@@ -13,7 +13,7 @@ garantia. Ele segue quase sempre — e é o "quase" que custa caro:
   implementar e o implementador a revisar.
 - **Rompe a cadeia em silêncio.** Decide que não vale passar adiante, e ninguém nota.
 
-Todos observados em execução real (ver [`references.md`](references.md)).
+Todos observados em execução real (ver [`references.md`](../references.md)).
 
 ## A forma da solução
 
@@ -124,7 +124,7 @@ Um papel pode cobrir várias etapas. Cada um declara o que possui, o que **não*
 e as ferramentas a que tem acesso:
 
 ```toml
-# stock/roles/reviewer.toml
+# src/stock/roles/reviewer.toml
 stages      = ["code-review"]
 tools_allow = ["Read", "Grep", "Bash"]
 tools_deny  = ["Edit", "Write"]
@@ -190,8 +190,8 @@ Tudo que define comportamento tem versão padrão e versão do usuário:
 
 | O quê | Padrão | Extensão |
 |---|---|---|
-| Etapas | as de `stock/stages/` | desabilitar, editar, criar |
-| Papéis | os de `stock/roles/` | próprios |
+| Etapas | as de `src/stock/stages/` | desabilitar, editar, criar |
+| Papéis | os de `src/stock/roles/` | próprios |
 | Perfis de gate | três | próprios |
 | Loops | um | declarar outros, com regras |
 | Skills | as da Luna, instaladas junto | apontar um diretório próprio |
