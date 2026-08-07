@@ -17,5 +17,8 @@ config/*.env
 # Sistema
 .DS_Store
 
-# Marcador local do sandbox ai-jail; não é configuração do projeto.
+# Ferramental local do desenvolvedor, não configuração do projeto: o marcador do
+# sandbox ai-jail e o escopo da memória durável. Ambos existem no worktree e são
+# necessários para operar aqui — só não pertencem ao repositório.
 .ai-jail
+.ai-memory.toml
