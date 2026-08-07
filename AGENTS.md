@@ -2,46 +2,135 @@
 
 Você está trabalhando **no código da Luna**, não sendo orquestrado por ela.
 
+## Prioridade das instruções
+
+- Este `AGENTS.md` prevalece sobre instruções globais dentro deste repositório.
+- Documentação específica de uma área prevalece sobre este arquivo no mesmo assunto.
+  A suíte de documentação é governada por [`docs/README.md`](docs/README.md).
+- Em conflito real entre regras, pare e peça esclarecimento antes de alterar código.
+
 ## O que é este projeto
 
 Uma máquina de estados que orquestra agentes de IA através de um fluxo de trabalho,
 tirando a decisão de controle de fluxo do modelo e colocando em código. Leia
-[`docs/architecture.md`](docs/architecture.md) antes de propor qualquer mudança
-estrutural.
+[`docs/architecture/overview.md`](docs/architecture/overview.md) antes de propor
+qualquer mudança estrutural.
 
 ## Estado atual
 
-**Em desenho.** As decisões estão fechadas e registradas; o código ainda não começou. Se
-você for escrever código aqui, comece por
-[`prototypes/fsm-flow.html`](prototypes/fsm-flow.html) — o módulo `LunaFSM` dentro dele é
-puro e descreve o comportamento pretendido do núcleo.
+**Em desenho.** As decisões estão fechadas e registradas; o código ainda não começou.
+Se você for escrever código aqui, comece por
+[`prototypes/fsm-flow.html`](prototypes/fsm-flow.html) — o módulo `LunaFSM` dentro
+dele é puro e descreve o comportamento pretendido do núcleo.
+
+## Fluxo padrão de trabalho
+
+- Leia o contexto local antes de alterar arquivos.
+- Preserve mudanças existentes no worktree. Não reverta alterações de terceiros sem
+  pedido explícito.
+- Faça alterações pequenas, coesas e limitadas ao escopo solicitado.
+- Use os alvos do Makefile como interface principal de validação (`make help` lista).
+- Ao finalizar, informe quais validações rodou e qualquer pendência relevante.
 
 ## Antes de mudar arquitetura
 
-[`docs/decisions.md`](docs/decisions.md) registra cada decisão **com a alternativa
-recusada**. Se você for propor algo que já foi recusado, traga argumento novo — o
-documento existe para não reabrir discussão sem motivo.
+[`docs/ADRs/`](docs/ADRs/) registra cada decisão **com a alternativa recusada**. Se
+você for propor algo que já foi recusado, traga argumento novo — o registro existe
+para não reabrir discussão sem motivo. ADR é **imutável**: decisão revista vira ADR
+novo, não edição do antigo.
 
-## Convenções
-
-- **Idioma:** documentação e mensagens de commit em português; nomes de código, tipos e
-  identificadores em inglês.
-- **Commits:** Conventional Commits. O corpo explica o **porquê**, não o quê — o diff já
-  mostra o quê.
-- **Documentação:** o `README.md` abre pelo problema que o projeto resolve, nunca pela
-  stack. Detalhe técnico vai para `docs/`.
+As regras que **sempre** valem, independentemente de implementação, estão em
+[`docs/invariants/`](docs/invariants/). Violar um invariante não é bug de código —
+é a Luna deixando de ser a Luna.
 
 ## Estrutura
 
 ```
-cmd/luna/        ponto de entrada do CLI
-internal/fsm/    o motor: etapas, transições, contrato
-internal/store/  estado append-only e store de conteúdo
-internal/node/   execução de um nó (chamada do agente)
-stock/           padrões: etapas, papéis, perfis, skills
-prototypes/      protótipos descartáveis; não são código de produção
-docs/            arquitetura, decisões, referências
+src/                 tudo que é aplicação
+  cmd/luna/          ponto de entrada do CLI
+  internal/fsm/      o motor: etapas, transições, contrato
+  internal/store/    estado append-only e store de conteúdo
+  internal/node/     execução de um nó (chamada do agente)
+  stock/             padrões: etapas, papéis, perfis, skills
+docs/                a suíte de documentação — o contrato está em docs/README.md
+scripts/             utilitários de desenvolvimento (lint-docs)
+prototypes/          protótipos descartáveis; não são código de produção
+bin/                 binários gerados; não versionado além do .gitkeep
+config/              configuração de exemplo do usuário
 ```
+
+`internal/` é barreira de import garantida pelo compilador Go: o motor não é
+importável de fora do módulo. Não mova nada de `internal/` para fora sem uma
+decisão registrada em ADR.
+
+## Convenções de código
+
+- **Idioma:** documentação, comentários e mensagens de commit em **português**;
+  nomes de código, tipos e identificadores em **inglês**. Vale também para o slug
+  do nome de arquivo em `docs/`.
+- **Nomes específicos e pesquisáveis.** Prefira os que retornam poucas ocorrências
+  em `rg`. Evite genéricos como `data`, `handler`, `Manager` quando houver opção mais
+  precisa. Termos do domínio (`stage`, `role`, `handoff`, `gate`) são o nome natural
+  do conceito e devem ser usados como tal.
+- **Tipagem explícita.** Sem `interface{}`/`any` onde um tipo concreto serve.
+- **Erros carregam o valor inválido e o esperado.** Uma mensagem que não diz o que
+  chegou nem o que se queria custa uma sessão de depuração.
+- **Funções idealmente entre 4 e 20 linhas;** maiores são aceitáveis quando manter a
+  lógica unida for mais claro que dividir artificialmente.
+- **Arquivos com menos de 500 linhas.** Divida por responsabilidade.
+- **Retornos antecipados** em vez de `if` aninhado. Máximo de 2 níveis de indentação.
+- **Comentários explicam o porquê**, não o quê — o código já mostra o quê. Mantenha
+  comentários existentes; não os remova em refactors. Referencie ADR ou SHA quando
+  uma linha existir por causa de uma decisão ou restrição externa.
+
+## Testes
+
+- Toda função nova tem teste; correção de bug tem teste de regressão.
+- Teste o **comportamento observável**, não a implementação.
+- Simule fronteira externa (processo de agente, filesystem, rede) com fake nomeado,
+  não com stub inline.
+- Rode pelos alvos do Makefile.
+
+## Interface Makefile
+
+`make help` lista todos os alvos. Os que importam:
+
+- `make bootstrap` — prepara o ambiente (mise + dependências). Idempotente.
+- `make doctor` — confere o ambiente sem instalar nada.
+- `make ci-check` — o que o CI remoto roda: `fmt`, `lint`, `lint-docs`, `test`.
+- `make ci` — alias de `ci-check`. Rode antes de abrir PR.
+- `make lint-docs` — valida a **forma** da suíte de docs; falha o CI como lint de
+  código. O contrato que ele executa está em [`docs/README.md`](docs/README.md).
+
+Enquanto não há `go.mod`, os alvos de código são no-op explícito em vez de falhar —
+assim o CI nasce verde e passa a valer de verdade quando o código vier.
+
+Não há `up`/`down`/`logs`/`clean_db`: a Luna é um CLI sem serviços nem banco de
+desenvolvimento. Target no-op seria cerimônia.
+
+## Documentação
+
+A suíte é governada por [`docs/README.md`](docs/README.md) — o contrato que diz
+quais camadas existem, o que cada uma responde e que forma segue. **Consulte-o antes
+de criar ou alterar qualquer documento**, para saber em qual camada ele entra.
+
+| Onde | O quê |
+|---|---|
+| [`docs/architecture/`](docs/architecture/) | como o sistema está montado hoje |
+| [`docs/glossary/`](docs/glossary/) | o que cada termo do domínio significa |
+| [`docs/invariants/`](docs/invariants/) | regras que sempre valem |
+| [`docs/ADRs/`](docs/ADRs/) | por que decidimos assim — imutável |
+| [`docs/PRDs/`](docs/PRDs/) · [`docs/RFCs/`](docs/RFCs/) | comportamento esperado · rota técnica |
+| [`docs/references.md`](docs/references.md) | de onde veio a ideia, e o que foi recusado |
+| [`docs/CHANGELOG/`](docs/CHANGELOG/) | o que mudou entre versões |
+
+O `README.md` da raiz abre pelo **problema que o projeto resolve**, nunca pela stack.
+Detalhe técnico vai para `docs/`.
+
+## Commits, PR e tags
+
+O git-flow é normativo em [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — e só lá.
+Em resumo: Conventional Commits, corpo em português explicando o **porquê**.
 
 ## O que não fazer
 
@@ -51,3 +140,7 @@ docs/            arquitetura, decisões, referências
   sem tratamento de erro. Reescreva ao integrar.
 - **Não crie etapa sem contrato.** Toda etapa declara o que exige e o que produz — é o
   que impede handoff incompleto.
+- **Não edite um ADR aceito.** Decisão revista vira ADR novo; o antigo só muda de
+  status. `make lint-docs` reprova a edição.
+- **Não duplique conteúdo entre camadas de doc.** Um fato mora numa camada só; se
+  precisa repetir, linke.

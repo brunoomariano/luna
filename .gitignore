@@ -16,3 +16,6 @@ config/*.env
 
 # Sistema
 .DS_Store
+
+# Marcador local do sandbox ai-jail; não é configuração do projeto.
+.ai-jail

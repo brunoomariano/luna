@@ -48,14 +48,20 @@ Ainda não há release. Quando houver, será um comando.
 
 ## Documentação
 
+[`docs/README.md`](docs/README.md) é o contrato da documentação: diz quais camadas
+existem, o que cada uma responde e onde mora. Comece por ele se for escrever um
+documento. Os pontos de entrada:
+
 | Documento | Assunto |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | como o sistema funciona e por quê |
-| [`docs/decisions.md`](docs/decisions.md) | decisões tomadas, com a alternativa recusada |
-| [`docs/stages.md`](docs/stages.md) | as etapas padrão e o contrato de cada uma |
+| [`docs/architecture/overview.md`](docs/architecture/overview.md) | como o sistema funciona e por quê |
+| [`docs/architecture/stages.md`](docs/architecture/stages.md) | as etapas padrão e o contrato de cada uma |
+| [`docs/ADRs/`](docs/ADRs/) | decisões tomadas, com a alternativa recusada |
+| [`docs/invariants/`](docs/invariants/) | regras que sempre valem |
+| [`docs/glossary/`](docs/glossary/) | os termos do domínio |
 | [`docs/references.md`](docs/references.md) | de onde vieram as ideias |
 | [`AGENTS.md`](AGENTS.md) | para agentes que trabalham neste repositório |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | fluxo de contribuição |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | fluxo de contribuição, commits e tags |
 
 ## Licença
 
