@@ -16,6 +16,9 @@ type StageID string
 // the flow — see docs/ADRs/0014-conditional-stages.md.
 type TaskKind string
 
+// The task kinds Luna ships with. They govern which conditional stages enter the
+// flow: diagnose is bug-only, spec and harden skip a chore, code-review skips
+// docs (see docs/architecture/stages.md).
 const (
 	KindFeature TaskKind = "feature"
 	KindBug     TaskKind = "bug"

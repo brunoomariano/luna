@@ -2,17 +2,65 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  # The gate. Mirrors the local `make ci-check` exactly — what passes here passes
+  # there, and vice versa. If the two ever diverge, that is a bug in the pipeline,
+  # not a quirk to work around.
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: jdx/mise-action@v2
         with:
-          go-version: stable
+          # The toolchain is pinned in mise.toml: same linter version locally and
+          # here. A linter that changes its mind between the two turns a green CI
+          # red with no code change, and the fix becomes guesswork.
+          install: true
           cache: true
-      # Mirrors the local `make ci-check` exactly: what passes here passes there.
       - run: make ci-check
+
+  # Kept out of ci-check because it needs CGO and roughly doubles the test time.
+  # It runs here, where the cost is paid once, rather than on every local run.
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: make race
+
+  # Kept out of ci-check because it reaches the network. Reachability-filtered:
+  # it reports only what the code actually calls, so a finding here is a finding
+  # that matters.
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: make vuln
+
+  # Reports rather than gates. These answer "how healthy is the code", which is a
+  # judgement call and not a threshold — so they surface the numbers in the run
+  # log without blocking a merge on a figure nobody agreed on.
+  metrics:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: make cyclo
+      - run: make mod

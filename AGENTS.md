@@ -134,6 +134,13 @@ the criterion before the diff.
   PR.**
 - `make lint-docs` — validates the **shape** of the docs suite; fails CI like a code
   linter. The contract it enforces is in [`docs/README.md`](docs/README.md).
+- `make race`, `make vuln` — outside the local gate, run by remote CI.
+- `make cyclo`, `make crap`, `make mutation`, `make deadcode` — reported, never gated.
+
+The full pipeline, what each step catches and the two thresholds that matter are in
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md). The premise behind it: Luna
+orchestrates agents that write code, so the code Luna is made of has to hold up
+without a human reading every line — the metrics do the reviewing.
 
 The distinction between `ci` and `ci-check` is not cosmetic: a CI step that reformats
 the code hides exactly what it should be failing on.

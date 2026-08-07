@@ -18,6 +18,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   broken on paper — a stage requiring what no earlier stage produces — before any agent
   is called. The 14-stage default flow is verified in CI.
 - `make cover` fails below the minimum coverage, and is part of `ci-check`.
+- A quality pipeline that stands in for line-by-line review: `.golangci.yaml` names
+  seventeen linters with a reason each, coverage carries a hard 95% floor, cyclomatic
+  complexity is capped at 10, and `depguard` encodes the rule that the engine has no
+  HTTP surface — a rule that until now lived only in prose. Race detection and
+  vulnerability scanning run in remote CI; complexity, dead code, CRAP index and
+  mutation testing report without gating.
 - Stage selection: `NextStage` answers which stage comes next, skipping the ones whose
   condition does not hold, and `MissingFor` is the contract's entry check — the sibling
   of the static one. An unknown stage is an error rather than a silent restart.

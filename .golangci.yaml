@@ -1,0 +1,94 @@
+# Linter configuration. The default preset runs about seven linters; this file
+# names what the project actually wants and why, because a linter set nobody can
+# justify is a linter set people disable on the first inconvenient failure.
+#
+# The premise: Luna orchestrates agents that write code, so the code it is made of
+# has to hold up without anyone reading every line. That means the metrics do the
+# reviewing — coverage, complexity, dependency direction, error handling.
+
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    # --- correctness ---------------------------------------------------------
+    - errcheck        # an unchecked error is the silent failure INV-core-8 forbids
+    - govet           # the compiler's own suspicions
+    - staticcheck     # the deepest analyzer of the set
+    - ineffassign     # a value assigned and never read is a bug or a leftover
+    - unused          # dead identifiers
+    - exhaustive      # a switch missing a case of a named type — the FSM is full of them
+    - nilnil          # returning (nil, nil) hides which of the two the caller should test
+    - errorlint       # comparing errors with == instead of errors.Is/As
+
+    # --- security ------------------------------------------------------------
+    - gosec           # the usual suspects: weak crypto, path traversal, unsafe exec
+
+    # --- structure -----------------------------------------------------------
+    - gocyclo         # cyclomatic complexity, the metric that stands in for review
+    - depguard        # encodes the architectural rule that today only lives in AGENTS.md
+    - gocritic        # a broad catalogue of style and correctness patterns
+    - revive          # the successor to golint, configurable
+
+    # --- clarity -------------------------------------------------------------
+    - misspell
+    - unconvert       # a conversion that converts nothing
+    - wastedassign
+    - prealloc        # a slice grown in a loop with a known length
+
+  settings:
+    gocyclo:
+      # 10 is the classic threshold. Functions here are meant to be 4-20 lines
+      # (AGENTS.md), so anything past this is a function that should have been two.
+      min-complexity: 10
+
+    exhaustive:
+      # The FSM models states and kinds as named string types. A switch that
+      # forgets one is exactly the bug the type system was supposed to prevent.
+      default-signifies-exhaustive: true
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    depguard:
+      rules:
+        # The engine must not know about issue trackers (INV-core-9) or grow a
+        # network surface. Today there are no external dependencies at all, so
+        # this rule guards the boundary before it is crossed rather than after.
+        engine:
+          files:
+            - "**/src/internal/fsm/**"
+            - "**/src/internal/store/**"
+          deny:
+            - pkg: "net/http"
+              desc: "the engine has no HTTP surface; an adapter may, the FSM may not"
+            - pkg: "os/exec"
+              desc: "running a process belongs to internal/node, not to the engine"
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: early-return
+          # AGENTS.md: early returns instead of nested ifs, max 2 levels
+        - name: unreachable-code
+        - name: confusing-naming
+
+  exclusions:
+    rules:
+      # Test files get some slack, but not on correctness: a test that ignores an
+      # error is a test that can pass for the wrong reason. Only the structural
+      # linters are relaxed, and only where a fake or a table genuinely needs it.
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - prealloc
+          - gosec
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

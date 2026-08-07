@@ -4,6 +4,15 @@
 [tools]
 go = "1.26"
 
+# Quality gates. Pinned rather than "latest": a linter that changes its mind
+# between two runs turns a green CI red without a single line of code changing,
+# and the fix becomes guesswork about which tool moved.
+golangci-lint = "2.12.2"   # linter aggregator — see .golangci.yaml
+gofumpt = "0.10.0"         # stricter than gofmt
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+"go:github.com/fzipp/gocyclo/cmd/gocyclo" = "latest"
+
 # Beads governs the order between tasks (see docs/architecture/overview.md).
 # It is not a build dependency — only a runtime one — so it stays out of the
 # mandatory `[tools]` while the core does not exist. `make doctor` reports if it

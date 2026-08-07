@@ -18,7 +18,6 @@ func TestFlowStartsAtTheFirstStage(t *testing.T) {
 	ctx := NewTaskContext(KindFeature)
 
 	next, ok, err := NextStage(DefaultFlow(), NoStage, ctx)
-
 	if err != nil {
 		t.Fatalf("starting a flow is not an error: %v", err)
 	}
@@ -102,7 +101,6 @@ func TestFlowEndsAfterTheLastStage(t *testing.T) {
 	ctx := NewTaskContext(KindFeature)
 
 	next, ok, err := NextStage(DefaultFlow(), "commit", ctx)
-
 	if err != nil {
 		t.Fatalf("reaching the end of the flow is not an error: %v", err)
 	}
