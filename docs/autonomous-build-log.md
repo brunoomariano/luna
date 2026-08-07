@@ -1,7 +1,8 @@
 # Autonomous build log — waves 7 and 6
 
-**Status:** IN PROGRESS
+**Status:** READY FOR REVIEW
 **Started:** 2026-08-07
+**Waves covered:** 7 (CLI) and 6 (lead)
 
 This file records the decisions taken without asking, during a build the user
 authorised to run unattended: *"if you need a decision, take the most recommended
@@ -189,3 +190,32 @@ These framed everything above and are not under review:
 | 4 | The gate profile travels in the `Advance` action | It reaches the log, so a replay reproduces the run as it happened rather than as it would happen today |
 | 5 | Wave 7 ships without `luna run` | Reading and answering gates works on the store alone; running belongs with the lead |
 | 6 | Wave order inverted to 7 → 6 | The CLI delivers something demonstrable without the lead existing |
+
+---
+
+## What to look at first, if time is short
+
+Three entries are the ones most likely to be wrong, in order:
+
+1. **#3 — a loop ceiling respects the profile.** A nightly run can now spin past its ceiling
+   with nobody watching, and the watchdog that was supposed to catch that does not exist yet.
+2. **#10 — the lead spends the whole retry budget to block.** The log shows three failures
+   where there was one decision.
+3. **#8 — stage completion is inferred from the evidence.** It works, but "started" and
+   "finished" being one inferred fact rather than two recorded ones is a design smell.
+
+The rest are small or self-evidently right.
+
+## What the wave-5 study says about these
+
+The study of five orchestrators (`../luna-study/SYNTHESIS.md`) landed while these waves were
+being built, and it bears on two entries:
+
+- **#3** — multica runs a three-layer watchdog with a *semantic inactivity* timer
+  (`codex.go:1089`), and hermes has a pure loop-detector whose `idempotent_no_progress` signal
+  catches an agent that succeeds without progressing. Together they are the watchdog ADR-0019
+  describes. Once that exists, letting a nightly run past its loop ceiling is defensible; until
+  then it is a gap.
+- **#10** — multica's failure taxonomy (`taskfailure/failure.go:56-186`) is a closed set of 22
+  reasons with allowlisted retry. If Luna adopts something like it, `Block{Reason}` stops being
+  a second path into `StatusBlocked` and becomes the natural one.
