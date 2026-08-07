@@ -68,7 +68,7 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 	case actionTaskCreated:
 		return decodeJSON[fsm.TaskCreated](e.Payload)
 	case actionComplete:
-		return decodeJSON[fsm.Complete](e.Payload)
+		return decodeComplete(e.Payload, flow)
 	case actionFail:
 		return decodeJSON[fsm.Fail](e.Payload)
 	case actionGateAdjust:
@@ -80,6 +80,26 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownAction, e.Action)
 	}
+}
+
+// decodeComplete rebuilds a Complete and supplies the flow it should check
+// against.
+//
+// The flow comes from the caller rather than the log, for the same reason Advance
+// does not record it: storing it would freeze a task to the flow it started under,
+// and flows are meant to be editable (ADR-0017).
+func decodeComplete(payload string, flow []fsm.Stage) (fsm.Action, error) {
+	action, err := decodeJSON[fsm.Complete](payload)
+	if err != nil {
+		return nil, err
+	}
+
+	complete, ok := action.(fsm.Complete)
+	if !ok {
+		return nil, fmt.Errorf("%w: payload did not decode to a Complete", ErrUnknownAction)
+	}
+	complete.Flow = flow
+	return complete, nil
 }
 
 // withPayload pairs an action name with its JSON body, so each case above stays

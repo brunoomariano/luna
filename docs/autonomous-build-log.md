@@ -121,6 +121,60 @@ one, which catches drift — but it is checking its own premise.
 **If wrong:** one end-to-end test that walks the whole flow with a nightly profile. It
 belongs with the lead (wave 6), where something exists to do the walking.
 
+### 8. The lead reads "stage finished" from the evidence, not from a note it kept
+
+**Chosen:** a stage counts as closed when every artifact it owed — flow products and audit
+reports alike — has an entry in `state.Evidence`.
+
+**Why:** a closed stage and a stage about to start are both `running`, so the lead needs
+some way to tell them apart or it runs the same node forever. It does: the first version
+kept a map of finished stages in memory, and that is exactly the kind of state INV-core-2
+exists to forbid — a restarted lead would have lost it.
+
+The context alone will not do the job. `qa` and `code-review` produce only an audit report,
+which deliberately never enters the context (ADR-0021), so those stages would look
+permanently unfinished. The evidence records both kinds, which makes it the only complete
+trace.
+
+**Given up:** a stage that owes nothing at all cannot be distinguished this way. There are
+none in the shipped flow, and such a stage would have no work to verify — but a custom flow
+could declare one, and its node would run twice.
+
+**If wrong:** record stage entry as its own event, so "started" and "finished" are both
+facts in the log rather than one being inferred. That is the more honest model and costs an
+event per stage.
+
+### 9. `Complete` carries the flow, and the codec supplies it at replay
+
+**Chosen:** `Complete` gained a `Flow` field marked `json:"-"`, injected by the decoder the
+same way `Advance` already worked.
+
+**Why:** a test caught the bug. `complete` looked the stage up in `DefaultFlow()`, so a task
+running a custom flow (ADR-0017) had its delivery checked against a contract it was not
+running — the stage was simply not found, and the exit check passed on an empty contract.
+
+The field is excluded from the payload deliberately: storing the flow would freeze a task to
+the one it started under, which is the thing ADR-0017 exists to prevent.
+
+**Given up:** two actions now carry a field that is stripped on the way to the log and
+re-supplied on the way back. It works, but a third such field would be a sign the shape is
+wrong.
+
+### 10. The lead spends the whole retry budget to block
+
+**Chosen:** when the judge says block, the lead records `Fail` repeatedly until the
+reducer's budget is spent and the block happens through the normal path.
+
+**Why:** one definition of what blocked means. The alternative — a separate "block now"
+action — would give the reducer two ways to reach the same state, and the two would drift.
+
+**Given up:** the log shows three failures where there was one decision. An audit reading it
+sees a retry that never happened.
+
+**If wrong, and this is the second most likely:** a `Block{Reason}` action the reducer
+accepts directly. It would make the log honest at the cost of a second path into
+`StatusBlocked`. Worth deciding deliberately rather than leaving as is.
+
 ---
 
 ## Decisions the user took before the run

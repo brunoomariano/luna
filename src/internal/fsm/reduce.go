@@ -32,9 +32,16 @@ type Advance struct{ Flow []Stage }
 // Delivered and Evidence come from outside: the lead runs the real tool and hands
 // the verdict in (ADR-0024). The reducer decides what it means, it does not go
 // looking.
+//
+// Flow is carried for the same reason Advance carries it: a task may run a flow
+// other than the shipped one (ADR-0017), and the exit check has to compare the
+// delivery against the contract that task is actually running. It defaults to the
+// shipped flow when empty, so a log written before this field existed still
+// replays.
 type Complete struct {
 	Delivered []Artifact
 	Evidence  map[Artifact]string
+	Flow      []Stage `json:"-"`
 }
 
 // Fail reports that the node broke. Retry until the budget is spent, then block
@@ -184,7 +191,11 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		return state, fmt.Errorf("%w: no stage is running", ErrIllegalTransition)
 	}
 
-	stage := stageIn(DefaultFlow(), state.Stage)
+	flow := a.Flow
+	if len(flow) == 0 {
+		flow = DefaultFlow()
+	}
+	stage := stageIn(flow, state.Stage)
 
 	// The exit check, and the one that catches the most: a stage that promised two
 	// artifacts and delivered one does not close. Both fields count — an audit
