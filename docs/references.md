@@ -35,9 +35,33 @@ handoff. Motor em Babashka. Estudado a fundo em 2026-08-06.
 - **Notificação por injeção de teclas no terminal**, com pausas ajustadas
   empiricamente. Frágil a mudanças nos CLIs.
 
+**Mecânico × prosa — a separação que o estudo revela.** O que ele valida com script
+(recusando com exit 2) e o que ele apenas pede em prosa dividem-se assim:
+
+| Mecânico — o script recusa | Prosa — sem enforcement |
+|---|---|
+| whitelist de campos; header reservado proibido | "sempre repasse ao próximo da cadeia" |
+| tabela explícita tipo × campo | "preserve o nome da tarefa ao repassar" |
+| commit validado com git real: regex de 10 hex → `--disambiguate` resolve para exatamente 1 objeto → `cat-file -t` diz `commit` | "não mande `note` sem autorização" |
+| corpo depois da linha em branco = rejeitado | "trabalhe só no seu worktree" |
+| destinatário existe no registro de papéis | "ignore o aviso se estiver ocupado" |
+
+Mecânico cobre **estrutura de mensagem e transição de fila**. Prosa cobre **política de
+roteamento e disciplina de trabalho**. O resultado: mensagem malformada nunca entra na
+rede — mas nada garante que o agente mande a mensagem certa, para o papel certo, na hora
+certa.
+
+**A leitura que fecha o estudo, e que orienta este projeto:**
+
+> Ele tem enforcement forte no **transporte** e zero no **fluxo**.
+> Nós queremos o inverso — e podemos ter os dois.
+
+A FSM rege o fluxo (o que lá é prosa); o contrato de etapa e o gating de ferramenta dão
+ao fluxo o mesmo tipo de recusa mecânica que lá protege só o transporte.
+
 **O que faltava lá e virou requisito aqui:** não há detecção de agente travado ou de
 cadeia rompida. Um enxame que para de conversar para em silêncio. Daí o watchdog de
-inatividade.
+inatividade — ver [ADR-0019](ADRs/0019-inactivity-watchdog.md).
 
 ## Observações de campo do mesmo autor
 

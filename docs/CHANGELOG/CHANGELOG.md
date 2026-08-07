@@ -15,9 +15,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - `make lint-docs` valida a forma da documentação e reprova o CI como lint de código.
 - `mise.toml` fixa a versão do Go que `make bootstrap` instala.
 
+- Três decisões que só viviam na memória do projeto ou no protótipo passaram a ter
+  registro: gating de ferramenta por hook que bloqueia (ADR-0018), watchdog de
+  inatividade (ADR-0019) e invalidação do verde ao voltar para `build` (ADR-0020).
+
 ### Modificado
-- As decisões deixaram de viver num arquivo só e viraram 17 ADRs numerados e
+- As decisões deixaram de viver num arquivo só e viraram 20 ADRs numerados e
   imutáveis em `docs/ADRs/`, cada um com a alternativa recusada.
+- As referências passaram a registrar a separação mecânico × prosa observada no
+  SwarmForge, e a tese que dela decorre: enforcement no fluxo, não só no transporte.
 - O código da aplicação passou a viver sob `src/`; `internal/` segue sendo a barreira
   de import garantida pelo compilador.
 - `CONTRIBUTING.md` e `CHANGELOG.md` passaram para `docs/`, e o git-flow passou a ser

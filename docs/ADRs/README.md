@@ -50,6 +50,9 @@ Não registre ADR para escolhas triviais ou reversíveis sem custo.
 <!-- Liste os ADRs aqui conforme forem criados, do mais recente ao mais antigo. -->
 <!-- - [ADR-0001](0001-title.md) — <título> — `Aceito` -->
 
+- [ADR-0020](0020-review-finding-invalidates-green.md) — Achado alinhado invalida o verde ao voltar para build — `Aceito`
+- [ADR-0019](0019-inactivity-watchdog.md) — Watchdog de inatividade vigia o trabalho, não a janela — `Aceito`
+- [ADR-0018](0018-tool-gating-by-pretooluse-hook.md) — O gating de ferramenta é hook que bloqueia, não instrução ao agente — `Aceito`
 - [ADR-0017](0017-defaults-plus-customization-everywhere.md) — Padrão + customização, em tudo — `Aceito`
 - [ADR-0016](0016-cli-first.md) — CLI primeiro — `Aceito`
 - [ADR-0015](0015-core-knows-no-issue-tracker.md) — O núcleo não conhece rastreador de issues — `Aceito`
