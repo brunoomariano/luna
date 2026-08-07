@@ -58,7 +58,7 @@ Luna ceasing to be Luna.
 src/                 everything that is application code
   cmd/luna/          CLI entry point
   internal/fsm/      the engine: stages, transitions, contract
-  internal/store/    append-only state and content store
+  internal/store/    append-only log, replay, and the content store
   internal/node/     running a node (the agent call)
   stock/             defaults: stages, roles, profiles, skills
 docs/                the documentation suite — its contract is docs/README.md

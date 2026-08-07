@@ -24,6 +24,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   HTTP surface — a rule that until now lived only in prose. Race detection and
   vulnerability scanning run in remote CI; complexity, dead code, CRAP index and
   mutation testing report without gating.
+- The append-only store: a task's history persists to SQLite and replays back into
+  state through the reducer. Killing the process and reopening the file rebuilds the
+  exact state, because it was never only in memory (INV-core-2). Snapshots live as
+  content-addressed rows in the same database, so an event and the blob it points at
+  land in one transaction. `AwaitingGate` makes a suspended task discoverable by query
+  rather than by having watched it happen (INV-core-12).
 - The reducer: a task now has state (`ready`, `running`, `awaiting_gate`, `blocked`,
   `done`) and moves between them through eight actions. This is where the contract's
   exit check lands — a stage that promised two artifacts and delivered one does not

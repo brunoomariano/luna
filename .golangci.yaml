@@ -50,23 +50,46 @@ linters:
       default-signifies-exhaustive: true
 
     errcheck:
+      # A type assertion without the ok form panics on a mismatch, which in a
+      # reducer means losing the state rather than reporting a bad one.
       check-type-assertions: true
-      check-blank: true
+
+      # check-blank stays off: `defer func() { _ = rows.Close() }()` is idiomatic
+      # Go, and the blank is the assertion that dropping the error was deliberate.
+      # Flagging it teaches people to write `defer rows.Close()` instead, which
+      # says the same thing less clearly.
+      check-blank: false
 
     depguard:
       rules:
-        # The engine must not know about issue trackers (INV-core-9) or grow a
-        # network surface. Today there are no external dependencies at all, so
-        # this rule guards the boundary before it is crossed rather than after.
+        # The engine decides the flow and touches nothing else. It must not know
+        # about issue trackers (INV-core-9), must not reach the network, must not
+        # run a process, and must not talk to the store — a reducer that could
+        # read from disk would stop being replayable (ADR-0024).
         engine:
           files:
             - "**/src/internal/fsm/**"
-            - "**/src/internal/store/**"
           deny:
             - pkg: "net/http"
               desc: "the engine has no HTTP surface; an adapter may, the FSM may not"
             - pkg: "os/exec"
               desc: "running a process belongs to internal/node, not to the engine"
+            - pkg: "database/sql"
+              desc: "the reducer is pure; persistence belongs to internal/store"
+            - pkg: "modernc.org/sqlite"
+              desc: "the reducer is pure; persistence belongs to internal/store"
+
+        # The store persists and replays. It may speak SQL — that is its job —
+        # but it has no more business running processes or reaching the network
+        # than the engine does.
+        store:
+          files:
+            - "**/src/internal/store/**"
+          deny:
+            - pkg: "net/http"
+              desc: "the store persists locally; it has no network surface"
+            - pkg: "os/exec"
+              desc: "running a process belongs to internal/node"
 
     revive:
       rules:
