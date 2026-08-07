@@ -31,10 +31,14 @@ cosmética:
 | 10 | `qa` | QA tester | | não é chore | `ci_green`, `briefing` | | `qa_report` |
 | 11 | `code-review` | reviewer | | não é docs | `code`, `ci_green` | | `review_report` |
 | 12 | `harden` | hardener | | feature ou bug | `tests_green`, `code` | | `mutation_report` |
-| 13 | `architecture` | architect | | mexe em estrutura | `code` | | `arch_report` |
+| 13 | `architecture` | architect | | mexe em estrutura † | `code` | | `arch_report` |
 | 14 | `commit` | — | confirm-write | | `ci_green`, `code` | `commit_sha` | |
 
 🔁 = participa do loop de convergência. ⇄ = gate que **carrega artefato** para revisão.
+† = condição sobre um **fato descoberto durante a execução**, não sobre a natureza da
+tarefa: só se sabe que a mudança tocou a estrutura depois de olhar o que o `build`
+produziu. Por isso a condição de etapa consulta o contexto inteiro (natureza, artefatos
+já produzidos e fatos descobertos), e não apenas o `kind`.
 \* = `contract` só é exigido quando a etapa `spec` entrou no fluxo (feature ou bug); em
 `chore` e `docs` ela é pulada e o `build` não o pede.
 

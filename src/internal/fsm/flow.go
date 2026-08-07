@@ -2,7 +2,7 @@ package fsm
 
 // isFeatureOrBug é a condição que governa as etapas cujo custo só se paga quando
 // há comportamento novo ou defeito a corrigir.
-func isFeatureOrBug(k TaskKind) bool { return k == KindFeature || k == KindBug }
+func isFeatureOrBug(c TaskContext) bool { return c.Kind == KindFeature || c.Kind == KindBug }
 
 // DefaultFlow é o fluxo que a Luna traz instalado — as 14 etapas de
 // docs/architecture/stages.md.
@@ -35,7 +35,7 @@ func DefaultFlow() []Stage {
 			Requires:         []Artifact{"briefing"},
 			Produces:         []Artifact{"root_cause"},
 			ProducesForHuman: []Artifact{"min_case"},
-			When:             func(k TaskKind) bool { return k == KindBug },
+			When:             func(c TaskContext) bool { return c.Kind == KindBug },
 		},
 		{
 			ID:       "scenarios",
@@ -72,14 +72,14 @@ func DefaultFlow() []Stage {
 			Role:             "qa",
 			Requires:         []Artifact{"ci_green", "briefing"},
 			ProducesForHuman: []Artifact{"qa_report"},
-			When:             func(k TaskKind) bool { return k != KindChore },
+			When:             func(c TaskContext) bool { return c.Kind != KindChore },
 		},
 		{
 			ID:               "code-review",
 			Role:             "reviewer",
 			Requires:         []Artifact{"code", "ci_green"},
 			ProducesForHuman: []Artifact{"review_report"},
-			When:             func(k TaskKind) bool { return k != KindDocs },
+			When:             func(c TaskContext) bool { return c.Kind != KindDocs },
 		},
 		{
 			ID:               "harden",
@@ -93,9 +93,10 @@ func DefaultFlow() []Stage {
 			Role:             "architect",
 			Requires:         []Artifact{"code"},
 			ProducesForHuman: []Artifact{"arch_report"},
-			// A condição de "mexe em estrutura" não é a natureza da tarefa, e
-			// sim um fato descoberto durante a execução. Fica fora de When —
-			// que só recebe TaskKind — até o contexto de execução existir.
+			// Diferente das demais, esta condição não é natureza da tarefa: só
+			// se sabe que a mudança mexeu na estrutura depois de olhar o que o
+			// build produziu.
+			When: func(c TaskContext) bool { return c.HasFact(TouchesStructure) },
 		},
 		{
 			ID:       "commit",

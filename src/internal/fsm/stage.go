@@ -27,6 +27,51 @@ const (
 // produz, porque a tarefa já chega com ele.
 const TaskID Artifact = "task_id"
 
+// Fact é algo descoberto sobre a tarefa **durante** a execução — diferente de
+// TaskKind, que ela carrega desde o intake. É o que permite a uma etapa
+// condicional depender do que o trabalho revelou, não só do que se sabia antes
+// de começar.
+type Fact string
+
+// TouchesStructure marca que a mudança mexeu na estrutura do sistema. Só se sabe
+// olhando o que o build produziu, e é a condição de entrada de `architecture`.
+const TouchesStructure Fact = "touches_structure"
+
+// TaskContext é o que uma condição de etapa consulta para decidir se entra no
+// fluxo: a natureza da tarefa, os artefatos já produzidos e os fatos descobertos
+// ao longo da execução.
+//
+// Existe um tipo em vez de passar TaskKind solto porque nem toda condição é
+// natureza da tarefa. `diagnose` depende do kind, sabido no intake;
+// `architecture` depende de a mudança ter tocado a estrutura, o que só se sabe
+// depois do build. Um único parâmetro serve as duas sem duplicar o mecanismo.
+type TaskContext struct {
+	Kind      TaskKind
+	Artifacts map[Artifact]bool
+	Facts     map[Fact]bool
+}
+
+// NewTaskContext monta um contexto para uma tarefa que está começando: só o
+// kind, sem artefato produzido nem fato descoberto.
+func NewTaskContext(kind TaskKind) TaskContext {
+	return TaskContext{
+		Kind:      kind,
+		Artifacts: map[Artifact]bool{TaskID: true},
+		Facts:     map[Fact]bool{},
+	}
+}
+
+// HasFact informa se o fato foi descoberto. Consulta segura em contexto de mapa
+// nil — uma condição não deveria precisar saber se alguém inicializou o mapa.
+func (c TaskContext) HasFact(f Fact) bool {
+	return c.Facts[f]
+}
+
+// HasArtifact informa se o artefato já está disponível no contexto.
+func (c TaskContext) HasArtifact(a Artifact) bool {
+	return c.Artifacts[a]
+}
+
 // Stage é o contrato de uma etapa: o que ela exige para começar e o que entrega
 // ao terminar.
 //
@@ -49,7 +94,11 @@ type Stage struct {
 	ProducesForHuman []Artifact
 
 	// When decide se a etapa entra no fluxo. Nil significa incondicional.
-	When func(TaskKind) bool
+	//
+	// Recebe o contexto inteiro, não só o kind: nem toda condição é natureza da
+	// tarefa. `diagnose` olha o kind; `architecture` olha um fato descoberto
+	// durante a execução.
+	When func(TaskContext) bool
 }
 
 // ProducesArtifact informa se a etapa entrega o artefato para o fluxo consumir.
@@ -79,10 +128,10 @@ func containsArtifact(list []Artifact, want Artifact) bool {
 	return false
 }
 
-// AppliesTo informa se a etapa entra no fluxo para esta natureza de tarefa.
-func (s Stage) AppliesTo(kind TaskKind) bool {
+// AppliesTo informa se a etapa entra no fluxo neste contexto.
+func (s Stage) AppliesTo(ctx TaskContext) bool {
 	if s.When == nil {
 		return true
 	}
-	return s.When(kind)
+	return s.When(ctx)
 }

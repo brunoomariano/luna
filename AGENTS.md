@@ -67,9 +67,17 @@ decisão registrada em ADR.
 
 ## Convenções de código
 
-- **Idioma:** documentação, comentários e mensagens de commit em **português**;
-  nomes de código, tipos e identificadores em **inglês**. Vale também para o slug
-  do nome de arquivo em `docs/`.
+- **Idioma — o código nasce em inglês, sempre.** Nome de pacote, tipo, função,
+  método, variável, constante, campo, **e nome de teste**. Sem exceção e sem
+  "depois a gente traduz": renomear teste depois é diff que ninguém revisa de
+  verdade.
+  - **Em inglês:** tudo que é identificador, incluindo `TestStageSeparatesFields`
+    e nomes de helper de teste.
+  - **Em português:** documentação, comentários, docstrings, mensagens de commit,
+    e o texto de mensagens de erro/log voltadas ao usuário do CLI.
+  - **Slug de arquivo em `docs/`** também em inglês (`alerts-0001-suppression.md`).
+  - A prosa PT-BR é transitória: a documentação e os comentários migram para
+    inglês em algum momento. O código não migra porque já nasce certo.
 - **Nomes específicos e pesquisáveis.** Prefira os que retornam poucas ocorrências
   em `rg`. Evite genéricos como `data`, `handler`, `Manager` quando houver opção mais
   precisa. Termos do domínio (`stage`, `role`, `handoff`, `gate`) são o nome natural
