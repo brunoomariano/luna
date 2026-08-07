@@ -201,9 +201,25 @@ registrados no handoff com caminho e hash, e `luna task show <tarefa>` lista o q
 tarefa produziu para leitura humana. Um relatório que ninguém sabe que existe é
 trabalho jogado fora.
 
-> **Em aberto:** notificação **fora do terminal** — e-mail, webhook, notificação de
-> sistema — não está decidida. Para o perfil `noturno`, em que nada espera, a questão é
-> menos urgente; para `interativo` com tarefas longas, ela volta.
+### Notificação é peça acoplável, não parte do núcleo
+
+O estado consultável é a **base**: `luna gates` responde "o que está esperando?" sem
+depender de nada externo. Sobre ela, notificação — webhook, Telegram, e-mail — é uma
+**saída acoplada**, não uma responsabilidade do motor.
+
+A divisão importa por dois motivos. O núcleo não pode depender de um canal que pode
+estar fora do ar: se o webhook falha, a tarefa continua suspensa e continua listada em
+`luna gates`. E o canal certo só se conhece rodando — qual serve depende de como você
+opera, o que não se decide no papel.
+
+Por isso a decisão do **canal** fica em aberto de propósito, enquanto a do **contrato**
+não: qualquer notificador consome o mesmo estado que `luna gates` expõe. O motor emite
+o evento; quem escuta é configuração.
+
+> **Em aberto:** quais canais existirão e como se configuram. Decidir depois de rodar,
+> com uso real. O que **não** está em aberto: notificação não vira dependência do
+> núcleo, e a ausência dela nunca torna uma tarefa suspensa invisível — isso é
+> INV-core-12.
 
 ## Estado
 
