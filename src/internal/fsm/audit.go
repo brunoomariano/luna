@@ -41,6 +41,11 @@ func AuditContract(flow []Stage) []ContractGap {
 // missingFrom returns the required artifacts that are not available yet, keeping
 // declaration order — whoever reads the report compares it against the contract
 // they wrote.
+//
+// Shared by both contract checks, and that is the point: the static one asks it
+// against the artifacts an earlier stage would have produced, the entry one
+// against the artifacts this task actually holds. Same question, different
+// moment — so a change to what counts as "available" cannot drift between them.
 func missingFrom(required []Artifact, available map[Artifact]bool) []Artifact {
 	var missing []Artifact
 	for _, r := range required {

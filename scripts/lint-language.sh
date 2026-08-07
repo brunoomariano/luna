@@ -18,9 +18,18 @@ cd "$(dirname "$0")/.."
 fail=0
 hit() { echo "$1"; fail=1; }
 
-# Files the language rule does not govern: local tooling markers, and the git
-# history itself (commit messages already written stay as they are).
-tracked() { git ls-files | grep -vE '^(\.ai-jail|\.ai-memory\.toml)$'; }
+# Files the language rule does not govern: local tooling markers, the git history
+# itself (commit messages already written stay as they are), and this script —
+# which necessarily spells out the Portuguese it hunts for, and would otherwise
+# report itself on every run.
+# `--cached --others` rather than plain `ls-files`: a file that is new and not yet
+# staged is exactly the one most likely to carry fresh Portuguese, and checking
+# only tracked files would wave it through. `--exclude-standard` keeps .gitignore
+# honoured so build output and local tooling stay out.
+tracked() {
+  git ls-files --cached --others --exclude-standard \
+    | grep -vE '^(\.ai-jail|\.ai-memory\.toml|scripts/lint-language\.sh)$'
+}
 
 # --- layer 1: accented characters ---------------------------------------------
 # The cheapest signal, and the one that catches most of it.

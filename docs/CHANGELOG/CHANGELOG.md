@@ -18,6 +18,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   broken on paper — a stage requiring what no earlier stage produces — before any agent
   is called. The 14-stage default flow is verified in CI.
 - `make cover` fails below the minimum coverage, and is part of `ci-check`.
+- Stage selection: `NextStage` answers which stage comes next, skipping the ones whose
+  condition does not hold, and `MissingFor` is the contract's entry check — the sibling
+  of the static one. An unknown stage is an error rather than a silent restart.
 - Three decisions that lived only in the project's memory or in the prototype now have a
   record: tool gating by a blocking hook (ADR-0018), inactivity watchdog (ADR-0019) and
   green invalidation when returning to `build` (ADR-0020).
