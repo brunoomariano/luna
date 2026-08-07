@@ -147,9 +147,12 @@ nó falha
    ↓
 modelo avalia
    ├── tentar de novo (até 2), com o erro no contexto
-   ├── voltar à etapa anterior
    └── bloquear + avisar o humano
 ```
+
+Não há "voltar à etapa anterior" como saída de falha: o único retorno a uma etapa
+anterior é o do achado de revisão, que invalida o verde ao voltar. Duas portas para o
+mesmo lugar significaria uma delas esquecendo de invalidar.
 
 Sem retry infinito: é exatamente o loop que não converge e queima tokens. E sem morte
 silenciosa: toda tarefa bloqueada avisa.
