@@ -15,6 +15,14 @@ var ErrIllegalTransition = errors.New("illegal transition")
 // the ways a task can move.
 type Action interface{ isAction() }
 
+// TaskCreated opens a task's log. It is always the first event, and it is what
+// makes the log self-describing: the kind and the profile come out of the history
+// rather than having to be supplied alongside it.
+type TaskCreated struct {
+	Kind    TaskKind
+	Profile Profile
+}
+
 // Advance moves to the next stage of the flow, applying the contract's entry
 // check on the way in.
 type Advance struct{ Flow []Stage }
@@ -57,6 +65,7 @@ type ReviewFinding struct {
 // Unblock is a human clearing a block.
 type Unblock struct{}
 
+func (TaskCreated) isAction()   {}
 func (Advance) isAction()       {}
 func (Complete) isAction()      {}
 func (Fail) isAction()          {}
@@ -84,6 +93,8 @@ var reviewStages = map[StageID]bool{
 // caller.
 func Reduce(state TaskState, action Action) (TaskState, error) {
 	switch a := action.(type) {
+	case TaskCreated:
+		return created(state, a)
 	case Advance:
 		return advance(state, a)
 	case Complete:
@@ -99,6 +110,20 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 	default:
 		return state, fmt.Errorf("%w: unknown action %T", ErrIllegalTransition, action)
 	}
+}
+
+// created stamps a task's kind and profile from its opening event.
+func created(state TaskState, a TaskCreated) (TaskState, error) {
+	if state.Status != StatusReady || state.Stage != "" {
+		return state, fmt.Errorf("%w: a task is created once, before anything else", ErrIllegalTransition)
+	}
+
+	state.Context.Kind = a.Kind
+	state.Profile = a.Profile
+	if state.Profile == "" {
+		state.Profile = ProfileInteractive
+	}
+	return state, nil
 }
 
 func advance(state TaskState, a Advance) (TaskState, error) {
@@ -141,7 +166,10 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	state.Stage = next
 	state.Retry.Attempts = 0
 
-	if gate := gateFor(stage); gate != nil {
+	// The profile decides whether the gate actually stops the task. A gate that
+	// resolves on its own still happened — it is just that nobody was asked
+	// (ADR-0013).
+	if gate := gateFor(stage); gate != nil && state.Profile.WaitsFor(gate.Kind) {
 		state.Status = StatusAwaitingGate
 		state.Gate = gate
 		return state, nil
@@ -258,7 +286,7 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	// A spent ceiling opens a gate rather than blocking. Not converging is a
 	// decision to make with the history in view, not an anomaly of the node
 	// (ADR-0023).
-	if reason := ceilingHit(state.Loop, limits); reason != "" {
+	if reason := ceilingHit(state.Loop, limits); reason != "" && state.Profile.WaitsFor(GateLoopCeiling) {
 		state.Status = StatusAwaitingGate
 		state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
 	}
@@ -304,7 +332,7 @@ func gateFor(stage Stage) *PendingGate {
 	case "spec":
 		return &PendingGate{Kind: GateReviewArtifact, Stage: stage.ID, Artifact: "contract", Reason: "review the contract"}
 	case "commit":
-		return &PendingGate{Kind: GateConfirm, Stage: stage.ID, Reason: "confirm the write"}
+		return &PendingGate{Kind: GateConfirmWrite, Stage: stage.ID, Reason: "confirm the write"}
 	default:
 		return nil
 	}

@@ -73,12 +73,12 @@ func TestOperationsOnAClosedStoreAreReported(t *testing.T) {
 		}
 	})
 	t.Run("Replay", func(t *testing.T) {
-		if _, err := s.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow()); err == nil {
+		if _, err := s.Replay("LUNA-1", fsm.DefaultFlow()); err == nil {
 			t.Error("replaying from a closed store must fail")
 		}
 	})
 	t.Run("AwaitingGate", func(t *testing.T) {
-		if _, err := s.AwaitingGate(fsm.KindFeature, fsm.DefaultFlow()); err == nil {
+		if _, err := s.AwaitingGate(fsm.DefaultFlow()); err == nil {
 			t.Error("listing gates on a closed store must fail")
 		}
 	})
@@ -113,7 +113,7 @@ func TestReplayStopsWhenTheReducerRefuses(t *testing.T) {
 		t.Fatalf("appending: %v", err)
 	}
 
-	_, err := s.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow())
+	_, err := s.Replay("LUNA-1", fsm.DefaultFlow())
 
 	if err == nil {
 		t.Fatal("an illegal sequence must stop the replay")
@@ -135,7 +135,7 @@ func TestAwaitingGateSurfacesAReplayFailure(t *testing.T) {
 		t.Fatalf("appending: %v", err)
 	}
 
-	if _, err := s.AwaitingGate(fsm.KindFeature, fsm.DefaultFlow()); err == nil {
+	if _, err := s.AwaitingGate(fsm.DefaultFlow()); err == nil {
 		t.Error("a task that cannot be replayed must not vanish from the listing")
 	}
 }
@@ -202,5 +202,43 @@ func TestAppendingAnEventThatCarriesAnExistingHash(t *testing.T) {
 	}
 	if events[0].Blob != hash {
 		t.Errorf("the event keeps the hash it was given, got %q", events[0].Blob)
+	}
+}
+
+// TestOpeningAFileThatIsNotADatabase covers the schema-creation failure in Open.
+//
+// Pointing the store at an existing file that is not SQLite has to fail at open
+// time with a message naming the file. Discovering it on the first append would
+// put the error several transitions away from the cause.
+func TestOpeningAFileThatIsNotADatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "not-a-database.db")
+	if err := os.WriteFile(path, []byte("this is just text"), 0o600); err != nil {
+		t.Fatalf("preparing the fixture: %v", err)
+	}
+
+	_, err := Open(path)
+
+	if err == nil {
+		t.Fatal("opening a file that is not a database must fail")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("the error should name the file, got %v", err)
+	}
+}
+
+// TestEncodingAnActionThatCannotBeSerialised covers withPayload's error branch.
+//
+// An action carrying something JSON cannot represent must be refused at the point
+// of writing rather than producing a log entry that will not decode.
+func TestEncodingAnActionThatCannotBeSerialised(t *testing.T) {
+	// A channel cannot be marshalled; Evidence holds strings, so this reaches the
+	// encoder through a map value that json rejects.
+	_, _, err := withPayload("Complete", map[string]any{"bad": make(chan int)})
+
+	if err == nil {
+		t.Fatal("an unserialisable payload must be reported")
+	}
+	if !strings.Contains(err.Error(), "encoding") {
+		t.Errorf("the error should say what it failed at, got %v", err)
 	}
 }

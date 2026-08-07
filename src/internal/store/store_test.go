@@ -173,7 +173,7 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	}
 	defer func() { _ = second.Close() }()
 
-	replayed, err := second.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow())
+	replayed, err := second.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 func TestReplayingAnEmptyLogGivesAFreshTask(t *testing.T) {
 	s := openTemp(t)
 
-	state, err := s.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow())
+	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("replaying an empty log is not an error: %v", err)
 	}
@@ -228,11 +228,11 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 
-	once, err := s.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow())
+	once, err := s.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("first replay: %v", err)
 	}
-	twice, err := s.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow())
+	twice, err := s.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("second replay: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestAnUnknownActionInTheLogIsReported(t *testing.T) {
 		t.Fatalf("appending: %v", err)
 	}
 
-	_, err := s.Replay("LUNA-1", fsm.KindFeature, fsm.DefaultFlow())
+	_, err := s.Replay("LUNA-1", fsm.DefaultFlow())
 
 	if !errors.Is(err, ErrUnknownAction) {
 		t.Errorf("want ErrUnknownAction, got %v", err)
@@ -387,7 +387,7 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 		}
 	}
 
-	waiting, err := s.AwaitingGate(fsm.KindFeature, fsm.DefaultFlow())
+	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 func TestListingTasksWithNothingSuspended(t *testing.T) {
 	s := openTemp(t)
 
-	waiting, err := s.AwaitingGate(fsm.KindFeature, fsm.DefaultFlow())
+	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("listing an empty store is not an error: %v", err)
 	}
@@ -488,5 +488,60 @@ func TestReopeningKeepsWhatWasThere(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Errorf("reopening must not wipe the log, got %d events", len(events))
+	}
+}
+
+// TestReplayReadsTheKindFromTheLog covers the reason TaskCreated exists.
+//
+// The kind is produced by intake and lives in the history. Asking a caller to
+// supply it alongside would let the two disagree — and `luna gates`, listing
+// tasks of several kinds at once, would have no single answer to give.
+func TestReplayReadsTheKindFromTheLog(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindBug,
+		Profile: fsm.ProfileNightly,
+	}); err != nil {
+		t.Fatalf("appending: %v", err)
+	}
+
+	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+
+	if state.Context.Kind != fsm.KindBug {
+		t.Errorf("the kind comes out of the log, got %q", state.Context.Kind)
+	}
+	if state.Profile != fsm.ProfileNightly {
+		t.Errorf("so does the profile, got %q", state.Profile)
+	}
+}
+
+// TestTasksOfDifferentKindsCoexist covers what the old signature made impossible.
+//
+// One store, two tasks, two kinds — and a single listing that gets both right.
+func TestTasksOfDifferentKindsCoexist(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendAction("a-bug", fsm.TaskCreated{Kind: fsm.KindBug}); err != nil {
+		t.Fatalf("appending: %v", err)
+	}
+	if err := s.AppendAction("a-chore", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+		t.Fatalf("appending: %v", err)
+	}
+
+	bug, err := s.Replay("a-bug", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying the bug: %v", err)
+	}
+	chore, err := s.Replay("a-chore", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying the chore: %v", err)
+	}
+
+	if bug.Context.Kind != fsm.KindBug || chore.Context.Kind != fsm.KindChore {
+		t.Errorf("each task keeps its own kind: %q and %q", bug.Context.Kind, chore.Context.Kind)
 	}
 }

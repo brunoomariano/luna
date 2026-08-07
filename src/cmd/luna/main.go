@@ -1,0 +1,72 @@
+// Command luna is the CLI.
+//
+// It does as little as a main should: work out where the store lives, open it,
+// hand the arguments to the cli package, and turn an error into an exit code.
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/brunoomariano/luna/src/internal/cli"
+	"github.com/brunoomariano/luna/src/internal/store"
+)
+
+func main() {
+	os.Exit(exitCode(run(os.Args[1:]), os.Stderr))
+}
+
+// exitCode turns an error into a status, and is separate from main so it can be
+// tested: main itself calls os.Exit, which a test cannot survive.
+//
+// Usage errors and runtime failures exit differently so a script can tell "you
+// typed it wrong" from "it went wrong".
+func exitCode(err error, stderr io.Writer) int {
+	if err == nil {
+		return 0
+	}
+	fmt.Fprintln(stderr, err)
+
+	if errors.Is(err, cli.ErrUsage) {
+		return 2
+	}
+	return 1
+}
+
+func run(args []string) error {
+	path, err := storePath()
+	if err != nil {
+		return err
+	}
+
+	s, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.Close() }()
+
+	return cli.Run(cli.Env{
+		Store: s,
+		Out:   os.Stdout,
+		Err:   os.Stderr,
+		Edit:  cli.Editor(),
+	}, args)
+}
+
+// storePath is where the log lives: LUNA_STORE if set, else .luna/luna.db under
+// the working directory. Per-directory rather than per-user because tasks belong
+// to a project, and two projects sharing one log would list each other's gates.
+func storePath() (string, error) {
+	if fromEnv := os.Getenv("LUNA_STORE"); fromEnv != "" {
+		return fromEnv, nil
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("finding the working directory: %w", err)
+	}
+	return filepath.Join(cwd, ".luna", "luna.db"), nil
+}

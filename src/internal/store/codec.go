@@ -11,6 +11,7 @@ import (
 // derived from the Go type name because the log outlives the code: renaming a
 // type should not make yesterday's tasks unreadable.
 const (
+	actionTaskCreated   = "TaskCreated"
 	actionAdvance       = "Advance"
 	actionComplete      = "Complete"
 	actionFail          = "Fail"
@@ -34,6 +35,8 @@ func encodeAction(action fsm.Action) (name, payload string, err error) {
 		return actionGateApprove, "", nil
 	case fsm.Unblock:
 		return actionUnblock, "", nil
+	case fsm.TaskCreated:
+		return withPayload(actionTaskCreated, a)
 	case fsm.Complete:
 		return withPayload(actionComplete, a)
 	case fsm.Fail:
@@ -62,6 +65,8 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 		return fsm.GateApprove{}, nil
 	case actionUnblock:
 		return fsm.Unblock{}, nil
+	case actionTaskCreated:
+		return decodeJSON[fsm.TaskCreated](e.Payload)
 	case actionComplete:
 		return decodeJSON[fsm.Complete](e.Payload)
 	case actionFail:

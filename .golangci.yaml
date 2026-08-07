@@ -60,6 +60,14 @@ linters:
       # says the same thing less clearly.
       check-blank: false
 
+      # Printing to a writer the caller owns is the one case where checking the
+      # error buys nothing: if stdout is broken, reporting that fact to stdout
+      # will not work either. Everything else stays checked.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
     depguard:
       rules:
         # The engine decides the flow and touches nothing else. It must not know

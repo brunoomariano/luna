@@ -24,6 +24,45 @@ const (
 	StatusDone Status = "done"
 )
 
+// Profile decides which gates actually wait for a human. It is chosen per task
+// rather than per task type or per repository, because the type does not predict
+// the risk — a critical bug can deserve more gating than a trivial feature
+// (ADR-0013).
+type Profile string
+
+const (
+	// ProfileInteractive stops at every gate.
+	ProfileInteractive Profile = "interactive"
+
+	// ProfileTurbo stops only before writing: the commit gate waits, the rest
+	// resolve on their own.
+	ProfileTurbo Profile = "turbo"
+
+	// ProfileNightly stops at nothing. It is what makes an unattended run
+	// unattended — and what makes the watchdog (ADR-0019) load-bearing rather
+	// than a nicety.
+	ProfileNightly Profile = "nightly"
+)
+
+// WaitsFor reports whether a gate of this kind stops the task under this profile.
+func (p Profile) WaitsFor(gate GateKind) bool {
+	switch p {
+	case ProfileNightly:
+		return false
+	case ProfileTurbo:
+		// Only the write waits. A loop ceiling under turbo resolves by carrying
+		// on, which is the point of the profile.
+		return gate == GateConfirmWrite
+	case ProfileInteractive:
+		return true
+	default:
+		// An unknown profile is treated as the most cautious one. Guessing the
+		// permissive answer would let a typo in configuration turn a supervised
+		// run into an unattended one.
+		return true
+	}
+}
+
 // GateKind names why a gate stopped the task, which decides what the human is
 // being asked for (ADR-0022).
 type GateKind string
@@ -31,6 +70,12 @@ type GateKind string
 const (
 	// GateConfirm asks a yes or no. Nothing is attached.
 	GateConfirm GateKind = "confirm"
+
+	// GateConfirmWrite is the confirmation before the task writes — the commit.
+	// It is a kind of its own rather than a plain confirm because it is the one
+	// gate the turbo profile still waits for: everything before it is reversible,
+	// and this is not.
+	GateConfirmWrite GateKind = "confirm-write"
 
 	// GateReviewArtifact carries what the stage produced. The human may approve
 	// it, adjust it, or reject it, and the approved version is what the next
@@ -107,6 +152,11 @@ type TaskState struct {
 	Stage   StageID
 	Context TaskContext
 
+	// Profile decides which gates wait. It lives in the state rather than in
+	// configuration because a replay has to reproduce the run as it happened: a
+	// task run overnight must not replay as though it had been supervised.
+	Profile Profile
+
 	Gate  *PendingGate
 	Loop  LoopCounters
 	Retry Retry
@@ -128,6 +178,7 @@ func NewTaskState(id string, kind TaskKind) TaskState {
 		ID:       id,
 		Status:   StatusReady,
 		Context:  NewTaskContext(kind),
+		Profile:  ProfileInteractive,
 		Retry:    Retry{Max: 2},
 		Evidence: map[Artifact]string{},
 	}

@@ -206,13 +206,17 @@ func (s *Store) Tasks() ([]string, error) {
 // This is the whole point of an append-only store: the state is not kept, it is
 // derived. It works because the reducer is pure (ADR-0024) — a transition that
 // could run a test suite would try to run it again on every replay.
-func (s *Store) Replay(taskID string, kind fsm.TaskKind, flow []fsm.Stage) (fsm.TaskState, error) {
+//
+// The kind and the profile are not parameters: they arrive in the log's opening
+// TaskCreated event. Asking a caller for what the history already holds would let
+// the two disagree.
+func (s *Store) Replay(taskID string, flow []fsm.Stage) (fsm.TaskState, error) {
 	events, err := s.Events(taskID)
 	if err != nil {
 		return fsm.TaskState{}, err
 	}
 
-	state := fsm.NewTaskState(taskID, kind)
+	state := fsm.NewTaskState(taskID, "")
 	for _, e := range events {
 		action, err := decodeAction(e, flow)
 		if err != nil {
@@ -231,7 +235,7 @@ func (s *Store) Replay(taskID string, kind fsm.TaskKind, flow []fsm.Stage) (fsm.
 // A suspended task released its slot, so no live process is left to remind anyone
 // it exists. Without a query like this it would wait forever — the second form of
 // silent failure (INV-core-12).
-func (s *Store) AwaitingGate(kind fsm.TaskKind, flow []fsm.Stage) ([]Waiting, error) {
+func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 	ids, err := s.Tasks()
 	if err != nil {
 		return nil, err
@@ -239,7 +243,7 @@ func (s *Store) AwaitingGate(kind fsm.TaskKind, flow []fsm.Stage) ([]Waiting, er
 
 	var waiting []Waiting
 	for _, id := range ids {
-		state, err := s.Replay(id, kind, flow)
+		state, err := s.Replay(id, flow)
 		if err != nil {
 			return nil, err
 		}
