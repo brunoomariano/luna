@@ -64,7 +64,7 @@ func NewTaskContext(kind TaskKind) TaskContext {
 }
 
 // HasFact reports whether the fact was discovered. Safe to call on a context with
-// nil maps — a condition should not have to know whether someone initialised them.
+// nil maps — a condition should not have to know whether someone initialized them.
 func (c TaskContext) HasFact(f Fact) bool {
 	return c.Facts[f]
 }

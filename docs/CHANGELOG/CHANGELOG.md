@@ -10,7 +10,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tool gating.
 - Initial documentation: architecture, decisions, stages and references.
 - Layered documentation suite, governed by the `docs/README.md` contract: core
-  glossary, invariants, ADRs, and the PRD and RFC layers formalised.
+  glossary, invariants, ADRs, and the PRD and RFC layers formalized.
 - `make lint-docs` validates the shape of the documentation and fails CI like a code
   linter.
 - `mise.toml` pins the Go version that `make bootstrap` installs.

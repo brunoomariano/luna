@@ -76,7 +76,7 @@ produced by any earlier stage? If so, the flow is broken on paper — and this i
 detectable without executing anything.
 
 **2. On entry.** The FSM does not call the agent of a stage whose `requires` is not in
-the context. Without this, the agent would start blind and the failure would look like model stupidity.
+the context. Without this, the agent would start blind and the failure would look like the model being dumb.
 
 **3. On exit.** The stage does not close without delivering the declared `produces`, and the delivery is
 verified **by running the tool** — the file exists, the test passes, the commit resolves.

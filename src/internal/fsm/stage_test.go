@@ -142,7 +142,7 @@ func TestStageConditionedOnDiscoveredFact(t *testing.T) {
 
 // TestTaskContextHandlesNilMaps covers the edge of a hand-built context.
 //
-// A condition should not have to know whether someone initialised the maps before
+// A condition should not have to know whether someone initialized the maps before
 // consulting them — reading a nil map in Go yields the zero value, and that is
 // what is expected here.
 func TestTaskContextHandlesNilMaps(t *testing.T) {

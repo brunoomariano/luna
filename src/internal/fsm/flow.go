@@ -1,7 +1,7 @@
 package fsm
 
 // isFeatureOrBug is the condition governing the stages whose cost only pays off
-// when there is new behaviour or a defect to fix.
+// when there is new behavior or a defect to fix.
 func isFeatureOrBug(c TaskContext) bool { return c.Kind == KindFeature || c.Kind == KindBug }
 
 // DefaultFlow is the flow Luna ships with — the 14 stages of

@@ -102,7 +102,7 @@ decision recorded in an ADR.
 ## Tests
 
 - Every new function has a test; every bug fix has a regression test.
-- Test **observable behaviour**, not the implementation.
+- Test **observable behavior**, not the implementation.
 - Fake an external boundary (agent process, filesystem, network) with a named fake, not
   an inline stub.
 - Run them through the Makefile targets.
@@ -153,7 +153,7 @@ creating or changing any document**, to know which layer it belongs to.
 | [`docs/glossary/`](docs/glossary/) | what each domain term means |
 | [`docs/invariants/`](docs/invariants/) | rules that always hold |
 | [`docs/ADRs/`](docs/ADRs/) | why we decided this way — immutable |
-| [`docs/PRDs/`](docs/PRDs/) · [`docs/RFCs/`](docs/RFCs/) | expected behaviour · technical route |
+| [`docs/PRDs/`](docs/PRDs/) · [`docs/RFCs/`](docs/RFCs/) | expected behavior · technical route |
 | [`docs/references.md`](docs/references.md) | where the idea came from, and what was rejected |
 | [`docs/CHANGELOG/`](docs/CHANGELOG/) | what changed between versions |
 

@@ -57,10 +57,10 @@ each one is in the table.
 **Whoever writes does not review.** The `implementer` does not do `code-review`; the `cleaner` does not run
 `harden`. The separation is in the roles, not in the model's good will.
 
-**The loop has an exit by judgment.** When `qa`, `code-review` or `harden` find something, the
+**The loop exits through judgment.** When `qa`, `code-review` or `harden` find something, the
 model decides by **alignment with the task**: aligned goes back to `build` (and invalidates the
-previous green); out of scope becomes a new task and the flow goes on. This distinction is not
-mechanizable — it is exactly where the judgment layer exists.
+previous green); out of scope becomes a new task and the flow goes on. This is not something a machine can
+decide — it is exactly where the judgment layer exists.
 
 **The loop has three ceilings, counted separately.** It is not a single counter: each ceiling
 detects a different pathology, and summing them into one number would hide precisely the difference.

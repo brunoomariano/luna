@@ -147,8 +147,8 @@ write waits), `nightly` (nothing waits). They live in `src/stock/profiles/`.
 
 ## FSM
 
-**Definition.** The state machine that governs the stages **inside** a task. It is
-it — and not the model — that decides which is the next stage.
+**Definition.** The state machine that governs the stages **inside** a task. It —
+not the model — decides which stage comes next.
 
 **Do not confuse with.** *Beads* — the FSM governs the stages inside a task; Beads
 governs the order **between** tasks (dependencies, what is free, atomic
