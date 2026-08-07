@@ -50,6 +50,7 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0024](0024-the-reducer-is-pure-verification-runs-outside.md) — The reducer is pure; verification runs outside it — `Accepted`
 - [ADR-0023](0023-three-separate-loop-ceilings.md) — The loop has three ceilings counted separately — `Accepted`
 - [ADR-0022](0022-gate-carries-artifact-for-review.md) — The gate carries the artifact, and the human can adjust it — `Accepted`
 - [ADR-0021](0021-produces-for-human-is-a-separate-contract-field.md) — What only the human reads is a contract field of its own — `Accepted`
