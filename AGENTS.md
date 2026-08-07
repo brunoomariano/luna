@@ -18,10 +18,13 @@ qualquer mudança estrutural.
 
 ## Estado atual
 
-**Em desenho.** As decisões estão fechadas e registradas; o código ainda não começou.
-Se você for escrever código aqui, comece por
-[`prototypes/fsm-flow.html`](prototypes/fsm-flow.html) — o módulo `LunaFSM` dentro
-dele é puro e descreve o comportamento pretendido do núcleo.
+**Motor em construção.** As decisões estão fechadas e registradas em
+[`docs/ADRs/`](docs/ADRs/); o núcleo começou pela verificação estática do contrato
+(`src/internal/fsm/`).
+
+O contrato de etapa é a fonte: [`docs/architecture/stages.md`](docs/architecture/stages.md)
+descreve as 14 etapas, e `DefaultFlow()` as implementa. Divergência entre os dois é bug —
+`TestFluxoPadraoTemAsQuatorzeEtapas` existe para pegá-la.
 
 ## Fluxo padrão de trabalho
 
@@ -54,7 +57,6 @@ src/                 tudo que é aplicação
   stock/             padrões: etapas, papéis, perfis, skills
 docs/                a suíte de documentação — o contrato está em docs/README.md
 scripts/             utilitários de desenvolvimento (lint-docs)
-prototypes/          protótipos descartáveis; não são código de produção
 bin/                 binários gerados; não versionado além do .gitkeep
 config/              configuração de exemplo do usuário
 ```
@@ -150,8 +152,6 @@ Em resumo: Conventional Commits, corpo em português explicando o **porquê**.
 
 - **Não mova o controle de fluxo para o modelo.** É a premissa do projeto inteiro.
 - **Não escreva estado com `UPDATE`.** O store é append-only; o histórico é a auditoria.
-- **Não promova protótipo a produção.** O que está em `prototypes/` nasceu sem teste e
-  sem tratamento de erro. Reescreva ao integrar.
 - **Não crie etapa sem contrato.** Toda etapa declara o que exige e o que produz — é o
   que impede handoff incompleto.
 - **Não edite um ADR aceito.** Decisão revista vira ADR novo; o antigo só muda de

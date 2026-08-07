@@ -36,11 +36,9 @@ importa. Ele nunca decide o próximo passo.
 
 ## Estado
 
-**Em desenho.** A arquitetura está fechada e registrada em [`docs/`](docs/); o código
-ainda não começou. Há um protótipo navegável do fluxo em
-[`prototypes/fsm-flow.html`](prototypes/fsm-flow.html) — abra no navegador e clique
-pelos cenários para ver a máquina de estados funcionando, incluindo o caso de handoff
-incompleto.
+**Motor em construção.** A arquitetura está fechada e registrada em [`docs/`](docs/).
+O núcleo começou pela verificação que roda antes de qualquer agente ser chamado: a
+auditoria estática do contrato, que detecta fluxo quebrado no papel.
 
 ## Instalação
 
