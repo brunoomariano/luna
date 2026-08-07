@@ -14,25 +14,26 @@ If the change touches a permanent rule of the domain, also check
 
 ## Project state
 
-In design. The architecture is settled; the code has not started. The most useful
-contributions right now are **design critique** — especially if you have already operated a fleet
-of agents and seen a failure mode the design does not cover.
+Engine under construction. The architecture is settled and recorded in
+[`docs/ADRs/`](ADRs/); the core has the contract's static and entry checks and stage
+selection. Design critique is still the most useful contribution — especially if you
+have operated a fleet of agents and seen a failure mode the design does not cover.
 
 ## Git-flow
 
-- **Default branch:** `master`. There is no `develop` — the project is too small to
+- **Default branch:** `main`. There is no `develop` — the project is too small to
   justify two integration lines.
-- **Every change comes out of a branch off `master`** and comes back through a PR. Name it by
+- **Every change comes out of a branch off `main`** and comes back through a PR. Name it by
   type and subject: `feat/stage-contract`, `fix/handoff-snapshot`,
   `docs/adr-numbering`.
-- **PRs target `master`.**
-- **Release tags are created on `master`**, in SemVer (`v0.1.0`). While there is no
+- **PRs target `main`.**
+- **Release tags are created on `main`**, in SemVer (`v0.1.0`). While there is no
   release, there is no tag.
 
 ## Flow
 
 1. Open an issue describing the problem before writing code.
-2. Work on a branch off `master`.
+2. Work on a branch off `main`.
 3. Conventional Commits; the body explains the why.
 4. `make ci` green before opening the PR.
 
@@ -57,6 +58,23 @@ of agents and seen a failure mode the design does not cover.
 Luna orchestrates agents that write code. That premise sets the bar for the code
 Luna itself is made of: it has to hold up without a human reading every line, which
 means the metrics do the reviewing.
+
+Both `ci` and `ci-check` announce each step with a blue `▸` line, mark the result,
+and close with a summary. They **stop at the first failure** — a linter answering
+about a tree the formatter already rejected reports noise — but the summary still
+prints, naming what failed and what never got a turn:
+
+```
+ci-check — 4 steps, 1s
+──────────────────────────────────
+  ✓ fmt-check      0s
+  ✗ lint           1s
+  · lint-docs      not run
+  · cover          not run
+failed at lint — 2 step(s) not run
+```
+
+Colour is dropped when stdout is not a terminal, so CI logs stay readable.
 
 **`ci-check` — the gate. Fails the build.**
 

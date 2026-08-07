@@ -103,9 +103,18 @@ mutation: ## mutation testing — does the suite catch an injected bug?
 # race and vuln are deliberately outside ci-check: race needs CGO and roughly
 # doubles the test time, and vuln reaches the network. Both run in remote CI as
 # separate steps, where the cost is paid once rather than on every local run.
-ci-check: fmt-check lint lint-docs cover ## verify only — the same thing remote CI runs
+#
+# Both go through run-steps.sh rather than chaining prerequisites, because make
+# stops at the first failure. A full pass that reports every problem turns four
+# fix-and-rerun cycles into one.
+CHECK_STEPS := fmt-check lint lint-docs cover
+CI_STEPS    := fmt $(CHECK_STEPS) mod
 
-ci: fmt ci-check mod ## fix what can be fixed, then verify. Run before opening a PR.
+ci-check: ## verify only — the same thing remote CI runs
+	@sh scripts/run-steps.sh ci-check $(CHECK_STEPS)
+
+ci: ## fix what can be fixed, then verify. Run before opening a PR.
+	@sh scripts/run-steps.sh ci $(CI_STEPS)
 
 build: ## build the binary
 	@go build -o bin/luna ./src/cmd/luna
