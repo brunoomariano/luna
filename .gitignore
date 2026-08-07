@@ -1,8 +1,10 @@
 # Go
 /luna
+/bin/luna
 /dist/
 *.test
 *.out
+coverage.out
 
 # Estado local
 *.db

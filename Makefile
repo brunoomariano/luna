@@ -19,44 +19,34 @@ doctor: ## confere o ambiente sem instalar nada
 	@printf 'bd       '; command -v bd       >/dev/null && bd version || echo '— ausente (Beads)'
 	@printf 'sqlite3  '; command -v sqlite3  >/dev/null && sqlite3 --version || echo '— ausente'
 
-# Enquanto não há go.mod, os alvos de código são no-op explícito em vez de
-# falhar — assim o CI nasce verde e passa a valer de verdade quando o código vier.
-HAS_GO := $(shell test -f go.mod && echo 1)
+# Cobertura mínima. Sobe conforme o motor cresce; não baixe para fazer passar.
+COVER_MIN ?= 80
 
 fmt: ## formata
-ifdef HAS_GO
 	@go fmt ./...
-else
-	@echo "(sem go.mod ainda — projeto em desenho)"
-endif
 
 lint: ## análise estática
-ifdef HAS_GO
 	@go vet ./...
-else
-	@echo "(sem go.mod ainda — projeto em desenho)"
-endif
 
 test: ## testes
-ifdef HAS_GO
 	@go test ./...
-else
-	@echo "(sem go.mod ainda — projeto em desenho)"
-endif
+
+cover: ## testes com cobertura, falhando abaixo de COVER_MIN
+	@go test -coverprofile=coverage.out ./... >/dev/null
+	@go tool cover -func=coverage.out | tail -1
+	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
+	  gsub(/%/,"",$$3); \
+	  if ($$3+0 < min) { printf "cobertura %.1f%% abaixo do mínimo %d%%\n", $$3, min; exit 1 } }'
 
 lint-docs: ## valida a forma da suíte de docs (read-only)
 	@sh scripts/lint-docs.sh
 
-ci-check: fmt lint lint-docs test ## o mesmo que o CI remoto roda
+ci-check: fmt lint lint-docs cover ## o mesmo que o CI remoto roda
 
 ci: ci-check ## alias de ci-check
 
 build: ## compila o binário
-ifdef HAS_GO
-	@go build -o luna ./src/cmd/luna
-else
-	@echo "(sem go.mod ainda — projeto em desenho)"
-endif
+	@go build -o bin/luna ./src/cmd/luna
 
 clean: ## remove artefatos de build
 	@rm -f luna
