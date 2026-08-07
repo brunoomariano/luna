@@ -65,8 +65,14 @@ about a tree the formatter already rejected reports noise — but the summary st
 prints, naming what failed and what never got a turn:
 
 ```
-ci-check — 4 steps, 1s
-──────────────────────────────────
+▸ fmt-check ──────────────────────────────────────────────────────────
+✓ fmt-check (0s)
+
+▸ lint ───────────────────────────────────────────────────────────────
+src/internal/fsm/select.go:31:1: cyclomatic complexity 12 (gocyclo)
+✗ lint (1s)
+
+ci-check — 4 steps, 1s ───────────────────────────────────────────────
   ✓ fmt-check      0s
   ✗ lint           1s
   · lint-docs      not run

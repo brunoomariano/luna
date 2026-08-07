@@ -29,6 +29,29 @@ else
   blue=''; bold=''; green=''; red=''; dim=''; off=''
 fi
 
+# Terminal width, capped so a maximised window does not draw a rule across a
+# metre of screen. 72 is roughly a comfortable reading measure.
+width=$(tput cols 2>/dev/null || echo 72)
+[ "$width" -gt 72 ] && width=72
+
+# rule <colour> <label> — a full-width line with the label embedded at the left.
+# Falls back to ASCII when the locale is not UTF-8: a row of question marks is
+# worse than a row of dashes.
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+  *UTF-8*|*utf8*|*UTF8*) bar='─' ;;
+  *)                     bar='-' ;;
+esac
+
+rule() {
+  _colour=$1
+  _label=$2
+  # Two spaces of padding around the label, so it does not touch the rule.
+  _pad=$(( width - ${#_label} - 3 ))
+  [ "$_pad" -lt 0 ] && _pad=0
+  _line=$(awk -v n="$_pad" -v c="$bar" 'BEGIN{while(n-->0)printf c}')
+  printf '%s%s%s %s%s\n' "$_colour$bold" "$_label" "$off$_colour" "$_line" "$off"
+}
+
 results=$(mktemp)
 failed=0
 first_failure=''
@@ -42,7 +65,9 @@ for target in "$@"; do
     continue
   fi
 
-  printf '%s%s▸ %s%s\n' "$blue" "$bold" "$target" "$off"
+  # The name sits inside the rule rather than above it: scrolling back through a
+  # long run, the eye catches a full-width line and reads the label already there.
+  rule "$blue" "▸ $target"
 
   step_start=$(date +%s)
   # --no-print-directory: the "Entering directory" pair around every sub-make
@@ -68,8 +93,9 @@ done
 total=$(( $(date +%s) - started ))
 
 # ── summary ──────────────────────────────────────────────────────────────────
-printf '%s%s%s — %s steps, %ss%s\n' "$bold" "$label" "$off" "$#" "$total" "$off"
-printf '%s%s%s\n' "$dim" "──────────────────────────────────" "$off"
+# Not dimmed: on a dark theme the summary rule was all but invisible, and the one
+# line that has to survive a scroll-back is this one.
+rule "$blue" "$label — $# steps, ${total}s"
 
 skipped=0
 while read -r target status elapsed; do
