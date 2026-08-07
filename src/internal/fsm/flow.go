@@ -50,8 +50,13 @@ func DefaultFlow() []Stage {
 			When:     isFeatureOrBug,
 		},
 		{
-			ID:       "build",
-			Role:     "implementer",
+			ID:   "build",
+			Role: "implementer",
+			// ADR-0022 prevê `contract` aqui, exigido só quando `spec` entrou no
+			// fluxo. Fica de fora até o mecanismo de requires condicional ser
+			// escolhido — declará-lo sem esse mecanismo faria toda tarefa
+			// `chore` ou `docs` travar, já que `spec` é pulada nelas.
+			// Ver a nota em docs/architecture/stages.md.
 			Requires: []Artifact{"scenarios", "approach", "worktree"},
 			Produces: []Artifact{"code", "tests_green"},
 		},

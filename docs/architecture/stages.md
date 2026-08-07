@@ -42,6 +42,12 @@ já produzidos e fatos descobertos), e não apenas o `kind`.
 \* = `contract` só é exigido quando a etapa `spec` entrou no fluxo (feature ou bug); em
 `chore` e `docs` ela é pulada e o `build` não o pede.
 
+> **Ainda não implementado.** O `requires` condicional descrito no `*` acima depende de
+> um mecanismo que ainda não foi escolhido — a alternativa está em avaliação por A/B.
+> Até lá, `DefaultFlow()` **não** declara `contract` no `requires` do `build`, e o
+> código traz a lacuna marcada. Doc e código divergem aqui de propósito: a tabela
+> descreve o destino, o código descreve o presente.
+
 ## Notas de desenho
 
 **As etapas 10 a 13 são condicionais por natureza.** Teste de mutação numa mudança de
