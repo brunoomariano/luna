@@ -171,6 +171,40 @@ Quais gates param é decidido por **perfil**, escolhido por tarefa:
 | `turbo` | só a escrita (commit) espera |
 | `noturno` | nada espera |
 
+### O gate carrega o que precisa ser decidido
+
+Um gate não é só uma pausa: ele entrega ao humano **o que motivou a parada**. Três
+formas, da mais simples à mais rica:
+
+- **confirmação** — só pede sim/não (`confirm-repos`: são estes os repositórios?);
+- **artefato para revisão** — carrega o que a etapa produziu, e o humano pode
+  **aprovar, ajustar ou recusar**. `approve-spec` entrega o `contract`; a versão
+  aprovada — possivelmente editada — é a que entra no contexto e que o `build` consome;
+- **decisão de fluxo** — um teto de loop estourou, e a escolha é continuar, abortar ou
+  mudar o rumo.
+
+O terceiro caso é o que impede o loop infinito de virar bloqueio automático: quando a
+convergência falha, quem decide é o humano, com o histórico à vista.
+
+### Como o humano vê o que está esperando
+
+Uma tarefa suspensa não pode depender de alguém lembrar de olhar — seria a morte
+silenciosa por outro nome. Três superfícies:
+
+- **`luna gates`** lista tudo que aguarda decisão: tarefa, etapa, tipo de gate, há
+  quanto tempo, e o artefato anexado quando houver;
+- **`luna gate show <tarefa>`** abre o artefato para leitura e edição;
+- **`luna gate approve|adjust|reject <tarefa>`** responde e retoma do ponto exato.
+
+Os artefatos de auditoria (`produces_for_human`) seguem o mesmo princípio: são
+registrados no handoff com caminho e hash, e `luna task show <tarefa>` lista o que a
+tarefa produziu para leitura humana. Um relatório que ninguém sabe que existe é
+trabalho jogado fora.
+
+> **Em aberto:** notificação **fora do terminal** — e-mail, webhook, notificação de
+> sistema — não está decidida. Para o perfil `noturno`, em que nada espera, a questão é
+> menos urgente; para `interativo` com tarefas longas, ela volta.
+
 ## Estado
 
 Duas camadas, com responsabilidades distintas:

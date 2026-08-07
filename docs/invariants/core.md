@@ -131,11 +131,22 @@ handoff; o receptor confiando na descrição do emissor em vez de ler o estado.
 trabalho não é revisão, é confirmação.
 
 **Como é preservada.** Cada papel declara `not_owns`, e o gating de ferramentas
-(`tools_allow`/`tools_deny`) é aplicado pela FSM antes de o agente começar — o
-`reviewer` não tem `Edit` nem `Write`.
+(`tools_allow`/`tools_deny`) é aplicado pela FSM **antes** de o agente começar — o
+`reviewer` não tem `Edit` nem `Write`. O gating **bloqueia a chamada**, não instrui o
+agente a evitá-la (ver [ADR-0018](../ADRs/0018-tool-gating-by-pretooluse-hook.md)).
 
 **O que a violaria.** O `implementer` rodando `code-review`; o `cleaner` rodando
-`harden`; um papel com `tools_allow` que contradiga o seu `not_owns`.
+`harden`; um papel com `tools_allow` que contradiga o seu `not_owns`; **um papel cuja
+restrição exista apenas como texto no prompt**.
+
+**Critério de aceite** — o código não é dado por pronto sem:
+
+- teste que tente usar uma ferramenta negada e verifique que a chamada é **recusada**,
+  não apenas desaconselhada;
+- teste que detecte `tools_allow` contradizendo `not_owns` na carga do papel, falhando
+  no carregamento e não em execução;
+- em harness sem bloqueio pré-execução, degradação **explícita e reportada** — nunca
+  silenciosa.
 
 ---
 
@@ -148,12 +159,21 @@ sem que alguém saiba.
 desassistida, a falha que ninguém vê é mais cara que a falha que interrompe.
 
 **Como é preservada.** Retry limitado a 2 tentativas (sem retry infinito, que é o loop
-que não converge e queima tokens), volta de etapa, ou bloqueio com aviso. Watchdog de
-inatividade para agente travado. Ver
+que não converge e queima tokens) e, esgotadas, bloqueio com aviso. Watchdog de
+inatividade para o agente que trava sem falhar (ver
+[ADR-0019](../ADRs/0019-inactivity-watchdog.md)). Ver
 [ADR-0011](../ADRs/0011-failure-retry-rollback-or-block.md).
 
 **O que a violaria.** Retry com backoff sem teto; uma tarefa suspensa que não notifica;
-uma exceção engolida entre transições.
+uma exceção engolida entre transições; um nó que para de progredir sem que nada perceba.
+
+**Critério de aceite** — o código não é dado por pronto sem:
+
+- teste que force esgotamento de retry e verifique que o estado final é `blocked` **e**
+  que a notificação foi emitida;
+- teste que simule um nó sem progresso além do limite e verifique que o watchdog o
+  transforma em decisão, não em espera indefinida;
+- nenhum caminho de `running` que termine sem `blocked`, `awaiting_gate` ou `done`.
 
 ---
 
@@ -188,3 +208,58 @@ ponto exato. Ver [ADR-0012](../ADRs/0012-gate-suspends-and-frees-the-slot.md).
 
 **O que a violaria.** Um agente bloqueado em leitura de stdin esperando o humano; um
 slot ocupado por tarefa suspensa.
+
+---
+
+## INV-core-11: toda etapa entrega o que declarou, inclusive o que só o humano lê
+
+**Regra.** Uma etapa não fecha sem entregar **tanto** o `produces` quanto o
+`produces_for_human` que declarou. O segundo não é opcional por não ter consumidor no
+fluxo.
+
+**Por que vale.** O relatório de QA, o parecer de arquitetura e o diagnóstico existem
+para alguém decidir com eles. Se a entrega deles depender de o fluxo senti-los faltando,
+nunca serão cobrados — nenhuma etapa adiante os pede.
+
+**Como é preservada.** A verificação de saída considera os dois campos; a verificação
+estática, só o `produces` (ver
+[ADR-0021](../ADRs/0021-produces-for-human-is-a-separate-contract-field.md)). O handoff
+registra caminho e hash de ambos, para que sejam localizáveis depois.
+
+**O que a violaria.** Uma etapa fechando sem o relatório declarado; um artefato de
+auditoria gravado fora do handoff, sem rastro de onde está; tratar
+`produces_for_human` como sugestão.
+
+**Critério de aceite** — o código não é dado por pronto sem:
+
+- teste que declare `produces_for_human` e verifique que a etapa **não fecha** sem ele;
+- teste que verifique que a verificação estática **não** reclama de
+  `produces_for_human` sem consumidor;
+- o handoff carregando a localização de cada artefato de auditoria produzido.
+
+---
+
+## INV-core-12: o que precisa de decisão humana é localizável sem alguém lembrar
+
+**Regra.** Uma tarefa em `awaiting_gate` e um artefato produzido para leitura humana são
+**descobríveis por comando**, sem depender de alguém ter visto passar no terminal.
+
+**Por que vale.** A morte silenciosa tem uma segunda forma: não a tarefa que falha sem
+avisar, mas a que **espera para sempre** porque ninguém soube que estava esperando. Num
+sistema com N tarefas paralelas e gates que liberam o slot, a suspensão é invisível por
+construção — o processo não está lá para lembrar você.
+
+**Como é preservada.** `luna gates` lista o que aguarda decisão, com tarefa, etapa, tipo
+de gate, tempo de espera e artefato anexado; `luna gate show` abre o artefato;
+`luna task show` lista o que a tarefa produziu para leitura humana. Ver
+[arquitetura](../architecture/overview.md).
+
+**O que a violaria.** Uma tarefa suspensa que só aparece se você souber o identificador;
+um artefato de auditoria gravado em caminho não registrado; um gate cujo motivo só exista
+no log que já rolou para fora da tela.
+
+**Critério de aceite** — o código não é dado por pronto sem:
+
+- teste que suspenda uma tarefa em gate e verifique que ela aparece na listagem;
+- teste que verifique que o artefato anexado ao gate é recuperável pelo comando, não só
+  pelo filesystem.

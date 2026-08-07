@@ -50,6 +50,9 @@ Não registre ADR para escolhas triviais ou reversíveis sem custo.
 <!-- Liste os ADRs aqui conforme forem criados, do mais recente ao mais antigo. -->
 <!-- - [ADR-0001](0001-title.md) — <título> — `Aceito` -->
 
+- [ADR-0023](0023-three-separate-loop-ceilings.md) — O loop tem três tetos contados separadamente — `Aceito`
+- [ADR-0022](0022-gate-carries-artifact-for-review.md) — O gate carrega o artefato, e o humano pode ajustá-lo — `Aceito`
+- [ADR-0021](0021-produces-for-human-is-a-separate-contract-field.md) — O que só o humano lê é campo próprio do contrato — `Aceito`
 - [ADR-0020](0020-review-finding-invalidates-green.md) — Achado alinhado invalida o verde ao voltar para build — `Aceito`
 - [ADR-0019](0019-inactivity-watchdog.md) — Watchdog de inatividade vigia o trabalho, não a janela — `Aceito`
 - [ADR-0018](0018-tool-gating-by-pretooluse-hook.md) — O gating de ferramenta é hook que bloqueia, não instrução ao agente — `Aceito`

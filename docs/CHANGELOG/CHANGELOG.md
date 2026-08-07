@@ -19,9 +19,20 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
   registro: gating de ferramenta por hook que bloqueia (ADR-0018), watchdog de
   inatividade (ADR-0019) e invalidação do verde ao voltar para `build` (ADR-0020).
 
+- O contrato de etapa passou a distinguir o que o fluxo consome do que só uma pessoa
+  lê (ADR-0021), e um gate passou a poder carregar o artefato que o humano revisa,
+  ajusta ou recusa (ADR-0022).
+- O loop de convergência ganhou três tetos contados separadamente (ADR-0023).
+- Invariantes passaram a trazer **critério de aceite**: a lista de testes sem os quais
+  a regra está descrita mas não implementada.
+
 ### Modificado
-- As decisões deixaram de viver num arquivo só e viraram 20 ADRs numerados e
+- As decisões deixaram de viver num arquivo só e viraram 23 ADRs numerados e
   imutáveis em `docs/ADRs/`, cada um com a alternativa recusada.
+- A política de falha deixou de ter "voltar à etapa anterior" como saída: o único
+  retorno a uma etapa anterior é o do achado de revisão, que invalida o verde ao
+  voltar. Duas portas para o mesmo lugar significaria uma delas esquecendo de
+  invalidar.
 - As referências passaram a registrar a separação mecânico × prosa observada no
   SwarmForge, e a tese que dela decorre: enforcement no fluxo, não só no transporte.
 - O código da aplicação passou a viver sob `src/`; `internal/` segue sendo a barreira

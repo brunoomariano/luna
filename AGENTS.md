@@ -91,6 +91,20 @@ decisão registrada em ADR.
   não com stub inline.
 - Rode pelos alvos do Makefile.
 
+### Critério de aceite dos invariantes
+
+Vários invariantes em [`docs/invariants/`](docs/invariants/) trazem uma seção
+**Critério de aceite** — a lista de testes sem os quais aquele invariante não está
+implementado, só descrito.
+
+**Não dê por pronto um pedaço do motor cujo invariante correspondente tenha critério de
+aceite não coberto.** Não é recomendação: é o que separa "o código faz" de "o código
+garante". Um `reviewer` que apenas *não costuma* editar não cumpre INV-core-7; um
+watchdog que existe mas nunca foi exercitado não cumpre INV-core-8.
+
+Ao implementar, comece pelo teste que o critério descreve. Ao revisar, confira o
+critério antes do diff.
+
 ## Interface Makefile
 
 `make help` lista todos os alvos. Os que importam:
