@@ -1,92 +1,92 @@
-# RFC-NNNN: <título da mudança>
+# RFC-NNNN: <title of the change>
 
-> Planejamento de uma mudança — a rota técnica de como executá-la. Documento datado:
-> ver a regra de obsolescência em
-> [docs/README.md](../README.md#regra-de-obsolescência-e-atualização).
+> Planning of a change — the technical route of how to execute it. Dated document:
+> see the obsolescence rule in
+> [docs/README.md](../README.md#obsolescence-and-update-rule).
 >
-> **Identificador.** O arquivo se chama `rfc-NNNN-title.md`, com `NNNN` sequencial
-> zero-padded a partir de `0001` (o `rfc-0000-template.md` é o modelo e não conta). O
-> prefixo é `rfc` fixo — não por domínio, porque um RFC costuma cruzar domínios. O
-> **slug é em inglês** (como todo path/ID da casa), ainda que a prosa seja PT-BR. Ex.:
+> **Identifier.** The file is named `rfc-NNNN-title.md`, with `NNNN` sequential
+> zero-padded starting from `0001` (the `rfc-0000-template.md` is the model and does not count). The
+> prefix is a fixed `rfc` — not per domain, because an RFC usually crosses domains. The
+> **slug is in English**, like the rest of the project. E.g.:
 > `docs/RFCs/rfc-0001-dedupe-mqtt-on-consumer.md`.
 >
-> **Fronteira (fonte única).** O RFC descreve o **como** da mudança. O **quê** e o
-> **comportamento esperado** (requisitos funcionais/não-funcionais, casos de borda,
-> critérios de aceite) moram no **PRD** — o RFC **linka** o PRD em vez de repetir. O
-> **porquê** de uma escolha estrutural que sobrevive à feature vira **ADR**. Se está
-> listando requisito de produto, subiu pro PRD; se está gravando "por que decidimos
-> assim" de forma permanente, desceu pro ADR.
+> **Boundary (single source).** The RFC describes the **how** of the change. The **what** and the
+> **expected behavior** (functional/non-functional requirements, edge cases,
+> acceptance criteria) live in the **PRD** — the RFC **links** the PRD instead of repeating. The
+> **why** of a structural choice that outlives the feature becomes an **ADR**. If you are
+> listing a product requirement, it moved up to the PRD; if you are recording "why we decided
+> this way" permanently, it moved down to the ADR.
 
-**Status:** RASCUNHO | EM ANDAMENTO | CONCLUÍDO | OBSOLETO
-**Última revisão:** AAAA-MM-DD
-**Issue de origem:** <ID do rastreador, ex. ALERT-45> | —
-**PRD:** [<domínio>-NNNN](../PRDs/<domínio>/<domínio>-NNNN-title.md) | —
+**Status:** DRAFT | IN PROGRESS | DONE | OBSOLETE
+**Last reviewed:** YYYY-MM-DD
+**Source issue:** <tracker ID, e.g. ALERT-45> | —
+**PRD:** [<domain>-NNNN](../PRDs/<domain>/<domain>-NNNN-title.md) | —
 
-## Motivação
-Por que esta mudança precisa acontecer agora. A dor, o gatilho, o custo de não
-fazer. Situe o leitor sem pressupor o contexto da issue — o RFC deve se sustentar
-sozinho. (O *quê* de produto está no PRD; aqui é o *porquê agora* da execução.)
+## Motivation
+Why this change needs to happen now. The pain, the trigger, the cost of not
+doing it. Situate the reader without assuming the context of the issue — the RFC must stand
+on its own. (The product *what* is in the PRD; here it is the *why now* of the execution.)
 
-## Proposta técnica
-### Visão geral (guide-level)
-A mudança explicada como se fosse ensinada a outra pessoa do time: o que passa a
-existir, o que muda no fluxo, em linguagem de comportamento. Mermaid quando o fluxo
-fica mais claro em diagrama.
+## Technical proposal
+### Overview (guide-level)
+The change explained as if taught to another person on the team: what comes to
+exist, what changes in the flow, in behavior language. Mermaid when the flow
+becomes clearer as a diagram.
 
 ```
 flowchart TD
-  A[Estado atual] --> B[Mudança proposta]
-  B --> C[Estado alvo]
+  A[Current state] --> B[Proposed change]
+  B --> C[Target state]
 ```
 
-### Detalhamento (reference-level)
-A rota técnica concreta, sem descer ao nível de `if`/query específica (isso é do
-`lsh-code-cycle:build`): serviços/módulos tocados (paths reais), pontos de integração,
-contratos afetados (API/MQTT/schema), sequência das partes que se encaixam.
+### Detail (reference-level)
+The concrete technical route, without descending to the level of a specific `if`/query (that belongs to
+`lsh-code-cycle:build`): services/modules touched (real paths), integration points,
+affected contracts (API/MQTT/schema), the sequence of the parts that fit together.
 
-- Serviços/módulos impactados (paths reais):
-- Contratos/fronteiras afetados:
-- Restrições técnicas relevantes:
+- Impacted services/modules (real paths):
+- Affected contracts/boundaries:
+- Relevant technical constraints:
 
-## Alternativas consideradas
-As abordagens de execução que foram pesadas e por que **não** foram escolhidas.
-Uma decisão de rota sem alternativas registradas perde metade do valor. (Se uma
-dessas escolhas é **estrutural e permanente**, promova-a a um ADR e linke aqui.)
+## Alternatives considered
+The execution approaches that were weighed and why they were **not** chosen.
+A route decision with no recorded alternatives loses half its value. (If one of
+these choices is **structural and permanent**, promote it to an ADR and link it here.)
 
-- **<Abordagem A>** — descartada porque …
-- **<Abordagem B>** — descartada porque …
+- **<Approach A>** — discarded because …
+- **<Approach B>** — discarded because …
 
 ## Drawbacks
-O que esta proposta custa, mesmo sendo a escolhida — dívida assumida, complexidade
-adicionada, o que fica pior antes de ficar melhor. Ser honesto aqui é o que separa
-um RFC de um pitch.
+What this proposal costs, even being the chosen one — debt taken on, complexity
+added, what gets worse before it gets better. Being honest here is what separates
+an RFC from a pitch.
 
-## Impacto e migração
-- Dados/persistência (migração de schema? backfill?):
-- Compatibilidade (quebra contrato? versionamento?):
-- Observabilidade (o que passa a ser logado/medido):
-- Superfície de rollback:
+## Impact and migration
+- Data/persistence (schema migration? backfill?):
+- Compatibility (does it break a contract? versioning?):
+- Observability (what starts being logged/measured):
+- Rollback surface:
 
-## Plano de rollout (faseado)
-Os passos de execução, em fases entregáveis. Cada fase deve deixar o sistema num
-estado válido.
+## Rollout plan (phased)
+The execution steps, in deliverable phases. Each phase must leave the system in a
+valid state.
 
-1. **Fase 1 —** …
-2. **Fase 2 —** …
-3. **Fase 3 —** …
+1. **Phase 1 —** …
+2. **Phase 2 —** …
+3. **Phase 3 —** …
 
-- Flag de feature? (sim/não)
-- Estratégia de rollback:
+- Feature flag? (yes/no)
+- Rollback strategy:
 
-## Questões em aberto
-O que ainda não está resolvido e precisa de decisão antes ou durante a execução.
-Uma pergunta sem dono aqui é um risco não mitigado.
+## Open questions
+What is not yet resolved and needs a decision before or during execution.
+A question without an owner here is an unmitigated risk.
 
 - [ ]
 - [ ]
 
-## Referências
+## References
 - Issue: <ID>
-- PRD: <domínio>-NNNN
-- ADRs relacionados: <ADR-NNNN, se a rota fixou decisão estrutural>
-- PRs: <se houver>
+- PRD: <domain>-NNNN
+- Related ADRs: <ADR-NNNN, if the route settled a structural decision>
+- PRs: <if any>

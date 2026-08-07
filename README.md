@@ -1,66 +1,68 @@
 # Luna
 
-**Agentes de IA não seguem um processo determinístico só porque você pediu em prosa.**
+**AI agents do not follow a deterministic process just because you asked for one in
+prose.**
 
-Você escreve um fluxo de trabalho — investigar, planejar, testar, implementar, revisar,
-entregar — e o agente segue *na maior parte das vezes*. Ele pula um passo quando acha
-que não precisa. Reinterpreta uma instrução. Para de iterar sem motivo. Numa sessão
-longa, esquece qual era o papel dele. Cada uma dessas falhas é barata sozinha e cara
-em conjunto: você deixa de confiar no resultado e volta a revisar tudo à mão.
+You write a workflow — investigate, plan, test, implement, review, deliver — and the
+agent follows it *most of the time*. It skips a step when it decides it is not needed.
+It reinterprets an instruction. It stops iterating for no reason. In a long session, it
+forgets which role it had. Each of these failures is cheap on its own and expensive
+together: you stop trusting the result and go back to reviewing everything by hand.
 
-A Luna resolve isso movendo o **controle de fluxo** para fora do modelo.
+Luna solves this by moving **flow control** out of the model.
 
 > *"When using agents, ensure that everything that can be deterministic, is done with
 > a deterministic tool. Don't try to get the poor agents to follow a deterministic
 > process."*
 > — Robert C. Martin
 
-Uma máquina de estados decide qual etapa vem agora, qual papel a executa, e valida o
-resultado **rodando a ferramenta de verdade** — o teste roda, o commit existe, o
-arquivo está lá. O modelo faz o trabalho dentro de cada etapa, onde julgamento é o que
-importa. Ele nunca decide o próximo passo.
+A state machine decides which stage comes now, which role runs it, and validates the
+result **by running the actual tool** — the test runs, the commit exists, the file is
+there. The model does the work inside each stage, where judgement is what matters. It
+never decides the next step.
 
-## O que isso muda na prática
+## What this changes in practice
 
-- **A etapa não fecha sem entregar o que declarou.** Se `scenarios` promete produzir
-  cenários e uma abordagem, e volta só com os cenários, a etapa não fecha e nada é
-  passado adiante. O buraco aparece onde nasceu.
-- **A etapa não começa sem receber o que exige.** O contrato é verificado antes de
-  qualquer agente ser chamado — inclusive de forma estática, antes de rodar.
-- **Cada etapa começa com contexto limpo.** Sem erosão de papel ao longo de uma sessão
-  longa. O que precisa atravessar, atravessa pelo handoff.
-- **A falha nunca é silenciosa.** Tentativa, volta de etapa ou bloqueio com aviso — a
-  tarefa não morre sem você saber.
-- **Você escolhe quanta autonomia dar**, por tarefa: do fluxo todo com aprovação humana
-  até a execução noturna sem interrupção.
+- **A stage does not close without delivering what it declared.** If `scenarios`
+  promises to produce scenarios and an approach, and comes back with only the
+  scenarios, the stage does not close and nothing is passed on. The hole shows up where
+  it was born.
+- **A stage does not start without receiving what it requires.** The contract is checked
+  before any agent is called — including statically, before anything runs.
+- **Every stage starts with a clean context.** No role erosion over a long session. What
+  needs to cross over crosses through the handoff.
+- **Failure is never silent.** A retry, or a block with a notice — the task does not die
+  without you knowing.
+- **You choose how much autonomy to grant**, per task: from the whole flow with human
+  approval to an overnight run with no interruption.
 
-## Estado
+## State
 
-**Motor em construção.** A arquitetura está fechada e registrada em [`docs/`](docs/).
-O núcleo começou pela verificação que roda antes de qualquer agente ser chamado: a
-auditoria estática do contrato, que detecta fluxo quebrado no papel.
+**Engine under construction.** The architecture is settled and recorded in
+[`docs/`](docs/). The core started with the check that runs before any agent is called:
+the contract's static audit, which detects a flow broken on paper.
 
-## Instalação
+## Installation
 
-Ainda não há release. Quando houver, será um comando.
+There is no release yet. When there is, it will be one command.
 
-## Documentação
+## Documentation
 
-[`docs/README.md`](docs/README.md) é o contrato da documentação: diz quais camadas
-existem, o que cada uma responde e onde mora. Comece por ele se for escrever um
-documento. Os pontos de entrada:
+[`docs/README.md`](docs/README.md) is the documentation contract: it states which layers
+exist, what each one answers and where it lives. Start there if you are going to write a
+document. The entry points:
 
-| Documento | Assunto |
+| Document | Subject |
 |---|---|
-| [`docs/architecture/overview.md`](docs/architecture/overview.md) | como o sistema funciona e por quê |
-| [`docs/architecture/stages.md`](docs/architecture/stages.md) | as etapas padrão e o contrato de cada uma |
-| [`docs/ADRs/`](docs/ADRs/) | decisões tomadas, com a alternativa recusada |
-| [`docs/invariants/`](docs/invariants/) | regras que sempre valem |
-| [`docs/glossary/`](docs/glossary/) | os termos do domínio |
-| [`docs/references.md`](docs/references.md) | de onde vieram as ideias |
-| [`AGENTS.md`](AGENTS.md) | para agentes que trabalham neste repositório |
-| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | fluxo de contribuição, commits e tags |
+| [`docs/architecture/overview.md`](docs/architecture/overview.md) | how the system works and why |
+| [`docs/architecture/stages.md`](docs/architecture/stages.md) | the default stages and each one's contract |
+| [`docs/ADRs/`](docs/ADRs/) | decisions taken, with the rejected alternative |
+| [`docs/invariants/`](docs/invariants/) | rules that always hold |
+| [`docs/glossary/`](docs/glossary/) | the domain terms |
+| [`docs/references.md`](docs/references.md) | where the ideas came from |
+| [`AGENTS.md`](AGENTS.md) | for agents working in this repository |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | contribution flow, commits and tags |
 
-## Licença
+## License
 
-A definir.
+To be defined.

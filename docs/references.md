@@ -1,135 +1,137 @@
-# Referências
+# References
 
-De onde vieram as ideias, e o que foi recusado de cada uma.
+Where the ideas came from, and what was rejected from each one.
 
 ## SwarmForge — Robert C. Martin
 
 <https://github.com/unclebob/swarm-forge>
 
-Orquestração de squad de agentes em tmux, com worktrees por papel e um daemon de
-handoff. Motor em Babashka. Estudado a fundo em 2026-08-06.
+Agent squad orchestration in tmux, with worktrees per role and a handoff daemon.
+Babashka engine. Studied in depth on 2026-08-06.
 
-**Trazido:**
+**Brought:**
 
-- **Payload sintetizado pelo sistema.** O agente preenche campos estruturados; o corpo
-  entregue é gerado. O agente não consegue injetar prosa na mensagem — o que elimina a
-  degradação por reescrita ao longo da cadeia.
-- **Instrução de reler o papel em todo handoff.** Anti-erosão barato e eficaz.
-- **Validação com a ferramenta real.** Ele valida o commit rodando `git` — não confere
-  se o texto *parece* um SHA, confere se resolve para exatamente um objeto e se esse
-  objeto é um commit.
-- **Especialização por negação.** Cada papel declara o que **não** faz. Parte da
-  separação é econômica: a operação mais cara do pipeline é rodada por um papel só.
-- **Amortecedor de loop.** "Não produziu mudança funcional" como condição de parada,
-  não só contagem de voltas.
-- **Transição atômica como estado.** Nele o estado é a localização do arquivo e toda
-  transição é um rename. A ideia foi mantida; o meio mudou.
+- **Payload synthesized by the system.** The agent fills in structured fields; the
+  delivered body is generated. The agent cannot inject prose into the message — which
+  eliminates degradation by rewriting along the chain.
+- **Instruction to re-read the role at every handoff.** Cheap and effective anti-erosion.
+- **Validation with the real tool.** It validates the commit by running `git` — it does
+  not check whether the text *looks like* a SHA, it checks whether it resolves to
+  exactly one object and whether that object is a commit.
+- **Specialization by negation.** Each role declares what it does **not** do. Part of
+  the separation is economic: the most expensive operation in the pipeline is run by a
+  single role.
+- **Loop damper.** "Produced no functional change" as a stopping condition, not just a
+  count of iterations.
+- **Atomic transition as state.** There, state is the file's location and every
+  transition is a rename. The idea was kept; the medium changed.
 
-**Recusado:**
+**Rejected:**
 
-- **Git como canal de transporte.** Funciona bem lá, mas amarra o transporte ao
-  versionamento.
-- **Worktree por agente.** Aqui é por tarefa — o paralelismo é entre tarefas.
-- **Fila por papel com outbox/inbox.** A FSM é o canal; não há agentes concorrentes
-  trocando mensagens dentro de uma tarefa.
-- **Notificação por injeção de teclas no terminal**, com pausas ajustadas
-  empiricamente. Frágil a mudanças nos CLIs.
+- **Git as a transport channel.** It works well there, but it ties transport to version
+  control.
+- **Worktree per agent.** Here it is per task — parallelism is between tasks.
+- **Queue per role with outbox/inbox.** The FSM is the channel; there are no concurrent
+  agents exchanging messages within a task.
+- **Notification by injecting keystrokes into the terminal**, with empirically tuned
+  pauses. Fragile to changes in the CLIs.
 
-**Mecânico × prosa — a separação que o estudo revela.** O que ele valida com script
-(recusando com exit 2) e o que ele apenas pede em prosa dividem-se assim:
+**Mechanical vs. prose — the separation the study reveals.** What it validates with a
+script (rejecting with exit 2) and what it merely asks for in prose split like this:
 
-| Mecânico — o script recusa | Prosa — sem enforcement |
+| Mechanical — the script rejects | Prose — no enforcement |
 |---|---|
-| whitelist de campos; header reservado proibido | "sempre repasse ao próximo da cadeia" |
-| tabela explícita tipo × campo | "preserve o nome da tarefa ao repassar" |
-| commit validado com git real: regex de 10 hex → `--disambiguate` resolve para exatamente 1 objeto → `cat-file -t` diz `commit` | "não mande `note` sem autorização" |
-| corpo depois da linha em branco = rejeitado | "trabalhe só no seu worktree" |
-| destinatário existe no registro de papéis | "ignore o aviso se estiver ocupado" |
+| field whitelist; reserved header forbidden | "always pass it on to the next in the chain" |
+| explicit type × field table | "preserve the task name when passing it on" |
+| commit validated with real git: 10-hex regex → `--disambiguate` resolves to exactly 1 object → `cat-file -t` says `commit` | "do not send `note` without authorization" |
+| body after the blank line = rejected | "work only in your worktree" |
+| recipient exists in the role registry | "ignore the notice if you are busy" |
 
-Mecânico cobre **estrutura de mensagem e transição de fila**. Prosa cobre **política de
-roteamento e disciplina de trabalho**. O resultado: mensagem malformada nunca entra na
-rede — mas nada garante que o agente mande a mensagem certa, para o papel certo, na hora
-certa.
+Mechanical covers **message structure and queue transition**. Prose covers **routing
+policy and work discipline**. The result: a malformed message never enters the network —
+but nothing guarantees that the agent sends the right message, to the right role, at the
+right time.
 
-**A leitura que fecha o estudo, e que orienta este projeto:**
+**The reading that closes the study, and that guides this project:**
 
-> Ele tem enforcement forte no **transporte** e zero no **fluxo**.
-> Nós queremos o inverso — e podemos ter os dois.
+> It has strong enforcement on **transport** and zero on **flow**.
+> We want the inverse — and we can have both.
 
-A FSM rege o fluxo (o que lá é prosa); o contrato de etapa e o gating de ferramenta dão
-ao fluxo o mesmo tipo de recusa mecânica que lá protege só o transporte.
+The FSM governs the flow (what is prose there); the stage contract and tool gating give
+the flow the same kind of mechanical rejection that there protects only transport.
 
-**O que faltava lá e virou requisito aqui:** não há detecção de agente travado ou de
-cadeia rompida. Um enxame que para de conversar para em silêncio. Daí o watchdog de
-inatividade — ver [ADR-0019](ADRs/0019-inactivity-watchdog.md).
+**What was missing there and became a requirement here:** there is no detection of a
+stuck agent or of a broken chain. A swarm that stops talking stops in silence. Hence the
+inactivity watchdog — see [ADR-0019](ADRs/0019-inactivity-watchdog.md).
 
-## Observações de campo do mesmo autor
+## Field observations from the same author
 
-Relatos públicos de execução real, agosto de 2026. São a origem dos modos de falha que
-o desenho precisa cobrir:
+Public reports of real execution, August 2026. They are the origin of the failure modes
+the design has to cover:
 
 - *"Ensure that everything that can be deterministic, is done with a deterministic tool.
   Don't try to get the poor agents to follow a deterministic process."*
 - *"Agents are completely unreliable unless you pin them down with strict rules, and
   repeat those rules at every possible turn."*
-- Um agente decidiu que **rodar** um comando significava **imprimi-lo**.
+- An agent decided that **running** a command meant **printing** it.
 - *"Agents don't deal with loops well. They might do the same thing 100 times and the
   101st time do something completely different."*
-- Sob compactação prolongada, os agentes **perderam a identidade de papel** — o
-  implementador passou a revisar e o revisor ficou sem trabalho.
-- A FSM dele tinha um bug e mandou o lead revisar um documento já revisado. **O lead
-  recusou e escalou.** É o argumento a favor do lead híbrido.
+- Under prolonged compaction, the agents **lost their role identity** — the implementer
+  started reviewing and the reviewer was left with no work.
+- His FSM had a bug and sent the lead to review an already reviewed document. **The lead
+  refused and escalated.** That is the argument in favor of the hybrid lead.
 
 ## 12-Factor Agents — HumanLayer
 
 <https://github.com/humanlayer/12-factor-agents>
 
-Princípios para software com LLM que aguenta produção. Os que este desenho aplica:
+Principles for LLM software that holds up in production. The ones this design applies:
 
-| Fator | Onde aparece |
+| Factor | Where it appears |
 |---|---|
-| 5 — unificar estado de execução e de negócio | um store, não quatro lugares |
-| 6 — lançar/pausar/retomar por API simples | o gate suspende e libera o slot |
-| 7 — falar com humanos por chamada de ferramenta | o gate é mecanismo, não convenção |
-| 8 — controle de fluxo é seu | a FSM, e não o modelo, decide a próxima etapa |
-| 10 — agentes pequenos e focados | um papel por responsabilidade |
-| 12 — o agente é um redutor sem estado | o nó recebe contexto e devolve resultado |
+| 5 — unify execution state and business state | one store, not four places |
+| 6 — launch/pause/resume with a simple API | the gate suspends and releases the slot |
+| 7 — contact humans with tool calls | the gate is mechanism, not convention |
+| 8 — own your control flow | the FSM, not the model, decides the next stage |
+| 10 — small, focused agents | one role per responsibility |
+| 12 — make your agent a stateless reducer | the node receives context and returns a result |
 
-A observação central: os produtos que funcionam são *"mostly deterministic code, with
+The central observation: the products that work are *"mostly deterministic code, with
 LLM steps sprinkled in at just the right points"*.
 
 ## Beads
 
 <https://github.com/gastownhall/beads>
 
-Rastreador em grafo para agentes: dependências, cálculo do que está livre para começar,
-reivindicação atômica. Usado para a ordem **entre** tarefas.
+Graph-based tracker for agents: dependencies, computing what is free to start, atomic
+claiming. Used for the ordering **between** tasks.
 
-Não é usado para as etapas **dentro** de uma tarefa — modelar 14 etapas × N tarefas como
-sub-issues inflaria o grafo sem ganho.
+It is not used for the stages **within** a task — modeling 14 stages × N tasks as
+sub-issues would inflate the graph with no gain.
 
-## Agent of Empires e herdr
+## Agent of Empires and herdr
 
 <https://github.com/agent-of-empires/agent-of-empires> ·
 <https://github.com/herdrdev/herdr>
 
-Gerenciadores de sessão de agentes. Não compõem o desenho atual, mas resolvem o problema
-de **executar e observar** processos de agente — que é uma decisão ainda em aberto.
+Agent session managers. They are not part of the current design, but they solve the
+problem of **running and observing** agent processes — which is still an open decision.
 
-Do herdr, a ideia que mais interessa: uma API que os próprios agentes dirigem, incluindo
-esperar até que outro agente esteja genuinamente bloqueado.
+From herdr, the most interesting idea: an API that the agents themselves drive,
+including waiting until another agent is genuinely blocked.
 
-## ai-jail e ai-memory
+## ai-jail and ai-memory
 
 <https://github.com/akitaonrails/ai-jail> ·
 <https://github.com/akitaonrails/ai-memory>
 
-Contenção de sistema de arquivos e memória durável de projeto. Ortogonais à orquestração
-e já validados em uso — a Luna compõe com eles em vez de reimplementá-los.
+Filesystem containment and durable project memory. Orthogonal to orchestration and
+already validated in use — Luna composes with them instead of reimplementing them.
 
-## Práticas de projeto
+## Project practices
 
 <https://akitaonrails.com/2026/05/30/boas-praticas-projetos-codigo-aberto-llm-o-minimo/>
 
-A estrutura deste repositório segue o mínimo proposto ali: superfície de instalação em
-um comando, CI automatizado, e documentação que abre pelo **problema** e não pela stack.
+This repository's structure follows the minimum proposed there: a one-command
+installation surface, automated CI, and documentation that opens with the **problem**
+and not with the stack.

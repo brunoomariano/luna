@@ -1,32 +1,32 @@
-# ADR-0013: Perfis de gate nomeados, escolhidos por tarefa
+# ADR-0013: Named gate profiles, chosen per task
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Nem toda tarefa merece o mesmo nível de supervisão humana. Falta decidir qual dimensão
-governa quais gates param.
+Not every task deserves the same level of human supervision. What remains is deciding which
+dimension governs which gates stop.
 
-## Decisão
+## Decision
 
-Quais gates param é decidido por **perfil nomeado, escolhido por tarefa** — por exemplo
-`interativo` (todos os gates esperam humano), `turbo` (só a escrita espera) e `noturno`
-(nada espera).
+Which gates stop is decided by a **named profile, chosen per task** — for example
+`interactive` (every gate waits for a human), `turbo` (only the write waits) and `nightly`
+(nothing waits).
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Perfil por tipo de tarefa** — descartada porque o tipo não prediz o risco: um bug
-  crítico pode merecer mais gate que uma feature trivial.
-- **Perfil por repositório** — descartada porque não distingue tarefa arriscada de
-  trivial dentro do mesmo código.
+- **Profile per task type** — rejected because the type does not predict the risk: a
+  critical bug may deserve more gating than a trivial feature.
+- **Profile per repository** — rejected because it does not distinguish a risky task from a
+  trivial one within the same code.
 
-## Consequências
+## Consequences
 
-- **Positivas:** o nível de supervisão acompanha o risco real da tarefa, e não uma
-  categoria que só o aproxima.
-- **Impactos:** o perfil passa a ser um parâmetro da tarefa, escolhido na entrada.
+- **Positive:** the level of supervision follows the task's real risk, and not a category
+  that merely approximates it.
+- **Impacts:** the profile becomes a task parameter, chosen at intake.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md)
+- Related documents: [architecture](../architecture/overview.md)

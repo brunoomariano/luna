@@ -1,270 +1,270 @@
-# Documentação da Luna
+# Luna documentation
 
-Este documento é a **porta de entrada** e o **padrão** da documentação do projeto.
-Define quais camadas de documentação existem, o que cada uma responde, onde mora e
-que forma segue. Toda nova documentação — feita por pessoas ou por agentes — deve
-respeitar este contrato.
+This document is the **entry point** and the **standard** for the project's
+documentation. It defines which documentation layers exist, what each one answers,
+where it lives and what form it follows. All new documentation — written by people or
+by agents — must respect this contract.
 
-> **Por que isto existe:** sem um acordo de forma, cada documento reinventa
-> estrutura e tom, specs antigas descrevem estados já mudados e conceitos de
-> domínio não têm fonte única. Este padrão é a fundação: as camadas seguintes
-> (glossário, arquitetura, invariantes, registros de decisão) nascem sob a mesma
-> forma.
+> **Why this exists:** without an agreement on form, every document reinvents
+> structure and tone, old specs describe states that already changed and domain
+> concepts have no single source. This standard is the foundation: the following
+> layers (glossary, architecture, invariants, decision records) are born under the
+> same form.
 
-## Como usar este guia
+## How to use this guide
 
-1. Vai **criar** um documento? Use o [critério de classificação](#critério-de-classificação)
-   para descobrir em qual camada o conteúdo entra.
-2. Encontrou a camada? Vá até a linha dela no [mapa de camadas](#mapa-de-camadas),
-   abra a localização indicada e copie o `_template.md` daquela camada.
-3. Escreva seguindo as [convenções transversais](#convenções-transversais).
+1. Are you going to **create** a document? Use the [classification criteria](#classification-criteria)
+   to find out which layer the content belongs to.
+2. Found the layer? Go to its row in the [layer map](#layer-map),
+   open the indicated location and copy that layer's `_template.md`.
+3. Write following the [cross-cutting conventions](#cross-cutting-conventions).
 
 ---
 
-## Mapa de camadas
+## Layer map
 
-Cada camada responde a **uma pergunta** e tem uma **fronteira** — o que
-deliberadamente *não* mora nela. Quando um conteúdo parece caber em duas camadas,
-a coluna "Não pertence" e o [critério de classificação](#critério-de-classificação)
-desambiguam.
+Each layer answers **one question** and has a **boundary** — what deliberately does
+*not* live in it. When content seems to fit two layers,
+the "Does not belong" column and the [classification criteria](#classification-criteria)
+disambiguate.
 
-| Camada | Pergunta que responde | Localização | Envelhece? |
+| Layer | Question it answers | Location | Does it age? |
 |---|---|---|---|
-| **README do projeto** | Como eu rodo e entendo o sistema? | `../README.md` (raiz) | sim (vivo) |
-| **Diretrizes de engenharia** | Como escrevo código aqui? | `../AGENTS.md` (raiz) | sim (vivo) |
-| **Contribuição** | Como faço commit, PR e tag? | `CONTRIBUTING.md` | sim (vivo) |
-| **Glossário** | O que esse termo significa neste domínio? | `glossary/` | sim (vivo) |
-| **Arquitetura** | Como o sistema é estruturado, operado e integrado? | `architecture/` | sim (vivo) |
-| **Invariantes** | Que regras sempre valem, independente da implementação? | `invariants/` | sim (vivo) |
-| **PRD** | O que esta feature faz e como deveria se comportar? | `PRDs/<domínio>/` | sim (datado) |
-| **RFC** | Como vou executar esta mudança (rota técnica, alternativas)? | `RFCs/` | sim (datado) |
-| **Registro de decisão (ADR)** | Por que decidimos assim, naquele momento? | `ADRs/` | não (imutável) |
-| **Changelog** | O que mudou entre versões? | `CHANGELOG/` | acumula |
-| **Referências** | De onde veio a ideia, e o que foi recusado dela? | `references.md` | sim (vivo) |
+| **Project README** | How do I run and understand the system? | `../README.md` (root) | yes (living) |
+| **Engineering guidelines** | How do I write code here? | `../AGENTS.md` (root) | yes (living) |
+| **Contributing** | How do I commit, PR and tag? | `CONTRIBUTING.md` | yes (living) |
+| **Glossary** | What does this term mean in this domain? | `glossary/` | yes (living) |
+| **Architecture** | How is the system structured, operated and integrated? | `architecture/` | yes (living) |
+| **Invariants** | Which rules always hold, regardless of implementation? | `invariants/` | yes (living) |
+| **PRD** | What does this feature do and how should it behave? | `PRDs/<domain>/` | yes (dated) |
+| **RFC** | How am I going to execute this change (technical route, alternatives)? | `RFCs/` | yes (dated) |
+| **Decision record (ADR)** | Why did we decide this way, at that moment? | `ADRs/` | no (immutable) |
+| **Changelog** | What changed between versions? | `CHANGELOG/` | accumulates |
+| **References** | Where did the idea come from, and what was rejected from it? | `references.md` | yes (living) |
 
-A coluna **Envelhece?** governa a [regra de obsolescência](#regra-de-obsolescência-e-atualização):
+The **Does it age?** column governs the [obsolescence and update rule](#obsolescence-and-update-rule):
 
-- **vivo** — reflete o estado atual; é atualizado no lugar quando a realidade muda.
-- **datado** — descreve um estado no tempo; ganha cabeçalho de status e pode ficar obsoleto.
-- **imutável** — registra uma decisão de um momento; nunca é editado, só substituído.
-- **acumula** — é um histórico append-only.
+- **living** — reflects the current state; updated in place when reality changes.
+- **dated** — describes a state in time; gets a status header and may become obsolete.
+- **immutable** — records a decision from a moment; never edited, only superseded.
+- **accumulates** — an append-only history.
 
-> **Camadas que este projeto não usa.** Não há `architecture/api/` nem
-> `architecture/contracts/` porque a Luna é um CLI sem superfície HTTP nem
-> mensageria. Não há `BRs/` — invariantes, PRD e glossário cobrem esse propósito.
-> Se alguma dessas realidades mudar, a camada entra aqui antes de o primeiro
-> arquivo ser escrito.
+> **Layers this project does not use.** There is no `architecture/api/` nor
+> `architecture/contracts/` because Luna is a CLI with no HTTP surface and no
+> messaging. There is no `BRs/` — invariants, PRD and glossary cover that purpose.
+> If any of these realities changes, the layer enters here before the first file
+> is written.
 
-> **Camada extra deste projeto.** `references.md` registra a **prior art**: de onde
-> cada ideia do desenho veio e o que foi recusado dela. Não é arquitetura (não
-> descreve o sistema montado) nem ADR (não é decisão nossa, é leitura de terceiros).
-> Num projeto que nasceu do estudo de outros orquestradores, essa procedência é
-> conhecimento de primeira classe.
+> **Extra layer of this project.** `references.md` records the **prior art**: where
+> each design idea came from and what was rejected from it. It is not architecture (it
+> does not describe the assembled system) nor an ADR (it is not our decision, it is a
+> reading of third parties). In a project born from studying other orchestrators, that
+> provenance is first-class knowledge.
 
-### Detalhe de cada camada
+### Detail of each layer
 
-**README do projeto** — `../README.md`
-Abre pelo **problema que a Luna resolve**, nunca pela stack. Visão geral e o caminho
-rápido para rodar. Menciona que o git-flow vive em [`CONTRIBUTING.md`](CONTRIBUTING.md)
-e aponta para lá.
-*Não pertence:* regra de código (vai em `AGENTS.md`), detalhe técnico (vai em
-`architecture/`), o fluxo de branch em si (vai em `CONTRIBUTING.md`).
+**Project README** — `../README.md`
+Opens with the **problem Luna solves**, never with the stack. Overview and the quick
+path to run it. Mentions that the git-flow lives in [`CONTRIBUTING.md`](CONTRIBUTING.md)
+and points there.
+*Does not belong:* code rules (go in `AGENTS.md`), technical detail (goes in
+`architecture/`), the branch flow itself (goes in `CONTRIBUTING.md`).
 
-**Diretrizes de engenharia** — `../AGENTS.md`
-Como o código é escrito: estrutura de diretórios, convenções, testes, Makefile.
-Vale para humanos e agentes; prevalece sobre instruções globais dentro do repo.
-*Não pertence:* o que o sistema faz (PRD), por que uma escolha foi feita (ADR), o
-fluxo de branch/merge/tag (`CONTRIBUTING.md`).
+**Engineering guidelines** — `../AGENTS.md`
+How code is written: directory structure, conventions, tests, Makefile.
+Applies to humans and agents; takes precedence over global instructions inside the repo.
+*Does not belong:* what the system does (PRD), why a choice was made (ADR), the
+branch/merge/tag flow (`CONTRIBUTING.md`).
 
-**Contribuição** — [`CONTRIBUTING.md`](CONTRIBUTING.md)
-Commits (Conventional Commits, PT-BR), descrição de PR, tags de release e o
-**git-flow**. É aqui — e só aqui — que o fluxo de branch/merge/tag é normativo.
-*Não pertence:* convenção de código de produção (vai em `AGENTS.md`).
+**Contributing** — [`CONTRIBUTING.md`](CONTRIBUTING.md)
+Commits (Conventional Commits), PR description, release tags and the
+**git-flow**. It is here — and only here — that the branch/merge/tag flow is normative.
+*Does not belong:* production code conventions (go in `AGENTS.md`).
 
-**Glossário** — [`glossary/`](glossary/)
-Fonte única dos termos do domínio: etapa, papel, handoff, lead, gate, perfil,
-contrato, nó, tarefa. Um termo, uma definição, sem ambiguidade.
-*Não pertence:* como o termo é implementado (arquitetura), regra que o governa
-(invariantes).
+**Glossary** — [`glossary/`](glossary/)
+Single source of the domain terms: stage, role, handoff, lead, gate, profile,
+contract, node, task. One term, one definition, no ambiguity.
+*Does not belong:* how the term is implemented (architecture), the rule that governs it
+(invariants).
 
-**Arquitetura** — [`architecture/`](architecture/)
-Estrutura do sistema e o **porquê** dela. Descreve o *como está montado* hoje.
+**Architecture** — [`architecture/`](architecture/)
+The system structure and the **why** behind it. Describes *how it is assembled* today.
 
-- [`architecture/overview.md`](architecture/overview.md) — o desenho geral: o
-  problema, a forma da solução, lead híbrido, contrato de etapa, handoff, papéis,
-  falha, gates, estado, extensão.
-- [`architecture/stages.md`](architecture/stages.md) — as etapas padrão, com papel,
-  gate, condição, `requires` e `produces`.
+- [`architecture/overview.md`](architecture/overview.md) — the general design: the
+  problem, the shape of the solution, hybrid lead, stage contract, handoff, roles,
+  failure, gates, state, extension.
+- [`architecture/stages.md`](architecture/stages.md) — the standard stages, with role,
+  gate, condition, `requires` and `produces`.
 
-*Não pertence:* a decisão pontual e datada que levou a uma escolha (ADR), o passo a
-passo de uma feature (PRD).
+*Does not belong:* the specific, dated decision that led to a choice (ADR), the
+step-by-step of a feature (PRD).
 
-**Invariantes** — [`invariants/`](invariants/)
-Regras que **sempre** valem, independentemente de implementação. São o contrato
-conceitual que qualquer código deve preservar — o que a Luna deixa de ser se for
-violado.
-*Não pertence:* como a regra é codificada (arquitetura), por que ela foi adotada
-(ADR), o que uma feature faz (PRD).
+**Invariants** — [`invariants/`](invariants/)
+Rules that **always** hold, regardless of implementation. They are the conceptual
+contract that any code must preserve — what Luna stops being if it is
+violated.
+*Does not belong:* how the rule is coded (architecture), why it was adopted
+(ADR), what a feature does (PRD).
 
-**PRD** — [`PRDs/`](PRDs/)`<domínio>/`
-Especificação de produto de uma feature: problema, objetivo, comportamento
-esperado, requisitos, impactos. Datado — carrega `**Status:**`. Identificado por
-`<domínio>-NNNN` (slug em inglês, ex.: `fsm-0001`).
-*Não pertence:* o plano de execução técnico (RFC), a decisão estrutural (ADR).
+**PRD** — [`PRDs/`](PRDs/)`<domain>/`
+Product specification of a feature: problem, goal, expected behavior,
+requirements, impacts. Dated — carries `**Status:**`. Identified by
+`<domain>-NNNN` (English slug, e.g.: `fsm-0001`).
+*Does not belong:* the technical execution plan (RFC), the structural decision (ADR).
 
 **RFC** — [`RFCs/`](RFCs/)
-Planejamento de uma mudança — a rota técnica de *como* executá-la: motivação,
-proposta, alternativas, rollout faseado, questões em aberto. Datado; identificado
-por `rfc-NNNN`. **Linka o PRD** em vez de repetir requisitos.
-*Não pertence:* os requisitos de produto (PRD), a decisão permanente (ADR).
+Planning of a change — the technical route of *how* to execute it: motivation,
+proposal, alternatives, phased rollout, open questions. Dated; identified
+by `rfc-NNNN`. **Links the PRD** instead of repeating requirements.
+*Does not belong:* the product requirements (PRD), the permanent decision (ADR).
 
-**Registro de decisão (ADR)** — [`ADRs/`](ADRs/)
-Por que uma decisão foi tomada, no contexto daquele momento, **com a alternativa
-recusada**. Numerado, imutável. Ver [`ADRs/README.md`](ADRs/README.md).
-*Não pertence:* o estado atual resultante da decisão (arquitetura), a definição de
-um termo (glossário).
+**Decision record (ADR)** — [`ADRs/`](ADRs/)
+Why a decision was made, in the context of that moment, **with the rejected
+alternative**. Numbered, immutable. See [`ADRs/README.md`](ADRs/README.md).
+*Does not belong:* the current state resulting from the decision (architecture), the
+definition of a term (glossary).
 
 **Changelog** — [`CHANGELOG/`](CHANGELOG/)
-Histórico de mudanças entre versões, em linguagem de comportamento. Acumula; não se
-reescreve o passado.
-*Não pertence:* a motivação de uma decisão (ADR), a spec de uma feature (PRD).
+History of changes between versions, in behavior language. Accumulates; the past is
+not rewritten.
+*Does not belong:* the motivation of a decision (ADR), the spec of a feature (PRD).
 
-**Referências** — [`references.md`](references.md)
-Prior art: os projetos e relatos que informaram o desenho, o que foi **trazido** de
-cada um e o que foi **recusado**.
-*Não pertence:* a nossa decisão em si (ADR — o ADR pode linkar a referência que o
-motivou), a descrição do sistema (arquitetura).
-
----
-
-## Critério de classificação
-
-Quando não estiver claro onde um conteúdo entra, responda **na ordem** — a primeira
-que casar é a camada:
-
-1. **É a definição de um termo do domínio?** → **Glossário**.
-2. **É uma regra que sempre vale, independente de como o código a implementa?** →
-   **Invariantes**.
-3. **É leitura de um projeto de terceiros — o que trouxemos ou recusamos dele?** →
-   **Referências**.
-4. **Estou registrando *por que* escolhemos um caminho, naquele momento, com
-   alternativas descartadas?** → **ADR**.
-5. **Descreve como o sistema está estruturado hoje (limites, camadas, etapas,
-   fluxos)?** → **Arquitetura**.
-6. **Especifica o que uma feature faz e como deve se comportar?** → **PRD**.
-7. **É a rota técnica de como executar uma mudança?** → **RFC**.
-8. **É como contribuir (commit, PR, tag)?** → **Contribuição**.
-9. **É como rodar/entender o projeto, ou como escrever código aqui?** → **README** /
-   **Diretrizes de engenharia**.
-
-### Desambiguação entre camadas próximas
-
-- **Invariante vs. Arquitetura:** a invariante é a regra conceitual ("o store nunca
-  faz `UPDATE`"); a arquitetura é como o código a sustenta ("o estado vive em SQLite
-  append-only, com transição atômica"). A regra vai em invariantes; a estrutura que
-  a garante, em arquitetura.
-- **Arquitetura vs. ADR:** a arquitetura descreve o **estado atual** ("o lead é
-  híbrido"); o ADR registra a **decisão datada** que levou a ele ("em 2026-08-06
-  escolhemos lead híbrido porque…, recusando lead puramente código e puramente
-  modelo"). O ADR não é editado quando a arquitetura muda — cria-se um novo ADR que
-  substitui o anterior.
-- **ADR vs. Referências:** o ADR é a **nossa** decisão; a referência é a **leitura de
-  outro projeto**. Um ADR pode linkar a referência que o motivou, mas o "trazido /
-  recusado do SwarmForge" mora em `references.md`, não em ADR.
-- **ADR vs. Invariantes:** o ADR explica o *porquê* datado; o invariante descreve a
-  regra vigente que o código deve preservar. Quando uma decisão cria uma regra
-  permanente, os dois se linkam em vez de duplicar.
-- **PRD vs. RFC:** o PRD é o *quê* e o comportamento esperado; o RFC é a rota técnica
-  de execução. Quando há os dois, o RFC linka o PRD e não repete requisitos.
+**References** — [`references.md`](references.md)
+Prior art: the projects and reports that informed the design, what was **brought** from
+each one and what was **rejected**.
+*Does not belong:* our decision itself (ADR — the ADR may link the reference that
+motivated it), the description of the system (architecture).
 
 ---
 
-## Convenções transversais
+## Classification criteria
 
-Valem para todas as camadas, salvo onde a camada especificar o contrário.
+When it is not clear where content belongs, answer **in order** — the first
+that matches is the layer:
 
-- **Idioma:** português do Brasil na prosa. Nomes de símbolo, path, comando,
-  identificador de issue **e o slug do nome do arquivo** ficam em inglês — como o
-  código (ver [`../AGENTS.md`](../AGENTS.md)).
-- **Formato:** Markdown. Um `# Título` por documento.
-- **Sem YAML front-matter.** Metadado de status vai em linhas em negrito no topo
-  (`**Status:** …`, `**Última revisão:** …`), nunca em bloco `---`.
-- **Tom:** objetivo e em linguagem de **comportamento**, não de implementação.
-  Descreva o efeito observável, não a função que o produz. Frases curtas.
-- **Nomes de arquivo:** `kebab-case.md` (ex.: `stage-contract.md`).
-- **Diagramas:** [Mermaid](https://mermaid.js.org/) embutido quando um fluxo ou
-  estrutura ficar mais claro visualmente. Prefira diagrama a parágrafo longo
-  descrevendo passos.
-- **Gherkin em bullets**, nunca em bloco de código: `- **Dado** …`, `- **Quando** …`,
-  `- **Então** …`.
-- **Templates:** cada camada com forma fixa tem um `_template.md` na sua pasta.
-  Comece sempre dele — não reinvente a estrutura.
-- **Fonte única:** um fato mora em uma camada só. Se precisa repetir, **referencie**
-  (link relativo) em vez de copiar.
+1. **Is it the definition of a domain term?** → **Glossary**.
+2. **Is it a rule that always holds, regardless of how the code implements it?** →
+   **Invariants**.
+3. **Is it a reading of a third-party project — what we brought or rejected from it?** →
+   **References**.
+4. **Am I recording *why* we chose a path, at that moment, with
+   discarded alternatives?** → **ADR**.
+5. **Does it describe how the system is structured today (boundaries, layers, stages,
+   flows)?** → **Architecture**.
+6. **Does it specify what a feature does and how it should behave?** → **PRD**.
+7. **Is it the technical route of how to execute a change?** → **RFC**.
+8. **Is it how to contribute (commit, PR, tag)?** → **Contributing**.
+9. **Is it how to run/understand the project, or how to write code here?** → **README** /
+   **Engineering guidelines**.
 
-A **forma** destas convenções é validada por `make lint-docs` (parte do
-`make ci-check`) — não é confiada à memória de quem escreve. Ver
+### Disambiguating between neighboring layers
+
+- **Invariant vs. Architecture:** the invariant is the conceptual rule ("the store never
+  does `UPDATE`"); the architecture is how the code sustains it ("state lives in
+  append-only SQLite, with atomic transition"). The rule goes in invariants; the
+  structure that guarantees it, in architecture.
+- **Architecture vs. ADR:** the architecture describes the **current state** ("the lead is
+  hybrid"); the ADR records the **dated decision** that led to it ("on 2026-08-06
+  we chose a hybrid lead because…, rejecting a purely code lead and a purely
+  model one"). The ADR is not edited when the architecture changes — a new ADR is created
+  that supersedes the previous one.
+- **ADR vs. References:** the ADR is **our** decision; the reference is the **reading of
+  another project**. An ADR may link the reference that motivated it, but the "brought /
+  rejected from SwarmForge" lives in `references.md`, not in an ADR.
+- **ADR vs. Invariants:** the ADR explains the dated *why*; the invariant describes the
+  standing rule the code must preserve. When a decision creates a permanent
+  rule, the two link to each other instead of duplicating.
+- **PRD vs. RFC:** the PRD is the *what* and the expected behavior; the RFC is the technical
+  route of execution. When both exist, the RFC links the PRD and does not repeat requirements.
+
+---
+
+## Cross-cutting conventions
+
+They apply to all layers, except where the layer specifies otherwise.
+
+- **Language:** English throughout — prose, symbol names, paths, commands, issue
+  identifiers **and the file name slug** stay in English — like the
+  code (see [`../AGENTS.md`](../AGENTS.md)).
+- **Format:** Markdown. One `# Title` per document.
+- **No YAML front-matter.** Status metadata goes in bold lines at the top
+  (`**Status:** …`, `**Last reviewed:** …`), never in a `---` block.
+- **Tone:** objective and in **behavior** language, not implementation.
+  Describe the observable effect, not the function that produces it. Short sentences.
+- **File names:** `kebab-case.md` (e.g.: `stage-contract.md`).
+- **Diagrams:** embedded [Mermaid](https://mermaid.js.org/) when a flow or
+  structure becomes clearer visually. Prefer a diagram to a long paragraph
+  describing steps.
+- **Gherkin in bullets**, never in a code block: `- **Given** …`, `- **When** …`,
+  `- **Then** …`.
+- **Templates:** each layer with a fixed form has a `_template.md` in its folder.
+  Always start from it — do not reinvent the structure.
+- **Single source:** a fact lives in one layer only. If you need to repeat it, **reference**
+  it (relative link) instead of copying.
+
+The **form** of these conventions is validated by `make lint-docs` (part of
+`make ci-check`) — it is not trusted to the memory of whoever writes. See
 [`../scripts/lint-docs.sh`](../scripts/lint-docs.sh).
 
 ---
 
-## Regra de obsolescência e atualização
+## Obsolescence and update rule
 
-A forma como um documento lida com o tempo depende da sua coluna **Envelhece?** no
-[mapa de camadas](#mapa-de-camadas).
+How a document deals with time depends on its **Does it age?** column in the
+[layer map](#layer-map).
 
-### Documentos vivos (README, AGENTS, CONTRIBUTING, glossário, arquitetura, invariantes, referências)
+### Living documents (README, AGENTS, CONTRIBUTING, glossary, architecture, invariants, references)
 
-Refletem o estado atual. Quando a realidade muda, **atualize no lugar** — não há
-versão "antiga" a preservar. Um documento vivo desatualizado é um bug de
-documentação.
+They reflect the current state. When reality changes, **update in place** — there is no
+"old" version to preserve. An outdated living document is a documentation
+bug.
 
-### Documentos datados (PRD, RFC)
+### Dated documents (PRD, RFC)
 
-Descrevem um estado num momento e podem ficar obsoletos. Carregam, no topo, um
-cabeçalho de status (o enum difere por camada):
+They describe a state at a moment and may become obsolete. They carry, at the top, a
+status header (the enum differs per layer):
 
 ```markdown
 # PRD
-**Status:** NÃO IMPLEMENTADO | IMPLEMENTADO | OBSOLETO
-**Última revisão:** AAAA-MM-DD
+**Status:** NOT IMPLEMENTED | IMPLEMENTED | OBSOLETE
+**Last reviewed:** YYYY-MM-DD
 
 # RFC
-**Status:** RASCUNHO | EM ANDAMENTO | CONCLUÍDO | OBSOLETO
-**Última revisão:** AAAA-MM-DD
+**Status:** DRAFT | IN PROGRESS | DONE | OBSOLETE
+**Last reviewed:** YYYY-MM-DD
 ```
 
-- Ao entregar, o PRD vai de `NÃO IMPLEMENTADO` para `IMPLEMENTADO`; o RFC de `EM
-  ANDAMENTO` para `CONCLUÍDO`.
-- Se o comportamento deixou de valer, marque `OBSOLETO` e aponte o sucessor:
-  `> ⚠️ Obsoleto desde AAAA-MM-DD. Ver: <link>`.
-- Documento `OBSOLETO` **move para `archive/`** (`PRDs/<domínio>/archive/`,
-  `RFCs/archive/`) — `git mv`, nunca apagar. O nome e o número não mudam; a
-  numeração conta o `archive/` no mesmo escopo. Um PRD `IMPLEMENTADO` descreve
-  comportamento vigente e **fica**.
+- On delivery, the PRD goes from `NOT IMPLEMENTED` to `IMPLEMENTED`; the RFC from `IN
+  PROGRESS` to `DONE`.
+- If the behavior no longer holds, mark it `OBSOLETE` and point to the successor:
+  `> ⚠️ Obsolete since YYYY-MM-DD. See: <link>`.
+- An `OBSOLETE` document **moves to `archive/`** (`PRDs/<domain>/archive/`,
+  `RFCs/archive/`) — `git mv`, never delete. The name and the number do not change; the
+  numbering counts `archive/` in the same scope. An `IMPLEMENTED` PRD describes
+  standing behavior and **stays**.
 
-### Documentos imutáveis (ADR)
+### Immutable documents (ADR)
 
-Um ADR **nunca é editado** após aceito. Quando uma decisão é revista, crie um
-**novo** ADR e marque o anterior como substituído:
+An ADR is **never edited** after acceptance. When a decision is revised, create a
+**new** ADR and mark the previous one as superseded:
 
 ```markdown
-**Status:** Substituído por [ADR-0007](0007-new-title.md)
+**Status:** Superseded by [ADR-0007](0007-new-title.md)
 ```
 
-ADR não tem `archive/`: a cadeia de substituição é o valor. Detalhes em
+An ADR has no `archive/`: the supersession chain is the value. Details in
 [`ADRs/README.md`](ADRs/README.md).
 
 ---
 
-## Índice de templates
+## Template index
 
-Comece sempre pelo template da camada:
+Always start from the layer's template:
 
-- Glossário — [`glossary/_template.md`](glossary/_template.md)
-- Arquitetura — [`architecture/_template.md`](architecture/_template.md)
-- Invariantes — [`invariants/_template.md`](invariants/_template.md)
+- Glossary — [`glossary/_template.md`](glossary/_template.md)
+- Architecture — [`architecture/_template.md`](architecture/_template.md)
+- Invariants — [`invariants/_template.md`](invariants/_template.md)
 - PRD — [`PRDs/_template.md`](PRDs/_template.md)
 - RFC — [`RFCs/_template.md`](RFCs/_template.md)
-- Registro de decisão — [`ADRs/0000-template.md`](ADRs/0000-template.md)
-  (convenção em [`ADRs/README.md`](ADRs/README.md))
+- Decision record — [`ADRs/0000-template.md`](ADRs/0000-template.md)
+  (convention in [`ADRs/README.md`](ADRs/README.md))

@@ -1,37 +1,38 @@
-# ADR-0006: Contexto novo a cada etapa
+# ADR-0006: Fresh context at every stage
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-A erosão de papel é um dos modos de falha conhecidos (ver
-[ADR-0001](0001-flow-control-out-of-model.md)): numa sessão longa com compactação, o
-revisor começa a implementar e o implementador a revisar. Manter o processo do agente
-vivo entre etapas é mais barato e preserva contexto, mas é exatamente o vetor dessa
-degradação.
+Role erosion is one of the known failure modes (see
+[ADR-0001](0001-flow-control-out-of-model.md)): in a long session with compaction, the
+reviewer starts implementing and the implementer starts reviewing. Keeping the agent
+process alive between stages is cheaper and preserves context, but it is exactly the
+vector of that degradation.
 
-## Decisão
+## Decision
 
-Cada etapa começa com o contexto limpo, **mesmo quando o papel é o mesmo**. Não há
-sessão longa para degradar.
+Every stage starts with a clean context, **even when the role is the same**. There is no
+long session to degrade.
 
-Todo payload de handoff é prefixado com uma instrução para reler o papel e as regras —
-contexto limpo e regra reinjetada são duas defesas pelo mesmo flanco.
+Every handoff payload is prefixed with an instruction to re-read the role and the rules —
+clean context and re-injected rule are two defenses on the same flank.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Manter o processo vivo entre etapas** — mais barato e preserva contexto, mas
-  descartada por ser o vetor da erosão de papel: contexto longo degrada aderência.
+- **Keep the process alive between stages** — cheaper and preserves context, but rejected
+  for being the vector of role erosion: long context degrades adherence.
 
-## Consequências
+## Consequences
 
-- **Consequência aceita:** o handoff vira a **única** ponte entre etapas. Se algo
-  necessário não estiver nele, o agente começa cego — e por isso o contrato de etapa
-  (ver [ADR-0004](0004-stage-requires-produces-contract.md)) deixa de ser opcional.
-- **Negativas / custos:** perde-se a economia de reaproveitar um processo já quente.
+- **Accepted consequence:** the handoff becomes the **only** bridge between stages. If
+  something necessary is not in it, the agent starts blind — and that is why the stage
+  contract (see [ADR-0004](0004-stage-requires-produces-contract.md)) stops being
+  optional.
+- **Negative / costs:** we give up the savings of reusing an already warm process.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [references](../references.md)

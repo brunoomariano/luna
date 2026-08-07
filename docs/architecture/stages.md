@@ -1,117 +1,117 @@
-# Etapas padrão
+# Default stages
 
-Estas são as etapas que a Luna traz instaladas. Não são obrigatórias: podem ser
-desabilitadas, editadas ou substituídas, e novas podem ser criadas.
+These are the stages that Luna ships installed. They are not mandatory: they can be
+disabled, edited or replaced, and new ones can be created.
 
-Cada etapa declara o papel que a executa, a skill que ela usa, o que **exige** para
-começar e o que **produz** ao terminar. O contrato é o que impede uma etapa de começar
-cega ou fechar pela metade.
+Each stage declares the role that executes it, the skill it uses, what it **requires** to
+start and what it **produces** when it finishes. The contract is what prevents a stage from starting
+blind or closing halfway.
 
-O que uma etapa produz vem em duas naturezas, e a distinção é do contrato, não
-cosmética:
+What a stage produces comes in two natures, and the distinction belongs to the contract, it is not
+cosmetic:
 
-- **`produces`** — o que o **fluxo** consome. Alguma etapa adiante o declara em
-  `requires`, e a verificação estática garante que exista quem o produza.
-- **`produces_for_human`** — o que **só uma pessoa** lê: relatórios de auditoria,
-  pareceres, diagnósticos. Verificado na saída igual ao `produces` (a etapa não fecha
-  sem entregar), mas **isento da verificação estática** — não é defeito ninguém
-  consumi-lo.
+- **`produces`** — what the **flow** consumes. Some stage ahead declares it in
+  `requires`, and the static check guarantees there is someone producing it.
+- **`produces_for_human`** — what **only a person** reads: audit reports,
+  opinions, diagnoses. Checked on exit just like `produces` (the stage does not close
+  without delivering), but **exempt from the static check** — it is not a defect that nobody
+  consumes it.
 
-| # | Etapa | Papel | Gate | Condição | Exige | Produz p/ o fluxo | Produz p/ humano |
+| # | Stage | Role | Gate | Condition | Requires | Produces for the flow | Produces for human |
 |---|---|---|---|---|---|---|---|
 | 1 | `discovery` | — | confirm-repos | | `task_id` | `repos` | |
 | 2 | `setup` | — | | | `repos` | `worktree` | |
 | 3 | `intake` | analyst | | | `task_id`, `worktree` | `briefing`, `kind` | |
-| 4 | `diagnose` | — | | é bug | `briefing` | `root_cause` | `min_case` |
+| 4 | `diagnose` | — | | is a bug | `briefing` | `root_cause` | `min_case` |
 | 5 | `scenarios` | gherkin author | approve-plan | | `briefing`, `kind` | `scenarios`, `approach` | |
-| 6 | `spec` | — | approve-spec ⇄ | feature ou bug | `approach` | `contract` | |
+| 6 | `spec` | — | approve-spec ⇄ | feature or bug | `approach` | `contract` | |
 | 7 | `build` | implementer | | 🔁 | `scenarios`, `approach`, `worktree`, `contract`* | `code`, `tests_green` | |
 | 8 | `refactor` | cleaner | | 🔁 | `code`, `tests_green` | `code` | |
 | 9 | `verify` | — | | 🔁 | `code`, `scenarios` | `ci_green` | `dod_checked` |
-| 10 | `qa` | QA tester | | não é chore | `ci_green`, `briefing` | | `qa_report` |
-| 11 | `code-review` | reviewer | | não é docs | `code`, `ci_green` | | `review_report` |
-| 12 | `harden` | hardener | | feature ou bug | `tests_green`, `code` | | `mutation_report` |
-| 13 | `architecture` | architect | | mexe em estrutura † | `code` | | `arch_report` |
+| 10 | `qa` | QA tester | | not a chore | `ci_green`, `briefing` | | `qa_report` |
+| 11 | `code-review` | reviewer | | not docs | `code`, `ci_green` | | `review_report` |
+| 12 | `harden` | hardener | | feature or bug | `tests_green`, `code` | | `mutation_report` |
+| 13 | `architecture` | architect | | touches structure † | `code` | | `arch_report` |
 | 14 | `commit` | — | confirm-write | | `ci_green`, `code` | `commit_sha` | |
 
-🔁 = participa do loop de convergência. ⇄ = gate que **carrega artefato** para revisão.
-† = condição sobre um **fato descoberto durante a execução**, não sobre a natureza da
-tarefa: só se sabe que a mudança tocou a estrutura depois de olhar o que o `build`
-produziu. Por isso a condição de etapa consulta o contexto inteiro (natureza, artefatos
-já produzidos e fatos descobertos), e não apenas o `kind`.
-\* = `contract` só é exigido quando a etapa `spec` entrou no fluxo (feature ou bug); em
-`chore` e `docs` ela é pulada e o `build` não o pede.
+🔁 = takes part in the convergence loop. ⇄ = gate that **carries an artifact** for review.
+† = condition over a **fact discovered during execution**, not over the nature of the
+task: you only know the change touched the structure after looking at what `build`
+produced. That is why the stage condition consults the whole context (nature, artifacts
+already produced and discovered facts), and not just the `kind`.
+\* = `contract` is only required when the `spec` stage entered the flow (feature or bug); in
+`chore` and `docs` it is skipped and `build` does not ask for it.
 
-> **Ainda não implementado.** O `requires` condicional descrito no `*` acima depende de
-> um mecanismo que ainda não foi escolhido — a alternativa está em avaliação por A/B.
-> Até lá, `DefaultFlow()` **não** declara `contract` no `requires` do `build`, e o
-> código traz a lacuna marcada. Doc e código divergem aqui de propósito: a tabela
-> descreve o destino, o código descreve o presente.
+> **Not implemented yet.** The conditional `requires` described in the `*` above depends on
+> a mechanism that has not been chosen yet — the alternative is under A/B evaluation.
+> Until then, `DefaultFlow()` does **not** declare `contract` in the `requires` of `build`, and the
+> code carries the gap marked. Doc and code diverge here on purpose: the table
+> describes the destination, the code describes the present.
 
-## Notas de desenho
+## Design notes
 
-**As etapas 10 a 13 são condicionais por natureza.** Teste de mutação numa mudança de
-uma linha é cerimônia — e cerimônia treina o humano a ignorar o processo. A condição de
-cada uma está na tabela.
+**Stages 10 to 13 are conditional by nature.** A mutation test on a one-line change
+is ceremony — and ceremony trains the human to ignore the process. The condition for
+each one is in the table.
 
-**Quem escreve não revisa.** O `implementer` não faz `code-review`; o `cleaner` não roda
-`harden`. A separação está nos papéis, não na boa vontade do modelo.
+**Whoever writes does not review.** The `implementer` does not do `code-review`; the `cleaner` does not run
+`harden`. The separation is in the roles, not in the model's good will.
 
-**O loop tem saída por julgamento.** Quando `qa`, `code-review` ou `harden` acham algo, o
-modelo decide pelo **alinhamento com a tarefa**: alinhado volta ao `build` (e invalida o
-verde anterior); fora do escopo vira tarefa nova e o fluxo segue. Essa distinção não é
-mecanizável — é exatamente onde a camada de julgamento existe.
+**The loop has an exit by judgment.** When `qa`, `code-review` or `harden` find something, the
+model decides by **alignment with the task**: aligned goes back to `build` (and invalidates the
+previous green); out of scope becomes a new task and the flow goes on. This distinction is not
+mechanizable — it is exactly where the judgment layer exists.
 
-**O loop tem três tetos, contados separadamente.** Não é um contador só: cada teto
-detecta uma patologia diferente, e somá-los num número esconderia justamente a diferença.
+**The loop has three ceilings, counted separately.** It is not a single counter: each ceiling
+detects a different pathology, and summing them into one number would hide precisely the difference.
 
-| Teto | Conta | Detecta |
+| Ceiling | Counts | Detects |
 |---|---|---|
-| `max_rounds` | voltas totais do loop | o loop que não termina |
-| `no_progress_rounds` | voltas seguidas sem mudança funcional | o loop que gira sem produzir |
-| `oscillation_rounds` | voltas seguidas alternando entre os mesmos estados | o loop que desfaz o que acabou de fazer |
+| `max_rounds` | total rounds of the loop | the loop that does not end |
+| `no_progress_rounds` | consecutive rounds without functional change | the loop that spins without producing |
+| `oscillation_rounds` | consecutive rounds alternating between the same states | the loop that undoes what it just did |
 
-Estourado qualquer um, o loop **abre um gate** em vez de continuar iterando — não
-bloqueia. A distinção importa: o loop que não converge não é falha, é decisão a tomar.
+Once any of them blows, the loop **opens a gate** instead of continuing to iterate — it does not
+block. The distinction matters: the loop that does not converge is not a failure, it is a decision to make.
 
-O contador de volta de loop é **separado do contador de retry de falha**
-(ver [ADR-0011](../ADRs/0011-failure-retry-rollback-or-block.md)): são coisas distintas,
-com tetos distintos, e uni-los faria uma falha transitória consumir orçamento de
-convergência.
+The loop round counter is **separate from the failure retry counter**
+(see [ADR-0011](../ADRs/0011-failure-retry-rollback-or-block.md)): they are distinct things,
+with distinct ceilings, and uniting them would make a transient failure consume the convergence
+budget.
 
-Loops são declarados em arquivo, com regras próprias — os três tetos são configuráveis
-por loop.
+Loops are declared in a file, with their own rules — the three ceilings are configurable
+per loop.
 
-**Um gate pode carregar um artefato para revisão.** O caso claro é `spec`: ela produz o
-`contract`, e o gate `approve-spec` entrega esse contrato ao humano, que pode **aprovar,
-ajustar ou recusar**. Só a versão aprovada entra no contexto — e é ela que o `build`
-consome como `requires`.
+**A gate can carry an artifact for review.** The clear case is `spec`: it produces the
+`contract`, and the `approve-spec` gate delivers that contract to the human, who can **approve,
+adjust or reject**. Only the approved version enters the context — and it is the one that `build`
+consumes as `requires`.
 
-Isso faz do gate mais que uma pausa: ele é o ponto onde o humano **edita o artefato** que
-a etapa seguinte vai usar. Sem esse mecanismo, o `contract` seria produzido e nunca
-consumido, e a revisão humana aconteceria fora do sistema, sem deixar rastro.
+This makes the gate more than a pause: it is the point where the human **edits the artifact** that
+the next stage will use. Without this mechanism, the `contract` would be produced and never
+consumed, and the human review would happen outside the system, leaving no trace.
 
-- **aprovar** — o artefato entra no contexto como está;
-- **ajustar** — o humano edita; a versão editada é a que entra, e o ajuste fica
-  registrado no handoff;
-- **recusar** — o artefato não entra; a etapa que o produziu volta a rodar com a recusa
-  no contexto.
+- **approve** — the artifact enters the context as it is;
+- **adjust** — the human edits; the edited version is the one that enters, and the adjustment is
+  recorded in the handoff;
+- **reject** — the artifact does not enter; the stage that produced it runs again with the rejection
+  in the context.
 
-## O que não é etapa
+## What is not a stage
 
-Quatro coisas que existiam no fluxo anterior e não viraram estado:
+Four things that existed in the previous flow and did not become states:
 
-- **`prime`** e **`close`** são efeitos — carregar memória e gravar o resumo. Viram ações
-  de entrada e saída, não etapas.
-- **`triage-type`** é um predicado: decide se `diagnose` entra. Vira condição de
-  transição.
-- **`reread-issue`** existia só porque um modo de preparo pulava o `discovery`. Com
-  estado externo, a tarefa já chega carregada.
+- **`prime`** and **`close`** are effects — loading memory and writing the summary. They become
+  entry and exit actions, not stages.
+- **`triage-type`** is a predicate: it decides whether `diagnose` enters. It becomes a transition
+  condition.
+- **`reread-issue`** existed only because a preparation mode skipped `discovery`. With
+  external state, the task already arrives loaded.
 
-Um estado que não tem trabalho próprio não deveria ser um estado.
+A state that has no work of its own should not be a state.
 
-## Antes do fluxo
+## Before the flow
 
-O fluxo começa numa tarefa já escrita. Transformar demanda crua em tarefa executável é
-`luna refine`, um comando à parte — não uma etapa. Decidir **o quê** construir continua
-sendo trabalho do humano.
+The flow starts from an already written task. Turning a raw demand into an executable task is
+`luna refine`, a separate command — not a stage. Deciding **what** to build remains
+the human's work.

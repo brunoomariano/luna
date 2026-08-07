@@ -1,72 +1,71 @@
-# ADR-0018: O gating de ferramenta é hook que bloqueia, não instrução ao agente
+# ADR-0018: Tool gating is a blocking hook, not an instruction to the agent
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Cada papel declara `tools_allow` e `tools_deny` (ver
-[ADR-0017](0017-defaults-plus-customization-everywhere.md)). Falta decidir **como** essa
-declaração vira restrição de verdade.
+Each role declares `tools_allow` and `tools_deny` (see
+[ADR-0017](0017-defaults-plus-customization-everywhere.md)). What remains is deciding
+**how** that declaration becomes a real restriction.
 
-O estudo do SwarmForge (ver [referências](../references.md)) mostra a separação que
-importa: lá, o **transporte** tem enforcement mecânico — o script recusa mensagem
-malformada com exit 2 — enquanto a **política de trabalho** é só prosa no prompt, sem
-enforcement nenhum. Frases como *"trabalhe só no seu worktree"* ou *"não mande `note` sem
-autorização"* dependem inteiramente da aderência do modelo.
+The SwarmForge study (see [references](../references.md)) shows the separation that
+matters: there, the **transport** has mechanical enforcement — the script refuses a
+malformed message with exit 2 — while the **work policy** is only prose in the prompt, with
+no enforcement at all. Phrases like *"work only in your worktree"* or *"do not send `note`
+without authorization"* depend entirely on the model's adherence.
 
-É a mesma classe de falha que motiva o projeto inteiro (ver
-[ADR-0001](0001-flow-control-out-of-model.md)): instrução em prosa é sugestão. Um
-`reviewer` instruído a não editar arquivos vai quase sempre obedecer — e o "quase" é o
-que custa, porque quem escreve não revisar é uma separação que só vale se for garantida
-(ver [invariantes](../invariants/core.md), INV-core-7).
+It is the same class of failure that motivates the entire project (see
+[ADR-0001](0001-flow-control-out-of-model.md)): an instruction in prose is a suggestion. A
+`reviewer` instructed not to edit files will obey almost always — and the "almost" is what
+costs, because whoever writes not reviewing is a separation that only holds if it is
+guaranteed (see [invariants](../invariants/core.md), INV-core-7).
 
-## Decisão
+## Decision
 
-O `tools_deny` do papel é aplicado por **hook `PreToolUse` que bloqueia a chamada** antes
-de ela executar. A FSM restringe o toolset ao entrar na etapa; o agente não recebe a
-ferramenta proibida como algo que ele deveria evitar usar — ele simplesmente não
-consegue usá-la.
+The role's `tools_deny` is enforced by a **`PreToolUse` hook that blocks the call** before
+it executes. The FSM restricts the toolset upon entering the stage; the agent does not
+receive the forbidden tool as something it ought to avoid using — it simply cannot use it.
 
-O arquivo do papel tem um consumidor duplo: a FSM lê os metadados (`tools_allow`,
-`tools_deny`) para o gating mecânico, e o agente lê a prosa (`owns`, `not_owns`) para o
-julgamento. Uma fonte, dois usos.
+The role file has a double consumer: the FSM reads the metadata (`tools_allow`,
+`tools_deny`) for the mechanical gating, and the agent reads the prose (`owns`, `not_owns`)
+for judgment. One source, two uses.
 
-Este é um dos **três mecanismos de força** do desenho, e o único que é mecânico:
+This is one of the design's **three enforcement mechanisms**, and the only one that is
+mechanical:
 
-1. hooks `PreToolUse` que bloqueiam ferramenta fora da etapa — **mecânico**;
-2. reinjeção da regra a cada turno (`Re-read your role and constitution.`) — prosa;
-3. watchdog de inatividade (ver [ADR-0019](0019-inactivity-watchdog.md)) — mecânico, mas
-   detecta em vez de impedir.
+1. `PreToolUse` hooks that block a tool outside the stage — **mechanical**;
+2. re-injection of the rule at every turn (`Re-read your role and constitution.`) — prose;
+3. inactivity watchdog (see [ADR-0019](0019-inactivity-watchdog.md)) — mechanical, but it
+   detects instead of preventing.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Instruir o papel em prosa e confiar na aderência** — descartada porque é exatamente
-  a falha que o projeto existe para corrigir. Sob compactação prolongada os agentes
-  perdem a identidade de papel; uma regra que só existe no prompt some junto.
-- **Filtrar a saída depois** (deixar o agente editar e reverter o que não podia) —
-  descartada porque o efeito colateral já aconteceu quando a detecção roda, e porque
-  transforma uma restrição clara numa correção posterior frágil.
+- **Instruct the role in prose and trust adherence** — rejected because it is exactly the
+  failure the project exists to fix. Under prolonged compaction agents lose their role
+  identity; a rule that only exists in the prompt disappears with it.
+- **Filter the output afterwards** (let the agent edit and revert what it could not) —
+  rejected because the side effect has already happened by the time the detection runs, and
+  because it turns a clear restriction into a fragile later correction.
 
-## Consequências
+## Consequences
 
-- **Positivas:** a separação por negação deixa de depender de boa vontade do modelo.
-  Um `reviewer` sem `Edit` não é um `reviewer` orientado a não editar — é um que não
-  edita.
-- **Negativas / custos:** amarra a Luna à superfície de hooks de cada harness. Claude,
-  Codex e OpenCode expõem isso de formas diferentes, ou não expõem.
-- **Impactos:** cada harness suportado precisa de um adaptador de gating. Onde o harness
-  não oferece bloqueio pré-execução, o mecanismo degrada para prosa — e essa degradação
-  precisa ser visível, não silenciosa.
+- **Positive:** separation by denial stops depending on the model's goodwill. A `reviewer`
+  without `Edit` is not a `reviewer` oriented not to edit — it is one that does not edit.
+- **Negative / costs:** it ties Luna to each harness's hook surface. Claude, Codex and
+  OpenCode expose this in different ways, or do not expose it at all.
+- **Impacts:** each supported harness needs a gating adapter. Where the harness offers no
+  pre-execution blocking, the mechanism degrades to prose — and that degradation must be
+  visible, not silent.
 
-## Questão em aberto
+## Open question
 
-**Como o `tools_deny` vira gating real em cada harness** é o item mais concreto da lista
-de pendências do desenho, e só se resolve com código rodando contra cada CLI. Este ADR
-fixa o *princípio* (bloqueio mecânico, não instrução); o mecanismo por harness é
-implementação a decidir.
+**How `tools_deny` becomes real gating in each harness** is the most concrete item on the
+design's list of pending work, and it is only settled with code running against each CLI.
+This ADR fixes the *principle* (mechanical blocking, not instruction); the mechanism per
+harness is implementation still to be decided.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [invariantes](../invariants/core.md), [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [invariants](../invariants/core.md), [references](../references.md)

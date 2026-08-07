@@ -1,34 +1,34 @@
-# ADR-0012: Gate suspende e libera o slot
+# ADR-0012: A gate suspends and frees the slot
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Um gate para a tarefa e espera decisão humana. Com N tarefas em paralelo (ver
-[ADR-0003](0003-parallelism-between-tasks.md)), a forma dessa espera decide quantos
-recursos ficam parados enquanto o humano decide.
+A gate stops the task and waits for a human decision. With N tasks in parallel (see
+[ADR-0003](0003-parallelism-between-tasks.md)), the shape of that wait decides how many
+resources sit idle while the human decides.
 
-## Decisão
+## Decision
 
-O gate faz uma espera curta no terminal; sem resposta, **suspende** a tarefa e libera o
-slot. Outra tarefa usa o recurso enquanto você decide, e a aprovação retoma do ponto
-exato.
+The gate does a short wait in the terminal; with no answer, it **suspends** the task and
+frees the slot. Another task uses the resource while you decide, and approval resumes from
+the exact point.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Agente vivo esperando** — descartada porque com N tarefas em paralelo seriam N
-  processos parados, com contexto envelhecendo.
+- **A live agent waiting** — rejected because with N tasks in parallel there would be N
+  idle processes, with aging context.
 
-## Consequências
+## Consequences
 
-- **Positivas:** o recurso não fica preso à latência humana; nenhum contexto envelhece
-  esperando.
-- **Impactos:** exige que o estado suspenso seja retomável do ponto exato — o que o store
-  append-only (ver [ADR-0010](0010-append-only-sqlite-and-content-addressed-store.md))
-  sustenta.
+- **Positive:** the resource is not held hostage to human latency; no context ages while
+  waiting.
+- **Impacts:** it requires the suspended state to be resumable from the exact point — which
+  the append-only store (see
+  [ADR-0010](0010-append-only-sqlite-and-content-addressed-store.md)) supports.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [references](../references.md)

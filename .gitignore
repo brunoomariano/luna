@@ -6,21 +6,21 @@
 *.out
 coverage.out
 
-# Estado local
+# Local state
 *.db
 *.db-shm
 *.db-wal
 /.luna/
 
-# Segredos
+# Secrets
 config/*.env
 !config/*.env.example
 
-# Sistema
+# System
 .DS_Store
 
-# Ferramental local do desenvolvedor, não configuração do projeto: o marcador do
-# sandbox ai-jail e o escopo da memória durável. Ambos existem no worktree e são
-# necessários para operar aqui — só não pertencem ao repositório.
+# Local developer tooling, not project configuration: the ai-jail sandbox marker
+# and the durable-memory scope. Both exist in the worktree and are needed to work
+# here — they just do not belong in the repository.
 .ai-jail
 .ai-memory.toml

@@ -1,32 +1,32 @@
-# ADR-0014: Etapas condicionais
+# ADR-0014: Conditional stages
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-O fluxo padrão inclui etapas de revisão pesada — QA, code review, teste de mutação,
-revisão de arquitetura. Rodar todas em qualquer mudança, independente do tamanho, é
-possível, mas tem custo.
+The default flow includes heavy review stages — QA, code review, mutation testing,
+architecture review. Running all of them on any change, regardless of size, is possible,
+but it has a cost.
 
-## Decisão
+## Decision
 
-Etapas são **condicionais**: etapas de revisão pesada não rodam em tarefa trivial. Cada
-etapa declara a condição sob a qual entra no fluxo.
+Stages are **conditional**: heavy review stages do not run on a trivial task. Each stage
+declares the condition under which it enters the flow.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Rodar tudo sempre** — descartada porque teste de mutação numa mudança de uma linha é
-  cerimônia, e cerimônia treina o humano a ignorar o processo.
+- **Run everything always** — rejected because mutation testing on a one-line change is
+  ceremony, and ceremony trains the human to ignore the process.
 
-## Consequências
+## Consequences
 
-- **Positivas:** o custo de revisão acompanha o tamanho da mudança; o processo não perde
-  credibilidade por excesso de ritual.
-- **Impactos:** cada etapa precisa declarar sua condição, além do contrato de
-  `requires`/`produces`.
+- **Positive:** the cost of review follows the size of the change; the process does not
+  lose credibility through excess ritual.
+- **Impacts:** each stage must declare its condition, in addition to the
+  `requires`/`produces` contract.
 
-## Referências
+## References
 
-- Documentos relacionados: [etapas padrão](../architecture/stages.md),
-  [arquitetura](../architecture/overview.md)
+- Related documents: [default stages](../architecture/stages.md),
+  [architecture](../architecture/overview.md)

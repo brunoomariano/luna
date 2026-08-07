@@ -1,66 +1,66 @@
-# PRD <domínio>-NNNN: <título>
+# PRD <domain>-NNNN: <title>
 
-> Especificação de produto de uma feature. Documento datado: ver a regra de
-> obsolescência em [docs/README.md](../README.md#regra-de-obsolescência-e-atualização).
+> Product specification of a feature. Dated document: see the obsolescence rule
+> in [docs/README.md](../README.md#obsolescence-and-update-rule).
 >
-> **Identificador.** O arquivo se chama `<domínio>-NNNN-title.md` — o `<domínio>` é
-> o mesmo do path (`docs/PRDs/<domínio>/`, o termo do glossário) e `NNNN` é sequencial
-> zero-padded dentro daquele domínio (`0001`, `0002`…). O **nome do arquivo (slug) é em
-> inglês** — como todo path/ID da casa —, ainda que a prosa do PRD seja PT-BR. Ex.:
-> `docs/PRDs/alerts/alerts-0001-suppression-on-recovery.md`. É esse ID que o RFC, o ADR
-> e a issue referenciam para fechar a rastreabilidade.
+> **Identifier.** The file is named `<domain>-NNNN-title.md` — the `<domain>` is
+> the same as the path (`docs/PRDs/<domain>/`, the glossary term) and `NNNN` is a sequential
+> zero-padded number within that domain (`0001`, `0002`…). The **file name (slug) is in
+> English**, like the rest of the project. E.g.:
+> `docs/PRDs/alerts/alerts-0001-suppression-on-recovery.md`. It is this ID that the RFC, the ADR
+> and the issue reference to close the traceability.
 
-**Status:** NÃO IMPLEMENTADO | IMPLEMENTADO | OBSOLETO
-**Última revisão:** AAAA-MM-DD
-**Issue de origem:** <ID do rastreador, ex. ALERT-45> | —
+**Status:** NOT IMPLEMENTED | IMPLEMENTED | OBSOLETE
+**Last reviewed:** YYYY-MM-DD
+**Source issue:** <tracker ID, e.g. ALERT-45> | —
 **RFC:** [<rfc-NNNN>](../../RFCs/<rfc-NNNN>-title.md) | —
 
-## Visão geral
-Resumo simples da feature, em linguagem stakeholder-facing.
+## Overview
+Simple summary of the feature, in stakeholder-facing language.
 
-## Problema
-Qual dor do usuário ou do sistema está sendo resolvida.
+## Problem
+Which user or system pain is being solved.
 
-## Objetivo
-O que essa feature resolve ou melhora.
+## Goal
+What this feature solves or improves.
 
-## Fluxo funcional (Mermaid)
+## Functional flow (Mermaid)
 
 ```
 flowchart TD
-  A[Evento / Trigger] --> B[Processamento]
-  B --> C{Decisão}
-  C -->|Caminho A| D[Resultado A]
-  C -->|Caminho B| E[Resultado B]
+  A[Event / Trigger] --> B[Processing]
+  B --> C{Decision}
+  C -->|Path A| D[Result A]
+  C -->|Path B| E[Result B]
 ```
 
-## Comportamento esperado
-### Fluxo principal
+## Expected behavior
+### Main flow
 1.
 2.
 3.
 
-### Casos de borda
+### Edge cases
 -
 
-### Tratamento de erros
-- O que acontece em falhas
-- O que deve ser logado/observado
+### Error handling
+- What happens on failures
+- What must be logged/observed
 
-## Requisitos
-### Funcionais
+## Requirements
+### Functional
 - RF1:
 - RF2:
 
-### Não funcionais
+### Non-functional
 - RNF1:
 - RNF2:
 
-## Impactos no sistema
-- Serviços afetados:
-- Dados/persistência:
-- Observabilidade:
+## System impacts
+- Affected services:
+- Data/persistence:
+- Observability:
 
-## Plano de rollout
-- Flag de feature? (sim/não)
-- Estratégia de rollback:
+## Rollout plan
+- Feature flag? (yes/no)
+- Rollback strategy:

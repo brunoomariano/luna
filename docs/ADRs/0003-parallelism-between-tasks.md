@@ -1,32 +1,32 @@
-# ADR-0003: Paralelismo entre tarefas, não dentro
+# ADR-0003: Parallelism between tasks, not within
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Um orquestrador de agentes pode paralelizar em dois eixos: rodar várias tarefas ao mesmo
-tempo, ou rodar vários agentes concorrentes dentro da mesma tarefa. O sistema de
-referência escolheu o segundo, com worktree por agente e troca de mensagens entre eles.
+An agent orchestrator can parallelize along two axes: run several tasks at the same time,
+or run several concurrent agents within the same task. The reference system chose the
+second, with a worktree per agent and message passing between them.
 
-## Decisão
+## Decision
 
-O paralelismo é **entre tarefas**. Cada tarefa tem um lead e uma worktree; as etapas
-dentro dela são sequenciais.
+Parallelism is **between tasks**. Each task has one lead and one worktree; the stages
+within it are sequential.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Agentes concorrentes por papel dentro da mesma tarefa** — descartada porque exige
-  fila por papel e transporte de mensagens entre agentes vivos. É complexidade que só se
-  paga quando o gargalo é a tarefa individual — não é o nosso caso.
+- **Concurrent agents per role within the same task** — rejected because it requires a
+  queue per role and message transport between live agents. That is complexity that only
+  pays off when the bottleneck is the individual task — which is not our case.
 
-## Consequências
+## Consequences
 
-- **Positivas:** dispensa fila por papel e transporte entre agentes vivos; a FSM é o
-  único canal dentro da tarefa.
-- **Impactos:** a worktree passa a ser por tarefa, não por agente.
+- **Positive:** no need for a queue per role nor transport between live agents; the FSM is
+  the only channel within the task.
+- **Impacts:** the worktree becomes per task, not per agent.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [references](../references.md)

@@ -1,60 +1,61 @@
-# Alvos canônicos. `make` sozinho lista o que existe.
-# Não há `up`/`down`/`logs`/`clean_db`: a Luna é um CLI sem serviços nem banco de
-# desenvolvimento. Target no-op é cerimônia, e cerimônia treina a ignorar o processo.
+# Canonical targets. `make` on its own lists what exists.
+# There is no `up`/`down`/`logs`/`clean_db`: Luna is a CLI with no services and no
+# development database. A no-op target is ceremony, and ceremony trains people to
+# ignore the process.
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap doctor ci ci-check test lint lint-docs fmt build clean
 
-help: ## lista os alvos
+help: ## list the targets
 	@grep -E '^[a-z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-bootstrap: ## prepara o ambiente de desenvolvimento
-	@command -v mise >/dev/null && mise install || echo "(mise ausente — instale de https://mise.jdx.dev)"
-	@command -v go >/dev/null || { echo "go não encontrado — instale com mise"; exit 1; }
-	@go mod download 2>/dev/null || echo "(sem go.mod ainda — projeto em desenho)"
+bootstrap: ## prepare the development environment
+	@command -v mise >/dev/null && mise install || echo "(mise missing — install from https://mise.jdx.dev)"
+	@command -v go >/dev/null || { echo "go not found — install it with mise"; exit 1; }
+	@go mod download 2>/dev/null || echo "(no go.mod yet)"
 
-doctor: ## confere o ambiente sem instalar nada
-	@printf 'mise     '; command -v mise     >/dev/null && mise --version || echo '— ausente'
-	@printf 'go       '; command -v go       >/dev/null && go version || echo '— ausente'
-	@printf 'bd       '; command -v bd       >/dev/null && bd version || echo '— ausente (Beads)'
-	@printf 'sqlite3  '; command -v sqlite3  >/dev/null && sqlite3 --version || echo '— ausente'
+doctor: ## check the environment without installing anything
+	@printf 'mise     '; command -v mise     >/dev/null && mise --version || echo '— missing'
+	@printf 'go       '; command -v go       >/dev/null && go version || echo '— missing'
+	@printf 'bd       '; command -v bd       >/dev/null && bd version || echo '— missing (Beads)'
+	@printf 'sqlite3  '; command -v sqlite3  >/dev/null && sqlite3 --version || echo '— missing'
 
-# Cobertura mínima. Sobe conforme o motor cresce; não baixe para fazer passar.
+# Minimum coverage. Raise it as the engine grows; never lower it to make CI pass.
 COVER_MIN ?= 80
 
-fmt: ## formata o código (escreve)
+fmt: ## format the code (writes)
 	@go fmt ./...
 
-fmt-check: ## confere a formatação sem escrever
+fmt-check: ## check formatting without writing
 	@out=$$(gofmt -l src/); \
-	  if [ -n "$$out" ]; then echo "não formatado:"; echo "$$out"; exit 1; fi
+	  if [ -n "$$out" ]; then echo "not formatted:"; echo "$$out"; exit 1; fi
 
-lint: ## análise estática
+lint: ## static analysis
 	@go vet ./...
 
-test: ## testes
+test: ## run the tests
 	@go test ./...
 
-cover: ## testes com cobertura, falhando abaixo de COVER_MIN
+cover: ## tests with coverage, failing below COVER_MIN
 	@go test -coverprofile=coverage.out ./... >/dev/null
 	@go tool cover -func=coverage.out | tail -1
 	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
 	  gsub(/%/,"",$$3); \
-	  if ($$3+0 < min) { printf "cobertura %.1f%% abaixo do mínimo %d%%\n", $$3, min; exit 1 } }'
+	  if ($$3+0 < min) { printf "coverage %.1f%% below the %d%% minimum\n", $$3, min; exit 1 } }'
 
-lint-docs: ## valida a forma da suíte de docs (read-only)
+lint-docs: ## validate the shape of the docs suite (read-only)
 	@sh scripts/lint-docs.sh
 
-# ci corrige o que dá e depois verifica; ci-check SÓ verifica.
-# A distinção não é cosmética: ci-check é o que o CI remoto roda, e um passo de
-# CI que reformata o código esconde justamente o que deveria reprovar.
-ci-check: fmt-check lint lint-docs cover ## só verifica — o mesmo que o CI remoto roda
+# ci fixes what it can and then verifies; ci-check ONLY verifies.
+# The distinction is not cosmetic: ci-check is what remote CI runs, and a CI step
+# that reformats the code hides exactly what it should be failing on.
+ci-check: fmt-check lint lint-docs cover ## verify only — the same thing remote CI runs
 
-ci: fmt ci-check ## corrige o que dá, depois verifica. Rode antes do PR.
+ci: fmt ci-check ## fix what can be fixed, then verify. Run before opening a PR.
 
-build: ## compila o binário
+build: ## build the binary
 	@go build -o bin/luna ./src/cmd/luna
 
-clean: ## remove artefatos de build
+clean: ## remove build artifacts
 	@rm -f luna
 	@rm -rf dist/

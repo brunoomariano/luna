@@ -2,30 +2,31 @@ package fsm
 
 import "testing"
 
-// TestDefaultFlowHasNoContractGap é o teste que mais importa deste pacote.
+// TestDefaultFlowHasNoContractGap is the test that matters most in this package.
 //
-// Se o fluxo que a Luna traz instalado tiver uma exigência sem produtor, toda
-// tarefa que o percorrer vai travar — e travar na etapa errada, com o sintoma
-// deslocado da causa. Este teste pega isso no CI, antes de qualquer execução.
+// If the flow Luna ships with has a requirement without a producer, every task
+// walking it will stall — and stall on the wrong stage, with the symptom
+// displaced from the cause. This test catches that in CI, before any run.
 func TestDefaultFlowHasNoContractGap(t *testing.T) {
 	gaps := AuditContract(DefaultFlow())
 
 	if len(gaps) != 0 {
 		for _, g := range gaps {
-			t.Errorf("etapa %q exige %v, que nenhuma etapa anterior produz", g.Stage, g.Missing)
+			t.Errorf("stage %q requires %v, which no earlier stage produces", g.Stage, g.Missing)
 		}
 	}
 }
 
-// TestDefaultFlowMatchesDocumentedStages guarda a tabela de docs/architecture/stages.md.
+// TestDefaultFlowMatchesDocumentedStages guards the table in docs/architecture/stages.md.
 //
-// Não é contagem por contagem: uma etapa que suma de DefaultFlow sem sumir da
-// documentação deixa os dois divergentes, e a documentação é o contrato.
+// This is not counting for counting's sake: a stage that disappears from
+// DefaultFlow without disappearing from the documentation leaves the two out of
+// sync, and the documentation is the contract.
 func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	flow := DefaultFlow()
 
 	if len(flow) != 14 {
-		t.Errorf("quis 14 etapas conforme docs/architecture/stages.md, veio %d", len(flow))
+		t.Errorf("want 14 stages per docs/architecture/stages.md, got %d", len(flow))
 	}
 
 	want := []StageID{
@@ -34,19 +35,20 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	}
 	for i, id := range want {
 		if i >= len(flow) {
-			t.Fatalf("fluxo terminou antes de %q", id)
+			t.Fatalf("flow ended before %q", id)
 		}
 		if flow[i].ID != id {
-			t.Errorf("posição %d: quis %q, veio %q", i, id, flow[i].ID)
+			t.Errorf("position %d: want %q, got %q", i, id, flow[i].ID)
 		}
 	}
 }
 
-// TestAuditReportsAreNotFlowProducts cobre INV-core-11 no fluxo real.
+// TestAuditReportsAreNotFlowProducts covers INV-core-11 on the real flow.
 //
-// Os pareceres de qa, code-review, harden e architecture existem para uma pessoa
-// ler. Se algum deles virasse Produces, passaria a satisfazer Requires de outra
-// etapa e a distinção de ADR-0021 perderia o sentido no fluxo que mais importa.
+// The assessments from qa, code-review, harden and architecture exist for a
+// person to read. If one of them became a Produces, it would start satisfying
+// another stage's Requires and the distinction in ADR-0021 would lose its meaning
+// in the flow that matters most.
 func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 	reports := map[StageID]Artifact{
 		"qa":           "qa_report",
@@ -63,19 +65,19 @@ func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 			continue
 		}
 		if stage.ProducesArtifact(report) {
-			t.Errorf("%q: %q é artefato de auditoria e não deveria estar em Produces", stage.ID, report)
+			t.Errorf("%q: %q is an audit artifact and should not be in Produces", stage.ID, report)
 		}
 		if !stage.ProducesForHumanArtifact(report) {
-			t.Errorf("%q: quis %q em ProducesForHuman, veio %v", stage.ID, report, stage.ProducesForHuman)
+			t.Errorf("%q: want %q in ProducesForHuman, got %v", stage.ID, report, stage.ProducesForHuman)
 		}
 	}
 }
 
-// TestDefaultFlowConditionalStages guarda a coluna "Condição" da tabela.
+// TestDefaultFlowConditionalStages guards the "Condition" column of the table.
 //
-// Rodar teste de mutação num chore de uma linha é a cerimônia que ADR-0014
-// existe para cortar. Se uma condição se perder, o fluxo passa a rodar etapa
-// cara onde ela não se paga — e ninguém nota, porque o resultado continua certo.
+// Running a mutation test on a one-line chore is the ceremony ADR-0014 exists to
+// cut. If a condition gets lost, the flow starts running an expensive stage where
+// it does not pay off — and nobody notices, because the result stays correct.
 func TestDefaultFlowConditionalStages(t *testing.T) {
 	cases := []struct {
 		stage   StageID
@@ -93,7 +95,7 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 		{"harden", KindBug, true},
 		{"harden", KindDocs, false},
 		{"build", KindDocs, true},
-		{"architecture", KindFeature, false}, // sem o fato descoberto, não entra
+		{"architecture", KindFeature, false}, // without the discovered fact, it stays out
 	}
 
 	byID := map[StageID]Stage{}
@@ -104,10 +106,10 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 	for _, c := range cases {
 		stage, ok := byID[c.stage]
 		if !ok {
-			t.Fatalf("etapa %q não existe no fluxo padrão", c.stage)
+			t.Fatalf("stage %q does not exist in the default flow", c.stage)
 		}
 		if got := stage.AppliesTo(NewTaskContext(c.kind)); got != c.applies {
-			t.Errorf("%q com kind=%q: quis applies=%v, veio %v", c.stage, c.kind, c.applies, got)
+			t.Errorf("%q with kind=%q: want applies=%v, got %v", c.stage, c.kind, c.applies, got)
 		}
 	}
 }

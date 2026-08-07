@@ -1,9 +1,10 @@
-# Toolchain do projeto. `mise install` resolve tudo.
-# O Makefile (bootstrap/doctor) assume que estas ferramentas vêm daqui.
+# Project toolchain. `mise install` resolves everything.
+# The Makefile (bootstrap/doctor) assumes these tools come from here.
 
 [tools]
 go = "1.26"
 
-# Beads governa a ordem entre tarefas (ver docs/architecture/overview.md).
-# Não é dependência de build — só de execução — por isso fica fora do `[tools]`
-# obrigatório enquanto o núcleo não existe. `make doctor` reporta se falta.
+# Beads governs the order between tasks (see docs/architecture/overview.md).
+# It is not a build dependency — only a runtime one — so it stays out of the
+# mandatory `[tools]` while the core does not exist. `make doctor` reports if it
+# is missing.

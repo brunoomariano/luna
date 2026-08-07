@@ -1,23 +1,23 @@
-# Glossário: <área do domínio>
+# Glossary: <domain area>
 
-> Fonte única dos termos de **<área>**. Um termo, uma definição. Ver os padrões
-> em [docs/README.md](../README.md).
+> Single source for the terms of **<area>**. One term, one definition. See the standards
+> in [docs/README.md](../README.md).
 
-## <Termo>
+## <Term>
 
-**Definição.** O que o termo significa neste domínio, em uma ou duas frases, sem
-ambiguidade.
+**Definition.** What the term means in this domain, in one or two sentences, without
+ambiguity.
 
-**Não confundir com.** Termos próximos dos quais este se distingue (opcional).
+**Do not confuse with.** Nearby terms from which this one is distinguished (optional).
 
-**Onde aparece.** Apps, fluxos ou documentos onde o conceito é usado (opcional).
+**Where it appears.** Apps, flows or documents where the concept is used (optional).
 
 ---
 
-## <Outro termo>
+## <Another term>
 
-**Definição.**
+**Definition.**
 
-**Não confundir com.**
+**Do not confuse with.**
 
-**Onde aparece.**
+**Where it appears.**

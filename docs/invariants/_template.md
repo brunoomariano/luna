@@ -1,29 +1,29 @@
-# Invariantes: <área do domínio>
+# Invariants: <domain area>
 
-> Regras que **sempre** valem em **<área>**, independentemente de implementação.
-> São o contrato conceitual que qualquer código deve preservar. Documento vivo.
-> Ver os padrões em [docs/README.md](../README.md).
+> Rules that **always** hold in **<area>**, regardless of implementation.
+> They are the conceptual contract that any code must preserve. Living document.
+> See the standards in [docs/README.md](../README.md).
 
-## INV-<área>-1: <enunciado curto da regra>
+## INV-<area>-1: <short statement of the rule>
 
-**Regra.** O que sempre vale, afirmado como verdade do domínio (ex.: "um cliente
-ativo tem exatamente um usuário técnico").
+**Rule.** What always holds, stated as a truth of the domain (e.g.: "an active
+customer has exactly one technical user").
 
-**Por que vale.** A razão de negócio que torna a regra inegociável.
+**Why it holds.** The business reason that makes the rule non-negotiable.
 
-**Como é preservada.** Em alto nível, onde o sistema garante a regra (referencie
-[docs/architecture/](../architecture/) para o detalhe — não o repita aqui).
+**How it is preserved.** At a high level, where the system guarantees the rule (reference
+[docs/architecture/](../architecture/) for the detail — do not repeat it here).
 
-**O que a violaria.** O estado proibido — útil para testes e revisão.
+**What would violate it.** The forbidden state — useful for tests and review.
 
 ---
 
-## INV-<área>-2: <enunciado curto da regra>
+## INV-<area>-2: <short statement of the rule>
 
-**Regra.**
+**Rule.**
 
-**Por que vale.**
+**Why it holds.**
 
-**Como é preservada.**
+**How it is preserved.**
 
-**O que a violaria.**
+**What would violate it.**

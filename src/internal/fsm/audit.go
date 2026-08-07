@@ -1,27 +1,27 @@
 package fsm
 
-// ContractGap é uma etapa que exige artefatos que nenhuma etapa anterior produz.
-// Carrega a etapa e o que falta: uma mensagem que diz só "contrato quebrado"
-// custa uma sessão de depuração.
+// ContractGap is a stage requiring artifacts that no earlier stage produces.
+// It carries both the stage and what is missing: a message that only says
+// "broken contract" costs a debugging session.
 type ContractGap struct {
 	Stage   StageID
 	Missing []Artifact
 }
 
-// AuditContract percorre o fluxo em ordem e reporta toda etapa cujo Requires não
-// é satisfeito por alguma etapa anterior.
+// AuditContract walks the flow in order and reports every stage whose Requires
+// is not satisfied by some earlier stage.
 //
-// É a primeira das três verificações do contrato (INV-core-3), e a única que roda
-// sem executar nada: detecta fluxo quebrado *no papel*, antes de qualquer agente
-// ser chamado. As outras duas — de entrada e de saída — só podem falhar com a
-// tarefa já rodando.
+// This is the first of the contract's three checks (INV-core-3), and the only one
+// that runs without executing anything: it detects a flow broken *on paper*,
+// before any agent is called. The other two — on entry and on exit — can only
+// fail once the task is already running.
 //
-// ProducesForHuman deliberadamente não entra no conjunto disponível: um relatório
-// de auditoria é lido por uma pessoa, não consumido pelo fluxo, e satisfazer um
-// Requires com ele tornaria o campo decorativo (ADR-0021).
+// ProducesForHuman deliberately stays out of the available set: an audit report
+// is read by a person, not consumed by the flow, and satisfying a Requires with
+// one would make the field decorative (ADR-0021).
 //
-// A ordem é o que se verifica, não a existência: um artefato produzido depois da
-// etapa que o exige não a satisfaz.
+// Order is what gets checked, not existence: an artifact produced after the stage
+// that requires it does not satisfy that stage.
 func AuditContract(flow []Stage) []ContractGap {
 	available := map[Artifact]bool{TaskID: true}
 	var gaps []ContractGap
@@ -38,9 +38,9 @@ func AuditContract(flow []Stage) []ContractGap {
 	return gaps
 }
 
-// missingFrom devolve os artefatos exigidos que ainda não estão disponíveis,
-// preservando a ordem da declaração — quem lê o relatório compara com o contrato
-// que escreveu.
+// missingFrom returns the required artifacts that are not available yet, keeping
+// declaration order — whoever reads the report compares it against the contract
+// they wrote.
 func missingFrom(required []Artifact, available map[Artifact]bool) []Artifact {
 	var missing []Artifact
 	for _, r := range required {

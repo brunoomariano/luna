@@ -1,75 +1,75 @@
-# Registros de decisão (ADR)
+# Decision records (ADR)
 
-Esta pasta guarda os **Architecture Decision Records** do projeto: o registro de
-*por que* tomamos cada decisão técnica ou de produto relevante, no contexto do
-momento em que foi tomada. Ver os padrões gerais em [docs/README.md](../README.md).
+This folder holds the project's **Architecture Decision Records**: the record of
+*why* we took each relevant technical or product decision, in the context of the
+moment it was taken. See the general standards in [docs/README.md](../README.md).
 
-## O que é um ADR
+## What an ADR is
 
-Um ADR captura uma decisão única e significativa — uma escolha estrutural, de
-contrato, de processo ou de produto cujo *porquê* vale preservar. Não é
-documentação do estado atual (isso é [arquitetura](../architecture/)); é o
-registro datado da decisão que levou a ele.
+An ADR captures a single significant decision — a structural, contract, process or
+product choice whose *why* is worth preserving. It is not documentation of the
+current state (that is [architecture](../architecture/)); it is the dated record of
+the decision that led to it.
 
-Registre um ADR quando a decisão:
-- afeta a estrutura, um contrato ou um limite do sistema;
-- tem alternativas reais que foram descartadas;
-- seria custosa ou confusa de reverter sem entender o motivo original.
+Record an ADR when the decision:
+- affects the structure, a contract or a boundary of the system;
+- has real alternatives that were discarded;
+- would be costly or confusing to reverse without understanding the original reason.
 
-Não registre ADR para escolhas triviais ou reversíveis sem custo.
+Do not record an ADR for trivial choices, or ones reversible at no cost.
 
-## Convenção
+## Convention
 
-- **Imutável.** Um ADR aceito **nunca é editado**. Ele é o registro de um momento.
-  Mudou a decisão? Crie um ADR novo (ver abaixo).
-- **Numerado.** Arquivos seguem `NNNN-title-in-kebab.md`, com `NNNN` sequencial
-  e zero-padded a partir de `0001`. O `0000-template.md` é o modelo e não conta
-  como decisão.
-- **Status.** Todo ADR carrega um status no topo:
-  - `Proposto` — em discussão, ainda não decidido.
-  - `Aceito` — decisão vigente.
-  - `Substituído por [ADR-NNNN](NNNN-title.md)` — revisado por um ADR posterior.
-  - `Rejeitado` — proposta avaliada e não adotada (mantida pelo registro).
+- **Immutable.** An accepted ADR is **never edited**. It is the record of a moment.
+  Did the decision change? Create a new ADR (see below).
+- **Numbered.** Files follow `NNNN-title-in-kebab.md`, with `NNNN` sequential and
+  zero-padded from `0001`. The `0000-template.md` is the model and does not count as
+  a decision.
+- **Status.** Every ADR carries a status at the top:
+  - `Proposed` — under discussion, not decided yet.
+  - `Accepted` — the decision in force.
+  - `Superseded by [ADR-NNNN](NNNN-title.md)` — revised by a later ADR.
+  - `Rejected` — a proposal evaluated and not adopted (kept for the record).
 
-## Como adicionar um ADR
+## How to add an ADR
 
-1. Copie `0000-template.md` para `NNNN-title.md`, usando o próximo número livre.
-2. Preencha contexto, decisão e consequências. Comece em `Proposto`.
-3. Ao bater o martelo, mude o status para `Aceito`.
+1. Copy `0000-template.md` to `NNNN-title.md`, using the next free number.
+2. Fill in context, decision and consequences. Start at `Proposed`.
+3. When the call is made, change the status to `Accepted`.
 
-## Como substituir uma decisão
+## How to supersede a decision
 
-1. Crie um **novo** ADR descrevendo a decisão revista e o motivo da mudança.
-2. No ADR antigo, troque o status para
-   `Substituído por [ADR-NNNN](NNNN-title.md)` — **essa é a única edição
-   permitida** num ADR aceito.
-3. Atualize a [arquitetura](../architecture/) viva para refletir o novo estado.
+1. Create a **new** ADR describing the revised decision and the reason for the change.
+2. In the old ADR, change the status to
+   `Superseded by [ADR-NNNN](NNNN-title.md)` — **that is the only edit allowed** in an
+   accepted ADR.
+3. Update the living [architecture](../architecture/) to reflect the new state.
 
-## Índice
+## Index
 
-<!-- Liste os ADRs aqui conforme forem criados, do mais recente ao mais antigo. -->
-<!-- - [ADR-0001](0001-title.md) — <título> — `Aceito` -->
+<!-- List the ADRs here as they are created, from newest to oldest. -->
+<!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
-- [ADR-0023](0023-three-separate-loop-ceilings.md) — O loop tem três tetos contados separadamente — `Aceito`
-- [ADR-0022](0022-gate-carries-artifact-for-review.md) — O gate carrega o artefato, e o humano pode ajustá-lo — `Aceito`
-- [ADR-0021](0021-produces-for-human-is-a-separate-contract-field.md) — O que só o humano lê é campo próprio do contrato — `Aceito`
-- [ADR-0020](0020-review-finding-invalidates-green.md) — Achado alinhado invalida o verde ao voltar para build — `Aceito`
-- [ADR-0019](0019-inactivity-watchdog.md) — Watchdog de inatividade vigia o trabalho, não a janela — `Aceito`
-- [ADR-0018](0018-tool-gating-by-pretooluse-hook.md) — O gating de ferramenta é hook que bloqueia, não instrução ao agente — `Aceito`
-- [ADR-0017](0017-defaults-plus-customization-everywhere.md) — Padrão + customização, em tudo — `Aceito`
-- [ADR-0016](0016-cli-first.md) — CLI primeiro — `Aceito`
-- [ADR-0015](0015-core-knows-no-issue-tracker.md) — O núcleo não conhece rastreador de issues — `Aceito`
-- [ADR-0014](0014-conditional-stages.md) — Etapas condicionais — `Aceito`
-- [ADR-0013](0013-named-gate-profiles-per-task.md) — Perfis de gate nomeados, escolhidos por tarefa — `Aceito`
-- [ADR-0012](0012-gate-suspends-and-frees-the-slot.md) — Gate suspende e libera o slot — `Aceito`
-- [ADR-0011](0011-failure-retry-rollback-or-block.md) — Falha: tentar até 2, depois bloquear com aviso — `Aceito`
-- [ADR-0010](0010-append-only-sqlite-and-content-addressed-store.md) — SQLite append-only + store endereçado por conteúdo — `Aceito`
-- [ADR-0009](0009-go.md) — Go como linguagem de implementação — `Aceito`
-- [ADR-0008](0008-system-generated-payload.md) — O payload é gerado pelo sistema — `Aceito`
-- [ADR-0007](0007-handoff-carries-pointers-and-snapshot.md) — O handoff carrega ponteiros e snapshot, não resumo — `Aceito`
-- [ADR-0006](0006-fresh-context-per-stage.md) — Contexto novo a cada etapa — `Aceito`
-- [ADR-0005](0005-validate-output-by-running-the-tool.md) — A saída é validada rodando a ferramenta — `Aceito`
-- [ADR-0004](0004-stage-requires-produces-contract.md) — Cada etapa declara `requires` e `produces` — `Aceito`
-- [ADR-0003](0003-parallelism-between-tasks.md) — Paralelismo entre tarefas, não dentro — `Aceito`
-- [ADR-0002](0002-hybrid-lead.md) — O lead é híbrido, não puramente determinístico — `Aceito`
-- [ADR-0001](0001-flow-control-out-of-model.md) — O controle de fluxo sai do modelo — `Aceito`
+- [ADR-0023](0023-three-separate-loop-ceilings.md) — The loop has three ceilings counted separately — `Accepted`
+- [ADR-0022](0022-gate-carries-artifact-for-review.md) — The gate carries the artifact, and the human can adjust it — `Accepted`
+- [ADR-0021](0021-produces-for-human-is-a-separate-contract-field.md) — What only the human reads is a contract field of its own — `Accepted`
+- [ADR-0020](0020-review-finding-invalidates-green.md) — An aligned finding invalidates the green when going back to build — `Accepted`
+- [ADR-0019](0019-inactivity-watchdog.md) — The inactivity watchdog watches the work, not the window — `Accepted`
+- [ADR-0018](0018-tool-gating-by-pretooluse-hook.md) — Tool gating is a blocking hook, not an instruction to the agent — `Accepted`
+- [ADR-0017](0017-defaults-plus-customization-everywhere.md) — Defaults + customization, everywhere — `Accepted`
+- [ADR-0016](0016-cli-first.md) — CLI first — `Accepted`
+- [ADR-0015](0015-core-knows-no-issue-tracker.md) — The core knows no issue tracker — `Accepted`
+- [ADR-0014](0014-conditional-stages.md) — Conditional stages — `Accepted`
+- [ADR-0013](0013-named-gate-profiles-per-task.md) — Named gate profiles, chosen per task — `Accepted`
+- [ADR-0012](0012-gate-suspends-and-frees-the-slot.md) — A gate suspends and frees the slot — `Accepted`
+- [ADR-0011](0011-failure-retry-rollback-or-block.md) — Failure — retry up to 2, then block with a notice — `Accepted`
+- [ADR-0010](0010-append-only-sqlite-and-content-addressed-store.md) — Append-only SQLite + content-addressed store — `Accepted`
+- [ADR-0009](0009-go.md) — Go as the implementation language — `Accepted`
+- [ADR-0008](0008-system-generated-payload.md) — The payload is generated by the system — `Accepted`
+- [ADR-0007](0007-handoff-carries-pointers-and-snapshot.md) — The handoff carries pointers and a snapshot, not a summary — `Accepted`
+- [ADR-0006](0006-fresh-context-per-stage.md) — Fresh context at every stage — `Accepted`
+- [ADR-0005](0005-validate-output-by-running-the-tool.md) — Output is validated by running the tool — `Accepted`
+- [ADR-0004](0004-stage-requires-produces-contract.md) — Every stage declares `requires` and `produces` — `Accepted`
+- [ADR-0003](0003-parallelism-between-tasks.md) — Parallelism between tasks, not within — `Accepted`
+- [ADR-0002](0002-hybrid-lead.md) — The lead is hybrid, not purely deterministic — `Accepted`
+- [ADR-0001](0001-flow-control-out-of-model.md) — Flow control leaves the model — `Accepted`

@@ -1,68 +1,68 @@
-# ADR-0023: O loop tem três tetos contados separadamente
+# ADR-0023: The loop has three ceilings counted separately
 
-**Status:** Aceito
-**Data:** 2026-08-07
+**Status:** Accepted
+**Date:** 2026-08-07
 
-## Contexto
+## Context
 
-O loop de convergência (`build` → `refactor` → `verify`) precisa de teto, senão é o loop
-que não converge e queima tokens — o mesmo motivo que descartou o retry infinito em
-[ADR-0011](0011-failure-retry-rollback-or-block.md).
+The convergence loop (`build` → `refactor` → `verify`) needs a ceiling, otherwise it is the
+loop that does not converge and burns tokens — the same reason that rejected infinite retry
+in [ADR-0011](0011-failure-retry-rollback-or-block.md).
 
-O protótipo usa **um contador só** (`loop`), incrementado tanto por falha de nó quanto
-por volta de revisão, e zerado a cada etapa que fecha. É simplificação de protótipo: o
-desenho original previa três limites distintos, que a simplificação fundiu.
+The prototype uses **a single counter** (`loop`), incremented both by node failure and by
+review round, and reset at every stage that closes. It is a prototype simplification: the
+original design foresaw three distinct limits, which the simplification merged.
 
-Um contador único esconde a diferença entre patologias que pedem respostas diferentes:
-um loop que gira quatro vezes **progredindo** é saudável e deve continuar; um que gira
-duas vezes **sem produzir mudança funcional** está travado; um que alterna entre os
-mesmos dois estados está desfazendo o próprio trabalho.
+A single counter hides the difference between pathologies that call for different answers: a
+loop that spins four times **making progress** is healthy and should continue; one that
+spins twice **without producing functional change** is stuck; one that alternates between
+the same two states is undoing its own work.
 
-## Decisão
+## Decision
 
-Três tetos, contados e configurados separadamente por loop:
+Three ceilings, counted and configured separately per loop:
 
-| Teto | Conta | Detecta |
+| Ceiling | Counts | Detects |
 |---|---|---|
-| `max_rounds` | voltas totais | o loop que não termina |
-| `no_progress_rounds` | voltas seguidas sem mudança funcional | o loop que gira sem produzir |
-| `oscillation_rounds` | voltas seguidas alternando entre os mesmos estados | o loop que desfaz o que acabou de fazer |
+| `max_rounds` | total rounds | the loop that does not end |
+| `no_progress_rounds` | consecutive rounds with no functional change | the loop that spins without producing |
+| `oscillation_rounds` | consecutive rounds alternating between the same states | the loop that undoes what it just did |
 
-Estourado **qualquer um**, o loop **abre um gate** — não bloqueia. A distinção importa: o
-loop que não converge não é falha do nó, é decisão a tomar, e o humano tem o histórico
-para tomá-la.
+Once **any one** is blown, the loop **opens a gate** — it does not block. The distinction
+matters: a loop that does not converge is not a node failure, it is a decision to be taken,
+and the human has the history to take it.
 
-O contador de volta de loop é **separado do contador de retry de falha** (ADR-0011). São
-naturezas distintas: retry responde a um nó que quebrou; volta de loop responde a
-trabalho que ainda não convergiu. Uni-los faria uma falha transitória consumir orçamento
-de convergência.
+The loop round counter is **separate from the failure retry counter** (ADR-0011). They are
+distinct in nature: retry answers a node that broke; a loop round answers work that has not
+converged yet. Merging them would make a transient failure consume the convergence budget.
 
-`no_progress_rounds` vem do amortecedor observado no SwarmForge (ver
-[referências](../references.md)): *"não produziu mudança funcional"* como condição de
-parada, em vez de só contagem de voltas.
+`no_progress_rounds` comes from the damper observed in SwarmForge (see
+[references](../references.md)): *"produced no functional change"* as a stopping condition,
+instead of just counting rounds.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Um contador só, como no protótipo** — descartada porque força um teto único a
-  arbitrar três situações diferentes. Baixo demais, mata loop saudável que estava
-  progredindo; alto demais, deixa o loop travado girar até o limite.
-- **Só `max_rounds`** — descartada porque a contagem de voltas não distingue progresso de
-  estagnação. Quatro voltas produtivas e quatro voltas idênticas somam o mesmo número.
-- **Bloquear em vez de abrir gate** — descartada porque não convergir não é anomalia do
-  nó, e `blocked` é o estado de anomalia. Um loop que atingiu o teto tem informação útil
-  para o humano decidir se continua, aborta ou muda o rumo.
+- **A single counter, as in the prototype** — rejected because it forces one ceiling to
+  arbitrate three different situations. Too low, it kills a healthy loop that was making
+  progress; too high, it lets the stuck loop spin up to the limit.
+- **Only `max_rounds`** — rejected because counting rounds does not distinguish progress
+  from stagnation. Four productive rounds and four identical rounds add up to the same
+  number.
+- **Blocking instead of opening a gate** — rejected because failing to converge is not a
+  node anomaly, and `blocked` is the anomaly state. A loop that hit the ceiling has useful
+  information for the human to decide whether to continue, abort or change course.
 
-## Consequências
+## Consequences
 
-- **Positivas:** cada patologia é detectada pelo sinal que a caracteriza. O gate em vez do
-  bloqueio mantém a decisão com quem pode tomá-la.
-- **Negativas / custos:** exige definir o que conta como "mudança funcional" — a mesma
-  pergunta que o SwarmForge responde de forma grosseira (mudança só de manifesto não
-  conta). É calibração que só o uso resolve.
-- **Impactos:** o estado do loop deixa de ser um inteiro e passa a carregar as três
-  contagens mais o suficiente para detectar oscilação (os últimos estados visitados).
+- **Positive:** each pathology is detected by the signal that characterizes it. The gate
+  instead of the block keeps the decision with whoever can take it.
+- **Negative / costs:** it requires defining what counts as "functional change" — the same
+  question SwarmForge answers coarsely (a manifest-only change does not count). It is
+  calibration that only use resolves.
+- **Impacts:** the loop state stops being an integer and comes to carry the three counts
+  plus enough to detect oscillation (the last visited states).
 
-## Referências
+## References
 
-- Documentos relacionados: [etapas padrão](../architecture/stages.md),
-  [referências](../references.md)
+- Related documents: [default stages](../architecture/stages.md),
+  [references](../references.md)

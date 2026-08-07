@@ -1,37 +1,37 @@
-# ADR-0007: O handoff carrega ponteiros e snapshot, não resumo
+# ADR-0007: The handoff carries pointers and a snapshot, not a summary
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Com contexto novo a cada etapa (ver [ADR-0006](0006-fresh-context-per-stage.md)), o
-handoff é a única ponte entre etapas. O que ele carrega determina se o receptor vê o
-estado real ou a interpretação de outro agente sobre ele.
+With fresh context at every stage (see [ADR-0006](0006-fresh-context-per-stage.md)), the
+handoff is the only bridge between stages. What it carries determines whether the receiver
+sees the real state or another agent's interpretation of it.
 
-## Decisão
+## Decision
 
-O handoff carrega **ponteiros** — identificador da tarefa, etapa de origem, artefatos
-produzidos, decisões de gate anteriores — e um **snapshot endereçado por conteúdo**: o
-hash do que existia no momento do handoff, para que o receptor veja exatamente o que o
-emissor viu, mesmo se a worktree mudou depois.
+The handoff carries **pointers** — task identifier, source stage, produced artifacts,
+earlier gate decisions — and a **content-addressed snapshot**: the hash of what existed at
+the moment of the handoff, so that the receiver sees exactly what the sender saw, even if
+the worktree changed afterwards.
 
-O snapshot endereçado por conteúdo dá a imutabilidade que um commit daria, sem amarrar o
-transporte ao versionamento.
+The content-addressed snapshot gives the immutability a commit would give, without tying
+the transport to versioning.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Resumo em prosa do que a etapa fez** — descartada porque reintroduz interpretação na
-  cadeia, que é justamente a degradação que se quer eliminar.
-- **Git como canal** — funciona (é o que o sistema de referência faz), mas descartada
-  porque amarra o transporte ao versionamento.
+- **A prose summary of what the stage did** — rejected because it reintroduces
+  interpretation into the chain, which is precisely the degradation we want to eliminate.
+- **Git as the channel** — it works (it is what the reference system does), but rejected
+  because it ties the transport to versioning.
 
-## Consequências
+## Consequences
 
-- **Positivas:** o receptor lê o estado real; ninguém interpreta para ele.
-- **Impactos:** exige um store de conteúdo endereçado por hash para os snapshots.
+- **Positive:** the receiver reads the real state; nobody interprets it for them.
+- **Impacts:** it requires a hash-addressed content store for the snapshots.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [references](../references.md)

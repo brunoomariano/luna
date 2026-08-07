@@ -1,36 +1,33 @@
-# ADR-0010: SQLite append-only + store endereçado por conteúdo
+# ADR-0010: Append-only SQLite + content-addressed store
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-O estado da FSM precisa sobreviver a reinício e servir de auditoria da tarefa. O sistema
-de referência usa arquivos como estado — a localização do arquivo é o estado, e toda
-transição é um rename. É elegante e inspecionável, mas o nosso estado tem relações e
-consultas.
+The FSM state must survive a restart and serve as the task's audit trail. The reference
+system uses files as state — the file's location is the state, and every transition is a
+rename. It is elegant and inspectable, but our state has relations and queries.
 
-## Decisão
+## Decision
 
-O estado da FSM vive em **SQLite append-only**, sem `UPDATE`: o histórico é a auditoria.
-Transições são atômicas — matar o processo e religar reconstrói o estado exato, porque
-ele nunca esteve só em memória. Os snapshots de handoff vivem num **store endereçado por
-conteúdo**.
+The FSM state lives in **append-only SQLite**, without `UPDATE`: the history is the audit
+trail. Transitions are atomic — killing the process and starting it again rebuilds the
+exact state, because it was never only in memory. Handoff snapshots live in a
+**content-addressed store**.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Arquivos como estado** (o que o sistema de referência faz) — elegante e
-  inspecionável, mas descartada porque fica caro quando o estado tem relações e
-  consultas.
+- **Files as state** (what the reference system does) — elegant and inspectable, but
+  rejected because it gets expensive when the state has relations and queries.
 
-## Consequências
+## Consequences
 
-- **Positivas:** reinício seguro por transição atômica; o log de transições é auditoria
-  completa, sem esforço extra.
-- **Impactos:** nenhum caminho de escrita pode usar `UPDATE` — é regra permanente do
-  store.
+- **Positive:** safe restart through atomic transitions; the transition log is a complete
+  audit trail, with no extra effort.
+- **Impacts:** no write path may use `UPDATE` — it is a permanent rule of the store.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [references](../references.md)

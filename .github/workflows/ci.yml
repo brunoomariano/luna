@@ -14,5 +14,5 @@ jobs:
         with:
           go-version: stable
           cache: true
-      # Espelha exatamente o `make ci-check` local: o que passa aqui passa lá.
+      # Mirrors the local `make ci-check` exactly: what passes here passes there.
       - run: make ci-check

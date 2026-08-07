@@ -1,19 +1,19 @@
-// Package fsm é o motor da Luna: etapas, contrato e transições.
+// Package fsm is Luna's engine: stages, contract and transitions.
 //
-// A FSM decide qual etapa vem agora; o modelo trabalha dentro dela. Ver
-// docs/invariants/core.md (INV-core-1) e docs/ADRs/0001-flow-control-out-of-model.md.
+// The FSM decides which stage comes next; the model works inside it. See
+// docs/invariants/core.md (INV-core-1) and docs/ADRs/0001-flow-control-out-of-model.md.
 package fsm
 
-// Artifact identifica um produto do fluxo — o que uma etapa exige para começar
-// ou entrega ao terminar. É string nomeada, e não string crua, para que o
-// compilador separe "nome de artefato" de qualquer outro texto que ande junto.
+// Artifact identifies a product of the flow — what a stage requires to start or
+// delivers when it finishes. It is a named string rather than a raw one so the
+// compiler keeps "artifact name" apart from any other text travelling with it.
 type Artifact string
 
-// StageID identifica uma etapa dentro de um fluxo.
+// StageID identifies a stage within a flow.
 type StageID string
 
-// TaskKind é a natureza da tarefa. Governa quais etapas condicionais entram no
-// fluxo — ver docs/ADRs/0014-conditional-stages.md.
+// TaskKind is the nature of the task. It governs which conditional stages enter
+// the flow — see docs/ADRs/0014-conditional-stages.md.
 type TaskKind string
 
 const (
@@ -23,36 +23,38 @@ const (
 	KindDocs    TaskKind = "docs"
 )
 
-// TaskID é a raiz do grafo de artefatos: o único insumo que nenhuma etapa
-// produz, porque a tarefa já chega com ele.
+// TaskID is the root of the artifact graph: the only input no stage produces,
+// because the task already arrives carrying it.
 const TaskID Artifact = "task_id"
 
-// Fact é algo descoberto sobre a tarefa **durante** a execução — diferente de
-// TaskKind, que ela carrega desde o intake. É o que permite a uma etapa
-// condicional depender do que o trabalho revelou, não só do que se sabia antes
-// de começar.
+// Fact is something discovered about the task **during** execution — unlike
+// TaskKind, which it carries from intake onwards. It is what lets a conditional
+// stage depend on what the work revealed, not only on what was known before it
+// started.
 type Fact string
 
-// TouchesStructure marca que a mudança mexeu na estrutura do sistema. Só se sabe
-// olhando o que o build produziu, e é a condição de entrada de `architecture`.
+// TouchesStructure marks that the change altered the system's structure. It is
+// only knowable by looking at what build produced, and it is the entry condition
+// for the architecture stage.
 const TouchesStructure Fact = "touches_structure"
 
-// TaskContext é o que uma condição de etapa consulta para decidir se entra no
-// fluxo: a natureza da tarefa, os artefatos já produzidos e os fatos descobertos
-// ao longo da execução.
+// TaskContext is what a stage condition consults to decide whether it enters the
+// flow: the nature of the task, the artifacts produced so far, and the facts
+// discovered along the way.
 //
-// Existe um tipo em vez de passar TaskKind solto porque nem toda condição é
-// natureza da tarefa. `diagnose` depende do kind, sabido no intake;
-// `architecture` depende de a mudança ter tocado a estrutura, o que só se sabe
-// depois do build. Um único parâmetro serve as duas sem duplicar o mecanismo.
+// It exists as a type instead of passing TaskKind alone because not every
+// condition is about the nature of the task. diagnose depends on the kind, known
+// at intake; architecture depends on the change having touched the structure,
+// which is only known after build. A single parameter serves both without
+// duplicating the mechanism.
 type TaskContext struct {
 	Kind      TaskKind
 	Artifacts map[Artifact]bool
 	Facts     map[Fact]bool
 }
 
-// NewTaskContext monta um contexto para uma tarefa que está começando: só o
-// kind, sem artefato produzido nem fato descoberto.
+// NewTaskContext builds a context for a task that is just starting: the kind
+// only, with no artifact produced and no fact discovered.
 func NewTaskContext(kind TaskKind) TaskContext {
 	return TaskContext{
 		Kind:      kind,
@@ -61,64 +63,64 @@ func NewTaskContext(kind TaskKind) TaskContext {
 	}
 }
 
-// HasFact informa se o fato foi descoberto. Consulta segura em contexto de mapa
-// nil — uma condição não deveria precisar saber se alguém inicializou o mapa.
+// HasFact reports whether the fact was discovered. Safe to call on a context with
+// nil maps — a condition should not have to know whether someone initialised them.
 func (c TaskContext) HasFact(f Fact) bool {
 	return c.Facts[f]
 }
 
-// HasArtifact informa se o artefato já está disponível no contexto.
+// HasArtifact reports whether the artifact is already available in the context.
 func (c TaskContext) HasArtifact(a Artifact) bool {
 	return c.Artifacts[a]
 }
 
-// Stage é o contrato de uma etapa: o que ela exige para começar e o que entrega
-// ao terminar.
+// Stage is a stage's contract: what it requires to start and what it delivers
+// when it finishes.
 //
-// Produces e ProducesForHuman são campos distintos de propósito. O primeiro é
-// consumido por alguma etapa adiante e entra na verificação estática; o segundo
-// é lido por uma pessoa e é isento dela — não é defeito ninguém consumi-lo. Ver
-// docs/ADRs/0021-produces-for-human-is-a-separate-contract-field.md.
+// Produces and ProducesForHuman are separate fields on purpose. The first is
+// consumed by some later stage and takes part in the static check; the second is
+// read by a person and is exempt from it — nobody consuming it is not a defect.
+// See docs/ADRs/0021-produces-for-human-is-a-separate-contract-field.md.
 type Stage struct {
 	ID   StageID
 	Role string
 
-	// Requires é o que precisa estar no contexto para a etapa começar.
+	// Requires is what must be in the context for the stage to start.
 	Requires []Artifact
 
-	// Produces é o que o fluxo consome. Verificado na saída e na estática.
+	// Produces is what the flow consumes. Checked on exit and by the static check.
 	Produces []Artifact
 
-	// ProducesForHuman é o que só uma pessoa lê: relatórios, pareceres,
-	// diagnósticos. Verificado na saída como Produces, isento da estática.
+	// ProducesForHuman is what only a person reads: reports, assessments,
+	// diagnoses. Checked on exit like Produces, exempt from the static check.
 	ProducesForHuman []Artifact
 
-	// When decide se a etapa entra no fluxo. Nil significa incondicional.
+	// When decides whether the stage enters the flow. Nil means unconditional.
 	//
-	// Recebe o contexto inteiro, não só o kind: nem toda condição é natureza da
-	// tarefa. `diagnose` olha o kind; `architecture` olha um fato descoberto
-	// durante a execução.
+	// It receives the whole context rather than just the kind: not every
+	// condition is about the nature of the task. diagnose looks at the kind;
+	// architecture looks at a fact discovered during execution.
 	When func(TaskContext) bool
 }
 
-// ProducesArtifact informa se a etapa entrega o artefato para o fluxo consumir.
-// ProducesForHuman não conta: um relatório de auditoria não satisfaz o Requires
-// de ninguém (INV-core-11).
+// ProducesArtifact reports whether the stage delivers the artifact for the flow
+// to consume. ProducesForHuman does not count: an audit report satisfies nobody's
+// Requires (INV-core-11).
 func (s Stage) ProducesArtifact(a Artifact) bool {
 	return containsArtifact(s.Produces, a)
 }
 
-// ProducesForHumanArtifact informa se a etapa entrega o artefato para leitura
-// humana. Separado de ProducesArtifact porque a pergunta é outra: aqui não se
-// checa disponibilidade para o fluxo, e sim se a etapa se comprometeu a entregar
-// um parecer.
+// ProducesForHumanArtifact reports whether the stage delivers the artifact for a
+// person to read. Separate from ProducesArtifact because the question differs:
+// this one is not about availability to the flow, but about whether the stage
+// committed to delivering an assessment.
 func (s Stage) ProducesForHumanArtifact(a Artifact) bool {
 	return containsArtifact(s.ProducesForHuman, a)
 }
 
-// containsArtifact é busca linear porque as listas de um contrato de etapa têm
-// meia dúzia de itens — um índice custaria mais em alocação do que economiza em
-// comparação.
+// containsArtifact is a linear scan because a stage contract's lists hold half a
+// dozen items — an index would cost more in allocation than it saves in
+// comparison.
 func containsArtifact(list []Artifact, want Artifact) bool {
 	for _, a := range list {
 		if a == want {
@@ -128,7 +130,7 @@ func containsArtifact(list []Artifact, want Artifact) bool {
 	return false
 }
 
-// AppliesTo informa se a etapa entra no fluxo neste contexto.
+// AppliesTo reports whether the stage enters the flow in this context.
 func (s Stage) AppliesTo(ctx TaskContext) bool {
 	if s.When == nil {
 		return true

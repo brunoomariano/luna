@@ -1,42 +1,43 @@
-# ADR-0002: O lead é híbrido, não puramente determinístico
+# ADR-0002: The lead is hybrid, not purely deterministic
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Com o controle de fluxo em código (ver [ADR-0001](0001-flow-control-out-of-model.md)),
-resta decidir quem conduz a tarefa quando algo sai do trilho: o nó falhou, a saída não
-validou, uma revisão achou problema.
+With flow control in code (see [ADR-0001](0001-flow-control-out-of-model.md)), it remains
+to decide who drives the task when something goes off the rails: the node failed, the
+output did not validate, a review found a problem.
 
-Há um caso real que pesa na escolha. Numa execução do sistema que inspirou este desenho,
-a máquina de estados tinha um bug e mandou o lead revisar um documento já revisado. **O
-lead recusou e escalou ao humano** — ele fora instruído a obedecer a FSM, e ainda assim
-reconheceu que a instrução não fazia sentido.
+There is a real case that weighs on the choice. In a run of the system that inspired this
+design, the state machine had a bug and told the lead to review an already reviewed
+document. **The lead refused and escalated to the human** — it had been instructed to obey
+the FSM, and still recognized that the instruction made no sense.
 
-## Decisão
+## Decision
 
-O lead é híbrido: **código no caminho feliz**, **modelo quando algo sai do trilho**.
+The lead is hybrid: **code on the happy path**, **model when something goes off the
+rails**.
 
-No caminho feliz o lead decide a etapa, chama o agente, valida e grava — custo zero de
-token, comportamento determinístico. Fora dele, um modelo decide o que fazer: tentar de
-novo, voltar uma etapa, abrir um gate ou bloquear.
+On the happy path the lead decides the stage, calls the agent, validates and records —
+zero token cost, deterministic behavior. Outside it, a model decides what to do: try
+again, go back a stage, open a gate or block.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Lead puramente código** — descartada porque perde o discernimento que pega o erro da
-  própria FSM. Existe caso real de um lead que recusou uma instrução sem sentido e
-  escalou.
-- **Lead puramente modelo** — descartada pelo custo por tarefa, e porque volta a ser
-  não-determinístico justamente onde precisamos de garantia.
+- **Purely code lead** — rejected because it loses the judgment that catches the FSM's own
+  error. There is a real case of a lead that refused a nonsensical instruction and
+  escalated.
+- **Purely model lead** — rejected for the cost per task, and because it becomes
+  non-deterministic again exactly where we need a guarantee.
 
-## Consequências
+## Consequences
 
-- **Positivas:** a camada determinística dá o esqueleto; a camada de julgamento pega o
-  erro do esqueleto. As duas se protegem.
-- **Negativas / custos:** existem dois caminhos de decisão a manter, em vez de um.
+- **Positive:** the deterministic layer gives the skeleton; the judgment layer catches the
+  skeleton's error. The two protect each other.
+- **Negative / costs:** there are two decision paths to maintain instead of one.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [references](../references.md)

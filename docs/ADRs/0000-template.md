@@ -1,32 +1,32 @@
-# ADR-NNNN: <título da decisão>
+# ADR-NNNN: <decision title>
 
-**Status:** Proposto | Aceito | Rejeitado | Substituído por [ADR-NNNN](NNNN-title.md)
-**Data:** AAAA-MM-DD
+**Status:** Proposed | Accepted | Rejected | Superseded by [ADR-NNNN](NNNN-title.md)
+**Date:** YYYY-MM-DD
 
-## Contexto
-A situação que exige uma decisão. As forças em jogo — restrições técnicas, de
-negócio, de prazo — que tornam a escolha não óbvia. Descreva o problema sem já
-embutir a solução.
+## Context
+The situation that demands a decision. The forces at play — technical, business,
+schedule constraints — that make the choice non-obvious. Describe the problem without
+already embedding the solution.
 
-## Decisão
-O que foi decidido, afirmado de forma direta ("Vamos usar X", "Adotamos Y").
-Inclua o suficiente para que alguém entenda a escolha sem contexto externo.
+## Decision
+What was decided, stated directly ("We will use X", "We adopt Y"). Include enough for
+someone to understand the choice without external context.
 
-## Alternativas consideradas
-As opções reais que foram pesadas e por que **não** foram escolhidas. Uma decisão
-sem alternativas registradas perde metade do seu valor.
+## Alternatives considered
+The real options that were weighed and why they were **not** chosen. A decision with no
+recorded alternatives loses half its value.
 
-- **<Alternativa A>** — descartada porque ...
-- **<Alternativa B>** — descartada porque ...
+- **<Alternative A>** — rejected because ...
+- **<Alternative B>** — rejected because ...
 
-## Consequências
-O que muda por causa desta decisão — o bom e o ruim.
+## Consequences
+What changes because of this decision — the good and the bad.
 
-- **Positivas:** o que ganhamos.
-- **Negativas / custos:** o que aceitamos em troca, dívidas assumidas.
-- **Impactos:** o que precisa mudar (código, processo, outros documentos).
+- **Positive:** what we gain.
+- **Negative / costs:** what we accept in exchange, debts taken on.
+- **Impacts:** what needs to change (code, process, other documents).
 
-## Referências
+## References
 - Issue: <ID>
-- PRs: <se houver>
-- Documentos relacionados: <links>
+- PRs: <if any>
+- Related documents: <links>

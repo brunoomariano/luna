@@ -1,17 +1,17 @@
 package fsm
 
-// isFeatureOrBug é a condição que governa as etapas cujo custo só se paga quando
-// há comportamento novo ou defeito a corrigir.
+// isFeatureOrBug is the condition governing the stages whose cost only pays off
+// when there is new behaviour or a defect to fix.
 func isFeatureOrBug(c TaskContext) bool { return c.Kind == KindFeature || c.Kind == KindBug }
 
-// DefaultFlow é o fluxo que a Luna traz instalado — as 14 etapas de
+// DefaultFlow is the flow Luna ships with — the 14 stages of
 // docs/architecture/stages.md.
 //
-// Não é obrigatório: etapas podem ser desabilitadas, editadas ou substituídas, e
-// novas podem ser criadas (ADR-0017). O que não muda é o contrato — toda etapa
-// declara o que exige e o que produz.
+// It is not mandatory: stages can be disabled, edited or replaced, and new ones
+// created (ADR-0017). What does not change is the contract — every stage declares
+// what it requires and what it produces.
 //
-// A ordem é significativa: AuditContract verifica precedência, não existência.
+// Order is significant: AuditContract checks precedence, not existence.
 func DefaultFlow() []Stage {
 	return []Stage{
 		{
@@ -52,11 +52,11 @@ func DefaultFlow() []Stage {
 		{
 			ID:   "build",
 			Role: "implementer",
-			// ADR-0022 prevê `contract` aqui, exigido só quando `spec` entrou no
-			// fluxo. Fica de fora até o mecanismo de requires condicional ser
-			// escolhido — declará-lo sem esse mecanismo faria toda tarefa
-			// `chore` ou `docs` travar, já que `spec` é pulada nelas.
-			// Ver a nota em docs/architecture/stages.md.
+			// ADR-0022 calls for `contract` here, required only when `spec` entered
+			// the flow. It stays out until the conditional-requires mechanism is
+			// chosen — declaring it without that mechanism would stall every
+			// `chore` or `docs` task, since `spec` is skipped in those.
+			// See the note in docs/architecture/stages.md.
 			Requires: []Artifact{"scenarios", "approach", "worktree"},
 			Produces: []Artifact{"code", "tests_green"},
 		},
@@ -98,9 +98,9 @@ func DefaultFlow() []Stage {
 			Role:             "architect",
 			Requires:         []Artifact{"code"},
 			ProducesForHuman: []Artifact{"arch_report"},
-			// Diferente das demais, esta condição não é natureza da tarefa: só
-			// se sabe que a mudança mexeu na estrutura depois de olhar o que o
-			// build produziu.
+			// Unlike the others, this condition is not about the nature of the
+			// task: whether the change touched the structure is only knowable
+			// after looking at what build produced.
 			When: func(c TaskContext) bool { return c.HasFact(TouchesStructure) },
 		},
 		{

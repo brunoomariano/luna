@@ -1,70 +1,73 @@
-# ADR-0022: O gate carrega o artefato, e o humano pode ajustá-lo
+# ADR-0022: The gate carries the artifact, and the human can adjust it
 
-**Status:** Aceito
-**Data:** 2026-08-07
+**Status:** Accepted
+**Date:** 2026-08-07
 
-## Contexto
+## Context
 
-Até aqui o gate era só uma **pausa**: a tarefa suspendia, o humano dizia sim, a tarefa
-retomava (ver [ADR-0012](0012-gate-suspends-and-frees-the-slot.md)). O que ele estava
-aprovando ficava implícito — o humano teria de ir ver por fora, no worktree ou nos logs.
+Until now the gate was only a **pause**: the task suspended, the human said yes, the task
+resumed (see [ADR-0012](0012-gate-suspends-and-frees-the-slot.md)). What was being approved
+stayed implicit — the human would have to go look outside, in the worktree or in the logs.
 
-O caso da `spec` expõe o buraco. Ela produz o `contract` e tem o gate `approve-spec`, mas
-**nenhuma etapa declarava `contract` em `requires`**. O artefato mais deliberado do fluxo
-— aquele que existe justamente para o humano revisar antes da construção — era produzido
-e esquecido.
+The `spec` case exposes the hole. It produces the `contract` and has the `approve-spec`
+gate, but **no stage declared `contract` in `requires`**. The most deliberate artifact of
+the flow — the one that exists precisely for the human to review before construction — was
+produced and forgotten.
 
-E "aprovar" não é a única resposta que faz sentido ali. Uma spec que está quase certa não
-merece nem um sim nem um não: merece **um ajuste**. Se o humano edita o contrato fora do
-sistema, a FSM segue com a versão que ela conhece, e a edição se perde ou — pior — o
-`build` usa uma coisa enquanto o registro diz outra.
+And "approve" is not the only answer that makes sense there. A spec that is nearly right
+deserves neither a yes nor a no: it deserves **an adjustment**. If the human edits the
+contract outside the system, the FSM proceeds with the version it knows, and the edit is
+lost or — worse — `build` uses one thing while the record says another.
 
-## Decisão
+## Decision
 
-Um gate pode **carregar o artefato** que a etapa produziu, e o humano tem três respostas:
+A gate can **carry the artifact** the stage produced, and the human has three answers:
 
-- **aprovar** — o artefato entra no contexto como está;
-- **ajustar** — o humano edita; a **versão editada** é a que entra no contexto, e o
-  ajuste fica registrado no handoff;
-- **recusar** — o artefato não entra; a etapa que o produziu volta a rodar, com a recusa
-  no contexto.
+- **approve** — the artifact enters the context as is;
+- **adjust** — the human edits; the **edited version** is the one that enters the context,
+  and the adjustment is recorded in the handoff;
+- **reject** — the artifact does not enter; the stage that produced it runs again, with the
+  rejection in context.
 
-O `contract` deixa de ser folha: passa a ser `requires` do `build`, na versão que saiu do
-gate. Quando `spec` não entra no fluxo (`chore`, `docs`), o `build` não o exige.
+The `contract` stops being a leaf: it becomes a `requires` of `build`, in the version that
+came out of the gate. When `spec` does not enter the flow (`chore`, `docs`), `build` does
+not require it.
 
-Isso dá três formas de gate, por riqueza crescente: **confirmação** (sim/não),
-**artefato para revisão** (este ADR) e **decisão de fluxo** (um teto de loop estourou).
+This gives three shapes of gate, by increasing richness: **confirmation** (yes/no),
+**artifact for review** (this ADR) and **flow decision** (a loop ceiling was blown).
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Gate continua só sinalizando; o humano abre o artefato por fora** — descartada porque
-  não modela o "ajustar". O humano editaria algo que a FSM já considera produzido e
-  fechado, criando divergência entre o artefato real e o que o handoff registra.
-- **Uma etapa dedicada de revisão humana** — descartada porque duplicaria o mecanismo: o
-  gate já é o ponto de parada para decisão humana, e uma etapa que não chama agente
-  nenhum não tem trabalho próprio (ver [etapas](../architecture/stages.md), "o que não é
-  etapa").
-- **Deixar o `contract` como artefato de auditoria** (`produces_for_human`, ver
-  [ADR-0021](0021-produces-for-human-is-a-separate-contract-field.md)) — descartada
-  porque inverte a intenção: a spec existe **para** guiar a construção. Um contrato que o
-  `build` não consome é documento decorativo.
+- **The gate keeps only signaling; the human opens the artifact outside** — rejected because
+  it does not model the "adjust". The human would edit something the FSM already considers
+  produced and closed, creating a divergence between the real artifact and what the handoff
+  records.
+- **A dedicated human review stage** — rejected because it would duplicate the mechanism:
+  the gate is already the stopping point for a human decision, and a stage that calls no
+  agent has no work of its own (see [stages](../architecture/stages.md), "what is not a
+  stage").
+- **Leave the `contract` as an audit artifact** (`produces_for_human`, see
+  [ADR-0021](0021-produces-for-human-is-a-separate-contract-field.md)) — rejected because it
+  inverts the intent: the spec exists **to** guide the construction. A contract that `build`
+  does not consume is a decorative document.
 
-## Consequências
+## Consequences
 
-- **Positivas:** a revisão humana passa a acontecer **dentro** do sistema, com rastro. O
-  ajuste fica no handoff, então dá para saber depois que a spec construída não era a spec
-  gerada — e o que mudou.
-- **Negativas / custos:** o gate deixa de ser um booleano e ganha payload e estados de
-  resposta. É mais mecanismo no ponto onde antes havia só uma pausa.
-- **Impactos:**
-  - `build` passa a exigir `contract` quando `spec` entrou no fluxo — a verificação
-    estática precisa entender `requires` condicional, o que antes não era necessário;
-  - a recusa cria um retorno à etapa anterior. Diferente do retorno de revisão (ver
-    [ADR-0020](0020-review-finding-invalidates-green.md)), este acontece **antes** de o
-    artefato entrar no contexto, então não há verde a invalidar;
-  - o handoff passa a carregar a versão do artefato pós-gate, não a produzida pela etapa.
+- **Positive:** human review starts happening **inside** the system, with a trace. The
+  adjustment stays in the handoff, so one can tell afterwards that the spec that was built
+  was not the spec that was generated — and what changed.
+- **Negative / costs:** the gate stops being a boolean and gains a payload and response
+  states. It is more mechanism at the point where before there was only a pause.
+- **Impacts:**
+  - `build` now requires `contract` when `spec` entered the flow — the static check has to
+    understand conditional `requires`, which was not necessary before;
+  - the rejection creates a rollback to the previous stage. Unlike the review rollback (see
+    [ADR-0020](0020-review-finding-invalidates-green.md)), this one happens **before** the
+    artifact enters the context, so there is no green to invalidate;
+  - the handoff now carries the post-gate version of the artifact, not the one produced by
+    the stage.
 
-## Referências
+## References
 
-- Documentos relacionados: [etapas padrão](../architecture/stages.md),
-  [arquitetura](../architecture/overview.md)
+- Related documents: [default stages](../architecture/stages.md),
+  [architecture](../architecture/overview.md)

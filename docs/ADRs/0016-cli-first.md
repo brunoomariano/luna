@@ -1,27 +1,27 @@
-# ADR-0016: CLI primeiro
+# ADR-0016: CLI first
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-A FSM ainda precisa provar valor. Qualquer superfície de interação construída antes disso
-é trabalho investido sobre um desenho que pode mudar.
+The FSM still has to prove its value. Any interaction surface built before that is work
+invested on a design that may change.
 
-## Decisão
+## Decision
 
-A interface é **CLI primeiro**. Uma interface visual entra quando o fluxo estabilizar.
+The interface is **CLI first**. A visual interface comes in when the flow stabilizes.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Interface visual desde o início** — descartada por ser muito trabalho antes de a FSM
-  provar valor.
+- **A visual interface from the start** — rejected for being too much work before the FSM
+  proves its value.
 
-## Consequências
+## Consequences
 
-- **Positivas:** o esforço fica concentrado no núcleo enquanto o desenho ainda muda.
-- **Impactos:** a interação com gates e o acompanhamento de tarefas acontecem no terminal.
+- **Positive:** the effort stays concentrated on the core while the design still changes.
+- **Impacts:** interaction with gates and task tracking happen in the terminal.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md)
+- Related documents: [architecture](../architecture/overview.md)

@@ -1,39 +1,41 @@
-# ADR-0004: Cada etapa declara `requires` e `produces`
+# ADR-0004: Every stage declares `requires` and `produces`
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Sem um contrato explícito por etapa, o que uma etapa recebe é apenas o que sobrou do
-contexto acumulado. Quando algo dá errado, não há como distinguir um erro do modelo de
-uma entrega incompleta da etapa anterior.
+Without an explicit contract per stage, what a stage receives is merely what was left over
+from the accumulated context. When something goes wrong, there is no way to tell a model
+error from an incomplete delivery by the previous stage.
 
-## Decisão
+## Decision
 
-Cada etapa declara o que **exige** (`requires`) e o que **produz** (`produces`).
+Every stage declares what it **requires** (`requires`) and what it **produces**
+(`produces`).
 
-Isso sustenta três verificações:
+This supports three checks:
 
-1. **estática, antes de rodar** — percorrendo as etapas em ordem, algum `requires` que
-   nenhuma etapa anterior produz indica um fluxo quebrado no papel, detectável sem
-   executar nada;
-2. **de entrada** — a FSM não chama o agente de uma etapa cujo `requires` não está no
-   contexto;
-3. **de saída** — a etapa não fecha sem entregar o `produces` declarado.
+1. **static, before running** — walking the stages in order, any `requires` that no
+   earlier stage produces indicates a flow broken on paper, detectable without executing
+   anything;
+2. **on input** — the FSM does not call the agent of a stage whose `requires` is not in
+   the context;
+3. **on output** — the stage does not close without delivering the declared `produces`.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Contexto livre acumulado** — descartada porque sem contrato não há como distinguir
-  "o modelo errou" de "o modelo não recebeu o que precisava".
+- **Free accumulated context** — rejected because without a contract there is no way to
+  tell "the model got it wrong" from "the model did not receive what it needed".
 
-## Consequências
+## Consequences
 
-- **Positivas:** um fluxo quebrado é detectável antes de qualquer execução; a falha é
-  pega onde nasce, não duas etapas adiante quando o sintoma já se deslocou da causa.
-- **Impactos:** nenhuma etapa pode existir sem contrato declarado.
+- **Positive:** a broken flow is detectable before any execution; the failure is caught
+  where it is born, not two stages later when the symptom has already drifted from the
+  cause.
+- **Impacts:** no stage can exist without a declared contract.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [etapas padrão](../architecture/stages.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [default stages](../architecture/stages.md)

@@ -1,62 +1,63 @@
-# ADR-0019: Watchdog de inatividade vigia o trabalho, não a janela
+# ADR-0019: The inactivity watchdog watches the work, not the window
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-A política de falha (ver [ADR-0011](0011-failure-retry-rollback-or-block.md)) cobre o nó
-que **falha**: retry até 2, volta de etapa, ou bloqueio com aviso. Ela não cobre o nó que
-simplesmente **para** — não retorna erro, não retorna sucesso, não retorna nada.
+The failure policy (see [ADR-0011](0011-failure-retry-rollback-or-block.md)) covers the
+node that **fails**: retry up to 2, stage rollback, or blocking with a notice. It does not
+cover the node that simply **stops** — returns no error, returns no success, returns
+nothing.
 
-O estudo do SwarmForge (ver [referências](../references.md)) identifica isso como o buraco
-mais visível daquele desenho: **zero modelo de liveness**. Nada lá detecta agente travado,
-agente que esqueceu de repassar, ou cadeia rompida. O `swarm-window-watchdog` que existe
-vigia **janelas de terminal**, não trabalho — uma janela viva com um agente parado dentro
-passa como saudável.
+The SwarmForge study (see [references](../references.md)) identifies this as the most
+visible hole in that design: **zero liveness model**. Nothing there detects a stuck agent,
+an agent that forgot to pass along, or a broken chain. The `swarm-window-watchdog` that
+does exist watches **terminal windows**, not work — a live window with a stopped agent
+inside passes as healthy.
 
-O resumo do achado: *uma frota que para de conversar, para em silêncio.*
+The summary of the finding: *a fleet that stops talking, stops in silence.*
 
-Isso colide com a regra de que nenhuma falha é silenciosa (ver
-[invariantes](../invariants/core.md), INV-core-8). Num sistema cujo propósito é rodar
-desassistido — o perfil `noturno` não tem nenhum gate humano (ver
-[ADR-0013](0013-named-gate-profiles-per-task.md)) — a falha que ninguém vê é mais cara que
-a falha que interrompe.
+This collides with the rule that no failure is silent (see
+[invariants](../invariants/core.md), INV-core-8). In a system whose purpose is to run
+unattended — the `nightly` profile has no human gate at all (see
+[ADR-0013](0013-named-gate-profiles-per-task.md)) — the failure nobody sees is costlier
+than the failure that interrupts.
 
-## Decisão
+## Decision
 
-A Luna tem um **watchdog de inatividade** que vigia o progresso do trabalho: uma tarefa
-que não produz transição, saída de ferramenta ou sinal de vida dentro de um limite é
-tratada como travada, e entra na mesma máquina de decisão da falha — o modelo decide entre
-retomar ou bloquear com aviso (ver [ADR-0011](0011-failure-retry-rollback-or-block.md)).
+Luna has an **inactivity watchdog** that watches the progress of the work: a task that
+produces no transition, no tool output and no sign of life within a limit is treated as
+stuck, and enters the same failure decision machine — the model chooses between resuming or
+blocking with a notice (see [ADR-0011](0011-failure-retry-rollback-or-block.md)).
 
-O que se vigia é o **trabalho**, não o processo nem a janela. Um processo vivo que não
-progride é exatamente o caso que o watchdog existe para pegar.
+What is watched is the **work**, not the process nor the window. A live process that does
+not progress is exactly the case the watchdog exists to catch.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Vigiar o processo/janela do agente** (o que o SwarmForge faz) — descartada porque é o
-  sinal errado: o processo continua vivo enquanto o trabalho está parado, que é
-  precisamente o modo de falha a detectar.
-- **Confiar no timeout do harness** — descartada porque cada CLI tem semântica própria de
-  timeout, e nenhum deles conhece a noção de "etapa que devia ter produzido algo". O
-  timeout do harness pega o processo pendurado, não a tarefa sem progresso.
-- **Não ter watchdog e aceitar a intervenção humana** — descartada porque anula o perfil
-  `noturno`. Se toda execução desassistida precisa de alguém conferindo se travou, ela não
-  é desassistida.
+- **Watch the agent's process/window** (what SwarmForge does) — rejected because it is the
+  wrong signal: the process stays alive while the work is stopped, which is precisely the
+  failure mode to detect.
+- **Trust the harness timeout** — rejected because each CLI has its own timeout semantics,
+  and none of them knows the notion of "a stage that should have produced something". The
+  harness timeout catches the hung process, not the task with no progress.
+- **Have no watchdog and accept human intervention** — rejected because it nullifies the
+  `nightly` profile. If every unattended run needs someone checking whether it got stuck, it
+  is not unattended.
 
-## Consequências
+## Consequences
 
-- **Positivas:** fecha o modo de falha "cadeia rompida em silêncio", que é um dos quatro
-  que motivam o projeto (ver [ADR-0001](0001-flow-control-out-of-model.md)). Torna o perfil
-  `noturno` defensável.
-- **Negativas / custos:** exige escolher um limite de inatividade, e limite mal calibrado
-  gera falso positivo — matar uma etapa legitimamente lenta é pior que esperar. O limite
-  provavelmente precisa variar por etapa.
-- **Impactos:** a execução do nó precisa emitir sinal de progresso observável, o que
-  restringe as opções de "quem executa o nó" — decisão ainda em aberto.
+- **Positive:** it closes the "silently broken chain" failure mode, which is one of the four
+  that motivate the project (see [ADR-0001](0001-flow-control-out-of-model.md)). It makes
+  the `nightly` profile defensible.
+- **Negative / costs:** it requires choosing an inactivity limit, and a badly calibrated
+  limit produces false positives — killing a legitimately slow stage is worse than waiting.
+  The limit probably needs to vary per stage.
+- **Impacts:** node execution must emit an observable progress signal, which constrains the
+  options for "who executes the node" — a decision still open.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [invariantes](../invariants/core.md), [referências](../references.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [invariants](../invariants/core.md), [references](../references.md)

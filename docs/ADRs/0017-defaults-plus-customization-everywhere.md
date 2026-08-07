@@ -1,31 +1,31 @@
-# ADR-0017: Padrão + customização, em tudo
+# ADR-0017: Defaults + customization, everywhere
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-O fluxo padrão da Luna é o desenho de quem a construiu. Outra pessoa terá outro — e uma
-ferramenta com fluxo fixo serve a um usuário só.
+Luna's default flow is the design of whoever built it. Someone else will have another one —
+and a tool with a fixed flow serves a single user.
 
-## Decisão
+## Decision
 
-Tudo que define comportamento tem **versão padrão e versão do usuário**: etapas, papéis,
-perfis de gate, loops e skills. O padrão vem instalado; o usuário pode desabilitar,
-editar ou criar o seu.
+Everything that defines behavior has a **default version and a user version**: stages,
+roles, gate profiles, loops and skills. The default comes installed; the user can disable,
+edit or create their own.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Fluxo fixo** — descartada porque o desenho padrão é o nosso, e outra pessoa terá
-  outro. Sem extensão, a ferramenta serve a um usuário só.
+- **Fixed flow** — rejected because the default design is ours, and someone else will have
+  another one. Without extension, the tool serves a single user.
 
-## Consequências
+## Consequences
 
-- **Positivas:** a Luna serve fluxos diferentes do que a originou.
-- **Impactos:** cada eixo de comportamento precisa de um ponto de extensão declarado — de
-  `src/stock/` como padrão à configuração do usuário como sobreposição.
+- **Positive:** Luna serves flows different from the one that originated it.
+- **Impacts:** each axis of behavior needs a declared extension point — from `src/stock/`
+  as the default to the user configuration as the overlay.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [etapas padrão](../architecture/stages.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [default stages](../architecture/stages.md)

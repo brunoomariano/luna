@@ -1,28 +1,28 @@
-# ADR-0015: O núcleo não conhece rastreador de issues
+# ADR-0015: The core knows no issue tracker
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Uma tarefa pode vir de um rastreador de issues, de outro rastreador, ou de lugar nenhum.
-Integrar nativamente com um deles tornaria o núcleo dependente daquela ferramenta.
+A task can come from an issue tracker, from another tracker, or from nowhere at all.
+Integrating natively with one of them would make the core dependent on that tool.
 
-## Decisão
+## Decision
 
-A FSM **não conhece rastreador de issues**. A tarefa entra por um comando próprio de
-criação ou por um **adaptador de importação**, que é um comando separado do núcleo.
+The FSM **knows no issue tracker**. A task enters through a creation command of its own or
+through an **import adapter**, which is a command separate from the core.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Integração nativa com Plane** — descartada porque amarraria o sistema a uma
-  ferramenta específica. A tarefa pode vir de qualquer lugar, ou de lugar nenhum.
+- **Native integration with Plane** — rejected because it would tie the system to a
+  specific tool. A task can come from anywhere, or from nowhere at all.
 
-## Consequências
+## Consequences
 
-- **Positivas:** trocar ou acrescentar uma origem de tarefa não toca o núcleo.
-- **Impactos:** cada origem suportada exige seu próprio adaptador de importação.
+- **Positive:** swapping or adding a task origin does not touch the core.
+- **Impacts:** each supported origin requires its own import adapter.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md)
+- Related documents: [architecture](../architecture/overview.md)

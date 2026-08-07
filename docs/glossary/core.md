@@ -1,182 +1,182 @@
-# Glossário: núcleo
+# Glossary: core
 
-> Fonte única dos termos do núcleo da Luna. Um termo, uma definição. Ver os padrões
-> em [docs/README.md](../README.md).
+> Single source for the terms of Luna's core. One term, one definition. See the standards
+> in [docs/README.md](../README.md).
 
-## Tarefa
+## Task
 
-**Definição.** A unidade de trabalho que a Luna executa de ponta a ponta. Entra por
-`luna task new` ou por um adaptador de importação, atravessa a FSM e termina em
-commit, bloqueio ou abandono explícito.
+**Definition.** The unit of work Luna executes end to end. It enters through
+`luna task new` or through an import adapter, crosses the FSM and ends in
+commit, block or explicit abandonment.
 
-**Não confundir com.** *Etapa* — a tarefa é o todo, a etapa é um passo dentro dela.
+**Do not confuse with.** *Stage* — the task is the whole, the stage is a step inside it.
 
-**Onde aparece.** É a raiz de tudo: cada tarefa tem um lead, uma worktree e uma
-instância da FSM.
+**Where it appears.** It is the root of everything: each task has a lead, a worktree and an
+instance of the FSM.
 
 ---
 
-## Etapa (*stage*)
+## Stage (*stage*)
 
-**Definição.** Um estado da máquina, com trabalho próprio. Declara o papel que a
-executa, a skill que usa, o que **exige** para começar (`requires`) e o que **produz**
-ao terminar (`produces`).
+**Definition.** A state of the machine, with work of its own. It declares the role that
+executes it, the skill it uses, what it **requires** to start (`requires`) and what it **produces**
+when it finishes (`produces`).
 
-**Não confundir com.** *Efeito* — carregar memória e gravar resumo acontecem na
-entrada e na saída do fluxo, não são estados. Um estado sem trabalho próprio não
-deveria ser um estado.
+**Do not confuse with.** *Effect* — loading memory and writing the summary happen on
+entry and exit of the flow, they are not states. A state without work of its own should
+not be a state.
 
-**Onde aparece.** As etapas padrão estão em
-[`docs/architecture/stages.md`](../architecture/stages.md); os arquivos vivem em
+**Where it appears.** The default stages are in
+[`docs/architecture/stages.md`](../architecture/stages.md); the files live in
 `src/stock/stages/`.
 
 ---
 
-## Contrato de etapa
+## Stage contract
 
-**Definição.** O par `requires`/`produces` que cada etapa declara. Sustenta três
-verificações: estática (antes de rodar, algum `requires` não é produzido por nenhuma
-etapa anterior?), de entrada (não chama o agente sem insumo) e de saída (não fecha sem
-entregar).
+**Definition.** The `requires`/`produces` pair that each stage declares. It sustains three
+checks: static (before running, is some `requires` not produced by any
+earlier stage?), entry (do not call the agent without input) and exit (do not close without
+delivering).
 
-**Não confundir com.** *Validação de formato* — o contrato é verificado **rodando a
-ferramenta**: o teste passa, o arquivo existe, o commit resolve. Um JSON bem-formado
-pode descrever algo que não existe.
+**Do not confuse with.** *Format validation* — the contract is checked **by running the
+tool**: the test passes, the file exists, the commit resolves. A well-formed JSON
+can describe something that does not exist.
 
-**Onde aparece.** É o que impede handoff incompleto — ver
+**Where it appears.** It is what prevents an incomplete handoff — see
 [`docs/invariants/core.md`](../invariants/core.md).
 
 ---
 
-## Papel (*role*)
+## Role (*role*)
 
-**Definição.** O perfil sob o qual um agente executa uma ou mais etapas. Declara o que
-possui (`owns`), o que **não** possui (`not_owns`) e as ferramentas a que tem acesso
+**Definition.** The profile under which an agent executes one or more stages. It declares what it
+owns (`owns`), what it does **not** own (`not_owns`) and the tools it has access to
 (`tools_allow`/`tools_deny`).
 
-**Não confundir com.** *Etapa* — um papel pode cobrir várias etapas; a etapa é o passo,
-o papel é quem o executa.
+**Do not confuse with.** *Stage* — a role can cover several stages; the stage is the step,
+the role is who executes it.
 
-**Onde aparece.** `src/stock/roles/`. O `tools_allow`/`tools_deny` é gating mecânico: a
-FSM restringe as ferramentas antes de o agente começar.
+**Where it appears.** `src/stock/roles/`. The `tools_allow`/`tools_deny` is mechanical gating: the
+FSM restricts the tools before the agent starts.
 
 ---
 
-## Especialização por negação
+## Specialization by negation
 
-**Definição.** O mecanismo pelo qual um papel se define pelo que **não** faz. Quem
-escreve não revisa: o `implementer` não roda `code-review`, o `cleaner` não roda
+**Definition.** The mechanism by which a role is defined by what it does **not** do. Whoever
+writes does not review: the `implementer` does not run `code-review`, the `cleaner` does not run
 `harden`.
 
-**Onde aparece.** O campo `not_owns` de cada papel. Parte da separação é econômica —
-a operação mais cara do pipeline é rodada por um papel só.
+**Where it appears.** The `not_owns` field of each role. Part of the separation is economic —
+the most expensive operation of the pipeline is run by a single role.
 
 ---
 
-## Nó (*node*)
+## Node (*node*)
 
-**Definição.** Uma chamada de agente: recebe contexto, executa, devolve resultado. É
-um redutor sem estado — não guarda nada entre invocações.
+**Definition.** An agent call: it receives context, executes, returns a result. It is
+a stateless reducer — it keeps nothing between invocations.
 
-**Não confundir com.** *Etapa* — a etapa é o estado da máquina; o nó é a execução do
-agente dentro dela.
+**Do not confuse with.** *Stage* — the stage is the state of the machine; the node is the execution of the
+agent inside it.
 
-**Onde aparece.** `src/internal/node/`.
+**Where it appears.** `src/internal/node/`.
 
 ---
 
 ## Lead
 
-**Definição.** Quem conduz uma tarefa através da FSM. É **híbrido**: no caminho feliz
-é código (decide a etapa, chama o agente, valida, grava — custo zero de token,
-determinístico); quando algo sai do trilho, um modelo decide o que fazer.
+**Definition.** Who conducts a task through the FSM. It is **hybrid**: on the happy path
+it is code (decides the stage, calls the agent, validates, writes — zero token cost,
+deterministic); when something goes off the rails, a model decides what to do.
 
-**Não confundir com.** *Nó* — o lead conduz o fluxo; o nó faz o trabalho da etapa.
+**Do not confuse with.** *Node* — the lead conducts the flow; the node does the stage's work.
 
-**Onde aparece.** Uma goroutine por tarefa. Ver
+**Where it appears.** One goroutine per task. See
 [`docs/architecture/overview.md`](../architecture/overview.md).
 
 ---
 
 ## Handoff
 
-**Definição.** A transição registrada entre duas etapas. Acontece a **cada** transição,
-mesmo quando o papel não muda. Carrega ponteiros (identificador da tarefa, etapa de
-origem, artefatos, decisões de gate) e um snapshot endereçado por conteúdo.
+**Definition.** The recorded transition between two stages. It happens at **every** transition,
+even when the role does not change. It carries pointers (task identifier, origin stage,
+artifacts, gate decisions) and a content-addressed snapshot.
 
-**Não confundir com.** *"Passar para outro agente"* — o handoff é a transição em si, e
-o log de handoffs é a auditoria completa da tarefa.
+**Do not confuse with.** *"Passing to another agent"* — the handoff is the transition itself, and
+the handoff log is the complete audit of the task.
 
-**Onde aparece.** É a **única** ponte entre etapas, já que cada etapa começa com
-contexto limpo. O payload é gerado pelo sistema, não escrito pelo agente.
+**Where it appears.** It is the **only** bridge between stages, since each stage starts with
+clean context. The payload is generated by the system, not written by the agent.
 
 ---
 
-## Snapshot endereçado por conteúdo
+## Content-addressed snapshot
 
-**Definição.** O hash do que existia no momento do handoff, para que o receptor veja
-exatamente o que o emissor viu — mesmo que a worktree tenha mudado depois. Dá a
-imutabilidade que um commit daria, sem amarrar o transporte ao versionamento.
+**Definition.** The hash of what existed at the moment of the handoff, so that the receiver sees
+exactly what the sender saw — even if the worktree changed afterwards. It gives the
+immutability a commit would give, without tying the transport to versioning.
 
-**Onde aparece.** Parte do payload de todo handoff; armazenado no store de conteúdo.
+**Where it appears.** Part of the payload of every handoff; stored in the content store.
 
 ---
 
 ## Gate
 
-**Definição.** Um ponto onde a tarefa para e espera decisão humana. **Não** segura um
-processo vivo: após uma espera curta no terminal, a tarefa suspende e libera o slot.
-`luna gate approve` retoma do ponto exato.
+**Definition.** A point where the task stops and waits for a human decision. It does **not** hold a live
+process: after a short wait in the terminal, the task suspends and releases the slot.
+`luna gate approve` resumes from the exact point.
 
-**Não confundir com.** *Bloqueio por falha* — o gate é uma pausa planejada; o bloqueio
-é a saída de um nó que falhou.
+**Do not confuse with.** *Block by failure* — the gate is a planned pause; the block
+is the exit of a node that failed.
 
-**Onde aparece.** Quais gates param é decidido por *perfil*.
+**Where it appears.** Which gates stop is decided by *profile*.
 
 ---
 
-## Perfil (*profile*)
+## Profile (*profile*)
 
-**Definição.** O conjunto de regras que decide quais gates esperam humano. Escolhido
-**por tarefa**, não por tipo de tarefa nem por repositório — o tipo não prediz o risco.
+**Definition.** The set of rules that decides which gates wait for a human. Chosen
+**per task**, not per task type nor per repository — the type does not predict the risk.
 
-**Onde aparece.** Os três padrão: `interativo` (todos os gates esperam), `turbo` (só a
-escrita espera), `noturno` (nada espera). Vivem em `src/stock/profiles/`.
+**Where it appears.** The three defaults: `interactive` (every gate waits), `turbo` (only the
+write waits), `nightly` (nothing waits). They live in `src/stock/profiles/`.
 
 ---
 
 ## FSM
 
-**Definição.** A máquina de estados que governa as etapas **dentro** de uma tarefa. É
-ela — e não o modelo — que decide qual é a próxima etapa.
+**Definition.** The state machine that governs the stages **inside** a task. It is
+it — and not the model — that decides which is the next stage.
 
-**Não confundir com.** *Beads* — a FSM governa as etapas dentro de uma tarefa; o Beads
-governa a ordem **entre** tarefas (dependências, o que está livre, reivindicação
-atômica).
+**Do not confuse with.** *Beads* — the FSM governs the stages inside a task; Beads
+governs the order **between** tasks (dependencies, what is free, atomic
+claiming).
 
-**Onde aparece.** `src/internal/fsm/`. O estado vive em SQLite append-only.
+**Where it appears.** `src/internal/fsm/`. The state lives in append-only SQLite.
 
 ---
 
-## Loop de convergência
+## Convergence loop
 
-**Definição.** O ciclo `build → refactor → verify` que repete até o trabalho convergir.
-Tem tetos: voltas máximas, voltas sem progresso e voltas em oscilação abrem um gate em
-vez de continuar iterando.
+**Definition.** The `build → refactor → verify` cycle that repeats until the work converges.
+It has ceilings: maximum rounds, rounds without progress and rounds in oscillation open a gate
+instead of continuing to iterate.
 
-**Não confundir com.** *Retry de falha* — o retry é a resposta a um nó que quebrou (até
-2 tentativas); o loop de convergência é o ciclo normal de refinamento.
+**Do not confuse with.** *Failure retry* — the retry is the response to a node that broke (up to
+2 attempts); the convergence loop is the normal refinement cycle.
 
-**Onde aparece.** As etapas marcadas 🔁 em
+**Where it appears.** The stages marked 🔁 in
 [`docs/architecture/stages.md`](../architecture/stages.md).
 
 ---
 
 ## Skill
 
-**Definição.** O corpo de instrução que um papel usa para executar uma etapa. Há as
-**da Luna** (instaladas no harness, explicam a estrutura ao agente), as **do bundle do
-usuário** (apontadas em configuração) e as **transversais do desenvolvedor** (que
-servem dentro e fora da Luna).
+**Definition.** The body of instruction a role uses to execute a stage. There are
+**Luna's** (installed in the harness, they explain the structure to the agent), the **user
+bundle's** (pointed to in configuration) and the **developer's cross-cutting ones** (which
+serve inside and outside Luna).
 
-**Onde aparece.** `src/stock/skills/`. Um comando de indexação cataloga o que existe.
+**Where it appears.** `src/stock/skills/`. An indexing command catalogs what exists.

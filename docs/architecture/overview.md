@@ -1,65 +1,65 @@
-# Arquitetura
+# Architecture
 
-## O problema
+## The problem
 
-Um fluxo de trabalho escrito em prosa é uma **sugestão** para o modelo, não uma
-garantia. Ele segue quase sempre — e é o "quase" que custa caro:
+A workflow written in prose is a **suggestion** to the model, not a
+guarantee. It follows almost every time — and it is the "almost" that costs dearly:
 
-- **Reinterpreta a instrução.** Um agente instruído a *rodar* um comando decidiu que
-  rodar significava *imprimi-lo*.
-- **Abandona o loop.** Repete a mesma coisa 100 vezes e na 101ª faz outra coisa, ou
-  simplesmente para.
-- **Perde o papel.** Numa sessão longa com compactação, o revisor começa a
-  implementar e o implementador a revisar.
-- **Rompe a cadeia em silêncio.** Decide que não vale passar adiante, e ninguém nota.
+- **Reinterprets the instruction.** An agent told to *run* a command decided that
+  running meant *printing it*.
+- **Abandons the loop.** Repeats the same thing 100 times and on the 101st does
+  something else, or simply stops.
+- **Loses the role.** In a long session with compaction, the reviewer starts to
+  implement and the implementer to review.
+- **Breaks the chain silently.** Decides it is not worth passing along, and nobody notices.
 
-Todos observados em execução real (ver [`references.md`](../references.md)).
+All observed in real execution (see [`references.md`](../references.md)).
 
-## A forma da solução
+## The shape of the solution
 
 ```
-  origem da tarefa (qualquer)          Beads
+  task origin (any)                    Beads
   ┌──────────────────────┐        ┌──────────────┐
-  │ luna task new        │───────▶│ grafo de     │
-  │ luna import <fonte>  │        │ dependências │
+  │ luna task new        │───────▶│ dependency   │
+  │ luna import <source> │        │ graph        │
   └──────────────────────┘        └──────┬───────┘
-                                         │ o que está livre
+                                         │ what is free
                      ┌───────────────────┴────────────────┐
                      ▼                   ▼                ▼
-                 lead(A)             lead(B)          lead(C)      ← uma goroutine
-                     │                                              por tarefa
+                 lead(A)             lead(B)          lead(C)      ← one goroutine
+                     │                                              per task
         ┌────────────┴─────────────────────────────┐
-        │  FSM da tarefa A                         │
+        │  task A FSM                              │
         │                                          │
-        │  etapa → papel → skill                   │
-        │    ├ verifica o que a etapa EXIGE        │
-        │    ├ chama o agente (contexto novo)      │
-        │    ├ valida o que a etapa PRODUZIU       │
-        │    └ grava o handoff e transiciona       │
+        │  stage → role → skill                    │
+        │    ├ checks what the stage REQUIRES      │
+        │    ├ calls the agent (fresh context)     │
+        │    ├ validates what the stage PRODUCED   │
+        │    └ writes the handoff and transitions  │
         └──────────────────────────────────────────┘
 ```
 
-**O paralelismo é entre tarefas, não dentro delas.** Cada tarefa tem seu lead e sua
-worktree; dentro dela as etapas são sequenciais.
+**Parallelism is between tasks, not inside them.** Each task has its own lead and its own
+worktree; inside it the stages are sequential.
 
-## O lead é híbrido
+## The lead is hybrid
 
-No caminho feliz o lead é **código**: decide a etapa, chama o agente, valida, grava.
-Custo zero de token, comportamento determinístico.
+On the happy path the lead is **code**: it decides the stage, calls the agent, validates, writes.
+Zero token cost, deterministic behavior.
 
-Quando algo sai do trilho — o nó falhou, a saída não validou, uma revisão achou
-problema — **um modelo decide o que fazer**: tentar de novo, voltar uma etapa, abrir um
-gate ou bloquear.
+When something goes off the rails — the node failed, the output did not validate, a review found a
+problem — **a model decides what to do**: retry, go back a stage, open a
+gate or block.
 
-Essa divisão importa por um motivo concreto. Numa execução real do sistema que inspirou
-este desenho, a máquina de estados tinha um bug e mandou o lead revisar um documento já
-revisado. **O lead recusou e escalou ao humano** — ele fora instruído a obedecer a FSM,
-e ainda assim reconheceu que a instrução não fazia sentido. A camada determinística dá o
-esqueleto; a camada de julgamento pega o erro do esqueleto. As duas se protegem.
+This split matters for a concrete reason. In a real execution of the system that inspired
+this design, the state machine had a bug and told the lead to review a document that had already been
+reviewed. **The lead refused and escalated to the human** — it had been instructed to obey the FSM,
+and still recognized that the instruction made no sense. The deterministic layer gives the
+skeleton; the judgment layer catches the skeleton's error. The two protect each other.
 
-## O contrato de etapa
+## The stage contract
 
-Cada etapa declara o que **exige** e o que **produz**:
+Each stage declares what it **requires** and what it **produces**:
 
 ```toml
 [stage.build]
@@ -69,59 +69,59 @@ requires = ["scenarios", "approach", "worktree"]
 produces = ["code", "tests_green"]
 ```
 
-Isso sustenta três verificações:
+This sustains three checks:
 
-**1. Estática, antes de rodar.** Percorrendo as etapas em ordem, algum `requires` não é
-produzido por nenhuma etapa anterior? Se sim, o fluxo está quebrado no papel — e isso é
-detectável sem executar nada.
+**1. Static, before running.** Walking the stages in order, is some `requires` not
+produced by any earlier stage? If so, the flow is broken on paper — and this is
+detectable without executing anything.
 
-**2. Na entrada.** A FSM não chama o agente de uma etapa cujo `requires` não está no
-contexto. Sem isso, o agente começaria cego e a falha pareceria burrice do modelo.
+**2. On entry.** The FSM does not call the agent of a stage whose `requires` is not in
+the context. Without this, the agent would start blind and the failure would look like model stupidity.
 
-**3. Na saída.** A etapa não fecha sem entregar o `produces` declarado, e a entrega é
-verificada **rodando a ferramenta** — o arquivo existe, o teste passa, o commit resolve.
-Não se confere formato, confere-se realidade.
+**3. On exit.** The stage does not close without delivering the declared `produces`, and the delivery is
+verified **by running the tool** — the file exists, the test passes, the commit resolves.
+Format is not checked, reality is.
 
-A terceira é a que mais importa: ela pega o buraco **onde ele nasce**, não duas etapas
-adiante quando o sintoma já está deslocado da causa.
+The third is the one that matters most: it catches the gap **where it is born**, not two stages
+later when the symptom is already displaced from the cause.
 
-## Contexto novo a cada etapa
+## Fresh context at each stage
 
-Cada etapa começa com o contexto limpo, mesmo quando o papel é o mesmo. Ataca a erosão
-de papel direto — não há sessão longa para degradar.
+Each stage starts with a clean context, even when the role is the same. It attacks role
+erosion head-on — there is no long session to degrade.
 
-**A consequência é estrutural:** com contexto novo, o handoff é a **única** ponte entre
-etapas. Se algo necessário não estiver nele, o agente começa cego. Por isso o contrato
-acima não é burocracia — é o que sustenta a decisão de zerar o contexto.
+**The consequence is structural:** with fresh context, the handoff is the **only** bridge between
+stages. If something needed is not in it, the agent starts blind. That is why the contract
+above is not bureaucracy — it is what sustains the decision to zero out the context.
 
-Todo payload de handoff é prefixado com uma instrução para reler o papel e as regras.
-Contexto limpo e regra reinjetada são duas defesas pelo mesmo flanco.
+Every handoff payload is prefixed with an instruction to reread the role and the rules.
+Clean context and reinjected rule are two defenses on the same flank.
 
-## O handoff
+## The handoff
 
-Registrado a **cada** transição de etapa, mesmo quando o papel não muda. O handoff não é
-"passar para outro agente" — é a transição registrada. O log de handoffs é a auditoria
-completa da tarefa.
+Recorded at **every** stage transition, even when the role does not change. The handoff is not
+"passing to another agent" — it is the recorded transition. The handoff log is the complete
+audit of the task.
 
-O que ele carrega:
+What it carries:
 
-- **ponteiros** — identificador da tarefa, etapa de origem, artefatos produzidos,
-  decisões de gate anteriores;
-- **snapshot endereçado por conteúdo** — o hash do que existia no momento do handoff,
-  para que o receptor veja exatamente o que o emissor viu, mesmo se a worktree mudou
-  depois.
+- **pointers** — task identifier, origin stage, produced artifacts,
+  previous gate decisions;
+- **content-addressed snapshot** — the hash of what existed at the moment of the handoff,
+  so that the receiver sees exactly what the sender saw, even if the worktree changed
+  afterwards.
 
-O que ele **não** carrega: resumo em prosa do que a etapa anterior fez. O receptor lê o
-estado real. Ninguém interpreta para ele.
+What it does **not** carry: a prose summary of what the previous stage did. The receiver reads the
+real state. Nobody interprets it for them.
 
-O payload é **gerado pelo sistema**, não escrito pelo agente. O agente preenche campos
-estruturados; o corpo entregue é sintetizado. Isso elimina a degradação por reescrita
-sucessiva ao longo da cadeia.
+The payload is **generated by the system**, not written by the agent. The agent fills structured
+fields; the delivered body is synthesized. This eliminates degradation by successive
+rewriting along the chain.
 
-## Papéis
+## Roles
 
-Um papel pode cobrir várias etapas. Cada um declara o que possui, o que **não** possui,
-e as ferramentas a que tem acesso:
+A role can cover several stages. Each one declares what it owns, what it does **not** own,
+and the tools it has access to:
 
 ```toml
 # src/stock/roles/reviewer.toml
@@ -132,124 +132,124 @@ owns        = "..."
 not_owns    = "..."
 ```
 
-O `not_owns` é o mecanismo de especialização, e a separação por negação é deliberada:
-quem escreve não revisa. Parte da separação também é econômica — testes de mutação são
-caros, então só um papel os roda.
+The `not_owns` is the specialization mechanism, and separation by negation is deliberate:
+whoever writes does not review. Part of the separation is also economic — mutation tests are
+expensive, so only one role runs them.
 
-O `tools_allow`/`tools_deny` é o gating mecânico: a FSM restringe as ferramentas antes
-de o agente começar. Um arquivo, dois consumidores — a FSM lê os metadados, o agente lê
-a prosa.
+The `tools_allow`/`tools_deny` is the mechanical gating: the FSM restricts the tools before
+the agent starts. One file, two consumers — the FSM reads the metadata, the agent reads
+the prose.
 
-## Falha
+## Failure
 
 ```
-nó falha
+node fails
    ↓
-modelo avalia
-   ├── tentar de novo (até 2), com o erro no contexto
-   └── bloquear + avisar o humano
+model evaluates
+   ├── retry (up to 2), with the error in the context
+   └── block + notify the human
 ```
 
-Não há "voltar à etapa anterior" como saída de falha: o único retorno a uma etapa
-anterior é o do achado de revisão, que invalida o verde ao voltar. Duas portas para o
-mesmo lugar significaria uma delas esquecendo de invalidar.
+There is no "go back to the previous stage" as a failure exit: the only return to an earlier
+stage is the one from a review finding, which invalidates the green when it goes back. Two doors to the
+same place would mean one of them forgetting to invalidate.
 
-Sem retry infinito: é exatamente o loop que não converge e queima tokens. E sem morte
-silenciosa: toda tarefa bloqueada avisa.
+No infinite retry: that is exactly the loop that does not converge and burns tokens. And no silent
+death: every blocked task notifies.
 
 ## Gates
 
-Um gate para a tarefa e espera decisão humana. Ele **não** segura um processo vivo: após
-uma espera curta no terminal, a tarefa suspende e libera o slot. Outra tarefa usa o
-recurso enquanto você decide; `luna gate approve` retoma do ponto exato.
+A gate stops the task and waits for a human decision. It does **not** hold a live process: after
+a short wait in the terminal, the task suspends and releases the slot. Another task uses the
+resource while you decide; `luna gate approve` resumes from the exact point.
 
-Quais gates param é decidido por **perfil**, escolhido por tarefa:
+Which gates stop is decided by **profile**, chosen per task:
 
-| Perfil | Comportamento |
+| Profile | Behavior |
 |---|---|
-| `interativo` | todos os gates esperam humano |
-| `turbo` | só a escrita (commit) espera |
-| `noturno` | nada espera |
+| `interactive` | every gate waits for a human |
+| `turbo` | only the write (commit) waits |
+| `nightly` | nothing waits |
 
-### O gate carrega o que precisa ser decidido
+### The gate carries what needs to be decided
 
-Um gate não é só uma pausa: ele entrega ao humano **o que motivou a parada**. Três
-formas, da mais simples à mais rica:
+A gate is not just a pause: it delivers to the human **what motivated the stop**. Three
+forms, from the simplest to the richest:
 
-- **confirmação** — só pede sim/não (`confirm-repos`: são estes os repositórios?);
-- **artefato para revisão** — carrega o que a etapa produziu, e o humano pode
-  **aprovar, ajustar ou recusar**. `approve-spec` entrega o `contract`; a versão
-  aprovada — possivelmente editada — é a que entra no contexto e que o `build` consome;
-- **decisão de fluxo** — um teto de loop estourou, e a escolha é continuar, abortar ou
-  mudar o rumo.
+- **confirmation** — only asks yes/no (`confirm-repos`: are these the repositories?);
+- **artifact for review** — carries what the stage produced, and the human can
+  **approve, adjust or reject**. `approve-spec` delivers the `contract`; the approved
+  version — possibly edited — is the one that enters the context and that `build` consumes;
+- **flow decision** — a loop ceiling blew, and the choice is to continue, abort or
+  change course.
 
-O terceiro caso é o que impede o loop infinito de virar bloqueio automático: quando a
-convergência falha, quem decide é o humano, com o histórico à vista.
+The third case is what prevents the infinite loop from becoming an automatic block: when
+convergence fails, the human decides, with the history in view.
 
-### Como o humano vê o que está esperando
+### How the human sees what is waiting
 
-Uma tarefa suspensa não pode depender de alguém lembrar de olhar — seria a morte
-silenciosa por outro nome. Três superfícies:
+A suspended task cannot depend on someone remembering to look — that would be silent
+death by another name. Three surfaces:
 
-- **`luna gates`** lista tudo que aguarda decisão: tarefa, etapa, tipo de gate, há
-  quanto tempo, e o artefato anexado quando houver;
-- **`luna gate show <tarefa>`** abre o artefato para leitura e edição;
-- **`luna gate approve|adjust|reject <tarefa>`** responde e retoma do ponto exato.
+- **`luna gates`** lists everything awaiting a decision: task, stage, gate type, how
+  long it has been waiting, and the attached artifact when there is one;
+- **`luna gate show <task>`** opens the artifact for reading and editing;
+- **`luna gate approve|adjust|reject <task>`** answers and resumes from the exact point.
 
-Os artefatos de auditoria (`produces_for_human`) seguem o mesmo princípio: são
-registrados no handoff com caminho e hash, e `luna task show <tarefa>` lista o que a
-tarefa produziu para leitura humana. Um relatório que ninguém sabe que existe é
-trabalho jogado fora.
+The audit artifacts (`produces_for_human`) follow the same principle: they are
+recorded in the handoff with path and hash, and `luna task show <task>` lists what the
+task produced for human reading. A report nobody knows exists is
+wasted work.
 
-### Notificação é peça acoplável, não parte do núcleo
+### Notification is a pluggable piece, not part of the core
 
-O estado consultável é a **base**: `luna gates` responde "o que está esperando?" sem
-depender de nada externo. Sobre ela, notificação — webhook, Telegram, e-mail — é uma
-**saída acoplada**, não uma responsabilidade do motor.
+The queryable state is the **base**: `luna gates` answers "what is waiting?" without
+depending on anything external. On top of it, notification — webhook, Telegram, email — is a
+**coupled output**, not a responsibility of the engine.
 
-A divisão importa por dois motivos. O núcleo não pode depender de um canal que pode
-estar fora do ar: se o webhook falha, a tarefa continua suspensa e continua listada em
-`luna gates`. E o canal certo só se conhece rodando — qual serve depende de como você
-opera, o que não se decide no papel.
+The split matters for two reasons. The core cannot depend on a channel that may
+be down: if the webhook fails, the task stays suspended and stays listed in
+`luna gates`. And the right channel is only known by running — which one serves depends on how you
+operate, and that is not decided on paper.
 
-Por isso a decisão do **canal** fica em aberto de propósito, enquanto a do **contrato**
-não: qualquer notificador consome o mesmo estado que `luna gates` expõe. O motor emite
-o evento; quem escuta é configuração.
+That is why the decision about the **channel** is left open on purpose, while the one about the **contract**
+is not: any notifier consumes the same state that `luna gates` exposes. The engine emits
+the event; who listens is configuration.
 
-> **Em aberto:** quais canais existirão e como se configuram. Decidir depois de rodar,
-> com uso real. O que **não** está em aberto: notificação não vira dependência do
-> núcleo, e a ausência dela nunca torna uma tarefa suspensa invisível — isso é
+> **Open:** which channels will exist and how they are configured. To be decided after running,
+> with real usage. What is **not** open: notification does not become a dependency of the
+> core, and its absence never makes a suspended task invisible — that is
 > INV-core-12.
 
-## Estado
+## State
 
-Duas camadas, com responsabilidades distintas:
+Two layers, with distinct responsibilities:
 
-- **Beads** governa a ordem **entre** tarefas — dependências, o que está livre para
-  começar, reivindicação atômica.
-- **A FSM** governa as etapas **dentro** de uma tarefa.
+- **Beads** governs the order **between** tasks — dependencies, what is free to
+  start, atomic claiming.
+- **The FSM** governs the stages **inside** a task.
 
-O estado da FSM vive em SQLite **append-only**: sem `UPDATE`, o histórico é a auditoria.
-Transições são atômicas — matar o processo e religar reconstrói o estado exato, porque
-ele nunca esteve só em memória.
+The FSM state lives in **append-only** SQLite: no `UPDATE`, the history is the audit.
+Transitions are atomic — killing the process and restarting rebuilds the exact state, because
+it was never only in memory.
 
-**A FSM não conhece rastreador de issues.** Plane, Jira, GitHub ou nada: a tarefa entra
-por `luna task new` ou por um adaptador de importação, que é um comando separado do
-núcleo.
+**The FSM knows no issue tracker.** Plane, Jira, GitHub or nothing: the task enters
+through `luna task new` or through an import adapter, which is a command separate from the
+core.
 
-## Extensão
+## Extension
 
-Tudo que define comportamento tem versão padrão e versão do usuário:
+Everything that defines behavior has a default version and a user version:
 
-| O quê | Padrão | Extensão |
+| What | Default | Extension |
 |---|---|---|
-| Etapas | as de `src/stock/stages/` | desabilitar, editar, criar |
-| Papéis | os de `src/stock/roles/` | próprios |
-| Perfis de gate | três | próprios |
-| Loops | um | declarar outros, com regras |
-| Skills | as da Luna, instaladas junto | apontar um diretório próprio |
+| Stages | the ones in `src/stock/stages/` | disable, edit, create |
+| Roles | the ones in `src/stock/roles/` | your own |
+| Gate profiles | three | your own |
+| Loops | one | declare others, with rules |
+| Skills | Luna's, installed alongside | point to your own directory |
 
-As skills merecem nota: há as **da Luna** (instaladas no harness, explicam a estrutura
-ao agente), as **do bundle do usuário** (apontadas em configuração) e as
-**transversais do desenvolvedor** (que servem dentro e fora da Luna). Um comando de
-indexação cataloga o que existe.
+Skills deserve a note: there are **Luna's** (installed in the harness, they explain the structure
+to the agent), the **user bundle's** (pointed to in configuration) and the
+**developer's cross-cutting ones** (which serve inside and outside Luna). An indexing
+command catalogs what exists.

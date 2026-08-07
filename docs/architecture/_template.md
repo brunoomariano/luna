@@ -1,28 +1,28 @@
-# Arquitetura: <parte do sistema>
+# Architecture: <part of the system>
 
-> Como **<parte>** está estruturada hoje e por quê. Documento vivo: mantenha-o
-> verdadeiro. Ver os padrões em [docs/README.md](../README.md).
+> How **<part>** is structured today and why. Living document: keep it
+> truthful. See the standards in [docs/README.md](../README.md).
 
-## Visão geral
-Em poucas frases, o que esta parte é e qual responsabilidade ela carrega.
+## Overview
+In a few sentences, what this part is and which responsibility it carries.
 
-## Estrutura
-As peças que a compõem e como se organizam (apps, camadas, módulos, serviços).
-Use um diagrama quando ajudar.
+## Structure
+The pieces that compose it and how they are organized (apps, layers, modules, services).
+Use a diagram when it helps.
 
 ```mermaid
 flowchart TD
-  A[Componente] --> B[Componente]
+  A[Component] --> B[Component]
 ```
 
-## Decisões estruturais
-As escolhas de estrutura consolidadas e o motivo de cada uma. Para a decisão
-**datada** que originou uma escolha, referencie o ADR correspondente em
-[docs/ADRs/](../ADRs/) em vez de repetir o histórico aqui.
+## Structural decisions
+The consolidated structural choices and the reason for each one. For the **dated**
+decision that originated a choice, reference the corresponding ADR in
+[docs/ADRs/](../ADRs/) instead of repeating the history here.
 
-## Limites e responsabilidades
-O que esta parte faz e o que deliberadamente **não** faz. Onde estão suas
-fronteiras com outras partes.
+## Boundaries and responsibilities
+What this part does and what it deliberately does **not** do. Where its
+boundaries with other parts are.
 
-## Pontos de atenção
-Restrições, gargalos conhecidos ou armadilhas para quem mexe aqui.
+## Points of attention
+Constraints, known bottlenecks or traps for whoever works here.

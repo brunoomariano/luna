@@ -1,56 +1,56 @@
-# ADR-0011: Falha — tentar até 2, depois bloquear com aviso
+# ADR-0011: Failure — retry up to 2, then block with a notice
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Quando um nó falha, alguém decide o que fazer. Os dois extremos são conhecidos: insistir
-indefinidamente, ou chamar o humano na primeira falha. Nenhum dos dois serve.
+When a node fails, someone decides what to do. The two extremes are known: insist
+indefinitely, or call the human on the first failure. Neither one serves.
 
-## Decisão
+## Decision
 
-Quando um nó falha, o modelo avalia e escolhe entre duas saídas:
+When a node fails, the model evaluates and chooses between two exits:
 
-- **tentar de novo**, até 2 vezes, com o erro no contexto;
-- **bloquear e avisar o humano**.
+- **try again**, up to 2 times, with the error in context;
+- **block and notify the human**.
 
-Esgotadas as tentativas, a tarefa vai para `blocked` e notifica. Não há morte
-silenciosa: toda tarefa bloqueada avisa.
+Once the attempts are exhausted, the task goes to `blocked` and notifies. There is no
+silent death: every blocked task notifies.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Retry infinito com backoff** — descartada porque é o loop que não converge e queima
-  tokens.
-- **Escalar na primeira falha** — descartada porque transforma o humano no loop de
-  correção de coisas que uma tentativa resolveria.
-- **Voltar à etapa anterior como terceira saída** — descartada. A ideia era escalar a
-  resposta (tenta → volta → bloqueia), mas o degrau do meio não se sustenta:
-  - **duplica caminho com o retorno por revisão.** Voltar de `verify` para `build` é a
-    mesma transição que um achado alinhado faz — só que por fora da invalidação de
-    `ci_green` (ver [ADR-0020](0020-review-finding-invalidates-green.md)). Dois caminhos
-    para o mesmo lugar, um deles esquecendo de invalidar o verde;
-  - **o que ela resolveria já está coberto.** Falta de insumo é violação de `requires`,
-    pega na entrada da etapa (ver [ADR-0004](0004-stage-requires-produces-contract.md));
-    falha transitória é o que o retry trata; trabalho ruim a montante é o que as etapas
-    de revisão existem para encontrar;
-  - **não é mecanizável sem decidir mais coisa.** Quantas etapas voltar? Os artefatos já
-    produzidos são invalidados? Sem essas respostas, seria decisão em aberto disfarçada
-    de opção fechada.
+- **Infinite retry with backoff** — rejected because it is the loop that does not converge
+  and burns tokens.
+- **Escalate on the first failure** — rejected because it turns the human into the
+  correction loop for things that one attempt would solve.
+- **Going back to the previous stage as a third exit** — rejected. The idea was to escalate
+  the response (retry → go back → block), but the middle step does not hold up:
+  - **it duplicates a path with the review rollback.** Going back from `verify` to `build`
+    is the same transition an aligned finding makes — except outside the invalidation of
+    `ci_green` (see [ADR-0020](0020-review-finding-invalidates-green.md)). Two paths to the
+    same place, one of them forgetting to invalidate the green;
+  - **what it would solve is already covered.** A missing input is a `requires` violation,
+    caught at the stage's entry (see
+    [ADR-0004](0004-stage-requires-produces-contract.md)); a transient failure is what the
+    retry handles; bad upstream work is what the review stages exist to find;
+  - **it is not mechanizable without deciding more things.** How many stages to go back?
+    Are the already produced artifacts invalidated? Without those answers, it would be an
+    open decision disguised as a closed option.
 
-## Consequências
+## Consequences
 
-- **Positivas:** o teto de tentativas impede o loop que não converge; o aviso obrigatório
-  impede a tarefa morta em silêncio. Com duas saídas em vez de três, o retorno a uma
-  etapa anterior tem **um único caminho** — o de revisão, que invalida o que precisa ser
-  invalidado.
-- **Negativas / custos:** uma falha que a etapa anterior causaria vai para `blocked` em
-  vez de ser corrigida sozinha. É deliberado: o humano decide se o caso merece uma volta,
-  em vez de a FSM adivinhar quantas etapas retroceder.
-- **Impactos:** depende da camada de julgamento do lead híbrido (ver
-  [ADR-0002](0002-hybrid-lead.md)) para escolher entre as duas saídas.
+- **Positive:** the attempt ceiling prevents the loop that does not converge; the mandatory
+  notice prevents the silently dead task. With two exits instead of three, going back to a
+  previous stage has **a single path** — the review one, which invalidates what needs to be
+  invalidated.
+- **Negative / costs:** a failure that the previous stage would cause goes to `blocked`
+  instead of being fixed on its own. That is deliberate: the human decides whether the case
+  deserves a rollback, instead of the FSM guessing how many stages to step back.
+- **Impacts:** it depends on the judgment layer of the hybrid lead (see
+  [ADR-0002](0002-hybrid-lead.md)) to choose between the two exits.
 
-## Referências
+## References
 
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [etapas padrão](../architecture/stages.md)
+- Related documents: [architecture](../architecture/overview.md),
+  [default stages](../architecture/stages.md)

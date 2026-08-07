@@ -2,8 +2,8 @@ package fsm
 
 import "testing"
 
-// soundFlow devolve um fluxo curto em que todo Requires tem produtor anterior.
-// Fake nomeado: vários cenários partem dele e alteram um ponto de cada vez.
+// soundFlow returns a short flow where every Requires has an earlier producer.
+// A named fake: several scenarios start from it and change one point at a time.
 func soundFlow() []Stage {
 	return []Stage{
 		{ID: "discovery", Requires: []Artifact{TaskID}, Produces: []Artifact{"repos"}},
@@ -12,24 +12,23 @@ func soundFlow() []Stage {
 	}
 }
 
-// TestSoundFlowReportsNoGap cobre o cenário B1.
+// TestSoundFlowReportsNoGap covers scenario B1.
 //
-// Percorrendo as etapas em ordem, todo artefato exigido foi produzido por alguma
-// etapa anterior. Um fluxo assim está íntegro no papel, e a auditoria não
-// reporta nada.
+// Walking the stages in order, every required artifact was produced by an earlier
+// stage. Such a flow is sound on paper, and the audit reports nothing.
 func TestSoundFlowReportsNoGap(t *testing.T) {
 	gaps := AuditContract(soundFlow())
 
 	if len(gaps) != 0 {
-		t.Errorf("fluxo íntegro não deveria acusar lacuna, veio %v", gaps)
+		t.Errorf("a sound flow should report no gap, got %v", gaps)
 	}
 }
 
-// TestRequirementWithoutProducerIsReported cobre o cenário B2.
+// TestRequirementWithoutProducerIsReported covers scenario B2.
 //
-// Uma etapa que exige um artefato que ninguém antes produz quebra o fluxo no
-// papel. A auditoria acusa nomeando a etapa e o artefato faltante — sem os dois,
-// a mensagem custa uma sessão de depuração.
+// A stage requiring an artifact nobody produces earlier breaks the flow on paper.
+// The audit reports it naming both the stage and the missing artifact — without
+// the two, the message costs a debugging session.
 func TestRequirementWithoutProducerIsReported(t *testing.T) {
 	flow := []Stage{
 		{ID: "discovery", Requires: []Artifact{TaskID}, Produces: []Artifact{"repos"}},
@@ -39,24 +38,24 @@ func TestRequirementWithoutProducerIsReported(t *testing.T) {
 	gaps := AuditContract(flow)
 
 	if len(gaps) != 1 {
-		t.Fatalf("quis 1 lacuna, veio %d (%v)", len(gaps), gaps)
+		t.Fatalf("want 1 gap, got %d (%v)", len(gaps), gaps)
 	}
 	if gaps[0].Stage != "build" {
-		t.Errorf("Stage da lacuna: quis build, veio %q", gaps[0].Stage)
+		t.Errorf("gap stage: want build, got %q", gaps[0].Stage)
 	}
 	if len(gaps[0].Missing) != 1 || gaps[0].Missing[0] != "approach" {
-		t.Errorf("Missing: quis [approach], veio %v", gaps[0].Missing)
+		t.Errorf("Missing: want [approach], got %v", gaps[0].Missing)
 	}
 }
 
-// TestAuditArtifactDoesNotSatisfyRequirement cobre o cenário B3.
+// TestAuditArtifactDoesNotSatisfyRequirement covers scenario B3.
 //
-// Um ProducesForHuman não entra no conjunto de artefatos disponíveis: ele é lido
-// por uma pessoa, não consumido pelo fluxo. Uma etapa que exija um artefato de
-// auditoria está exigindo algo que o fluxo não entrega, e isso é lacuna.
+// A ProducesForHuman does not join the set of available artifacts: it is read by a
+// person, not consumed by the flow. A stage requiring an audit artifact is
+// requiring something the flow does not deliver, and that is a gap.
 //
-// É o teste que prova que ProducesForHuman faz alguma coisa: se ele passasse a
-// satisfazer Requires, o campo seria decorativo.
+// This is the test proving ProducesForHuman does something: if it started
+// satisfying Requires, the field would be decorative.
 func TestAuditArtifactDoesNotSatisfyRequirement(t *testing.T) {
 	flow := []Stage{
 		{ID: "verify", Requires: []Artifact{TaskID}, Produces: []Artifact{"ci_green"}, ProducesForHuman: []Artifact{"dod_checked"}},
@@ -66,18 +65,18 @@ func TestAuditArtifactDoesNotSatisfyRequirement(t *testing.T) {
 	gaps := AuditContract(flow)
 
 	if len(gaps) != 1 {
-		t.Fatalf("artefato de auditoria não satisfaz Requires; quis 1 lacuna, veio %d (%v)", len(gaps), gaps)
+		t.Fatalf("an audit artifact does not satisfy Requires; want 1 gap, got %d (%v)", len(gaps), gaps)
 	}
 	if gaps[0].Stage != "commit" || gaps[0].Missing[0] != "dod_checked" {
-		t.Errorf("quis lacuna commit/dod_checked, veio %s/%v", gaps[0].Stage, gaps[0].Missing)
+		t.Errorf("want gap commit/dod_checked, got %s/%v", gaps[0].Stage, gaps[0].Missing)
 	}
 }
 
-// TestArtifactProducedLaterDoesNotSatisfy cobre o cenário B4.
+// TestArtifactProducedLaterDoesNotSatisfy covers scenario B4.
 //
-// A ordem importa: um artefato produzido por uma etapa posterior não está
-// disponível para a anterior. A auditoria acusa mesmo existindo produtor no
-// conjunto — o que ela verifica é a precedência, não a existência.
+// Order matters: an artifact produced by a later stage is not available to an
+// earlier one. The audit reports it even though a producer exists in the set —
+// what it checks is precedence, not existence.
 func TestArtifactProducedLaterDoesNotSatisfy(t *testing.T) {
 	flow := []Stage{
 		{ID: "build", Requires: []Artifact{"scenarios"}, Produces: []Artifact{"code"}},
@@ -87,64 +86,64 @@ func TestArtifactProducedLaterDoesNotSatisfy(t *testing.T) {
 	gaps := AuditContract(flow)
 
 	if len(gaps) != 1 {
-		t.Fatalf("quis 1 lacuna por ordem invertida, veio %d (%v)", len(gaps), gaps)
+		t.Fatalf("want 1 gap from inverted order, got %d (%v)", len(gaps), gaps)
 	}
 	if gaps[0].Stage != "build" {
-		t.Errorf("quis lacuna em build, veio %q", gaps[0].Stage)
+		t.Errorf("want gap in build, got %q", gaps[0].Stage)
 	}
 }
 
-// TestTaskIDIsAvailableFromTheStart cobre o cenário B5.
+// TestTaskIDIsAvailableFromTheStart covers scenario B5.
 //
-// A tarefa já chega com seu identificador: é a raiz do grafo e o único insumo
-// que nenhuma etapa produz. Qualquer outro artefato precisa de produtor
-// declarado.
+// The task already arrives with its identifier: it is the root of the graph and
+// the only input no stage produces. Every other artifact needs a declared
+// producer.
 func TestTaskIDIsAvailableFromTheStart(t *testing.T) {
 	flow := []Stage{
 		{ID: "discovery", Requires: []Artifact{TaskID}, Produces: []Artifact{"repos"}},
 	}
 
 	if gaps := AuditContract(flow); len(gaps) != 0 {
-		t.Errorf("task_id é a raiz e não deveria acusar lacuna, veio %v", gaps)
+		t.Errorf("task_id is the root and should report no gap, got %v", gaps)
 	}
 
 	withoutRoot := []Stage{
-		{ID: "discovery", Requires: []Artifact{"outra_coisa"}, Produces: []Artifact{"repos"}},
+		{ID: "discovery", Requires: []Artifact{"something_else"}, Produces: []Artifact{"repos"}},
 	}
 
 	if gaps := AuditContract(withoutRoot); len(gaps) != 1 {
-		t.Errorf("só task_id é insumo externo; quis 1 lacuna, veio %v", gaps)
+		t.Errorf("task_id is the only external input; want 1 gap, got %v", gaps)
 	}
 }
 
-// TestEveryGapIsReported cobre o cenário B6.
+// TestEveryGapIsReported covers scenario B6.
 //
-// A auditoria percorre o fluxo inteiro e reporta tudo que encontra. Parar na
-// primeira lacuna faria quem conserta descobrir as demais uma a uma, a cada
-// nova execução.
+// The audit walks the whole flow and reports everything it finds. Stopping at the
+// first gap would make whoever fixes it discover the rest one at a time, on every
+// new run.
 func TestEveryGapIsReported(t *testing.T) {
 	flow := []Stage{
-		{ID: "a", Requires: []Artifact{"faltante_um"}, Produces: []Artifact{"x"}},
-		{ID: "b", Requires: []Artifact{"faltante_dois"}, Produces: []Artifact{"y"}},
-		{ID: "c", Requires: []Artifact{"faltante_tres"}, Produces: []Artifact{"z"}},
+		{ID: "a", Requires: []Artifact{"missing_one"}, Produces: []Artifact{"x"}},
+		{ID: "b", Requires: []Artifact{"missing_two"}, Produces: []Artifact{"y"}},
+		{ID: "c", Requires: []Artifact{"missing_three"}, Produces: []Artifact{"z"}},
 	}
 
 	gaps := AuditContract(flow)
 
 	if len(gaps) != 3 {
-		t.Fatalf("quis 3 lacunas reportadas juntas, veio %d (%v)", len(gaps), gaps)
+		t.Fatalf("want 3 gaps reported together, got %d (%v)", len(gaps), gaps)
 	}
 	for i, want := range []StageID{"a", "b", "c"} {
 		if gaps[i].Stage != want {
-			t.Errorf("lacuna %d: quis etapa %q, veio %q", i, want, gaps[i].Stage)
+			t.Errorf("gap %d: want stage %q, got %q", i, want, gaps[i].Stage)
 		}
 	}
 }
 
-// TestGapGroupsMissingArtifactsByStage cobre a borda de B6.
+// TestGapGroupsMissingArtifactsByStage covers the edge of B6.
 //
-// Uma etapa a que faltam dois insumos gera uma lacuna com os dois, não duas
-// lacunas — quem lê o relatório quer saber o que falta para a etapa começar.
+// A stage missing two inputs yields one gap carrying both, not two gaps — whoever
+// reads the report wants to know what the stage needs in order to start.
 func TestGapGroupsMissingArtifactsByStage(t *testing.T) {
 	flow := []Stage{
 		{ID: "build", Requires: []Artifact{"scenarios", "approach"}, Produces: []Artifact{"code"}},
@@ -153,19 +152,19 @@ func TestGapGroupsMissingArtifactsByStage(t *testing.T) {
 	gaps := AuditContract(flow)
 
 	if len(gaps) != 1 {
-		t.Fatalf("quis 1 lacuna agrupada por etapa, veio %d (%v)", len(gaps), gaps)
+		t.Fatalf("want 1 gap grouped by stage, got %d (%v)", len(gaps), gaps)
 	}
 	if len(gaps[0].Missing) != 2 {
-		t.Errorf("Missing: quis 2 artefatos na mesma lacuna, veio %v", gaps[0].Missing)
+		t.Errorf("Missing: want 2 artifacts in the same gap, got %v", gaps[0].Missing)
 	}
 }
 
-// TestEmptyFlowReportsNoGap cobre a borda degenerada.
+// TestEmptyFlowReportsNoGap covers the degenerate edge.
 //
-// Um fluxo sem etapas não tem exigência a violar. É caso limite, mas quem chama
-// não deveria precisar tratá-lo por fora.
+// A flow with no stages has no requirement to violate. It is a limit case, but
+// callers should not have to handle it themselves.
 func TestEmptyFlowReportsNoGap(t *testing.T) {
 	if gaps := AuditContract(nil); len(gaps) != 0 {
-		t.Errorf("fluxo vazio não tem o que acusar, veio %v", gaps)
+		t.Errorf("an empty flow has nothing to report, got %v", gaps)
 	}
 }

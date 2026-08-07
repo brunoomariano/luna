@@ -1,63 +1,63 @@
-# ADR-0020: Achado alinhado invalida o verde ao voltar para build
+# ADR-0020: An aligned finding invalidates the green when going back to build
 
-**Status:** Aceito
-**Data:** 2026-08-06
+**Status:** Accepted
+**Date:** 2026-08-06
 
-## Contexto
+## Context
 
-Quando uma etapa de revisão — `qa`, `code-review`, `harden` ou `architecture` — encontra
-um problema, o modelo decide pelo **alinhamento com a tarefa**: achado alinhado volta ao
-`build`; achado fora do escopo vira tarefa nova e o fluxo segue (ver
-[ADR-0014](0014-conditional-stages.md) e
-[arquitetura/etapas](../architecture/stages.md)).
+When a review stage — `qa`, `code-review`, `harden` or `architecture` — finds a problem,
+the model decides by **alignment with the task**: an aligned finding goes back to `build`;
+a finding outside the scope becomes a new task and the flow continues (see
+[ADR-0014](0014-conditional-stages.md) and
+[architecture/stages](../architecture/stages.md)).
 
-A volta ao `build` cria um problema que não é óbvio. As etapas de revisão só entram
-**depois** de `verify` ter produzido `ci_green`. Se o fluxo volta ao `build`, o código
-muda — mas `ci_green` continua no contexto, atestando um estado que não existe mais.
+Going back to `build` creates a problem that is not obvious. The review stages only enter
+**after** `verify` has produced `ci_green`. If the flow goes back to `build`, the code
+changes — but `ci_green` stays in the context, attesting to a state that no longer exists.
 
-O contrato de etapa (ver [ADR-0004](0004-stage-requires-produces-contract.md)) verifica
-que o `requires` **está presente** no contexto. Ele não tem como saber que um valor
-presente ficou obsoleto. Sem invalidação explícita, a segunda passagem pelas etapas de
-revisão encontraria `ci_green` satisfeito por uma execução anterior ao código atual — e o
-contrato aprovaria a entrada, porque do ponto de vista dele o insumo está lá.
+The stage contract (see [ADR-0004](0004-stage-requires-produces-contract.md)) checks that
+the `requires` **is present** in the context. It has no way of knowing that a present value
+went stale. Without explicit invalidation, the second pass through the review stages would
+find `ci_green` satisfied by a run predating the current code — and the contract would
+approve the entry, because from its point of view the input is there.
 
-Isso derrotaria a garantia central: a validação é feita **rodando a ferramenta** (ver
-[ADR-0005](0005-validate-output-by-running-the-tool.md)), justamente para não confiar em
-atestado. Um `ci_green` obsoleto é atestado disfarçado de verificação.
+That would defeat the central guarantee: validation is done by **running the tool** (see
+[ADR-0005](0005-validate-output-by-running-the-tool.md)), precisely so as not to trust an
+attestation. A stale `ci_green` is an attestation disguised as verification.
 
-## Decisão
+## Decision
 
-Quando um achado alinhado devolve o fluxo ao `build`, a transição **remove `ci_green` do
-contexto**. O verde precisa ser reconquistado por uma execução nova de `verify` sobre o
-código novo.
+When an aligned finding sends the flow back to `build`, the transition **removes `ci_green`
+from the context**. The green must be re-earned by a new run of `verify` over the new code.
 
-A invalidação é parte da transição, não responsabilidade do agente: nenhuma etapa
-"lembra" de invalidar o que a mudança dela tornou obsoleto.
+Invalidation is part of the transition, not the agent's responsibility: no stage "remembers"
+to invalidate what its own change made stale.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **Manter `ci_green` e confiar que `verify` roda de novo no caminho** — descartada
-  porque o contrato só exige presença, não frescor. `verify` participa do loop e seria
-  reexecutado no caminho feliz, mas o fluxo não *garante* isso: bastaria uma condição de
-  etapa mudar para o código novo alcançar `code-review` com o verde antigo.
-- **Marcar `ci_green` com o hash do código que o produziu** e comparar na entrada —
-  descartada por ora: resolve o mesmo problema com mais mecanismo, e exigiria estender o
-  contrato de etapa de presença para validade. Fica registrada como a evolução natural se
-  outros produtos passarem a precisar de invalidação por dependência.
+- **Keep `ci_green` and trust that `verify` runs again along the way** — rejected because
+  the contract only requires presence, not freshness. `verify` takes part in the loop and
+  would be re-executed on the happy path, but the flow does not *guarantee* that: one stage
+  condition changing would be enough for the new code to reach `code-review` with the old
+  green.
+- **Tag `ci_green` with the hash of the code that produced it** and compare it on entry —
+  rejected for now: it solves the same problem with more mechanism, and would require
+  extending the stage contract from presence to validity. It is recorded as the natural
+  evolution if other products come to need dependency-based invalidation.
 
-## Consequências
+## Consequences
 
-- **Positivas:** impede que uma verificação obsoleta valide código novo. É o que mantém
-  honesta a segunda passagem pelas etapas de revisão.
-- **Negativas / custos:** toda volta ao `build` paga uma reexecução de `verify`, mesmo
-  quando a mudança foi mínima. É o custo aceito para não confiar num verde velho.
-- **Impactos:** estabelece que **a transição pode invalidar produtos anteriores**. Hoje o
-  caso é só `ci_green`; se surgirem outros produtos com dependência de frescor, a
-  alternativa do hash volta à mesa.
+- **Positive:** it prevents a stale verification from validating new code. It is what keeps
+  the second pass through the review stages honest.
+- **Negative / costs:** every rollback to `build` pays for a re-execution of `verify`, even
+  when the change was minimal. That is the cost accepted for not trusting an old green.
+- **Impacts:** it establishes that **a transition may invalidate earlier products**. Today
+  the only case is `ci_green`; if other products with a freshness dependency appear, the
+  hash alternative comes back to the table.
 
-## Referências
+## References
 
-- Protótipo: `prototypes/fsm-flow.html`, caso `REVIEW_FINDING` do redutor `LunaFSM` — o
-  comportamento está implementado e é dirigível pelos cenários da página.
-- Documentos relacionados: [arquitetura](../architecture/overview.md),
-  [etapas](../architecture/stages.md), [invariantes](../invariants/core.md)
+- Prototype: `prototypes/fsm-flow.html`, the `REVIEW_FINDING` case of the `LunaFSM` reducer
+  — the behavior is implemented and drivable through the page's scenarios.
+- Related documents: [architecture](../architecture/overview.md),
+  [stages](../architecture/stages.md), [invariants](../invariants/core.md)
