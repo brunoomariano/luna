@@ -65,7 +65,7 @@ func TestRelatoriosDeAuditoriaNaoSaoProdutosDoFluxo(t *testing.T) {
 		if stage.ProducesArtifact(report) {
 			t.Errorf("%q: %q é artefato de auditoria e não deveria estar em Produces", stage.ID, report)
 		}
-		if !contains(stage.ProducesForHuman, report) {
+		if !stage.ProducesForHumanArtifact(report) {
 			t.Errorf("%q: quis %q em ProducesForHuman, veio %v", stage.ID, report, stage.ProducesForHuman)
 		}
 	}
@@ -109,13 +109,4 @@ func TestEtapasCondicionaisDoFluxoPadrao(t *testing.T) {
 			t.Errorf("%q com kind=%q: quis entra=%v, veio %v", c.stage, c.kind, c.entra, got)
 		}
 	}
-}
-
-func contains(list []Artifact, want Artifact) bool {
-	for _, a := range list {
-		if a == want {
-			return true
-		}
-	}
-	return false
 }

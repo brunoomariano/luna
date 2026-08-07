@@ -52,12 +52,27 @@ type Stage struct {
 	When func(TaskKind) bool
 }
 
-// Produces informa se a etapa entrega o artefato para o fluxo consumir.
+// ProducesArtifact informa se a etapa entrega o artefato para o fluxo consumir.
 // ProducesForHuman não conta: um relatório de auditoria não satisfaz o Requires
 // de ninguém (INV-core-11).
 func (s Stage) ProducesArtifact(a Artifact) bool {
-	for _, p := range s.Produces {
-		if p == a {
+	return containsArtifact(s.Produces, a)
+}
+
+// ProducesForHumanArtifact informa se a etapa entrega o artefato para leitura
+// humana. Separado de ProducesArtifact porque a pergunta é outra: aqui não se
+// checa disponibilidade para o fluxo, e sim se a etapa se comprometeu a entregar
+// um parecer.
+func (s Stage) ProducesForHumanArtifact(a Artifact) bool {
+	return containsArtifact(s.ProducesForHuman, a)
+}
+
+// containsArtifact é busca linear porque as listas de um contrato de etapa têm
+// meia dúzia de itens — um índice custaria mais em alocação do que economiza em
+// comparação.
+func containsArtifact(list []Artifact, want Artifact) bool {
+	for _, a := range list {
+		if a == want {
 			return true
 		}
 	}
