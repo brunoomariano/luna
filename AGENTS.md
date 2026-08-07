@@ -27,6 +27,11 @@ The stage contract is the source of truth:
 `DefaultFlow()` implements them. A divergence between the two is a bug —
 `TestDefaultFlowMatchesDocumentedStages` exists to catch it.
 
+The engine is a reducer: `Reduce(state, action) → state`, pure, with no clock, no
+filesystem and no process. Verification runs outside it and its verdict arrives inside
+the action (ADR-0024) — that is what keeps a transition reproducible from the log and
+testable without infrastructure. Running things belongs to `internal/node`.
+
 ## Standard workflow
 
 - Read the local context before changing files.

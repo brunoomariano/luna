@@ -24,6 +24,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   HTTP surface — a rule that until now lived only in prose. Race detection and
   vulnerability scanning run in remote CI; complexity, dead code, CRAP index and
   mutation testing report without gating.
+- The reducer: a task now has state (`ready`, `running`, `awaiting_gate`, `blocked`,
+  `done`) and moves between them through eight actions. This is where the contract's
+  exit check lands — a stage that promised two artifacts and delivered one does not
+  close — along with retry-then-block on failure, the three gate answers, the green
+  invalidation on an aligned review finding, and the three loop ceilings.
 - Stage selection: `NextStage` answers which stage comes next, skipping the ones whose
   condition does not hold, and `MissingFor` is the contract's entry check — the sibling
   of the static one. An unknown stage is an error rather than a silent restart.
