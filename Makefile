@@ -22,8 +22,12 @@ doctor: ## confere o ambiente sem instalar nada
 # Cobertura mínima. Sobe conforme o motor cresce; não baixe para fazer passar.
 COVER_MIN ?= 80
 
-fmt: ## formata
+fmt: ## formata o código (escreve)
 	@go fmt ./...
+
+fmt-check: ## confere a formatação sem escrever
+	@out=$$(gofmt -l src/); \
+	  if [ -n "$$out" ]; then echo "não formatado:"; echo "$$out"; exit 1; fi
 
 lint: ## análise estática
 	@go vet ./...
@@ -41,9 +45,12 @@ cover: ## testes com cobertura, falhando abaixo de COVER_MIN
 lint-docs: ## valida a forma da suíte de docs (read-only)
 	@sh scripts/lint-docs.sh
 
-ci-check: fmt lint lint-docs cover ## o mesmo que o CI remoto roda
+# ci corrige o que dá e depois verifica; ci-check SÓ verifica.
+# A distinção não é cosmética: ci-check é o que o CI remoto roda, e um passo de
+# CI que reformata o código esconde justamente o que deveria reprovar.
+ci-check: fmt-check lint lint-docs cover ## só verifica — o mesmo que o CI remoto roda
 
-ci: ci-check ## alias de ci-check
+ci: fmt ci-check ## corrige o que dá, depois verifica. Rode antes do PR.
 
 build: ## compila o binário
 	@go build -o bin/luna ./src/cmd/luna

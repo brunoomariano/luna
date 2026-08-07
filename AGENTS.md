@@ -121,13 +121,14 @@ critério antes do diff.
 
 - `make bootstrap` — prepara o ambiente (mise + dependências). Idempotente.
 - `make doctor` — confere o ambiente sem instalar nada.
-- `make ci-check` — o que o CI remoto roda: `fmt`, `lint`, `lint-docs`, `test`.
-- `make ci` — alias de `ci-check`. Rode antes de abrir PR.
+- `make ci-check` — **só verifica**: `fmt-check`, `lint`, `lint-docs`, `cover`. É o que
+  o CI remoto roda, e não escreve em nada.
+- `make ci` — corrige o que dá (`fmt`) e então verifica. **Rode antes de abrir PR.**
+
+A distinção entre os dois não é cosmética: um passo de CI que reformata o código
+esconde exatamente o que deveria reprovar.
 - `make lint-docs` — valida a **forma** da suíte de docs; falha o CI como lint de
   código. O contrato que ele executa está em [`docs/README.md`](docs/README.md).
-
-Enquanto não há `go.mod`, os alvos de código são no-op explícito em vez de falhar —
-assim o CI nasce verde e passa a valer de verdade quando o código vier.
 
 Não há `up`/`down`/`logs`/`clean_db`: a Luna é um CLI sem serviços nem banco de
 desenvolvimento. Target no-op seria cerimônia.
