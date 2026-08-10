@@ -59,6 +59,7 @@ func run(args []string) error {
 		Store: s,
 		Out:   os.Stdout,
 		Err:   os.Stderr,
+		In:    os.Stdin,
 		Edit:  cli.Editor(cfg),
 	}, args)
 }

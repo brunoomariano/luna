@@ -31,6 +31,10 @@ type Env struct {
 	Out   io.Writer
 	Err   io.Writer
 
+	// In is where `--stdin` reads a replacement from. Nil means nothing is
+	// connected, which `--stdin` reports rather than silently treating as empty.
+	In io.Reader
+
 	// Edit opens content for a person to change and returns what they left. It is
 	// injected rather than called directly so a test does not need $EDITOR — and
 	// so that a headless run can fail loudly instead of hanging on a terminal.
@@ -79,8 +83,10 @@ luna — deterministic orchestration for AI agents
   luna gate approve <id>
         accept and carry on
 
-  luna gate adjust <id>
-        edit the artifact under review, then accept the edited version
+  luna gate adjust <id> [--append <text> | --replace <text> | --stdin]
+        change the artifact under review, then accept the changed version.
+        With no flag, opens the editor. The flags exist so an agent or a
+        script can answer a gate without a terminal.
 
   luna gate reject <id> [reason]
         refuse the artifact; the stage that produced it runs again
@@ -261,7 +267,7 @@ func runGate(env Env, args []string) error {
 	case "reject":
 		return answer(env, id, fsm.GateReject{Reason: strings.Join(args[2:], " ")}, "rejected")
 	case "adjust":
-		return gateAdjust(env, id, state)
+		return gateAdjust(env, id, state, args[2:])
 	default:
 		// Unreachable: the switch above already rejected anything else.
 		return fmt.Errorf("%w: unknown gate subcommand %q", ErrUsage, sub)
@@ -281,27 +287,85 @@ func gateShow(env Env, state fsm.TaskState) error {
 	return nil
 }
 
-func gateAdjust(env Env, id string, state fsm.TaskState) error {
+// gateAdjust applies a human's edit to the artifact a gate is holding.
+//
+// Four ways in, because the answer does not always come from a person at a
+// terminal. An agent driving Luna — or a script — has no editor to open, and an
+// interface that only works interactively would push that caller into approving
+// something it meant to change.
+//
+//	--append "text"   add to the end
+//	--replace "text"  swap the whole thing
+//	--stdin           read the replacement from stdin
+//	(none)            open the editor
+func gateAdjust(env Env, id string, state fsm.TaskState, args []string) error {
 	if state.Gate.Kind != fsm.GateReviewArtifact {
 		return fmt.Errorf("the gate on %q carries no artifact to adjust", id)
 	}
-	if env.Edit == nil {
-		return errors.New("no editor available; set $EDITOR or use approve/reject")
-	}
 
-	edited, err := env.Edit(state.Gate.Payload)
+	payload, err := adjustedPayload(env, state.Gate.Payload, args)
 	if err != nil {
 		return err
 	}
 
-	// Leaving the editor without changing anything is how a person says "never
-	// mind". Treating it as an approval would put words in their mouth.
-	if edited == state.Gate.Payload {
+	// An adjustment that changes nothing is how someone says "never mind" —
+	// whether they left the editor untouched or passed an empty append. Reading it
+	// as approval would put words in their mouth.
+	if payload == state.Gate.Payload {
 		fmt.Fprintln(env.Out, "unchanged — nothing was applied")
 		return nil
 	}
 
-	return answer(env, id, fsm.GateAdjust{Payload: edited}, "adjusted")
+	return answer(env, id, fsm.GateAdjust{Payload: payload}, "adjusted")
+}
+
+// adjustedPayload works out the new content from however the caller chose to
+// supply it.
+func adjustedPayload(env Env, current string, args []string) (string, error) {
+	flags, err := parseFlags(args)
+	if err != nil {
+		return "", err
+	}
+
+	if len(flags) > 1 {
+		return "", fmt.Errorf("%w: choose one of --append, --replace or --stdin", ErrUsage)
+	}
+
+	for name, value := range flags {
+		switch name {
+		case "append":
+			// A newline between the two: appending to a contract should not glue
+			// the addition onto the last line of what it is commenting on.
+			return strings.TrimRight(current, "\n") + "\n" + value + "\n", nil
+		case "replace":
+			return value, nil
+		case "stdin":
+			return readAll(env)
+		default:
+			return "", fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		}
+	}
+
+	if env.Edit == nil {
+		return "", errors.New(
+			"no editor configured; set `editor` in .luna/config.toml, or use " +
+				"--append/--replace/--stdin",
+		)
+	}
+	return env.Edit(current)
+}
+
+// readAll reads the replacement from stdin, which is how a pipeline supplies it.
+func readAll(env Env) (string, error) {
+	if env.In == nil {
+		return "", errors.New("--stdin was given but nothing is connected to read from")
+	}
+
+	content, err := io.ReadAll(env.In)
+	if err != nil {
+		return "", fmt.Errorf("reading the replacement from stdin: %w", err)
+	}
+	return string(content), nil
 }
 
 // answer records a gate response, after checking the reducer accepts it. Writing
@@ -323,6 +387,9 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 	return nil
 }
 
+// valuelessFlags are the switches: present or absent, never `--flag value`.
+var valuelessFlags = map[string]bool{"stdin": true}
+
 // parseFlags reads --name=value and --name value pairs.
 func parseFlags(args []string) (map[string]string, error) {
 	flags := map[string]string{}
@@ -336,6 +403,11 @@ func parseFlags(args []string) (map[string]string, error) {
 
 		if name, value, found := strings.Cut(arg, "="); found {
 			flags[name] = value
+			continue
+		}
+		// A few flags are switches rather than settings; they carry no value.
+		if valuelessFlags[arg] {
+			flags[arg] = ""
 			continue
 		}
 		if i+1 >= len(args) {

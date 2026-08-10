@@ -343,7 +343,7 @@ func TestAdjustLeavingTheEditorUnchangedAppliesNothing(t *testing.T) {
 		Payload:  "the generated contract",
 	}
 
-	if err := gateAdjust(h.env, "LUNA-1", state); err != nil {
+	if err := gateAdjust(h.env, "LUNA-1", state, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -364,7 +364,7 @@ func TestAdjustWithoutAnEditorSaysSo(t *testing.T) {
 	state.Status = fsm.StatusAwaitingGate
 	state.Gate = &fsm.PendingGate{Kind: fsm.GateReviewArtifact, Artifact: "contract"}
 
-	err := gateAdjust(h.env, "LUNA-1", state)
+	err := gateAdjust(h.env, "LUNA-1", state, nil)
 
 	if err == nil || !strings.Contains(err.Error(), "editor") {
 		t.Errorf("want a message naming what to configure, got %v", err)
@@ -633,5 +633,145 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 
 	if !strings.Contains(out, "LUNA-1") {
 		t.Errorf("want the task named, got %q", out)
+	}
+}
+
+// ── adjusting a gate without an editor ───────────────────────────────────────
+
+// TestGateAdjustAppends covers the mode an agent would use.
+//
+// The point of the non-interactive modes: whoever answers a gate is not always a
+// person at a terminal. An interface that only worked interactively would push an
+// agent into approving something it meant to change.
+func TestGateAdjustAppends(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+	h.env.Edit = nil // no editor anywhere; the flag must carry it
+
+	out := h.mustRun(t, "gate", "adjust", "LUNA-1", "--append", "and one more constraint")
+
+	if !strings.Contains(out, "adjusted") {
+		t.Errorf("want a confirmation, got %q", out)
+	}
+
+	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if !strings.Contains(state.Evidence["contract"], "and one more constraint") {
+		t.Errorf("want the addition recorded, got %q", state.Evidence["contract"])
+	}
+}
+
+// TestGateAdjustReplaces covers the wholesale swap.
+func TestGateAdjustReplaces(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+	h.env.Edit = nil
+
+	h.mustRun(t, "gate", "adjust", "LUNA-1", "--replace", "a completely different contract")
+
+	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if state.Evidence["contract"] != "a completely different contract" {
+		t.Errorf("want the replacement, got %q", state.Evidence["contract"])
+	}
+}
+
+// TestGateAdjustFromStdin covers the pipeline mode.
+func TestGateAdjustFromStdin(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+	h.env.Edit = nil
+	h.env.In = strings.NewReader("a contract from a pipeline")
+
+	h.mustRun(t, "gate", "adjust", "LUNA-1", "--stdin")
+
+	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if state.Evidence["contract"] != "a contract from a pipeline" {
+		t.Errorf("want what stdin carried, got %q", state.Evidence["contract"])
+	}
+}
+
+// TestGateAdjustWithStdinAndNothingConnected covers the missing-reader path.
+//
+// Reporting it beats treating an absent reader as an empty replacement, which
+// would silently wipe the artifact.
+func TestGateAdjustWithStdinAndNothingConnected(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+	h.env.Edit = nil
+	h.env.In = nil
+
+	err := h.run(t, "gate", "adjust", "LUNA-1", "--stdin")
+
+	if err == nil || !strings.Contains(err.Error(), "nothing is connected") {
+		t.Errorf("want a clear message, got %v", err)
+	}
+}
+
+// TestGateAdjustRefusesTwoModesAtOnce covers the ambiguity.
+func TestGateAdjustRefusesTwoModesAtOnce(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+
+	err := h.run(t, "gate", "adjust", "LUNA-1", "--append", "x", "--replace", "y")
+
+	if !errors.Is(err, ErrUsage) {
+		t.Errorf("want ErrUsage when two modes are given, got %v", err)
+	}
+}
+
+// TestGateAdjustRejectsAnUnknownFlag covers the typo path.
+func TestGateAdjustRejectsAnUnknownFlag(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+
+	if err := h.run(t, "gate", "adjust", "LUNA-1", "--apend", "x"); !errors.Is(err, ErrUsage) {
+		t.Errorf("want ErrUsage for a mistyped flag, got %v", err)
+	}
+}
+
+// TestAnAppendThatChangesNothingAppliesNothing covers the no-op guard.
+//
+// An empty append is how someone says "never mind" without an editor. Reading it
+// as approval would put words in their mouth — the same reasoning as leaving an
+// editor untouched.
+func TestAnAppendThatChangesNothingAppliesNothing(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+	h.env.Edit = nil
+
+	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	current := state.Gate.Payload
+
+	out := h.mustRun(t, "gate", "adjust", "LUNA-1", "--replace", current)
+
+	if !strings.Contains(out, "unchanged") {
+		t.Errorf("want it to say nothing was applied, got %q", out)
+	}
+}
+
+// TestAdjustWithNoEditorAndNoFlagSaysWhatToDo covers the dead end.
+func TestAdjustWithNoEditorAndNoFlagSaysWhatToDo(t *testing.T) {
+	h := newHarness(t)
+	specGateStore(t, h, "LUNA-1")
+	h.env.Edit = nil
+
+	err := h.run(t, "gate", "adjust", "LUNA-1")
+
+	if err == nil {
+		t.Fatal("with no editor and no flag there is nothing to do")
+	}
+	if !strings.Contains(err.Error(), "--append") {
+		t.Errorf("the message should name the alternatives, got %v", err)
 	}
 }
