@@ -180,6 +180,64 @@ accepts directly. It would make the log honest at the cost of a second path into
 
 ## Resolved after review
 
+### #2 and #6 — one profile list, and the surface says when it meets an unknown name
+
+**Raised by the user:** "when does this replay happen, and why are we reading from the log?"
+
+The answers changed the fix. The log is `.luna/luna.db`, a SQLite file in the project — it
+is not published anywhere. Everything reads from it because **the state is not stored, it is
+derived**: there is no row saying a task is at a gate, only the actions and the reducer.
+
+An unknown profile therefore reaches the engine by exactly one realistic route: a log written
+by a newer version, replayed by an older one. Failing the replay was rejected because
+`luna gates` replays every task to find the suspended ones — one unreadable task would hide
+all the others.
+
+**Done:** `fsm.ParseProfile` is now the single list of valid names, and the CLI calls it. The
+fallback in `WaitsFor` stays, because it is not a second list — it is what happens to a name
+that never passed through any parser. `luna gates` and `luna task show` now flag a profile
+this build does not know, so a nightly run stopping at every gate says why.
+
+The user's objection to storing the whole policy in the log was right and that option was
+dropped: the log keeps the name.
+
+### #8 — the status says the stage finished
+
+**Raised by the user:** "why not improve the record instead of reading a side effect? If it
+finished, change the status."
+
+Correct, and it exposes the real mistake. There were two situations — a node with work to do
+and a node that had finished — collapsed into one `running` status, and inferring the
+difference from what landed in the context was working around the symptom.
+
+**Done:** `StatusStageDone`. `Complete` sets it, `Advance` accepts it, and `Advance` now
+*refuses* a stage still running — a guard that was impossible before, because the state could
+not tell the two apart. The inferred `closed()` helper is gone.
+
+Two things this fixes beyond the loop: a custom flow with a stage that owes nothing no longer
+runs its node twice, and evidence being optional some day would no longer break the
+tie-break silently.
+
+### #10 — a block is one event
+
+**Raised by the user:** "I prefer an honest log, without the phantom retry."
+
+**Done:** `Block{Reason}` is an action the reducer accepts directly. The lead records one
+event where it used to record three `Fail`s to spend the retry budget.
+
+The reason is required rather than defaulted: a task that halts without saying why is the
+silent failure INV-core-8 forbids. And the retry counter is left untouched, because a block is
+not an attempt.
+
+The cost I named — a second path into `StatusBlocked` — is real but smaller than the log
+lying. The wave-5 study points at what makes it disappear: multica's closed failure taxonomy,
+where a reason that is never retried has no other way in.
+
+### #3 — kept
+
+**User's call:** "having a different ceiling per profile is good, keep it."
+
+
 ### #4 — the editor is now the project's choice first
 
 **Raised by the user:** "$EDITOR is the user's default; the Luna system may want another."

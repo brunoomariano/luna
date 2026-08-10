@@ -69,6 +69,15 @@ type ReviewFinding struct {
 	Limits  LoopLimits
 }
 
+// Block stops the task and notifies, without pretending an attempt was made.
+//
+// It exists because the lead used to reach a block by recording Fail until the
+// retry budget ran out, which left three failures in the log where there had been
+// one decision to escalate. The history is the audit trail (INV-core-2), and an
+// audit that shows retries that never happened is a worse kind of wrong than a
+// second path into the same state.
+type Block struct{ Reason string }
+
 // Unblock is a human clearing a block.
 type Unblock struct{}
 
@@ -80,6 +89,7 @@ func (GateApprove) isAction()   {}
 func (GateAdjust) isAction()    {}
 func (GateReject) isAction()    {}
 func (ReviewFinding) isAction() {}
+func (Block) isAction()         {}
 func (Unblock) isAction()       {}
 
 // reviewStages are the only ones allowed to produce a finding. An implementer
@@ -112,10 +122,36 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 		return answerGate(state, action)
 	case ReviewFinding:
 		return reviewFinding(state, a)
+	case Block:
+		return block(state, a)
 	case Unblock:
 		return unblock(state)
 	default:
 		return state, fmt.Errorf("%w: unknown action %T", ErrIllegalTransition, action)
+	}
+}
+
+// canAdvance reports whether the task is in a position to enter a stage.
+//
+// Every status is named rather than relying on a default: when a seventh one is
+// added, this is the place that has to decide about it, instead of silently
+// letting it advance.
+func canAdvance(state TaskState) error {
+	switch state.Status {
+	case StatusReady, StatusStageDone:
+		// The two that may advance: a task that has not started, and one whose
+		// stage just closed.
+		return nil
+	case StatusRunning:
+		return fmt.Errorf("%w: %q is still running", ErrIllegalTransition, state.Stage)
+	case StatusAwaitingGate:
+		return fmt.Errorf("%w: a gate is pending on %q", ErrIllegalTransition, state.Stage)
+	case StatusBlocked:
+		return fmt.Errorf("%w: the task is blocked", ErrIllegalTransition)
+	case StatusDone:
+		return fmt.Errorf("%w: the task is finished", ErrIllegalTransition)
+	default:
+		return fmt.Errorf("%w: unknown status %q", ErrIllegalTransition, state.Status)
 	}
 }
 
@@ -134,19 +170,8 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 }
 
 func advance(state TaskState, a Advance) (TaskState, error) {
-	// Every status is named rather than relying on a default: when a sixth one is
-	// added, the compiler-adjacent check makes this switch the place that has to
-	// decide about it, instead of silently letting it advance.
-	switch state.Status {
-	case StatusReady, StatusRunning:
-		// The two that may advance: a task that has not started, and one whose
-		// stage just closed.
-	case StatusAwaitingGate:
-		return state, fmt.Errorf("%w: a gate is pending on %q", ErrIllegalTransition, state.Stage)
-	case StatusBlocked:
-		return state, fmt.Errorf("%w: the task is blocked", ErrIllegalTransition)
-	case StatusDone:
-		return state, fmt.Errorf("%w: the task is finished", ErrIllegalTransition)
+	if err := canAdvance(state); err != nil {
+		return state, err
 	}
 
 	next, ok, err := NextStage(a.Flow, state.Stage, state.Context)
@@ -218,6 +243,11 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		state.Evidence[artifact] = evidence
 	}
 
+	// The status says the stage finished, rather than leaving the caller to infer
+	// it from what landed in the context. A closed stage and a stage about to
+	// start were both `running`, which is a distinction the state should make
+	// itself.
+	state.Status = StatusStageDone
 	state.Retry.Attempts = 0
 	return state, nil
 }
@@ -302,6 +332,23 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 		state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
 	}
 
+	return state, nil
+}
+
+// block stops the task with the reason it will notify with.
+func block(state TaskState, a Block) (TaskState, error) {
+	if state.Status == StatusDone || state.Status == StatusBlocked {
+		return state, fmt.Errorf("%w: the task is already %s", ErrIllegalTransition, state.Status)
+	}
+	if a.Reason == "" {
+		// A block that does not say why is the silent failure INV-core-8 forbids,
+		// so the reason is required rather than defaulted.
+		return state, fmt.Errorf("%w: a block must carry a reason", ErrIllegalTransition)
+	}
+
+	state.Status = StatusBlocked
+	state.Blocked = a.Reason
+	state.Gate = nil
 	return state, nil
 }
 

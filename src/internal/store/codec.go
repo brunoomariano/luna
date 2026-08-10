@@ -19,8 +19,17 @@ const (
 	actionGateAdjust    = "GateAdjust"
 	actionGateReject    = "GateReject"
 	actionReviewFinding = "ReviewFinding"
+	actionBlock         = "Block"
 	actionUnblock       = "Unblock"
 )
+
+// valueless are the actions that carry nothing but their name, so decoding them
+// needs no JSON at all. Advance is deliberately absent: it is valueless in the
+// log but needs the current flow supplied on the way back.
+var valueless = map[string]fsm.Action{
+	actionGateApprove: fsm.GateApprove{},
+	actionUnblock:     fsm.Unblock{},
+}
 
 // encodeAction turns an action into the pair of strings the log stores.
 //
@@ -35,6 +44,14 @@ func encodeAction(action fsm.Action) (name, payload string, err error) {
 		return actionGateApprove, "", nil
 	case fsm.Unblock:
 		return actionUnblock, "", nil
+	default:
+		return encodeWithPayload(a)
+	}
+}
+
+// encodeWithPayload handles the actions whose fields have to survive the log.
+func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
+	switch a := action.(type) {
 	case fsm.TaskCreated:
 		return withPayload(actionTaskCreated, a)
 	case fsm.Complete:
@@ -47,6 +64,8 @@ func encodeAction(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionGateReject, a)
 	case fsm.ReviewFinding:
 		return withPayload(actionReviewFinding, a)
+	case fsm.Block:
+		return withPayload(actionBlock, a)
 	default:
 		return "", "", fmt.Errorf("%w: cannot record %T", ErrUnknownAction, action)
 	}
@@ -58,13 +77,16 @@ func encodeAction(action fsm.Action) (name, payload string, err error) {
 // skipped: a log written by a newer version would otherwise rebuild the task into
 // a state it was never in, and that state would look perfectly valid.
 func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
-	switch e.Action {
-	case actionAdvance:
+	// Advance is valueless too, but it needs the current flow rather than a zero
+	// value — the one exception to the table above (ADR-0017).
+	if e.Action == actionAdvance {
 		return fsm.Advance{Flow: flow}, nil
-	case actionGateApprove:
-		return fsm.GateApprove{}, nil
-	case actionUnblock:
-		return fsm.Unblock{}, nil
+	}
+	if action, ok := valueless[e.Action]; ok {
+		return action, nil
+	}
+
+	switch e.Action {
 	case actionTaskCreated:
 		return decodeJSON[fsm.TaskCreated](e.Payload)
 	case actionComplete:
@@ -77,6 +99,8 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 		return decodeJSON[fsm.GateReject](e.Payload)
 	case actionReviewFinding:
 		return decodeJSON[fsm.ReviewFinding](e.Payload)
+	case actionBlock:
+		return decodeJSON[fsm.Block](e.Payload)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownAction, e.Action)
 	}

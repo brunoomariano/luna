@@ -134,22 +134,14 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 // step performs exactly one transition and records it. Splitting it out keeps Run
 // a loop over outcomes rather than a loop with a body.
 func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flow []fsm.Stage) error {
-	// A task with no stage running has to enter one first.
+	// Anything but a running node means the next move is to enter a stage — a task
+	// that has not started, or one whose stage just closed. The status says which,
+	// so the lead never has to infer it.
 	if state.Status != fsm.StatusRunning {
 		return l.record(taskID, fsm.Advance{Flow: flow})
 	}
 
 	stage := stageIn(flow, state.Stage)
-
-	// A closed stage and a stage about to start are both "running", so the lead
-	// needs a way to tell them apart or it would run the same node forever.
-	//
-	// The answer is derived from the state rather than remembered in the lead,
-	// which is what lets a restarted lead pick up exactly where the old one left
-	// off (INV-core-2).
-	if closed(stage, state) {
-		return l.record(taskID, fsm.Advance{Flow: flow})
-	}
 
 	if l.Watchdog != nil && l.Watchdog.Stalled(state) {
 		return l.handleFailure(ctx, taskID, state, ErrStalled.Error())
@@ -171,35 +163,6 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	})
 }
 
-// closed reports whether a stage already delivered everything it owed.
-//
-// The trace it reads is the evidence: closing a stage records what the tool
-// reported for every artifact, flow product and audit report alike (ADR-0024).
-// The context alone is not enough — qa and code-review produce only an audit
-// report, which deliberately never enters the context (ADR-0021), so a stage like
-// those would look permanently unfinished and the lead would run its node forever.
-//
-// A stage that owes nothing at all cannot be told apart this way; it is treated as
-// unfinished so the node runs and the reducer's exit check decides.
-func closed(stage fsm.Stage, state fsm.TaskState) bool {
-	owed := len(stage.Produces) + len(stage.ProducesForHuman)
-	if owed == 0 {
-		return false
-	}
-
-	for _, produced := range stage.Produces {
-		if _, recorded := state.Evidence[produced]; !recorded {
-			return false
-		}
-	}
-	for _, report := range stage.ProducesForHuman {
-		if _, recorded := state.Evidence[report]; !recorded {
-			return false
-		}
-	}
-	return true
-}
-
 // handleFailure asks the judge what to do and records the answer.
 //
 // The retry budget is the reducer's to spend: recording a Fail is what increments
@@ -215,15 +178,10 @@ func (l *Lead) handleFailure(ctx context.Context, taskID string, state fsm.TaskS
 	case DecideRetry:
 		return l.record(taskID, fsm.Fail{Reason: reason})
 	case DecideBlock:
-		// Spending the budget in one go is how the lead escalates deliberately:
-		// the reducer blocks once the attempts are past the maximum, and doing it
-		// through the same path keeps one definition of what blocked means.
-		for attempt := state.Retry.Attempts; attempt <= state.Retry.Max; attempt++ {
-			if err := l.record(taskID, fsm.Fail{Reason: reason}); err != nil {
-				return err
-			}
-		}
-		return nil
+		// One decision, one event. Spending the retry budget to reach a block would
+		// leave three failures in the log where there was one choice to escalate,
+		// and the history is the audit trail (INV-core-2).
+		return l.record(taskID, fsm.Block{Reason: reason})
 	default:
 		return fmt.Errorf("the judge returned an unknown decision %q", decision)
 	}

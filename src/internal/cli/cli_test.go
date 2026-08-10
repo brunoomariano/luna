@@ -775,3 +775,49 @@ func TestAdjustWithNoEditorAndNoFlagSaysWhatToDo(t *testing.T) {
 		t.Errorf("the message should name the alternatives, got %v", err)
 	}
 }
+
+// TestAnUnknownProfileIsFlaggedInTheListing covers the warning.
+//
+// A log written by a newer version can name a profile this build has never heard
+// of. The task still replays as interactive — the cautious guess — but without a
+// word about it someone would watch their nightly run stop at every gate and have
+// nothing to go on.
+func TestAnUnknownProfileIsFlaggedInTheListing(t *testing.T) {
+	h := newHarness(t)
+
+	// A log as a future version would have written it.
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.Profile("paranoid"),
+	}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	out := h.mustRun(t, "gates")
+	if !strings.Contains(out, "unknown to this version") {
+		t.Errorf("want the listing to flag it, got %q", out)
+	}
+
+	out = h.mustRun(t, "task", "show", "LUNA-1")
+	if !strings.Contains(out, "paranoid") {
+		t.Errorf("want the profile as recorded, got %q", out)
+	}
+	if !strings.Contains(out, "unknown to this version") {
+		t.Errorf("want task show to flag it too, got %q", out)
+	}
+}
+
+// TestAKnownProfileIsNotFlagged covers the quiet path.
+func TestAKnownProfileIsNotFlagged(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "turbo")
+
+	out := h.mustRun(t, "task", "show", "LUNA-1")
+
+	if strings.Contains(out, "unknown") {
+		t.Errorf("a shipped profile must not be flagged, got %q", out)
+	}
+}

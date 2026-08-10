@@ -523,3 +523,123 @@ func TestUnblockReturnsTheTaskToItsStage(t *testing.T) {
 		t.Error("the block reason is cleared once it is cleared")
 	}
 }
+
+// TestCompleteSaysTheStageIsDone covers the status the exit produces.
+//
+// A closed stage and a stage about to start used to be both `running`, which left
+// the caller to infer the difference from what landed in the context. If a stage
+// finished, the status should say so.
+func TestCompleteSaysTheStageIsDone(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+	stage := stageIn(DefaultFlow(), "build")
+
+	state, err := Reduce(state, Complete{Delivered: stage.Produces})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if state.Status != StatusStageDone {
+		t.Errorf("want stage_done after a stage closes, got %q", state.Status)
+	}
+	if state.Stage != "build" {
+		t.Errorf("the stage that closed is still named, got %q", state.Stage)
+	}
+}
+
+// TestAdvanceRefusesAStageStillRunning covers the guard the new status enables.
+//
+// Advancing past a node that has not reported would skip its work and its
+// contract check both.
+func TestAdvanceRefusesAStageStillRunning(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+
+	_, err := Reduce(state, Advance{Flow: DefaultFlow()})
+
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("want ErrIllegalTransition while a stage runs, got %v", err)
+	}
+}
+
+// TestBlockStopsTheTaskInOneEvent covers the action that replaced the retry hack.
+//
+// The lead used to reach a block by recording Fail until the budget ran out,
+// which left three failures in the log where there had been one decision. The
+// history is the audit trail (INV-core-2).
+func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+
+	state, err := Reduce(state, Block{Reason: "the judge escalated"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if state.Status != StatusBlocked {
+		t.Errorf("want the task blocked, got %q", state.Status)
+	}
+	if state.Blocked != "the judge escalated" {
+		t.Errorf("want the reason kept, got %q", state.Blocked)
+	}
+	// The retry budget is untouched: nothing was attempted.
+	if state.Retry.Attempts != 0 {
+		t.Errorf("a block is not an attempt, got %d", state.Retry.Attempts)
+	}
+}
+
+// TestABlockMustSayWhy covers the required reason.
+//
+// A task that halts without saying why is the silent failure INV-core-8 forbids,
+// so the reason is required rather than defaulted to something unhelpful.
+func TestABlockMustSayWhy(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+
+	if _, err := Reduce(state, Block{}); !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("want ErrIllegalTransition for a reasonless block, got %v", err)
+	}
+}
+
+// TestBlockingWhatIsAlreadyOverIsRefused covers the guard.
+func TestBlockingWhatIsAlreadyOverIsRefused(t *testing.T) {
+	for _, status := range []Status{StatusDone, StatusBlocked} {
+		state := TaskState{Status: status, Evidence: map[Artifact]string{}}
+
+		if _, err := Reduce(state, Block{Reason: "again"}); !errors.Is(err, ErrIllegalTransition) {
+			t.Errorf("%s: want ErrIllegalTransition, got %v", status, err)
+		}
+	}
+}
+
+// TestAProfileThisBuildDoesNotKnow covers the forward-compatibility path.
+//
+// A log written by a newer version can name a profile this one has never heard
+// of. The task still replays — treated as the cautious profile — and the surface
+// can say so, which is what keeps someone from watching a nightly run stop at
+// every gate with no explanation.
+func TestAProfileThisBuildDoesNotKnow(t *testing.T) {
+	future := Profile("paranoid")
+
+	if future.KnownProfile() {
+		t.Error("a profile this build does not list is not known to it")
+	}
+	if !future.WaitsFor(GateConfirm) {
+		t.Error("an unknown profile must fall back to waiting, not to running free")
+	}
+
+	for _, known := range []Profile{ProfileInteractive, ProfileTurbo, ProfileNightly} {
+		if !known.KnownProfile() {
+			t.Errorf("%q is a shipped profile and must be known", known)
+		}
+	}
+}
+
+// TestParseProfileIsTheOneList covers the shared parser.
+func TestParseProfileIsTheOneList(t *testing.T) {
+	for _, name := range []string{"interactive", "turbo", "nightly"} {
+		if _, err := ParseProfile(name); err != nil {
+			t.Errorf("%q must parse: %v", name, err)
+		}
+	}
+
+	if _, err := ParseProfile("nightl"); err == nil {
+		t.Error("a typo must be rejected")
+	}
+}

@@ -1,5 +1,7 @@
 package fsm
 
+import "fmt"
+
 // Status is where a task stands. The five values are exhaustive: a task is always
 // in exactly one of them.
 type Status string
@@ -10,6 +12,16 @@ const (
 
 	// StatusRunning is a node working inside a stage.
 	StatusRunning Status = "running"
+
+	// StatusStageDone is a stage that delivered and closed, with the next one not
+	// yet entered.
+	//
+	// It exists because "the node has work to do" and "the node is finished" are
+	// different situations, and collapsing them into `running` left the lead
+	// unable to tell them apart — it would run the same node forever. Inferring
+	// the difference from a side effect was the first fix and the wrong one: if a
+	// stage finished, the status should say so.
+	StatusStageDone Status = "stage_done"
 
 	// StatusAwaitingGate is a planned pause. The profile foresaw it, and the slot
 	// is released while it waits (INV-core-10) — this is not a failure, and it
@@ -194,4 +206,30 @@ func (s TaskState) IsTerminal() bool {
 // (a gate) or not (a block). Both stop progress; only one is an anomaly.
 func (s TaskState) NeedsHuman() bool {
 	return s.Status == StatusAwaitingGate || s.Status == StatusBlocked
+}
+
+// ParseProfile turns a name into a Profile, rejecting what it does not know.
+//
+// It lives here rather than in the CLI so there is one list of valid names. The
+// fallback in WaitsFor is not a second list: it is what happens to a name that
+// never passed through any parser, which is exactly what replaying a log written
+// by a newer version produces.
+func ParseProfile(name string) (Profile, error) {
+	switch Profile(name) {
+	case ProfileInteractive, ProfileTurbo, ProfileNightly:
+		return Profile(name), nil
+	default:
+		return "", fmt.Errorf("unknown profile %q (interactive, turbo, nightly)", name)
+	}
+}
+
+// KnownProfile reports whether the profile is one this build understands.
+//
+// A log can carry a name from a version that knew more profiles than this one.
+// The task still replays — treated as interactive, the cautious guess — but the
+// surface can say so instead of leaving someone wondering why their nightly run
+// keeps stopping.
+func (p Profile) KnownProfile() bool {
+	_, err := ParseProfile(string(p))
+	return err == nil
 }

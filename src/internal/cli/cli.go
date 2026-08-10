@@ -159,8 +159,11 @@ func parseTaskOptions(args []string) (fsm.TaskKind, fsm.Profile, error) {
 				return "", "", err
 			}
 		case "profile":
-			if profile, err = parseProfile(value); err != nil {
-				return "", "", err
+			// One list of valid names, in the engine. The CLI rejects a typo here
+			// so someone who meant `nightly` hears about it, rather than getting a
+			// supervised run with nothing saying why.
+			if profile, err = fsm.ParseProfile(value); err != nil {
+				return "", "", fmt.Errorf("%w: %w", ErrUsage, err)
 			}
 		default:
 			return "", "", fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
@@ -190,7 +193,7 @@ func taskShow(env Env, args []string) error {
 
 	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, state.Status)
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
-	fmt.Fprintf(env.Out, "  profile  %s\n", state.Profile)
+	fmt.Fprintf(env.Out, "  profile  %s%s\n", state.Profile, unknownProfileNote(state.Profile))
 	if state.Stage != "" {
 		fmt.Fprintf(env.Out, "  stage    %s\n", state.Stage)
 	}
@@ -231,8 +234,23 @@ func runGates(env Env, args []string) error {
 
 	for _, w := range waiting {
 		fmt.Fprintf(env.Out, "%-16s %-14s %s\n", w.TaskID, w.Stage, w.Reason)
+		if note := unknownProfileNote(w.Profile); note != "" {
+			fmt.Fprintf(env.Out, "%-16s %s\n", "", strings.TrimSpace(note))
+		}
 	}
 	return nil
+}
+
+// unknownProfileNote explains a profile this build does not recognise.
+//
+// It happens when a log was written by a newer version: the task still replays,
+// treated as interactive, but without a word about it someone would watch their
+// nightly run stop at every gate and have nothing to go on.
+func unknownProfileNote(p fsm.Profile) string {
+	if p == "" || p.KnownProfile() {
+		return ""
+	}
+	return fmt.Sprintf("  ⚠ unknown to this version — treated as %s", fsm.ProfileInteractive)
 }
 
 func runGate(env Env, args []string) error {
@@ -425,19 +443,6 @@ func parseKind(value string) (fsm.TaskKind, error) {
 		return fsm.TaskKind(value), nil
 	default:
 		return "", fmt.Errorf("%w: unknown kind %q (feature, bug, chore, docs)", ErrUsage, value)
-	}
-}
-
-// parseProfile rejects an unknown name here rather than letting it reach the
-// engine. The engine treats what it does not recognise as interactive, which is
-// the safe guess — but a typo silently costing someone their nightly run is worth
-// catching at the edge, where the name was typed.
-func parseProfile(value string) (fsm.Profile, error) {
-	switch fsm.Profile(value) {
-	case fsm.ProfileInteractive, fsm.ProfileTurbo, fsm.ProfileNightly:
-		return fsm.Profile(value), nil
-	default:
-		return "", fmt.Errorf("%w: unknown profile %q (interactive, turbo, nightly)", ErrUsage, value)
 	}
 }
 

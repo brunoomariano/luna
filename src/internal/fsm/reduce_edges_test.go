@@ -162,7 +162,7 @@ func TestGateApproveKeepsTheReviewedArtifact(t *testing.T) {
 // TestUnknownStageStopsTheAdvance covers the error path out of NextStage.
 func TestUnknownStageStopsTheAdvance(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
-	state.Status = StatusRunning
+	state.Status = StatusStageDone
 	state.Stage = "buld" // a typo, not a stage
 
 	if _, err := Reduce(state, Advance{Flow: DefaultFlow()}); !errors.Is(err, ErrUnknownStage) {

@@ -47,6 +47,10 @@ type Waiting struct {
 	TaskID string
 	Stage  fsm.StageID
 	Reason string
+
+	// Profile is carried so the listing can flag one this build does not know,
+	// which happens when a log was written by a newer version.
+	Profile fsm.Profile
 }
 
 // Store is the append-only log plus the content store, in one SQLite file.
@@ -251,7 +255,7 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 			continue
 		}
 
-		w := Waiting{TaskID: id, Stage: state.Stage}
+		w := Waiting{TaskID: id, Stage: state.Stage, Profile: state.Profile}
 		if state.Gate != nil {
 			w.Reason = state.Gate.Reason
 		}
