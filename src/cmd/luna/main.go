@@ -42,6 +42,13 @@ func run(args []string) error {
 		return err
 	}
 
+	// The config is read before the store is opened: a malformed config should
+	// report itself rather than being discovered halfway through a command.
+	cfg, err := cli.LoadConfig(cli.ConfigPath(path))
+	if err != nil {
+		return err
+	}
+
 	s, err := store.Open(path)
 	if err != nil {
 		return err
@@ -52,7 +59,7 @@ func run(args []string) error {
 		Store: s,
 		Out:   os.Stdout,
 		Err:   os.Stderr,
-		Edit:  cli.Editor(),
+		Edit:  cli.Editor(cfg),
 	}, args)
 }
 

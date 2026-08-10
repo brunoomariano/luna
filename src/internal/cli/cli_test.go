@@ -366,8 +366,8 @@ func TestAdjustWithoutAnEditorSaysSo(t *testing.T) {
 
 	err := gateAdjust(h.env, "LUNA-1", state)
 
-	if err == nil || !strings.Contains(err.Error(), "EDITOR") {
-		t.Errorf("want a message naming $EDITOR, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "editor") {
+		t.Errorf("want a message naming what to configure, got %v", err)
 	}
 }
 

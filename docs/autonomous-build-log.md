@@ -178,6 +178,36 @@ accepts directly. It would make the log honest at the cost of a second path into
 
 ---
 
+## Resolved after review
+
+### #4 — the editor is now the project's choice first
+
+**Raised by the user:** "$EDITOR is the user's default; the Luna system may want another."
+
+Correct, and now implemented. Resolution order, most specific first:
+
+1. `editor` in `.luna/config.toml` — the project's own choice
+2. `$LUNA_EDITOR` — overrides the project for one invocation, without editing a versioned file
+3. `$EDITOR`
+4. `$VISUAL`
+
+The reasoning: `$EDITOR` serves someone's git, not this project. A repository whose contracts
+are long markdown is not obliged to open them in the editor that writes commit messages.
+
+An unknown key in the config is an **error**, not a warning — a typo in `editor` would
+otherwise leave the setting silently unapplied, and the person would conclude the feature does
+not work rather than that they misspelled it.
+
+The config parser is hand-rolled for one key rather than pulling in a TOML library, which
+would be the project's second external dependency for a dozen lines of work. The comment says
+so, and says the trade flips if the file ever grows sections or arrays.
+
+**Where the editor is used:** exactly one place — `luna gate adjust`, which today only fires
+on the `approve-spec` gate of the `spec` stage. It is the only gate that carries an artifact
+for review (ADR-0022).
+
+---
+
 ## Decisions the user took before the run
 
 These framed everything above and are not under review:

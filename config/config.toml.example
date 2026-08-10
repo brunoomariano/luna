@@ -1,0 +1,18 @@
+# Luna project configuration. Copy to .luna/config.toml to use.
+#
+# Everything here is optional: a project with no config file behaves the same as
+# one with an empty one.
+
+# Which editor `luna gate adjust` opens when a gate carries an artifact for
+# review. It may carry arguments.
+#
+# This wins over $EDITOR, because $EDITOR serves your git and this project may
+# want something else — a repository whose contracts are long markdown is not
+# obliged to open them in the editor that writes commit messages.
+#
+# Resolution order, most specific first:
+#   1. this setting
+#   2. $LUNA_EDITOR   — overrides the project for one invocation
+#   3. $EDITOR
+#   4. $VISUAL
+editor = "vim"

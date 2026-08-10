@@ -13,17 +13,19 @@ import (
 func TestEditorIsNilWithoutAnEnvironment(t *testing.T) {
 	t.Setenv("EDITOR", "")
 	t.Setenv("VISUAL", "")
+	t.Setenv("LUNA_EDITOR", "")
 
-	if Editor() != nil {
+	if Editor(Config{}) != nil {
 		t.Error("with no editor configured there is nothing to return")
 	}
 }
 
 func TestEditorFallsBackToVisual(t *testing.T) {
 	t.Setenv("EDITOR", "")
+	t.Setenv("LUNA_EDITOR", "")
 	t.Setenv("VISUAL", "true")
 
-	if Editor() == nil {
+	if Editor(Config{}) == nil {
 		t.Error("$VISUAL is the traditional fallback and must be honoured")
 	}
 }
@@ -37,7 +39,7 @@ func TestEditInEditorRoundTripsThroughTheFile(t *testing.T) {
 	t.Setenv("EDITOR", "cat")
 
 	const original = "the generated contract\nwith two lines\n"
-	got, err := EditInEditor(original)
+	got, err := EditInEditor("", original)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +59,7 @@ func TestEditInEditorSeesTheEdit(t *testing.T) {
 	}
 	t.Setenv("EDITOR", "sed -i s/generated/reviewed/")
 
-	got, err := EditInEditor("the generated contract\n")
+	got, err := EditInEditor("", "the generated contract\n")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,11 +72,12 @@ func TestEditInEditorSeesTheEdit(t *testing.T) {
 func TestEditInEditorWithoutAnEditorSaysSo(t *testing.T) {
 	t.Setenv("EDITOR", "")
 	t.Setenv("VISUAL", "")
+	t.Setenv("LUNA_EDITOR", "")
 
-	_, err := EditInEditor("anything")
+	_, err := EditInEditor("", "anything")
 
-	if err == nil || !strings.Contains(err.Error(), "EDITOR") {
-		t.Errorf("want a message naming the variable to set, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "config.toml") {
+		t.Errorf("want a message naming what to set, got %v", err)
 	}
 }
 
@@ -85,7 +88,7 @@ func TestEditInEditorWithoutAnEditorSaysSo(t *testing.T) {
 func TestEditInEditorReportsAFailingEditor(t *testing.T) {
 	t.Setenv("EDITOR", "false")
 
-	if _, err := EditInEditor("anything"); err == nil {
+	if _, err := EditInEditor("", "anything"); err == nil {
 		t.Error("an editor exiting non-zero must be reported")
 	}
 }
