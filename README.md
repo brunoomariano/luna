@@ -1,3 +1,5 @@
+![Luna](docs/assets/imgs/luna_banner.png)
+
 # Luna
 
 **AI agents do not follow a deterministic process just because you asked for one in
