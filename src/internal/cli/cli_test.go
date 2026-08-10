@@ -776,16 +776,17 @@ func TestAdjustWithNoEditorAndNoFlagSaysWhatToDo(t *testing.T) {
 	}
 }
 
-// TestAnUnknownProfileIsFlaggedInTheListing covers the warning.
+// TestAnUndefinedProfileIsFlaggedInTheListing covers the warning.
 //
-// A log written by a newer version can name a profile this build has never heard
-// of. The task still replays as interactive — the cautious guess — but without a
-// word about it someone would watch their nightly run stop at every gate and have
-// nothing to go on.
-func TestAnUnknownProfileIsFlaggedInTheListing(t *testing.T) {
+// A task can name a profile the configuration no longer defines — deleted or
+// renamed after it started. It replays exactly as it ran, because every gate
+// decision it took is in its log (ADR-0026), but its remaining gates fall back to
+// the cautious policy. Without a word about it someone would watch their nightly
+// run start stopping at every gate and have nothing to go on.
+func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
 	h := newHarness(t)
 
-	// A log as a future version would have written it.
+	// A task started under a profile the config no longer carries.
 	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
 		Kind:    fsm.KindFeature,
 		Profile: fsm.Profile("paranoid"),
@@ -797,7 +798,7 @@ func TestAnUnknownProfileIsFlaggedInTheListing(t *testing.T) {
 	}
 
 	out := h.mustRun(t, "gates")
-	if !strings.Contains(out, "unknown to this version") {
+	if !strings.Contains(out, "no longer defined") {
 		t.Errorf("want the listing to flag it, got %q", out)
 	}
 
@@ -805,7 +806,7 @@ func TestAnUnknownProfileIsFlaggedInTheListing(t *testing.T) {
 	if !strings.Contains(out, "paranoid") {
 		t.Errorf("want the profile as recorded, got %q", out)
 	}
-	if !strings.Contains(out, "unknown to this version") {
+	if !strings.Contains(out, "no longer defined") {
 		t.Errorf("want task show to flag it too, got %q", out)
 	}
 }

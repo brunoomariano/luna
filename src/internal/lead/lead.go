@@ -69,6 +69,18 @@ type Judge interface {
 	OnFailure(ctx context.Context, state fsm.TaskState, reason string) Decision
 }
 
+// GatePolicy decides whether a gate stops the task.
+//
+// It is an interface rather than a map because the answer comes from
+// configuration, and the reducer may not read configuration (ADR-0024). The lead
+// asks it once, and what it answered goes into the log — so replaying the task
+// never asks again, and editing a profile cannot rewrite what already happened
+// (ADR-0026).
+type GatePolicy interface {
+	// Waits reports whether a gate of this kind stops a task on this profile.
+	Waits(profile fsm.Profile, gate fsm.GateKind) bool
+}
+
 // Watchdog reports whether a task has stopped making progress.
 //
 // Separate from Node because the question is different: a node that returns an
@@ -90,6 +102,11 @@ type Lead struct {
 	// Watchdog is optional. Without one, a node that hangs hangs the lead — which
 	// is the honest behaviour until wave 5 gives it something to measure.
 	Watchdog Watchdog
+
+	// Gates is optional. Without one the lead records no gate decision, and the
+	// replay falls back to the shipped policy — the same behaviour as a log
+	// written before decisions were recorded.
+	Gates GatePolicy
 
 	// Flow defaults to the shipped one when empty.
 	Flow []fsm.Stage
@@ -138,7 +155,10 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	// that has not started, or one whose stage just closed. The status says which,
 	// so the lead never has to infer it.
 	if state.Status != fsm.StatusRunning {
-		return l.record(taskID, fsm.Advance{Flow: flow})
+		return l.record(taskID, fsm.Advance{
+			Flow:         flow,
+			GateDecision: l.decideGate(state, fsm.GateAhead(state, flow)),
+		})
 	}
 
 	stage := stageIn(flow, state.Stage)
@@ -161,6 +181,23 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		Evidence:  result.Evidence,
 		Flow:      flow,
 	})
+}
+
+// decideGate asks the policy about a gate and turns the answer into the value the
+// log will carry.
+//
+// A stage that opens no gate records no decision: there was nothing to decide, and
+// writing "passed" would claim a gate was reached that never was. With no policy
+// configured it also records nothing, which leaves replay on the shipped defaults
+// — the honest reading, since nothing else decided.
+func (l *Lead) decideGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
+	if gate == nil || l.Gates == nil {
+		return fsm.GateDecisionAbsent
+	}
+	if l.Gates.Waits(state.Profile, gate.Kind) {
+		return fsm.GateDecisionWaited
+	}
+	return fsm.GateDecisionPassed
 }
 
 // handleFailure asks the judge what to do and records the answer.

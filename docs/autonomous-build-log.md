@@ -201,6 +201,19 @@ this build does not know, so a nightly run stopping at every gate says why.
 The user's objection to storing the whole policy in the log was right and that option was
 dropped: the log keeps the name.
 
+**Superseded by [ADR-0026](ADRs/0026-the-log-records-the-gate-decision-not-the-policy.md).**
+The fix above answered "what happens to a name this build does not know" and left the harder
+question standing: `ParseProfile` being the single list meant a project could not define a
+profile at all, which contradicts what ADR-0017 promised. Making profiles configurable then
+broke the assumption underneath the fix — replay re-derived each gate decision from the
+profile, so editing one would rewrite how past tasks replay.
+
+The log now records the decision (`Advance{GateDecision: "waited"}`) and keeps the name for
+the audit. `ParseProfile` and `KnownProfile` are gone; validation moved to the CLI, which asks
+the config. The warning survives with a changed meaning: it flags a profile *no longer
+defined* rather than one this build never knew — the same signal, for the situation that can
+actually happen now.
+
 ### #8 — the status says the stage finished
 
 **Raised by the user:** "why not improve the record instead of reading a side effect? If it

@@ -28,8 +28,14 @@ var ErrUsage = errors.New("usage")
 // asserting on a mock of themselves.
 type Env struct {
 	Store *store.Store
-	Out   io.Writer
-	Err   io.Writer
+
+	// Config is the project's settings, including the profiles it defines. A zero
+	// value carries no profiles at all, so commands that need one fall back to the
+	// shipped set rather than refusing every name.
+	Config Config
+
+	Out io.Writer
+	Err io.Writer
 
 	// In is where `--stdin` reads a replacement from. Nil means nothing is
 	// connected, which `--stdin` reports rather than silently treating as empty.
@@ -92,7 +98,8 @@ luna — deterministic orchestration for AI agents
         refuse the artifact; the stage that produced it runs again
 
 kinds:    feature, bug, chore, docs
-profiles: interactive (default), turbo, nightly
+profiles: interactive (default), turbo, nightly, plus any the project
+          defines in .luna/config.toml
 `)
 }
 
@@ -118,7 +125,7 @@ func taskNew(env Env, args []string) error {
 
 	id := args[0]
 
-	kind, profile, err := parseTaskOptions(args[1:])
+	kind, profile, err := parseTaskOptions(env.profiles(), args[1:])
 	if err != nil {
 		return err
 	}
@@ -143,7 +150,12 @@ func taskNew(env Env, args []string) error {
 
 // parseTaskOptions reads --kind and --profile, defaulting to the cautious pair:
 // a feature, supervised. An unstated profile must not run unattended.
-func parseTaskOptions(args []string) (fsm.TaskKind, fsm.Profile, error) {
+//
+// The valid names come from the project's configuration rather than a list in the
+// engine, because a project defines its own profiles (ADR-0026). The rejection is
+// still worth doing here: someone who meant `nightly` hears about the typo,
+// instead of getting a supervised run with nothing saying why.
+func parseTaskOptions(cfg Config, args []string) (fsm.TaskKind, fsm.Profile, error) {
 	kind := fsm.KindFeature
 	profile := fsm.ProfileInteractive
 
@@ -159,17 +171,28 @@ func parseTaskOptions(args []string) (fsm.TaskKind, fsm.Profile, error) {
 				return "", "", err
 			}
 		case "profile":
-			// One list of valid names, in the engine. The CLI rejects a typo here
-			// so someone who meant `nightly` hears about it, rather than getting a
-			// supervised run with nothing saying why.
-			if profile, err = fsm.ParseProfile(value); err != nil {
-				return "", "", fmt.Errorf("%w: %w", ErrUsage, err)
+			if _, ok := cfg.Profile(fsm.Profile(value)); !ok {
+				return "", "", fmt.Errorf("%w: unknown profile %q (%s)",
+					ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
 			}
+			profile = fsm.Profile(value)
 		default:
 			return "", "", fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
 		}
 	}
 	return kind, profile, nil
+}
+
+// profiles is the configuration a command should resolve names against, falling
+// back to the shipped profiles when nothing was loaded.
+//
+// The fallback is for tests and for a zero Env, not for a real run: main always
+// loads a config, and a missing file already yields the shipped set.
+func (e Env) profiles() Config {
+	if len(e.Config.Profiles) == 0 {
+		return Config{Editor: e.Config.Editor, Profiles: ShippedProfiles()}
+	}
+	return e.Config
 }
 
 func taskShow(env Env, args []string) error {
@@ -193,7 +216,7 @@ func taskShow(env Env, args []string) error {
 
 	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, state.Status)
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
-	fmt.Fprintf(env.Out, "  profile  %s%s\n", state.Profile, unknownProfileNote(state.Profile))
+	fmt.Fprintf(env.Out, "  profile  %s%s\n", state.Profile, undefinedProfileNote(env.profiles(), state.Profile))
 	if state.Stage != "" {
 		fmt.Fprintf(env.Out, "  stage    %s\n", state.Stage)
 	}
@@ -234,23 +257,28 @@ func runGates(env Env, args []string) error {
 
 	for _, w := range waiting {
 		fmt.Fprintf(env.Out, "%-16s %-14s %s\n", w.TaskID, w.Stage, w.Reason)
-		if note := unknownProfileNote(w.Profile); note != "" {
+		if note := undefinedProfileNote(env.profiles(), w.Profile); note != "" {
 			fmt.Fprintf(env.Out, "%-16s %s\n", "", strings.TrimSpace(note))
 		}
 	}
 	return nil
 }
 
-// unknownProfileNote explains a profile this build does not recognise.
+// undefinedProfileNote flags a profile the configuration no longer defines.
 //
-// It happens when a log was written by a newer version: the task still replays,
-// treated as interactive, but without a word about it someone would watch their
-// nightly run stop at every gate and have nothing to go on.
-func unknownProfileNote(p fsm.Profile) string {
-	if p == "" || p.KnownProfile() {
+// It happens when a profile is deleted or renamed after tasks have run under it.
+// Those tasks replay exactly as they ran — every gate decision they took is in
+// their log (ADR-0026) — but the ones still moving have no policy left to decide
+// their next gate, and that is worth saying before someone watches a nightly run
+// start stopping at everything.
+func undefinedProfileNote(cfg Config, p fsm.Profile) string {
+	if p == "" {
 		return ""
 	}
-	return fmt.Sprintf("  ⚠ unknown to this version — treated as %s", fsm.ProfileInteractive)
+	if _, ok := cfg.Profile(p); ok {
+		return ""
+	}
+	return fmt.Sprintf("  ⚠ no longer defined — remaining gates treated as %s", fsm.ProfileInteractive)
 }
 
 func runGate(env Env, args []string) error {

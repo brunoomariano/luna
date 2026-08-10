@@ -171,6 +171,12 @@ Which gates stop is decided by **profile**, chosen per task:
 | `turbo` | only the write (commit) waits |
 | `nightly` | nothing waits |
 
+These three come installed; a project defines its own in `.luna/config.toml`, naming the gate
+kinds that wait. Editing a profile changes what tasks do from here on and leaves the past
+alone: every advance records what its gate actually decided, so a replay reads a fact instead
+of recomputing one
+([ADR-0026](../ADRs/0026-the-log-records-the-gate-decision-not-the-policy.md)).
+
 ### The gate carries what needs to be decided
 
 A gate is not just a pause: it delivers to the human **what motivated the stop**. Three
@@ -245,7 +251,7 @@ Everything that defines behavior has a default version and a user version:
 |---|---|---|
 | Stages | the ones in `src/stock/stages/` | disable, edit, create |
 | Roles | the ones in `src/stock/roles/` | your own |
-| Gate profiles | three | your own |
+| Gate profiles | three | your own, in `.luna/config.toml` — **built** |
 | Loops | one | declare others, with rules |
 | Skills | Luna's, installed alongside | point to your own directory |
 

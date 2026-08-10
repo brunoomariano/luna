@@ -21,7 +21,7 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 	}{
 		{
 			name:   "Advance",
-			action: fsm.Advance{Flow: fsm.DefaultFlow()},
+			action: fsm.Advance{Flow: fsm.DefaultFlow(), GateDecision: fsm.GateDecisionPassed},
 			verify: func(t *testing.T, got fsm.Action) {
 				a, ok := got.(fsm.Advance)
 				if !ok {
@@ -31,6 +31,11 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 				// it would freeze a task to the flow it started under (ADR-0017).
 				if len(a.Flow) != len(fsm.DefaultFlow()) {
 					t.Errorf("replay supplies the current flow, got %d stages", len(a.Flow))
+				}
+				// The decision goes the other way: it is history, and recomputing
+				// it would let an edited profile rewrite the past (ADR-0026).
+				if a.GateDecision != fsm.GateDecisionPassed {
+					t.Errorf("want the recorded gate decision, got %q", a.GateDecision)
 				}
 			},
 		},

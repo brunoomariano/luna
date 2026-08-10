@@ -25,7 +25,26 @@ type TaskCreated struct {
 
 // Advance moves to the next stage of the flow, applying the contract's entry
 // check on the way in.
-type Advance struct{ Flow []Stage }
+//
+// The two fields are recorded on opposite rules, and the difference is the whole
+// point of ADR-0026:
+//
+//   - Flow is configuration, so it is not recorded. Storing it would freeze a task
+//     to the flow it started under, and flows are meant to be editable (ADR-0017).
+//   - GateDecision is history, so it is recorded. The profile that produced it is
+//     configuration too — and if replay re-derived the decision from it, editing a
+//     profile would rewrite how past tasks replay.
+//
+// Both come from outside the reducer, which reads a profile no more than it reads
+// a clock (ADR-0024).
+type Advance struct {
+	Flow []Stage `json:"-"`
+
+	// GateDecision is what the profile decided about the gate this advance walks
+	// into, or empty when the stage opens no gate — and also when the event
+	// predates the field, which is why replay still needs a fallback.
+	GateDecision GateWaited `json:"gate_decision,omitempty"`
+}
 
 // Complete closes the running stage.
 //
@@ -67,6 +86,12 @@ type ReviewFinding struct {
 	Aligned bool
 	Summary string
 	Limits  LoopLimits
+
+	// GateDecision is what the profile decided about the loop-ceiling gate, for
+	// the same reason Advance carries one: the decision is history and the policy
+	// behind it is not (ADR-0026). It is consulted only when a ceiling is actually
+	// reached, so an ordinary round leaves it empty.
+	GateDecision GateWaited `json:"gate_decision,omitempty"`
 }
 
 // Block stops the task and notifies, without pretending an attempt was made.
@@ -198,10 +223,10 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	state.Stage = next
 	state.Retry.Attempts = 0
 
-	// The profile decides whether the gate actually stops the task. A gate that
-	// resolves on its own still happened — it is just that nobody was asked
-	// (ADR-0013).
-	if gate := gateFor(stage); gate != nil && state.Profile.WaitsFor(gate.Kind) {
+	// The profile decided whether this gate stops the task, and the decision
+	// arrived in the action. A gate that resolves on its own still happened — it
+	// is just that nobody was asked (ADR-0013, ADR-0026).
+	if gate := gateFor(stage); gate != nil && gateWaits(a.GateDecision, state.Profile, gate.Kind) {
 		state.Status = StatusAwaitingGate
 		state.Gate = gate
 		return state, nil
@@ -327,7 +352,7 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	// A spent ceiling opens a gate rather than blocking. Not converging is a
 	// decision to make with the history in view, not an anomaly of the node
 	// (ADR-0023).
-	if reason := ceilingHit(state.Loop, limits); reason != "" && state.Profile.WaitsFor(GateLoopCeiling) {
+	if reason := ceilingHit(state.Loop, limits); reason != "" && gateWaits(a.GateDecision, state.Profile, GateLoopCeiling) {
 		state.Status = StatusAwaitingGate
 		state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
 	}
@@ -377,6 +402,45 @@ func ceilingHit(loop LoopCounters, limits LoopLimits) string {
 	default:
 		return ""
 	}
+}
+
+// GateAhead reports the gate an Advance would walk into, or nil.
+//
+// It exists so the caller can ask the profile about that gate *before* recording
+// the action, which is what lets the decision be written into the log instead of
+// recomputed at replay (ADR-0026). It walks the same path advance does and
+// changes nothing, so asking is free of consequences.
+func GateAhead(state TaskState, flow []Stage) *PendingGate {
+	if err := canAdvance(state); err != nil {
+		return nil
+	}
+
+	next, ok, err := NextStage(flow, state.Stage, state.Context)
+	if err != nil || !ok {
+		return nil
+	}
+
+	stage := stageIn(flow, next)
+	if len(MissingFor(stage, state.Context)) > 0 {
+		// The entry check blocks before any gate is reached, so there is no
+		// decision to make here.
+		return nil
+	}
+	return gateFor(stage)
+}
+
+// gateWaits reports whether a gate stops the task, preferring the decision the
+// log recorded over anything this build would compute.
+//
+// The fallback is not a second policy: it is what an event written before the
+// decision existed replays as. Those logs recorded a name and nothing else, so
+// the shipped policy is the only reading of them available — and it is the same
+// one that produced them (ADR-0026).
+func gateWaits(decision GateWaited, profile Profile, gate GateKind) bool {
+	if waited, recorded := decision.Waits(); recorded {
+		return waited
+	}
+	return ShippedPolicy(profile, gate)
 }
 
 // gateFor returns the gate a stage opens, or nil. The profile decides whether it

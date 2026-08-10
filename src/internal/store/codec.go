@@ -24,22 +24,16 @@ const (
 )
 
 // valueless are the actions that carry nothing but their name, so decoding them
-// needs no JSON at all. Advance is deliberately absent: it is valueless in the
-// log but needs the current flow supplied on the way back.
+// needs no JSON at all. Advance is deliberately absent: half of it is recorded and
+// half is not, so it needs a case of its own.
 var valueless = map[string]fsm.Action{
 	actionGateApprove: fsm.GateApprove{},
 	actionUnblock:     fsm.Unblock{},
 }
 
 // encodeAction turns an action into the pair of strings the log stores.
-//
-// Advance carries the flow, which is configuration rather than history: recording
-// it would freeze a task to the flow it started under, and the flow is meant to be
-// editable (ADR-0017). Replay supplies the current one instead.
 func encodeAction(action fsm.Action) (name, payload string, err error) {
 	switch a := action.(type) {
-	case fsm.Advance:
-		return actionAdvance, "", nil
 	case fsm.GateApprove:
 		return actionGateApprove, "", nil
 	case fsm.Unblock:
@@ -52,6 +46,11 @@ func encodeAction(action fsm.Action) (name, payload string, err error) {
 // encodeWithPayload handles the actions whose fields have to survive the log.
 func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 	switch a := action.(type) {
+	case fsm.Advance:
+		// Flow is tagged json:"-" and stays out; the gate decision goes in. That
+		// split is the point of ADR-0026 — the flow is configuration and may change,
+		// the decision is history and may not.
+		return withPayload(actionAdvance, a)
 	case fsm.TaskCreated:
 		return withPayload(actionTaskCreated, a)
 	case fsm.Complete:
@@ -77,20 +76,23 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 // skipped: a log written by a newer version would otherwise rebuild the task into
 // a state it was never in, and that state would look perfectly valid.
 func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
-	// Advance is valueless too, but it needs the current flow rather than a zero
-	// value — the one exception to the table above (ADR-0017).
-	if e.Action == actionAdvance {
-		return fsm.Advance{Flow: flow}, nil
-	}
 	if action, ok := valueless[e.Action]; ok {
 		return action, nil
 	}
 
 	switch e.Action {
+	case actionAdvance:
+		return decodeWithFlow(e.Payload, flow, func(a fsm.Advance) fsm.Advance {
+			a.Flow = flow
+			return a
+		})
 	case actionTaskCreated:
 		return decodeJSON[fsm.TaskCreated](e.Payload)
 	case actionComplete:
-		return decodeComplete(e.Payload, flow)
+		return decodeWithFlow(e.Payload, flow, func(a fsm.Complete) fsm.Complete {
+			a.Flow = flow
+			return a
+		})
 	case actionFail:
 		return decodeJSON[fsm.Fail](e.Payload)
 	case actionGateAdjust:
@@ -106,24 +108,24 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 	}
 }
 
-// decodeComplete rebuilds a Complete and supplies the flow it should check
+// decodeWithFlow rebuilds an action and supplies the flow it should check
 // against.
 //
-// The flow comes from the caller rather than the log, for the same reason Advance
-// does not record it: storing it would freeze a task to the flow it started under,
-// and flows are meant to be editable (ADR-0017).
-func decodeComplete(payload string, flow []fsm.Stage) (fsm.Action, error) {
-	action, err := decodeJSON[fsm.Complete](payload)
+// The flow comes from the caller rather than the log: storing it would freeze a
+// task to the flow it started under, and flows are meant to be editable
+// (ADR-0017). Both actions that carry one are rebuilt this way, so the rule lives
+// in one place rather than being repeated per action.
+func decodeWithFlow[T fsm.Action](payload string, flow []fsm.Stage, withFlow func(T) T) (fsm.Action, error) {
+	action, err := decodeJSON[T](payload)
 	if err != nil {
 		return nil, err
 	}
 
-	complete, ok := action.(fsm.Complete)
+	typed, ok := action.(T)
 	if !ok {
-		return nil, fmt.Errorf("%w: payload did not decode to a Complete", ErrUnknownAction)
+		return nil, fmt.Errorf("%w: payload did not decode to a %T", ErrUnknownAction, typed)
 	}
-	complete.Flow = flow
-	return complete, nil
+	return withFlow(typed), nil
 }
 
 // withPayload pairs an action name with its JSON body, so each case above stays

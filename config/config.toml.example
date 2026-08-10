@@ -16,3 +16,38 @@
 #   3. $EDITOR
 #   4. $VISUAL
 editor = "vim"
+
+# ── gate profiles ────────────────────────────────────────────────────────────
+#
+# A profile names which gates stop a task and wait for a person. It is chosen per
+# task (`luna task new LUNA-1 --profile turbo`), because the kind of work does not
+# predict the risk: a critical bug can deserve more gating than a trivial feature.
+#
+# Three come installed — interactive (stops at everything), turbo (stops only
+# before the write) and nightly (stops at nothing). Naming any profile below
+# replaces that set with yours, so copy the ones you still want. Redefining a
+# shipped name is allowed: it is how you adjust turbo rather than work around it.
+#
+# The gate kinds a profile may name:
+#
+#   confirm           a yes or no, with nothing attached
+#   confirm-write     the confirmation before the task writes — the commit
+#   review-artifact   the human reads what a stage produced, and may edit it
+#   loop-ceiling      a loop that stopped converging and needs a decision
+#
+# Editing a profile changes what tasks do from here on. It does not change what
+# past tasks replay to: each task's log records what its gates actually decided,
+# so history stays what happened (ADR-0026).
+
+# [profile.interactive]
+# waits = ["confirm", "confirm-write", "review-artifact", "loop-ceiling"]
+
+# [profile.turbo]
+# waits = ["confirm-write"]
+
+# [profile.nightly]
+# waits = []
+
+# A profile of your own — this one reviews the contract but trusts the rest.
+# [profile.spec-only]
+# waits = ["review-artifact", "confirm-write"]

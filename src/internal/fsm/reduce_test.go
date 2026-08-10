@@ -608,38 +608,41 @@ func TestBlockingWhatIsAlreadyOverIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProfileThisBuildDoesNotKnow covers the forward-compatibility path.
+// TestAProfileTheEngineHasNoPolicyFor covers the fallback path.
 //
-// A log written by a newer version can name a profile this one has never heard
-// of. The task still replays — treated as the cautious profile — and the surface
-// can say so, which is what keeps someone from watching a nightly run stop at
-// every gate with no explanation.
-func TestAProfileThisBuildDoesNotKnow(t *testing.T) {
-	future := Profile("paranoid")
+// A profile named in a log may be one the engine has no shipped policy for —
+// either defined by the project, or since deleted from its config. Replay must
+// still work, and the fallback must be the cautious direction: a name that
+// resolves to nothing must not become an unattended run (ADR-0026).
+func TestAProfileTheEngineHasNoPolicyFor(t *testing.T) {
+	configured := Profile("paranoid")
 
-	if future.KnownProfile() {
-		t.Error("a profile this build does not list is not known to it")
-	}
-	if !future.WaitsFor(GateConfirm) {
-		t.Error("an unknown profile must fall back to waiting, not to running free")
+	if !ShippedPolicy(configured, GateConfirm) {
+		t.Error("a profile with no shipped policy must fall back to waiting, not to running free")
 	}
 
-	for _, known := range []Profile{ProfileInteractive, ProfileTurbo, ProfileNightly} {
-		if !known.KnownProfile() {
-			t.Errorf("%q is a shipped profile and must be known", known)
-		}
+	// The shipped three keep their policies: they are the defaults a project
+	// inherits, not special cases the engine treats differently.
+	if ShippedPolicy(ProfileNightly, GateConfirm) {
+		t.Error("nightly waits for nothing")
 	}
 }
 
-// TestParseProfileIsTheOneList covers the shared parser.
-func TestParseProfileIsTheOneList(t *testing.T) {
-	for _, name := range []string{"interactive", "turbo", "nightly"} {
-		if _, err := ParseProfile(name); err != nil {
-			t.Errorf("%q must parse: %v", name, err)
-		}
-	}
+// TestShippedProfilesAreTheDefaults covers the list the engine still owns.
+//
+// It is a seed for configuration rather than a validation list: the engine does
+// not reject a name it has not heard of, because a project defines its own
+// (ADR-0026).
+func TestShippedProfilesAreTheDefaults(t *testing.T) {
+	want := map[Profile]bool{ProfileInteractive: true, ProfileTurbo: true, ProfileNightly: true}
 
-	if _, err := ParseProfile("nightl"); err == nil {
-		t.Error("a typo must be rejected")
+	shipped := ShippedProfiles()
+	if len(shipped) != len(want) {
+		t.Fatalf("want %d shipped profiles, got %d: %v", len(want), len(shipped), shipped)
+	}
+	for _, p := range shipped {
+		if !want[p] {
+			t.Errorf("%q is not a shipped profile", p)
+		}
 	}
 }

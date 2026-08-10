@@ -1,7 +1,5 @@
 package fsm
 
-import "fmt"
-
 // Status is where a task stands. The five values are exhaustive: a task is always
 // in exactly one of them.
 type Status string
@@ -36,10 +34,15 @@ const (
 	StatusDone Status = "done"
 )
 
-// Profile decides which gates actually wait for a human. It is chosen per task
+// Profile names which gates actually wait for a human. It is chosen per task
 // rather than per task type or per repository, because the type does not predict
 // the risk — a critical bug can deserve more gating than a trivial feature
 // (ADR-0013).
+//
+// The name is all the engine holds. What the name *means* is configuration, and
+// it is resolved outside the reducer — the decision arrives in the action, the
+// same way a verification verdict does (ADR-0024, ADR-0026). That is what lets a
+// project define its own profiles without the engine growing a list of them.
 type Profile string
 
 const (
@@ -56,8 +59,49 @@ const (
 	ProfileNightly Profile = "nightly"
 )
 
-// WaitsFor reports whether a gate of this kind stops the task under this profile.
-func (p Profile) WaitsFor(gate GateKind) bool {
+// GateWaited is whether a gate stopped the task, decided by the profile before
+// the action was recorded.
+//
+// It is a tri-state rather than a bool because the log has to distinguish "the
+// profile said carry on" from "this event predates the field". A bool would make
+// those identical, and the older one has to fall back to recomputing while the
+// newer one must not (ADR-0026).
+type GateWaited string
+
+const (
+	// GateDecisionAbsent is an event written before the decision was recorded.
+	// Replaying one falls back to the shipped policy, which is the best guess
+	// available and the only behaviour that keeps old logs replaying.
+	GateDecisionAbsent GateWaited = ""
+
+	// GateDecisionWaited means the gate stopped the task and a human answered it.
+	GateDecisionWaited GateWaited = "waited"
+
+	// GateDecisionPassed means the gate was reached and the profile let it
+	// through. It still happened — nobody was asked (ADR-0013).
+	GateDecisionPassed GateWaited = "passed"
+)
+
+// Waits reports what the recorded decision says, and whether it said anything at
+// all. A caller that gets false must fall back to a policy.
+func (d GateWaited) Waits() (waited, recorded bool) {
+	switch d {
+	case GateDecisionWaited:
+		return true, true
+	case GateDecisionPassed:
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// ShippedPolicy is what the three built-in profiles do. It is the fallback for an
+// event recorded before the decision was part of the log, and the seed for the
+// defaults a project inherits when its config names no profiles of its own.
+//
+// It is not consulted for a task whose events carry a decision: those replay from
+// what was recorded, so editing a profile cannot rewrite them (ADR-0026).
+func ShippedPolicy(p Profile, gate GateKind) bool {
 	switch p {
 	case ProfileNightly:
 		return false
@@ -68,9 +112,9 @@ func (p Profile) WaitsFor(gate GateKind) bool {
 	case ProfileInteractive:
 		return true
 	default:
-		// An unknown profile is treated as the most cautious one. Guessing the
-		// permissive answer would let a typo in configuration turn a supervised
-		// run into an unattended one.
+		// A profile this build has no policy for is treated as the most cautious
+		// one. Guessing the permissive answer would let a name that resolved to
+		// nothing turn a supervised run into an unattended one.
 		return true
 	}
 }
@@ -208,28 +252,11 @@ func (s TaskState) NeedsHuman() bool {
 	return s.Status == StatusAwaitingGate || s.Status == StatusBlocked
 }
 
-// ParseProfile turns a name into a Profile, rejecting what it does not know.
+// ShippedProfiles are the three that come installed. A project's configuration
+// starts from these and may add to them or replace them (ADR-0017).
 //
-// It lives here rather than in the CLI so there is one list of valid names. The
-// fallback in WaitsFor is not a second list: it is what happens to a name that
-// never passed through any parser, which is exactly what replaying a log written
-// by a newer version produces.
-func ParseProfile(name string) (Profile, error) {
-	switch Profile(name) {
-	case ProfileInteractive, ProfileTurbo, ProfileNightly:
-		return Profile(name), nil
-	default:
-		return "", fmt.Errorf("unknown profile %q (interactive, turbo, nightly)", name)
-	}
-}
-
-// KnownProfile reports whether the profile is one this build understands.
-//
-// A log can carry a name from a version that knew more profiles than this one.
-// The task still replays — treated as interactive, the cautious guess — but the
-// surface can say so instead of leaving someone wondering why their nightly run
-// keeps stopping.
-func (p Profile) KnownProfile() bool {
-	_, err := ParseProfile(string(p))
-	return err == nil
+// The engine exposes the list but does not validate against it: a name it has
+// never heard of is a profile someone defined, not an error (ADR-0026).
+func ShippedProfiles() []Profile {
+	return []Profile{ProfileInteractive, ProfileTurbo, ProfileNightly}
 }

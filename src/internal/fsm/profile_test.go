@@ -5,13 +5,16 @@ import (
 	"testing"
 )
 
-// TestProfileDecidesWhichGatesWait covers the profile table of ADR-0013.
+// TestShippedPolicyDecidesWhichGatesWait covers the profile table of ADR-0013.
 //
 // The three profiles are the whole point of the mechanism: the same flow, run at
 // three different levels of supervision. Getting one cell of this table wrong
 // means a run is either more interrupted or more unattended than someone asked
 // for, and the second is the expensive direction.
-func TestProfileDecidesWhichGatesWait(t *testing.T) {
+//
+// This is the shipped policy, which is also the fallback for an event recorded
+// before decisions were part of the log (ADR-0026).
+func TestShippedPolicyDecidesWhichGatesWait(t *testing.T) {
 	cases := []struct {
 		profile Profile
 		gate    GateKind
@@ -35,22 +38,22 @@ func TestProfileDecidesWhichGatesWait(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		if got := c.profile.WaitsFor(c.gate); got != c.waits {
+		if got := ShippedPolicy(c.profile, c.gate); got != c.waits {
 			t.Errorf("%s + %s: want waits=%v, got %v", c.profile, c.gate, c.waits, got)
 		}
 	}
 }
 
-// TestAnUnknownProfileWaitsForEverything covers the default branch.
+// TestAProfileWithNoShippedPolicyWaitsForEverything covers the default branch.
 //
-// The two failure modes are not symmetric. Guessing permissive would let a typo
-// in configuration turn a supervised run into an unattended one; guessing
+// The two failure modes are not symmetric. Guessing permissive would let a name
+// that resolved to nothing turn a supervised run into an unattended one; guessing
 // cautious only stops a task that would have carried on.
-func TestAnUnknownProfileWaitsForEverything(t *testing.T) {
+func TestAProfileWithNoShippedPolicyWaitsForEverything(t *testing.T) {
 	typo := Profile("interactve")
 
 	for _, gate := range []GateKind{GateConfirm, GateConfirmWrite, GateReviewArtifact, GateLoopCeiling} {
-		if !typo.WaitsFor(gate) {
+		if !ShippedPolicy(typo, gate) {
 			t.Errorf("an unrecognised profile must not silently become unattended (%s)", gate)
 		}
 	}

@@ -56,11 +56,12 @@ func run(args []string) error {
 	defer func() { _ = s.Close() }()
 
 	return cli.Run(cli.Env{
-		Store: s,
-		Out:   os.Stdout,
-		Err:   os.Stderr,
-		In:    os.Stdin,
-		Edit:  cli.Editor(cfg),
+		Store:  s,
+		Config: cfg,
+		Out:    os.Stdout,
+		Err:    os.Stderr,
+		In:     os.Stdin,
+		Edit:   cli.Editor(cfg),
 	}, args)
 }
 

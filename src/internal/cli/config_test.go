@@ -17,7 +17,13 @@ func TestAMissingConfigIsTheOrdinaryCase(t *testing.T) {
 		t.Fatalf("a missing config is not an error: %v", err)
 	}
 	if cfg.Editor != "" {
-		t.Errorf("want a zero config, got %+v", cfg)
+		t.Errorf("want no editor configured, got %q", cfg.Editor)
+	}
+
+	// The profiles are not zero, though: a project with no config still gets the
+	// three shipped ones, or `--profile nightly` would stop working.
+	if _, ok := cfg.Profile("nightly"); !ok {
+		t.Errorf("want the shipped profiles, got %v", cfg.ProfileNames())
 	}
 }
 

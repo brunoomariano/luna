@@ -140,8 +140,13 @@ is the exit of a node that failed.
 **Definition.** The set of rules that decides which gates wait for a human. Chosen
 **per task**, not per task type nor per repository — the type does not predict the risk.
 
-**Where it appears.** The three defaults: `interactive` (every gate waits), `turbo` (only the
-write waits), `nightly` (nothing waits). They live in `src/stock/profiles/`.
+**Where it appears.** Three come installed: `interactive` (every gate waits), `turbo` (only the
+write waits), `nightly` (nothing waits). A project defines its own in `.luna/config.toml`, and
+naming any profile there replaces the shipped set.
+
+A profile is configuration, so what a name means can change. What a task already did cannot:
+each gate its log records carries the decision that was taken, not the policy that produced it
+([ADR-0026](../ADRs/0026-the-log-records-the-gate-decision-not-the-policy.md)).
 
 ---
 
