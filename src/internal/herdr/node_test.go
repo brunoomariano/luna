@@ -3,6 +3,7 @@ package herdr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -410,5 +411,68 @@ func TestALongSingleLineIsTruncated(t *testing.T) {
 	}
 	if got := firstLine("short"); got != "short" {
 		t.Errorf("a short line is left alone, got %q", got)
+	}
+}
+
+// TestAStallIsTranslatedIntoLunasVocabulary covers ADR-0034's boundary rule.
+//
+// herdr answers `agent_prompt_stalled`. Nothing above this package should have to
+// know that code, so it comes out as lead.ErrStalled — and the lead turns it into
+// a block without asking a model (ADR-0030).
+func TestAStallIsTranslatedIntoLunasVocabulary(t *testing.T) {
+	runner := &failingRunner{
+		failAt: "prompt",
+		err:    &apiError{Code: "agent_prompt_stalled", Message: "no observed state change within 5000 ms"},
+	}
+	node := &Node{Runner: runner, Agent: "claude"}
+
+	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+
+	if !errors.Is(err, lead.ErrStalled) {
+		t.Errorf("a stall must reach the lead as its own condition, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "build") {
+		t.Errorf("the error should name the stage that stalled, got %v", err)
+	}
+	if len(runner.ran) != 0 {
+		t.Error("an agent that never reacted delivered nothing to verify")
+	}
+}
+
+// TestStalledReadsTheCodeNotTheMessage covers why the detection keys on herdr's
+// error code: a reworded message must not silently stop being recognised.
+func TestStalledReadsTheCodeNotTheMessage(t *testing.T) {
+	if !Stalled(&apiError{Code: "agent_prompt_stalled", Message: "anything at all"}) {
+		t.Error("the code is what identifies a stall")
+	}
+	if Stalled(&apiError{Code: "target_busy", Message: "agent_prompt_stalled"}) {
+		t.Error("a message that merely mentions the code is not a stall")
+	}
+	if !Stalled(fmt.Errorf("wrapped: %w", lead.ErrStalled)) {
+		t.Error("an already-translated stall is still a stall")
+	}
+	if Stalled(errors.New("something else")) {
+		t.Error("an unrelated error is not a stall")
+	}
+}
+
+// TestAnOrdinaryFailureIsNotAStall covers the other side of the distinction.
+//
+// A stall blocks without spending the retry budget; a failure goes to the judge.
+// Confusing them would misroute both.
+func TestAnOrdinaryFailureIsNotAStall(t *testing.T) {
+	runner := &failingRunner{
+		failAt: "prompt",
+		err:    &apiError{Code: "target_busy", Message: "the pane is occupied"},
+	}
+	node := &Node{Runner: runner, Agent: "claude"}
+
+	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+
+	if errors.Is(err, lead.ErrStalled) {
+		t.Errorf("a busy pane is a failure, not a stall: %v", err)
+	}
+	if err == nil {
+		t.Error("it is still an error")
 	}
 }

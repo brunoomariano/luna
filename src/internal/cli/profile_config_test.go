@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
@@ -305,5 +306,86 @@ func TestATrailingCommaInAListIsTolerated(t *testing.T) {
 	}
 	if !policy.Waits(fsm.GateConfirm) {
 		t.Error("the entry before the trailing comma still counts")
+	}
+}
+
+// TestAProfileCanTightenItsWatchdog covers the third decision of ADR-0034: the
+// budgets live beside the gate policy, in the same section.
+func TestAProfileCanTightenItsWatchdog(t *testing.T) {
+	cfg := load(t, `
+[profile.nightly]
+waits = []
+idle_budget = "10m"
+tool_budget = "45m"
+`)
+
+	budgets := cfg.Budgets("nightly")
+	if budgets.Idle != 10*time.Minute {
+		t.Errorf("want the configured idle budget, got %s", budgets.Idle)
+	}
+	if budgets.Tool != 45*time.Minute {
+		t.Errorf("want the configured tool budget, got %s", budgets.Tool)
+	}
+
+	// The gates in the same section still work: the two settings coexist rather
+	// than one shadowing the other.
+	if _, ok := cfg.Profile("nightly"); !ok {
+		t.Error("the profile is still defined")
+	}
+}
+
+// TestAProfileWithNoBudgetsGetsTheShippedOnes covers the ordinary case — every
+// profile written before this feature existed.
+func TestAProfileWithNoBudgetsGetsTheShippedOnes(t *testing.T) {
+	cfg := load(t, "[profile.careful]\nwaits = [\"confirm\"]\n")
+
+	if got := cfg.Budgets("careful"); got != fsm.DefaultBudgets() {
+		t.Errorf("want the shipped budgets, got %+v", got)
+	}
+}
+
+// TestADeletedProfileStillHasAWatchdog covers the direction that matters.
+//
+// A task whose profile was removed must keep its net: falling back to no limit
+// would mean deleting a profile silently turns its running tasks into ones that
+// hang forever (ADR-0034).
+func TestADeletedProfileStillHasAWatchdog(t *testing.T) {
+	cfg := load(t, "[profile.paranoid]\nwaits = [\"confirm\"]\n")
+
+	if got := cfg.Budgets("deleted-last-week"); got != fsm.DefaultBudgets() {
+		t.Errorf("an undefined profile still gets a budget, got %+v", got)
+	}
+}
+
+// TestAMalformedBudgetIsRefused covers the fail-loud rule.
+//
+// Someone who wrote `idle_budget = "30"` believes they tightened the watchdog. A
+// silent fallback would leave them believing it.
+func TestAMalformedBudgetIsRefused(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[profile.p]\nidle_budget = \"30\"\n"))
+
+	if err == nil {
+		t.Fatal("a budget that is not a duration must be reported")
+	}
+	if !strings.Contains(err.Error(), "idle_budget") {
+		t.Errorf("the error should name the setting, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "30m") {
+		t.Errorf("the error should show the expected shape, got %v", err)
+	}
+}
+
+// TestAnUnknownProfileKeyNamesTheAlternatives covers the message someone sees
+// after a typo, now that a section accepts three keys.
+func TestAnUnknownProfileKeyNamesTheAlternatives(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[profile.p]\nidle_budgets = \"30m\"\n"))
+
+	if err == nil {
+		t.Fatal("an unknown key must be reported")
+	}
+	for _, want := range []string{"waits", "idle_budget", "tool_budget"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should list %q, got %v", want, err)
+		}
 	}
 }

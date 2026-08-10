@@ -2,6 +2,7 @@ package herdr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -33,6 +34,21 @@ const (
 // outcome, which is why the verdict still comes from running the real check.
 func (s AgentStatus) Settled() bool {
 	return s == StatusIdle || s == StatusDone || s == StatusUnknown
+}
+
+// stallCode is what herdr calls it on the wire.
+const stallCode = "agent_prompt_stalled"
+
+// Stalled reports whether an error from herdr is the stall condition.
+//
+// It reads herdr's error code rather than matching on message text: the code is
+// the contract, and a reworded message must not silently stop being detected.
+func Stalled(err error) bool {
+	var api *apiError
+	if errors.As(err, &api) {
+		return api.Code == stallCode
+	}
+	return errors.Is(err, lead.ErrStalled)
 }
 
 // Runner is the part of herdr the node actually needs.
@@ -99,6 +115,12 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 
 	status, err := n.Runner.Prompt(ctx, pane, n.prompt(state, stage))
 	if err != nil {
+		// A stall is translated here so nothing above this package has to read
+		// herdr's error codes. What crosses the boundary is Luna's vocabulary
+		// (ADR-0030), and the lead decides what a stall means (ADR-0034).
+		if Stalled(err) {
+			return lead.Result{}, fmt.Errorf("%w: the agent did not react in stage %q", lead.ErrStalled, stage.ID)
+		}
 		return lead.Result{}, err
 	}
 

@@ -3,7 +3,9 @@ package lead
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -73,6 +75,15 @@ type alwaysBlocks struct{ asked int }
 func (j *alwaysBlocks) OnFailure(context.Context, fsm.TaskState, string) Decision {
 	j.asked++
 	return DecideBlock
+}
+
+// stallingNode reports the stall the node layer observes — what herdr answers as
+// `agent_prompt_stalled`. Named rather than inline because it stands in for a
+// real external condition.
+type stallingNode struct{}
+
+func (stallingNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, error) {
+	return Result{}, fmt.Errorf("%w: the agent did not react", ErrStalled)
 }
 
 // stalledWatchdog reports a task as stuck the moment it is asked.
@@ -361,12 +372,14 @@ func TestEvidenceReachesTheLog(t *testing.T) {
 
 // ── the watchdog ─────────────────────────────────────────────────────────────
 
-// TestAStalledTaskIsTreatedAsAFailure covers ADR-0019.
+// TestAStalledTaskBlocksWithoutConsultingTheJudge covers ADR-0019 and ADR-0034.
 //
 // A node that returns nothing is not a node that failed — only something outside
 // the call can tell those apart. When the watchdog says the task stopped moving,
-// it goes down the same judgement path a failure would.
-func TestAStalledTaskIsTreatedAsAFailure(t *testing.T) {
+// that is a decision, not a judgement call: there is nothing for a model to weigh
+// about an agent that is alive and doing nothing, and asking one would spend
+// tokens to restate what the log already says.
+func TestAStalledTaskBlocksWithoutConsultingTheJudge(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
@@ -382,11 +395,68 @@ func TestAStalledTaskIsTreatedAsAFailure(t *testing.T) {
 	if watchdog.asked == 0 {
 		t.Error("the watchdog must be consulted while a stage is running")
 	}
-	if judge.asked == 0 {
-		t.Error("a stall goes to the judgement layer, like a failure")
+	if judge.asked != 0 {
+		t.Errorf("a stall is decided in code, not by the model (got %d calls)", judge.asked)
 	}
 	if state.Status != fsm.StatusBlocked {
 		t.Errorf("want the stalled task blocked, got %q", state.Status)
+	}
+	if !strings.Contains(state.Blocked, "progress") {
+		t.Errorf("the reason must say the task stopped progressing, got %q", state.Blocked)
+	}
+}
+
+// TestAStallDoesNotSpendTheRetryBudget covers the other half of ADR-0034.
+//
+// The retry budget is for a stage that failed. A stall says nothing about the
+// stage — burning attempts on an agent that is not going to react would reach a
+// block through three recorded failures that never happened (INV-core-2).
+func TestAStallDoesNotSpendTheRetryBudget(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindChore)
+
+	l := &Lead{Store: s, Node: &deliveringNode{}, Watchdog: &stalledWatchdog{}}
+
+	state, err := l.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if state.Retry.Attempts != 0 {
+		t.Errorf("a stall costs no retries, got %d spent", state.Retry.Attempts)
+	}
+
+	// One decision, one event: the log must not show failures nobody observed.
+	events, err := s.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("reading the log: %v", err)
+	}
+	for _, e := range events {
+		if e.Action == "Fail" {
+			t.Error("a stall is recorded as a block, never as a failure")
+		}
+	}
+}
+
+// TestAStalledNodeBlocksToo covers the stall reported by the node rather than by
+// the watchdog — the path herdr's `agent_prompt_stalled` takes (ADR-0034).
+func TestAStalledNodeBlocksToo(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindChore)
+
+	judge := &alwaysRetries{}
+	l := &Lead{Store: s, Node: &stallingNode{}, Judge: judge}
+
+	state, err := l.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if judge.asked != 0 {
+		t.Errorf("a stall from the node is not a failure either (got %d calls)", judge.asked)
+	}
+	if state.Status != fsm.StatusBlocked {
+		t.Errorf("want the task blocked, got %q", state.Status)
 	}
 }
 

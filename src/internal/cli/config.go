@@ -25,18 +25,27 @@ type Config struct {
 	// that names none inherits the three shipped ones; naming one that already
 	// exists replaces it, which is what makes `turbo` adjustable rather than
 	// merely extendable (ADR-0017).
-	Profiles map[fsm.Profile]GatePolicy
+	Profiles map[fsm.Profile]Policy
 }
 
-// GatePolicy is the set of gate kinds that stop a task under one profile.
+// Policy is everything one profile decides: which gates stop the task, and how
+// long the watchdog waits before calling it stuck.
 //
-// It is a set rather than a list so a duplicate in the config is harmless, and so
-// the question the resolver actually asks — does this kind wait — is a lookup
-// rather than a scan.
-type GatePolicy map[fsm.GateKind]bool
+// The two live together because they answer the same question from opposite
+// ends. A profile that waits at no gate has nobody watching, which makes the
+// watchdog its only net — so the profile that most needs a short budget is
+// exactly the one that already declares how supervised the run is (ADR-0034).
+type Policy struct {
+	// Gates is a set rather than a list so a duplicate in the config is harmless,
+	// and so the question the resolver asks — does this kind wait — is a lookup.
+	Gates map[fsm.GateKind]bool
+
+	// Budgets bound how long the node waits on an agent that is not reacting.
+	Budgets fsm.Budgets
+}
 
 // Waits reports whether a gate of this kind stops the task under this policy.
-func (p GatePolicy) Waits(gate fsm.GateKind) bool { return p[gate] }
+func (p Policy) Waits(gate fsm.GateKind) bool { return p.Gates[gate] }
 
 // knownGateKinds is what a profile may name. A closed list, because a typo in a
 // gate kind would otherwise define a profile that silently waits for nothing —
@@ -50,16 +59,16 @@ var knownGateKinds = map[fsm.GateKind]bool{
 
 // ShippedProfiles is the policy each built-in profile carries, expressed the same
 // way a configured one is. They are defaults, not special cases (ADR-0026).
-func ShippedProfiles() map[fsm.Profile]GatePolicy {
-	profiles := map[fsm.Profile]GatePolicy{}
+func ShippedProfiles() map[fsm.Profile]Policy {
+	profiles := map[fsm.Profile]Policy{}
 	for _, name := range fsm.ShippedProfiles() {
-		policy := GatePolicy{}
+		gates := map[fsm.GateKind]bool{}
 		for gate := range knownGateKinds {
 			if fsm.ShippedPolicy(name, gate) {
-				policy[gate] = true
+				gates[gate] = true
 			}
 		}
-		profiles[name] = policy
+		profiles[name] = Policy{Gates: gates, Budgets: fsm.DefaultBudgets()}
 	}
 	return profiles
 }
@@ -70,7 +79,7 @@ func ShippedProfiles() map[fsm.Profile]GatePolicy {
 // to tell the two situations apart: creating a task under an unknown profile is a
 // mistake worth refusing, while replaying a task whose profile was since deleted
 // is ordinary and must still work.
-func (c Config) Profile(name fsm.Profile) (GatePolicy, bool) {
+func (c Config) Profile(name fsm.Profile) (Policy, bool) {
 	policy, ok := c.Profiles[name]
 	return policy, ok
 }
@@ -89,6 +98,20 @@ func (c Config) Waits(profile fsm.Profile, gate fsm.GateKind) bool {
 		return fsm.ShippedPolicy(fsm.ProfileInteractive, gate)
 	}
 	return policy.Waits(gate)
+}
+
+// Budgets reports how long the watchdog waits under this profile.
+//
+// A profile the configuration no longer defines falls back to the shipped
+// defaults rather than to no limit at all. The direction matters: a task whose
+// profile was deleted must still have a net, or removing a profile would silently
+// turn its running tasks into ones that hang forever (ADR-0034).
+func (c Config) Budgets(profile fsm.Profile) fsm.Budgets {
+	policy, ok := c.Profile(profile)
+	if !ok {
+		return fsm.DefaultBudgets()
+	}
+	return policy.Budgets.Resolve()
 }
 
 // ProfileNames lists the profiles this project offers, sorted, for error messages
@@ -130,7 +153,7 @@ func LoadConfig(path string) (Config, error) {
 // line worth keeping; if the config ever takes a shape not listed above, that is
 // the point to replace this rather than extend it.
 func parseConfig(content, path string) (Config, error) {
-	cfg := Config{Profiles: map[fsm.Profile]GatePolicy{}}
+	cfg := Config{Profiles: map[fsm.Profile]Policy{}}
 	section := ""
 
 	for number, raw := range strings.Split(content, "\n") {
@@ -149,7 +172,7 @@ func parseConfig(content, path string) (Config, error) {
 			// An empty section still declares the profile: `[profile.yolo]` with no
 			// `waits` is a profile that stops at nothing, which is a thing someone
 			// may legitimately want to write.
-			cfg.Profiles[fsm.Profile(profile)] = GatePolicy{}
+			cfg.Profiles[fsm.Profile(profile)] = Policy{Gates: map[fsm.GateKind]bool{}, Budgets: fsm.DefaultBudgets()}
 			continue
 		}
 
@@ -179,29 +202,54 @@ func assign(cfg *Config, section, key, value, where string) error {
 		return assignRoot(cfg, key, value, where)
 	}
 
-	if key != "waits" {
+	policy := cfg.Profiles[fsm.Profile(section)]
+
+	switch key {
+	case "waits":
+		gates, err := parseGates(value, section, where)
+		if err != nil {
+			return err
+		}
+		policy.Gates = gates
+	case "idle_budget", "tool_budget":
+		budget, err := fsm.ParseBudget(strings.Trim(value, `"`))
+		if err != nil {
+			return fmt.Errorf("%s: %s in [profile.%s]: %w", where, key, section, err)
+		}
+		if key == "idle_budget" {
+			policy.Budgets.Idle = budget
+		} else {
+			policy.Budgets.Tool = budget
+		}
+	default:
 		// An unknown key is an error rather than a warning, for the same reason a
 		// misspelled gate kind is: the profile would parse, apply, and wait for
 		// nothing, and nobody would learn why until an unattended run wrote
 		// something it should have asked about.
-		return fmt.Errorf("%s: unknown setting %q in [profile.%s] (expected waits)", where, key, section)
+		return fmt.Errorf("%s: unknown setting %q in [profile.%s] (expected waits, idle_budget, tool_budget)",
+			where, key, section)
 	}
 
-	gates, err := parseStringArray(value, where)
-	if err != nil {
-		return err
-	}
-
-	policy := GatePolicy{}
-	for _, gate := range gates {
-		kind := fsm.GateKind(gate)
-		if !knownGateKinds[kind] {
-			return fmt.Errorf("%s: unknown gate kind %q in [profile.%s] (%s)", where, gate, section, gateKindList())
-		}
-		policy[kind] = true
-	}
 	cfg.Profiles[fsm.Profile(section)] = policy
 	return nil
+}
+
+// parseGates reads the `waits` list and refuses a gate kind nobody declared.
+func parseGates(value, section, where string) (map[fsm.GateKind]bool, error) {
+	names, err := parseStringArray(value, where)
+	if err != nil {
+		return nil, err
+	}
+
+	gates := map[fsm.GateKind]bool{}
+	for _, name := range names {
+		kind := fsm.GateKind(name)
+		if !knownGateKinds[kind] {
+			return nil, fmt.Errorf("%s: unknown gate kind %q in [profile.%s] (%s)", where, name, section, gateKindList())
+		}
+		gates[kind] = true
+	}
+	return gates, nil
 }
 
 func assignRoot(cfg *Config, key, value, where string) error {

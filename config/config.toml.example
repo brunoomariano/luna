@@ -39,6 +39,19 @@ editor = "vim"
 # past tasks replay to: each task's log records what its gates actually decided,
 # so history stays what happened (ADR-0026).
 
+# A profile also decides how long to wait on an agent that has stopped reacting
+# before calling the task stuck. Two windows, because a real build runs silent
+# for many minutes and an agent that stopped does not:
+#
+#   idle_budget   nothing is running and the agent is not reacting
+#   tool_budget   a tool is in flight; a compile is not a stall
+#
+# Both are optional and default to 30m / 2h. There is deliberately no wall-clock
+# cap: progress, not elapsed time, is the signal worth acting on.
+#
+# The profile that waits at no gate has nobody watching, which makes its watchdog
+# the only net — so it is usually the one worth tightening.
+
 # [profile.interactive]
 # waits = ["confirm", "confirm-write", "review-artifact", "loop-ceiling"]
 
@@ -47,6 +60,8 @@ editor = "vim"
 
 # [profile.nightly]
 # waits = []
+# idle_budget = "15m"
+# tool_budget = "1h"
 
 # A profile of your own — this one reviews the contract but trusts the rest.
 # [profile.spec-only]

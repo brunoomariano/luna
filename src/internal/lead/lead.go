@@ -164,11 +164,18 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	stage := stageIn(flow, state.Stage)
 
 	if l.Watchdog != nil && l.Watchdog.Stalled(state) {
-		return l.handleFailure(ctx, taskID, state, ErrStalled.Error())
+		return l.stall(taskID, fmt.Sprintf("%s at stage %q", ErrStalled, state.Stage))
 	}
 
 	result, err := l.Node.Run(ctx, state, stage)
 	if err != nil {
+		// A stall is a decision, not a judgement call: the node observed that the
+		// agent is alive and doing nothing, and there is nothing for a model to
+		// weigh (ADR-0034). It also must not spend the retry budget — that budget
+		// is for a stage that failed, and a stall says nothing about the stage.
+		if errors.Is(err, ErrStalled) {
+			return l.stall(taskID, err.Error())
+		}
 		return l.handleFailure(ctx, taskID, state, err.Error())
 	}
 
@@ -198,6 +205,17 @@ func (l *Lead) decideGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWa
 		return fsm.GateDecisionWaited
 	}
 	return fsm.GateDecisionPassed
+}
+
+// stall records a task that stopped making progress.
+//
+// It is a block rather than a failure, and the distinction is load-bearing: a
+// failure says the stage went wrong, a stall says nothing about the stage at all.
+// Collapsing them would spend the retry budget on an agent that is not going to
+// react, and would leave the audit unable to tell the two apart at exactly the
+// moment someone needs to know which happened (ADR-0034, ADR-0011).
+func (l *Lead) stall(taskID, reason string) error {
+	return l.record(taskID, fsm.Block{Reason: reason})
 }
 
 // handleFailure asks the judge what to do and records the answer.
