@@ -50,6 +50,7 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0026](0026-the-log-records-the-gate-decision-not-the-policy.md) — The log records the gate decision, not the policy that produced it — `Accepted`
 - [ADR-0025](0025-pure-go-sqlite-and-blobs-in-the-same-database.md) — Pure-Go SQLite, with the blobs in the same database — `Accepted`
 - [ADR-0024](0024-the-reducer-is-pure-verification-runs-outside.md) — The reducer is pure; verification runs outside it — `Accepted`
 - [ADR-0023](0023-three-separate-loop-ceilings.md) — The loop has three ceilings counted separately — `Accepted`
