@@ -222,10 +222,15 @@ type TaskState struct {
 	// INV-core-8 forbids.
 	Blocked string
 
+	// Seq counts transitions applied. It is the log position, and it is what lets
+	// the staleness rule compare "when was this proven" against "when was this
+	// touched" without a clock ever entering the reducer (ADR-0024, ADR-0032).
+	Seq int
+
 	// Evidence records what the tool reported for each delivered artifact
 	// (ADR-0024). An audit that says a stage closed but not on what grounds
 	// answers half the question.
-	Evidence map[Artifact]string
+	Evidence map[Artifact]Evidence
 }
 
 // NewTaskState starts a task that has not entered its first stage.
@@ -236,7 +241,7 @@ func NewTaskState(id string, kind TaskKind) TaskState {
 		Context:  NewTaskContext(kind),
 		Profile:  ProfileInteractive,
 		Retry:    Retry{Max: 2},
-		Evidence: map[Artifact]string{},
+		Evidence: map[Artifact]Evidence{},
 	}
 }
 

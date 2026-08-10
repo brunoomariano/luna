@@ -98,6 +98,11 @@ type Stage struct {
 	// diagnoses. Checked on exit like Produces, exempt from the static check.
 	ProducesForHuman []Artifact
 
+	// Verifiers declares how each produced artifact is proven (ADR-0032). An
+	// artifact absent from the map is verified by existence alone, which the
+	// static check warns about so the floor stays a choice.
+	Verifiers map[Artifact]Verifier
+
 	// When decides whether the stage enters the flow. Nil means unconditional.
 	//
 	// It receives the whole context rather than just the kind: not every

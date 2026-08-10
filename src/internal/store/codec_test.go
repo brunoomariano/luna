@@ -53,15 +53,27 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:   "Complete with evidence",
-			action: fsm.Complete{Delivered: []fsm.Artifact{"code"}, Evidence: map[fsm.Artifact]string{"code": "sha256:abc"}},
+			name: "Complete with evidence",
+			action: fsm.Complete{
+				Delivered: []fsm.Artifact{"code"},
+				Evidence: map[fsm.Artifact]fsm.Evidence{"code": {
+					Scope:    fsm.ScopeFull,
+					Verdict:  fsm.VerdictPassed,
+					Command:  "go test ./...",
+					ExitCode: 0,
+				}},
+			},
 			verify: func(t *testing.T, got fsm.Action) {
 				a, ok := got.(fsm.Complete)
 				if !ok {
 					t.Fatalf("want Complete, got %T", got)
 				}
-				if a.Evidence["code"] != "sha256:abc" {
-					t.Errorf("the evidence must survive the round trip (ADR-0024), got %v", a.Evidence)
+				// Every field is checked rather than the map: evidence that comes
+				// back with its scope or verdict lost would replay as a different
+				// claim about the same delivery (ADR-0024, ADR-0028).
+				code := a.Evidence["code"]
+				if code.Scope != fsm.ScopeFull || code.Verdict != fsm.VerdictPassed || code.Command != "go test ./..." {
+					t.Errorf("the evidence must survive the round trip (ADR-0024), got %+v", a.Evidence)
 				}
 			},
 		},

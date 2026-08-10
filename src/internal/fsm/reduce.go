@@ -59,7 +59,7 @@ type Advance struct {
 // replays.
 type Complete struct {
 	Delivered []Artifact
-	Evidence  map[Artifact]string
+	Evidence  map[Artifact]Evidence
 	Flow      []Stage `json:"-"`
 }
 
@@ -134,6 +134,13 @@ var reviewStages = map[StageID]bool{
 // blocked state, not an error: that is a fact about the task, not a bug in the
 // caller.
 func Reduce(state TaskState, action Action) (TaskState, error) {
+	// Every applied action advances the log position. It is incremented before
+	// the transition so anything recorded during it carries the sequence of the
+	// event that produced it, which is what the staleness rule compares against
+	// (ADR-0032). A refused action returns the state untouched, sequence
+	// included — it never entered the log.
+	state.Seq++
+
 	switch a := action.(type) {
 	case TaskCreated:
 		return created(state, a)
@@ -258,15 +265,25 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		return state, nil
 	}
 
+	// The verdict decides, not the delivery. A stage that produced an artifact
+	// whose check failed does not close: the node ran the real tool and it said
+	// no, and closing anyway is the self-reported completion ADR-0028 rejects.
+	if failed := notPassing(owed, a.Evidence); len(failed) > 0 {
+		state.Status = StatusBlocked
+		state.Blocked = fmt.Sprintf("stage %q delivered %v but its verification did not pass", state.Stage, failed)
+		// The evidence is recorded even so: the audit needs to show what failed,
+		// not just that something did.
+		absorb(state.Evidence, a.Evidence)
+		return state, nil
+	}
+
 	// Only flow products enter the context. Letting an audit report in would make
 	// it satisfy some stage's requires, which is what ADR-0021 separates the two
 	// fields to prevent.
 	for _, produced := range stage.Produces {
 		state.Context.Artifacts[produced] = true
 	}
-	for artifact, evidence := range a.Evidence {
-		state.Evidence[artifact] = evidence
-	}
+	absorb(state.Evidence, a.Evidence)
 
 	// The status says the stage finished, rather than leaving the caller to infer
 	// it from what landed in the context. A closed stage and a stage about to
@@ -304,12 +321,15 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 	switch a := action.(type) {
 	case GateApprove:
 		if gate.Kind == GateReviewArtifact && gate.Payload != "" {
-			state.Evidence[gate.Artifact] = gate.Payload
+			state.Evidence[gate.Artifact] = Approved(gate.Payload, state.Seq)
 		}
 	case GateAdjust:
 		// The edited version is what carries on. Recording it is what keeps the
 		// handoff describing what the next stage actually consumed.
-		state.Evidence[gate.Artifact] = a.Payload
+		//
+		// It is human-scoped evidence rather than a command's verdict: someone
+		// looked and accepted, which is a different fact from a check that ran.
+		state.Evidence[gate.Artifact] = Approved(a.Payload, state.Seq)
 	case GateReject:
 		// Nothing enters the context: unlike the review rollback, this happens
 		// before the artifact was ever accepted, so there is no green to
@@ -346,6 +366,11 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	// Going back invalidates the green: ci_green attested to code that no longer
 	// exists, and qa, code-review and commit all consume it (ADR-0020).
 	delete(state.Context.Artifacts, "ci_green")
+
+	// The evidence for it does not disappear, it goes stale. Dropping the record
+	// would leave an audit that cannot tell "never checked" from "checked, then
+	// invalidated" — and the second is the interesting one (ADR-0032).
+	stale(state.Evidence, []Artifact{"ci_green", "tests_green"}, state.Seq)
 	state.Stage = "build"
 	state.Status = StatusRunning
 
@@ -467,6 +492,53 @@ func stageIn(flow []Stage, id StageID) Stage {
 		}
 	}
 	return Stage{ID: id}
+}
+
+// notPassing reports which owed artifacts arrived without passing evidence.
+//
+// Missing evidence counts as not passing: a delivery the node said nothing about
+// is not proof, and treating silence as success is exactly how a status becomes a
+// verdict (ADR-0028).
+func notPassing(owed []Artifact, evidence map[Artifact]Evidence) []Artifact {
+	var failed []Artifact
+	for _, artifact := range owed {
+		if !evidence[artifact].Passing() {
+			failed = append(failed, artifact)
+		}
+	}
+	return failed
+}
+
+// absorb copies observed evidence into the state, newest wins.
+func absorb(into, from map[Artifact]Evidence) {
+	for artifact, e := range from {
+		into[artifact] = e
+	}
+}
+
+// stale marks evidence that stopped being true because the work moved under it.
+//
+// One comparison of two sequence numbers is the whole mechanism that stops "I
+// tested it" from surviving a later change (ADR-0032). It is a pure function of
+// the log, which is why it belongs here and not in the node layer.
+//
+// The comparison is `>` rather than `>=`: evidence recorded at the very event
+// that invalidates it is still invalidated. Only a check proven *after* the
+// change survives it, which is the whole point.
+func stale(evidence map[Artifact]Evidence, touched []Artifact, at int) {
+	for _, artifact := range touched {
+		e, ok := evidence[artifact]
+		if !ok || e.Verdict != VerdictPassed || e.RecordedAt > at {
+			continue
+		}
+		// Existence is not invalidated by an edit: the thing still exists, and
+		// claiming otherwise would block a stage for rewriting its own prose.
+		if e.Scope == ScopeExistence {
+			continue
+		}
+		e.Verdict = VerdictStale
+		evidence[artifact] = e
+	}
 }
 
 // missingFromList reports which of the owed artifacts are absent from delivered.

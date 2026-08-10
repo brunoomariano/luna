@@ -83,7 +83,7 @@ func TestTheLoopCeilingGateHonoursItsRecordedDecision(t *testing.T) {
 		Profile:  ProfileInteractive,
 		Loop:     LoopCounters{Rounds: 9},
 		Context:  NewTaskContext(KindFeature),
-		Evidence: map[Artifact]string{},
+		Evidence: map[Artifact]Evidence{},
 	}
 
 	passed, err := Reduce(spent, ReviewFinding{Aligned: true, GateDecision: GateDecisionPassed})
@@ -200,4 +200,46 @@ func start(t *testing.T, profile Profile) TaskState {
 		t.Fatalf("creating: %v", err)
 	}
 	return state
+}
+
+// TestAReviewFindingMakesTheGreenStale covers the audit half of ADR-0020.
+//
+// The rollback already removes ci_green from the context so nothing downstream
+// consumes it. The evidence is a different question: dropping it would leave an
+// audit unable to tell "never checked" from "checked, then invalidated by a
+// finding", and the second is the one worth seeing (ADR-0032).
+func TestAReviewFindingMakesTheGreenStale(t *testing.T) {
+	state := TaskState{
+		Status:  StatusRunning,
+		Stage:   "qa",
+		Profile: ProfileNightly,
+		Context: NewTaskContext(KindFeature),
+		Evidence: map[Artifact]Evidence{
+			"ci_green": {Scope: ScopeFull, Verdict: VerdictPassed, Command: "make ci", RecordedAt: 1},
+			"contract": Exists(1),
+		},
+	}
+	state.Context.Artifacts["ci_green"] = true
+
+	after, err := Reduce(state, ReviewFinding{Aligned: true})
+	if err != nil {
+		t.Fatalf("reviewing: %v", err)
+	}
+
+	green := after.Evidence["ci_green"]
+	if green.Verdict != VerdictStale {
+		t.Errorf("a finding invalidates the green, got %q", green.Verdict)
+	}
+	if green.Command != "make ci" {
+		t.Error("the record stays: the audit needs to see what was invalidated")
+	}
+	if green.Passing() {
+		t.Error("stale is not passing")
+	}
+
+	// Prose is not invalidated by a code change: the contract still exists, and
+	// blocking a stage for rewriting its own briefing would be nonsense.
+	if after.Evidence["contract"].Verdict != VerdictPassed {
+		t.Error("existence evidence survives a rollback")
+	}
 }

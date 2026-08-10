@@ -175,7 +175,11 @@ func TestTaskShowListsWhatWasProducedWithItsEvidence(t *testing.T) {
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
 			Delivered: []fsm.Artifact{"repos"},
-			Evidence:  map[fsm.Artifact]string{"repos": "found 2 repositories"},
+			Evidence: map[fsm.Artifact]fsm.Evidence{"repos": {
+				Scope:   fsm.ScopeFull,
+				Verdict: fsm.VerdictPassed,
+				Command: "found 2 repositories",
+			}},
 		},
 	} {
 		if err := h.env.Store.AppendAction("LUNA-1", action); err != nil {
@@ -442,18 +446,29 @@ func TestAFlagWithoutAValueIsRejected(t *testing.T) {
 func specGateStore(t *testing.T, h *harness, id string) {
 	t.Helper()
 
+	// Each stage closes on existence evidence: a stage now blocks unless every
+	// artifact it owed carries a passing verdict (ADR-0028), and what these tests
+	// are about is the gate, not what was checked along the way.
+	delivered := func(artifacts ...fsm.Artifact) fsm.Complete {
+		evidence := map[fsm.Artifact]fsm.Evidence{}
+		for _, a := range artifacts {
+			evidence[a] = fsm.Exists(0)
+		}
+		return fsm.Complete{Delivered: artifacts, Evidence: evidence}
+	}
+
 	actions := []fsm.Action{
 		fsm.TaskCreated{Kind: fsm.KindFeature},
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // discovery, gated
 		fsm.GateApprove{},                    //
-		fsm.Complete{Delivered: []fsm.Artifact{"repos"}},
+		delivered("repos"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // setup
-		fsm.Complete{Delivered: []fsm.Artifact{"worktree"}},
+		delivered("worktree"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // intake
-		fsm.Complete{Delivered: []fsm.Artifact{"briefing", "kind"}},
+		delivered("briefing", "kind"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // scenarios, gated
 		fsm.GateApprove{},                    //
-		fsm.Complete{Delivered: []fsm.Artifact{"scenarios", "approach"}},
+		delivered("scenarios", "approach"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // spec, gated with the contract
 	}
 
@@ -506,8 +521,13 @@ func TestGateAdjustAppliesAnEditedContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
-	if state.Evidence["contract"] != "the contract a human fixed" {
-		t.Errorf("the edited version must be what was recorded, got %q", state.Evidence["contract"])
+	// A person's edit is recorded as human-scoped evidence, and the edited text is
+	// what it carries (ADR-0022).
+	if state.Evidence["contract"].Detail != "the contract a human fixed" {
+		t.Errorf("the edited version must be what was recorded, got %q", state.Evidence["contract"].Detail)
+	}
+	if state.Evidence["contract"].Scope != fsm.ScopeHuman {
+		t.Errorf("want the adjustment scoped to the human who made it, got %q", state.Evidence["contract"].Scope)
 	}
 	if state.Status != fsm.StatusRunning {
 		t.Errorf("want the task running again, got %q", state.Status)
@@ -619,7 +639,13 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 	}
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: flow},
-		fsm.Complete{Delivered: []fsm.Artifact{"repos"}},
+		// The first stage closes cleanly; the block has to come from the second
+		// stage's missing input, not from an unverified delivery.
+		fsm.Complete{
+			Delivered: []fsm.Artifact{"repos"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"repos": fsm.Exists(0)},
+			Flow:      flow,
+		},
 		fsm.Advance{Flow: flow},
 	} {
 		if err := h.env.Store.AppendAction("LUNA-1", action); err != nil {
@@ -658,8 +684,8 @@ func TestGateAdjustAppends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
-	if !strings.Contains(state.Evidence["contract"], "and one more constraint") {
-		t.Errorf("want the addition recorded, got %q", state.Evidence["contract"])
+	if !strings.Contains(state.Evidence["contract"].Detail, "and one more constraint") {
+		t.Errorf("want the addition recorded, got %q", state.Evidence["contract"].Detail)
 	}
 }
 
@@ -675,8 +701,8 @@ func TestGateAdjustReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
-	if state.Evidence["contract"] != "a completely different contract" {
-		t.Errorf("want the replacement, got %q", state.Evidence["contract"])
+	if state.Evidence["contract"].Detail != "a completely different contract" {
+		t.Errorf("want the replacement, got %q", state.Evidence["contract"].Detail)
 	}
 }
 
@@ -693,8 +719,8 @@ func TestGateAdjustFromStdin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
-	if state.Evidence["contract"] != "a contract from a pipeline" {
-		t.Errorf("want what stdin carried, got %q", state.Evidence["contract"])
+	if state.Evidence["contract"].Detail != "a contract from a pipeline" {
+		t.Errorf("want what stdin carried, got %q", state.Evidence["contract"].Detail)
 	}
 }
 

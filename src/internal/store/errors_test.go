@@ -231,8 +231,8 @@ func TestOpeningAFileThatIsNotADatabase(t *testing.T) {
 // An action carrying something JSON cannot represent must be refused at the point
 // of writing rather than producing a log entry that will not decode.
 func TestEncodingAnActionThatCannotBeSerialised(t *testing.T) {
-	// A channel cannot be marshalled; Evidence holds strings, so this reaches the
-	// encoder through a map value that json rejects.
+	// A channel cannot be marshalled, so this reaches the encoder through a map
+	// value that json rejects.
 	_, _, err := withPayload("Complete", map[string]any{"bad": make(chan int)})
 
 	if err == nil {

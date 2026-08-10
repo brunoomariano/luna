@@ -34,8 +34,10 @@ func atStage(t *testing.T, kind TaskKind, target StageID, produced ...Artifact) 
 		}
 		if next.Stage != target {
 			stage := stageIn(DefaultFlow(), next.Stage)
+			owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 			next, err = Reduce(next, Complete{
-				Delivered: append(stage.Produces, stage.ProducesForHuman...),
+				Delivered: owed,
+				Evidence:  passing(owed),
 			})
 			if err != nil {
 				t.Fatalf("completing %q: %v", next.Stage, err)
@@ -48,6 +50,18 @@ func atStage(t *testing.T, kind TaskKind, target StageID, produced ...Artifact) 
 		state.Context.Artifacts[a] = true
 	}
 	return state
+}
+
+// passing is the cheapest evidence that closes a stage: every artifact was
+// delivered and nothing was checked about it. A named fake for the scenarios
+// whose subject is the transition rather than the verdict — the ones that do care
+// about the verdict build their own Evidence and say what it proves.
+func passing(owed []Artifact) map[Artifact]Evidence {
+	evidence := map[Artifact]Evidence{}
+	for _, a := range owed {
+		evidence[a] = Exists(0)
+	}
+	return evidence
 }
 
 // ── block F: entering a stage ────────────────────────────────────────────────
@@ -88,7 +102,8 @@ func TestAdvanceRefusesAStageMissingItsInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("entering the first stage: %v", err)
 	}
-	state, err = Reduce(state, Complete{Delivered: []Artifact{"repos"}})
+	repos := []Artifact{"repos"}
+	state, err = Reduce(state, Complete{Delivered: repos, Evidence: passing(repos), Flow: flow})
 	if err != nil {
 		t.Fatalf("completing the first stage: %v", err)
 	}
@@ -113,7 +128,10 @@ func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
 	state := atStage(t, KindDocs, "commit")
 	stage := stageIn(DefaultFlow(), "commit")
 
-	state, err := Reduce(state, Complete{Delivered: stage.Produces})
+	state, err := Reduce(state, Complete{
+		Delivered: stage.Produces,
+		Evidence:  passing(stage.Produces),
+	})
 	if err != nil {
 		t.Fatalf("completing commit: %v", err)
 	}
@@ -136,10 +154,15 @@ func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
 	state := atStage(t, KindFeature, "build")
 	stage := stageIn(DefaultFlow(), "build")
 
-	state, err := Reduce(state, Complete{
-		Delivered: stage.Produces,
-		Evidence:  map[Artifact]string{"tests_green": "go test ./... → ok"},
-	})
+	evidence := passing(stage.Produces)
+	evidence["tests_green"] = Evidence{
+		Scope:    ScopeFull,
+		Verdict:  VerdictPassed,
+		Command:  "go test ./...",
+		ExitCode: 0,
+	}
+
+	state, err := Reduce(state, Complete{Delivered: stage.Produces, Evidence: evidence})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,8 +172,8 @@ func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
 			t.Errorf("%q should be in the context after the stage closed", a)
 		}
 	}
-	if state.Evidence["tests_green"] == "" {
-		t.Error("the evidence for a delivery must be kept (ADR-0024)")
+	if state.Evidence["tests_green"].Command != "go test ./..." {
+		t.Errorf("the evidence for a delivery must be kept (ADR-0024), got %+v", state.Evidence["tests_green"])
 	}
 }
 
@@ -204,9 +227,8 @@ func TestAuditReportDoesNotEnterTheFlowContext(t *testing.T) {
 	state := atStage(t, KindFeature, "verify")
 	stage := stageIn(DefaultFlow(), "verify")
 
-	state, err := Reduce(state, Complete{
-		Delivered: append(stage.Produces, stage.ProducesForHuman...),
-	})
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	state, err := Reduce(state, Complete{Delivered: owed, Evidence: passing(owed)})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -301,8 +323,8 @@ func TestGateAdjustReplacesThePayload(t *testing.T) {
 	if state.Status != StatusRunning {
 		t.Errorf("want running after an adjustment, got %q", state.Status)
 	}
-	if state.Evidence["contract"] != "the contract a human fixed" {
-		t.Errorf("the adjusted version is what carries on, got %q", state.Evidence["contract"])
+	if state.Evidence["contract"].Detail != "the contract a human fixed" {
+		t.Errorf("the adjusted version is what carries on, got %+v", state.Evidence["contract"])
 	}
 }
 
@@ -505,7 +527,7 @@ func TestUnblockReturnsTheTaskToItsStage(t *testing.T) {
 		Blocked:  "tests failed three times",
 		Retry:    Retry{Attempts: 2, Max: 2},
 		Context:  NewTaskContext(KindFeature),
-		Evidence: map[Artifact]string{},
+		Evidence: map[Artifact]Evidence{},
 	}
 
 	state, err := Reduce(state, Unblock{})
@@ -533,7 +555,10 @@ func TestCompleteSaysTheStageIsDone(t *testing.T) {
 	state := atStage(t, KindFeature, "build")
 	stage := stageIn(DefaultFlow(), "build")
 
-	state, err := Reduce(state, Complete{Delivered: stage.Produces})
+	state, err := Reduce(state, Complete{
+		Delivered: stage.Produces,
+		Evidence:  passing(stage.Produces),
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -600,7 +625,7 @@ func TestABlockMustSayWhy(t *testing.T) {
 // TestBlockingWhatIsAlreadyOverIsRefused covers the guard.
 func TestBlockingWhatIsAlreadyOverIsRefused(t *testing.T) {
 	for _, status := range []Status{StatusDone, StatusBlocked} {
-		state := TaskState{Status: status, Evidence: map[Artifact]string{}}
+		state := TaskState{Status: status, Evidence: map[Artifact]Evidence{}}
 
 		if _, err := Reduce(state, Block{Reason: "again"}); !errors.Is(err, ErrIllegalTransition) {
 			t.Errorf("%s: want ErrIllegalTransition, got %v", status, err)

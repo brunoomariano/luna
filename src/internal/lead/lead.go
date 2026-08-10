@@ -42,7 +42,7 @@ type Node interface {
 // transition.
 type Result struct {
 	Delivered []fsm.Artifact
-	Evidence  map[fsm.Artifact]string
+	Evidence  map[fsm.Artifact]fsm.Evidence
 }
 
 // Decision is what the model chose to do about a failure.

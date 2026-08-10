@@ -154,8 +154,8 @@ func TestGateApproveKeepsTheReviewedArtifact(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Evidence["contract"] != "the generated contract" {
-		t.Errorf("an approved artifact is recorded as approved, got %q", state.Evidence["contract"])
+	if state.Evidence["contract"].Detail != "the generated contract" {
+		t.Errorf("an approved artifact is recorded as approved, got %+v", state.Evidence["contract"])
 	}
 }
 

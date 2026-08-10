@@ -151,7 +151,10 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.GateApprove{},
-		fsm.Complete{Delivered: []fsm.Artifact{"repos"}},
+		fsm.Complete{
+			Delivered: []fsm.Artifact{"repos"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"repos": fsm.Exists(0)},
+		},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 	} {
 		live, err = fsm.Reduce(live, action)

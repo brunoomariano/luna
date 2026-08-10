@@ -229,8 +229,10 @@ func taskShow(env Env, args []string) error {
 		fmt.Fprintf(env.Out, "\nproduced\n")
 		for _, a := range artifacts {
 			// Evidence is what the tool reported (ADR-0024). Showing it is the
-			// difference between knowing a stage closed and knowing on what grounds.
-			if evidence := state.Evidence[a]; evidence != "" {
+			// difference between knowing a stage closed and knowing on what
+			// grounds — and the scope is what separates a green suite from a file
+			// that merely exists (ADR-0032).
+			if evidence := state.Evidence[a]; evidence.Delivered() {
 				fmt.Fprintf(env.Out, "  %-16s %s\n", a, evidence)
 				continue
 			}

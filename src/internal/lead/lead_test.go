@@ -22,9 +22,17 @@ func (n *deliveringNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage
 	delivered = append(delivered, stage.Produces...)
 	delivered = append(delivered, stage.ProducesForHuman...)
 
-	evidence := map[fsm.Artifact]string{}
+	// Passing evidence for everything it owes: a stage only closes when every owed
+	// artifact has a verdict that passed (ADR-0028), so a node that always succeeds
+	// has to say so artifact by artifact.
+	evidence := map[fsm.Artifact]fsm.Evidence{}
 	for _, a := range delivered {
-		evidence[a] = "the tool confirmed " + string(a)
+		evidence[a] = fsm.Evidence{
+			Scope:   fsm.ScopeFull,
+			Verdict: fsm.VerdictPassed,
+			Command: "check " + string(a),
+			Detail:  "the tool confirmed " + string(a),
+		}
 	}
 	return Result{Delivered: delivered, Evidence: evidence}, nil
 }
@@ -346,7 +354,7 @@ func TestEvidenceReachesTheLog(t *testing.T) {
 	if len(state.Evidence) == 0 {
 		t.Fatal("the evidence must reach the log")
 	}
-	if state.Evidence["repos"] == "" {
+	if !state.Evidence["repos"].Delivered() {
 		t.Errorf("want evidence for what discovery produced, got %v", state.Evidence)
 	}
 }
