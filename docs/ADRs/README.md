@@ -50,6 +50,11 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0031](0031-agents-start-through-herdrs-allowlist.md) — Agents start through herdr's allowlist — `Accepted`
+- [ADR-0030](0030-the-node-boundary-keeps-herdr-replaceable.md) — The node boundary keeps herdr replaceable — `Accepted`
+- [ADR-0029](0029-herdr-blocked-becomes-a-luna-block.md) — herdr's `blocked` becomes a Luna block — `Accepted`
+- [ADR-0028](0028-herdr-status-triggers-verification-it-never-closes-a-stage.md) — herdr's status triggers verification; it never closes a stage — `Accepted`
+- [ADR-0027](0027-luna-runs-under-herdr-as-a-socket-client.md) — Luna runs under herdr as a socket client — `Accepted`
 - [ADR-0026](0026-the-log-records-the-gate-decision-not-the-policy.md) — The log records the gate decision, not the policy that produced it — `Accepted`
 - [ADR-0025](0025-pure-go-sqlite-and-blobs-in-the-same-database.md) — Pure-Go SQLite, with the blobs in the same database — `Accepted`
 - [ADR-0024](0024-the-reducer-is-pure-verification-runs-outside.md) — The reducer is pure; verification runs outside it — `Accepted`
