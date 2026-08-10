@@ -17,8 +17,27 @@ strict=0
 err()  { echo "$1: ERROR: $2"; fail=1; }
 warn() { echo "$1: warning: $2"; [ "$strict" = 1 ] && fail=1 || true; }
 
-# Excludes the directories that are not hand-written documentation.
-docs_md() { find docs -name '*.md' | sort; }
+# The documents this suite is accountable for: the ones the repository tracks.
+#
+# Ignored paths are excluded by construction rather than by a list here. Working
+# material — cloned third-party repositories, scratch notes — lives under docs/
+# without being part of the suite, and linting someone else's markdown for our
+# conventions reports violations we neither own nor can fix.
+#
+# The fallback keeps the check working outside a git checkout (a release tarball,
+# a container build), where nothing is ignored and everything present is ours.
+# `--cached --others --exclude-standard` is the combination that matters: tracked
+# files plus new ones not yet committed, minus anything ignored. A document must
+# be linted before it is committed, not after — checking only tracked files would
+# let every new document through on the run that mattered.
+docs_md() {
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    git ls-files --cached --others --exclude-standard -- 'docs/*.md' 'docs/**/*.md' \
+      | sort -u
+  else
+    find docs -name '*.md' | sort
+  fi
+}
 
 # --- 5. the contract exists ---------------------------------------------------
 # Without docs/README.md the suite is a pile: it is the piece governing the rest.
