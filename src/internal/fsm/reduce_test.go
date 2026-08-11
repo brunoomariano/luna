@@ -2,6 +2,7 @@ package fsm
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func atStage(t *testing.T, kind TaskKind, target StageID, produced ...Artifact) 
 			owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 			next, err = Reduce(next, Complete{
 				Delivered: owed,
-				Evidence:  passing(owed),
+				Evidence:  passing(stage, owed),
 			})
 			if err != nil {
 				t.Fatalf("completing %q: %v", next.Stage, err)
@@ -52,14 +53,23 @@ func atStage(t *testing.T, kind TaskKind, target StageID, produced ...Artifact) 
 	return state
 }
 
-// passing is the cheapest evidence that closes a stage: every artifact was
-// delivered and nothing was checked about it. A named fake for the scenarios
-// whose subject is the transition rather than the verdict — the ones that do care
-// about the verdict build their own Evidence and say what it proves.
-func passing(owed []Artifact) map[Artifact]Evidence {
+// passing is the cheapest evidence that closes a stage: every artifact arrives
+// proven at exactly the scope its contract declared. A named fake for the
+// scenarios whose subject is the transition rather than the verdict — the ones
+// that do care about the verdict build their own Evidence and say what it proves.
+//
+// It takes the stage rather than a bare list because the exit check compares
+// scopes now: an artifact declared with a command is not closed by existence
+// alone, so a helper that always answered Exists would be testing a flow no
+// contract describes.
+func passing(stage Stage, owed []Artifact) map[Artifact]Evidence {
 	evidence := map[Artifact]Evidence{}
 	for _, a := range owed {
-		evidence[a] = Exists(0)
+		evidence[a] = Evidence{
+			Scope:   VerifierFor(stage, a).Proves(),
+			Verdict: VerdictPassed,
+			Command: VerifierFor(stage, a).Describe(),
+		}
 	}
 	return evidence
 }
@@ -103,7 +113,7 @@ func TestAdvanceRefusesAStageMissingItsInputs(t *testing.T) {
 		t.Fatalf("entering the first stage: %v", err)
 	}
 	repos := []Artifact{"repos"}
-	state, err = Reduce(state, Complete{Delivered: repos, Evidence: passing(repos), Flow: flow})
+	state, err = Reduce(state, Complete{Delivered: repos, Evidence: passing(stageIn(flow, state.Stage), repos), Flow: flow})
 	if err != nil {
 		t.Fatalf("completing the first stage: %v", err)
 	}
@@ -130,7 +140,7 @@ func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
 
 	state, err := Reduce(state, Complete{
 		Delivered: stage.Produces,
-		Evidence:  passing(stage.Produces),
+		Evidence:  passing(stage, stage.Produces),
 	})
 	if err != nil {
 		t.Fatalf("completing commit: %v", err)
@@ -154,7 +164,7 @@ func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
 	state := atStage(t, KindFeature, "build")
 	stage := stageIn(DefaultFlow(), "build")
 
-	evidence := passing(stage.Produces)
+	evidence := passing(stage, stage.Produces)
 	evidence["tests_green"] = Evidence{
 		Scope:    ScopeFull,
 		Verdict:  VerdictPassed,
@@ -174,6 +184,68 @@ func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
 	}
 	if state.Evidence["tests_green"].Command != "go test ./..." {
 		t.Errorf("the evidence for a delivery must be kept (ADR-0024), got %+v", state.Evidence["tests_green"])
+	}
+}
+
+// TestCompleteRefusesEvidenceWeakerThanTheContract covers INV-core-4's second
+// acceptance criterion.
+//
+// The delivery is complete and the verdict passed — what is wrong is that the
+// check was not the one the contract declared. `build` proves tests_green by
+// running a command, so evidence that only witnesses the artifact on disk has
+// delivered it, not verified it, and closing on that is the laundering the
+// scopes exist to prevent.
+func TestCompleteRefusesEvidenceWeakerThanTheContract(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+	stage := stageIn(DefaultFlow(), "build")
+
+	evidence := passing(stage, stage.Produces)
+	// Everything as the contract asked, except the one artifact that owed a
+	// command and arrived witnessed instead.
+	evidence["tests_green"] = Exists(0)
+
+	state, err := Reduce(state, Complete{Delivered: stage.Produces, Evidence: evidence})
+	if err != nil {
+		t.Fatalf("weak evidence is a state, not an error: %v", err)
+	}
+
+	if state.Status != StatusBlocked {
+		t.Errorf("want blocked when the check was weaker than declared, got %q", state.Status)
+	}
+	if !strings.Contains(state.Blocked, "tests_green") {
+		t.Errorf("the block must name the artifact that was under-proven, got %q", state.Blocked)
+	}
+	if state.Context.HasArtifact("tests_green") {
+		t.Error("nothing enters the context when the stage does not close")
+	}
+	// The audit needs the record even so: what arrived is what explains the block.
+	if state.Evidence["tests_green"].Scope != ScopeExistence {
+		t.Errorf("the evidence that caused the block must be kept, got %+v", state.Evidence["tests_green"])
+	}
+}
+
+// TestStrongerEvidenceThanAskedForIsAccepted is the other direction, and it is
+// not symmetric with the test above.
+//
+// A stage that ran the whole suite where its contract only wanted delivery has
+// proven more than it had to. Refusing that would be refusing good news — the
+// rule is that evidence never claims *more* than the check proved, not that it
+// must claim exactly what was asked.
+func TestStrongerEvidenceThanAskedForIsAccepted(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+	stage := stageIn(DefaultFlow(), "build")
+
+	evidence := passing(stage, stage.Produces)
+	// `code` is declared Existence; this run proved more.
+	evidence["code"] = Evidence{Scope: ScopeFull, Verdict: VerdictPassed, Command: "make ci"}
+
+	state, err := Reduce(state, Complete{Delivered: stage.Produces, Evidence: evidence})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if state.Status != StatusStageDone {
+		t.Errorf("stronger evidence closes the stage, got %q: %s", state.Status, state.Blocked)
 	}
 }
 
@@ -228,7 +300,7 @@ func TestAuditReportDoesNotEnterTheFlowContext(t *testing.T) {
 	stage := stageIn(DefaultFlow(), "verify")
 
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
-	state, err := Reduce(state, Complete{Delivered: owed, Evidence: passing(owed)})
+	state, err := Reduce(state, Complete{Delivered: owed, Evidence: passing(stage, owed)})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -557,7 +629,7 @@ func TestCompleteSaysTheStageIsDone(t *testing.T) {
 
 	state, err := Reduce(state, Complete{
 		Delivered: stage.Produces,
-		Evidence:  passing(stage.Produces),
+		Evidence:  passing(stage, stage.Produces),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

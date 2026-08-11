@@ -35,18 +35,45 @@ const (
 // Satisfies reports whether evidence at this scope meets a requirement for the
 // wanted one.
 //
-// The rule is deliberately one-directional: a full check answers a targeted
-// requirement, never the reverse. Everything else must match exactly, so an
-// existence record cannot stand in for a check that was supposed to run.
+// The rule is deliberately one-directional: stronger evidence answers a weaker
+// requirement, never the reverse. An existence record cannot stand in for a check
+// that was supposed to run, which is the laundering the scopes exist to prevent —
+// but a stage that ran the whole suite where only delivery was asked has proven
+// more than it had to, and refusing that would be refusing good news.
+//
+// The ordering is human > full > targeted > existence. `human` outranks a command
+// because a person looked; `existence` is the floor because it verified nothing.
+// An unknown scope on either side refuses: evidence this build cannot rank
+// proves nothing, and a requirement it cannot rank cannot be shown to be met.
+// That is the same refusal the store makes for an unknown action — a log written
+// by a newer version stops the replay rather than being read generously.
 func (s Scope) Satisfies(wanted Scope) bool {
-	if s == wanted {
-		return true
+	have, known := scopeRank(s)
+	if !known {
+		return false
 	}
-	// A person who approved the artifact outranks a command that inspected it.
-	if s == ScopeHuman {
-		return true
+	asked, known := scopeRank(wanted)
+	if !known {
+		return false
 	}
-	return s == ScopeFull && wanted == ScopeTargeted
+	return have >= asked
+}
+
+// scopeRank orders the scopes by how much they prove, and reports whether the
+// scope is one this build knows at all.
+func scopeRank(s Scope) (int, bool) {
+	switch s {
+	case ScopeHuman:
+		return 4, true
+	case ScopeFull:
+		return 3, true
+	case ScopeTargeted:
+		return 2, true
+	case ScopeExistence:
+		return 1, true
+	default:
+		return 0, false
+	}
 }
 
 // Verdict is what the verification concluded.

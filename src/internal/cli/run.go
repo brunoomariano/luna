@@ -160,8 +160,15 @@ func rolesFor(cfg Config, override string) func(fsm.RoleName) (fsm.Role, bool) {
 // dryNode delivers whatever the contract asks for, without running anything.
 //
 // It exists so the machine can be exercised without the world: the flow, the
-// contract checks, the gates and the replay all run, and the evidence says
-// `existence` because that is the truth about what was proven — nothing.
+// contract checks, the gates and the replay all run, and no agent starts.
+//
+// The evidence it produces claims the scope the contract declared, and says in
+// its detail that nothing ran. That is a deliberate lie of scope with the truth
+// beside it, and it is confined to this type: recording `existence` instead
+// would be honest but would stop every stage whose contract declares a command,
+// which is exactly the machinery a dry run exists to exercise. Nothing outside
+// `--dry` may construct evidence this way — a node that cannot prove something
+// says so and lets the stage block (ADR-0028).
 type dryNode struct{}
 
 func (dryNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
@@ -169,7 +176,14 @@ func (dryNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lea
 
 	evidence := make(map[fsm.Artifact]fsm.Evidence, len(owed))
 	for _, artifact := range owed {
-		evidence[artifact] = fsm.Exists(state.Seq)
+		verifier := fsm.VerifierFor(stage, artifact)
+		evidence[artifact] = fsm.Evidence{
+			Scope:      verifier.Proves(),
+			Verdict:    fsm.VerdictPassed,
+			Command:    verifier.Describe(),
+			Detail:     "dry run: nothing was executed",
+			RecordedAt: state.Seq,
+		}
 	}
 	return lead.Result{Delivered: owed, Evidence: evidence}, nil
 }

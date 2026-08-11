@@ -235,7 +235,7 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	// is just that nobody was asked (ADR-0013, ADR-0026).
 	if gate := gateFor(stage); gate != nil && gateWaits(a.GateDecision, state.Profile, gate.Kind) {
 		state.Status = StatusAwaitingGate
-		state.Gate = gate
+		state.Gate = withPayload(gate, state.Evidence)
 		return state, nil
 	}
 
@@ -273,6 +273,17 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		state.Blocked = fmt.Sprintf("stage %q delivered %v but its verification did not pass", state.Stage, failed)
 		// The evidence is recorded even so: the audit needs to show what failed,
 		// not just that something did.
+		absorb(state.Evidence, a.Evidence)
+		return state, nil
+	}
+
+	// Passing is not enough — it has to be the check the contract asked for. An
+	// artifact declared with a command that comes back proven by existence alone
+	// has not been verified, it has been delivered, and closing on that is the
+	// laundering the scopes exist to prevent (INV-core-4).
+	if weak := underProven(stage, owed, a.Evidence); len(weak) > 0 {
+		state.Status = StatusBlocked
+		state.Blocked = fmt.Sprintf("stage %q proved %v with a weaker check than its contract declared", state.Stage, weak)
 		absorb(state.Evidence, a.Evidence)
 		return state, nil
 	}
@@ -485,6 +496,29 @@ func gateFor(stage Stage) *PendingGate {
 	}
 }
 
+// withPayload fills a review gate with the artifact the human is being asked to
+// read, when there is one to fill it with.
+//
+// INV-core-12 requires the gate's artifact to be retrievable by command, and
+// until this existed `luna gate show` printed the artifact's name and a blank
+// line — the payload was declared, documented, and written by nothing.
+//
+// It fills from the evidence because that is where the delivered content lives.
+// A gate whose artifact has not been produced yet keeps an empty payload rather
+// than inventing one: the gate for `spec` opens on entry, before `spec` has
+// written the contract, which is a timing bug of its own and is recorded in
+// RFC-0001 rather than papered over here.
+func withPayload(gate *PendingGate, evidence map[Artifact]Evidence) *PendingGate {
+	if gate.Kind != GateReviewArtifact || gate.Payload != "" {
+		return gate
+	}
+	// A copy: the caller's gate is shared with the state it came from, and the
+	// reducer does not write through its inputs.
+	filled := *gate
+	filled.Payload = evidence[gate.Artifact].Detail
+	return &filled
+}
+
 func stageIn(flow []Stage, id StageID) Stage {
 	for _, s := range flow {
 		if s.ID == id {
@@ -507,6 +541,28 @@ func notPassing(owed []Artifact, evidence map[Artifact]Evidence) []Artifact {
 		}
 	}
 	return failed
+}
+
+// underProven reports which owed artifacts passed a weaker check than the
+// contract asked for.
+//
+// This is the other half of the exit check, and without it the scopes are
+// decoration: evidence that only proves the file is on disk would close a stage
+// whose contract declared a command, and the log would carry `existence` under a
+// stage that promised the suite. Scope.Satisfies is one-directional precisely so
+// that gap cannot be closed by reading the record generously (ADR-0032).
+//
+// It runs after notPassing, so everything here already passed — the question is
+// no longer whether the check succeeded but whether it was the right check.
+func underProven(stage Stage, owed []Artifact, evidence map[Artifact]Evidence) []Artifact {
+	var weak []Artifact
+	for _, artifact := range owed {
+		wanted := VerifierFor(stage, artifact).Proves()
+		if !evidence[artifact].Scope.Satisfies(wanted) {
+			weak = append(weak, artifact)
+		}
+	}
+	return weak
 }
 
 // absorb copies observed evidence into the state, newest wins.

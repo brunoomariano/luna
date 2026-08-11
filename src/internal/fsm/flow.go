@@ -62,6 +62,16 @@ func DefaultFlow() []Stage {
 			// See the note in docs/architecture/stages.md.
 			Requires: []Artifact{"scenarios", "approach", "worktree"},
 			Produces: []Artifact{"code", "tests_green"},
+			Verifiers: map[Artifact]Verifier{
+				// Targeted rather than full: build runs the tests it touched, and
+				// claiming the whole suite here would be the laundering ADR-0028
+				// rejects. `verify` is the stage that earns ScopeFull.
+				"tests_green": Command{Run: "make test", Scope: ScopeTargeted},
+				// `code` has no command that proves it — the compiler is part of
+				// `make test`, and "the diff is non-empty" proves nothing about it.
+				// It closes on existence, and that is now said rather than defaulted.
+				"code": Existence{},
+			},
 		},
 		{
 			ID:       "refactor",
@@ -78,6 +88,14 @@ func DefaultFlow() []Stage {
 			Requires:         []Artifact{"code", "scenarios"},
 			Produces:         []Artifact{"ci_green"},
 			ProducesForHuman: []Artifact{"dod_checked"},
+			Verifiers: map[Artifact]Verifier{
+				// The one artifact in the flow that earns ScopeFull: `make ci` is
+				// the whole gate, and INV-core-4 wants it run rather than claimed.
+				"ci_green": Command{Run: "make ci", Scope: ScopeFull},
+				// A checklist a person reads. Recording it as a passing check would
+				// be the lie ADR-0032 names.
+				"dod_checked": Existence{},
+			},
 		},
 		{
 			ID:               "qa",
@@ -114,6 +132,13 @@ func DefaultFlow() []Stage {
 			ID:       "commit",
 			Requires: []Artifact{"ci_green", "code"},
 			Produces: []Artifact{"commit_sha"},
+			Verifiers: map[Artifact]Verifier{
+				// INV-core-4 names this one literally: the commit resolves to
+				// exactly one object and that object is a commit. `^{commit}`
+				// makes git fail rather than answer for a tag or a tree, and
+				// --verify makes an ambiguous name an error instead of a guess.
+				"commit_sha": Command{Run: "git rev-parse --verify HEAD^{commit}", Scope: ScopeFull},
+			},
 		},
 	}
 }

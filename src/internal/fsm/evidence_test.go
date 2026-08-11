@@ -25,6 +25,16 @@ func TestScopeSatisfiesIsOneDirectional(t *testing.T) {
 		// Identity always holds.
 		{ScopeFull, ScopeFull, true},
 		{ScopeExistence, ScopeExistence, true},
+		// Proving more than was asked is not laundering, it is good news: a stage
+		// that ran the suite where only delivery was declared has over-delivered,
+		// and refusing it would refuse the stronger claim.
+		{ScopeFull, ScopeExistence, true},
+		{ScopeTargeted, ScopeExistence, true},
+		// A scope this build does not understand satisfies nothing, in either
+		// direction. A log written by a newer version must not be read
+		// generously — the same refusal the store makes for an unknown action.
+		{Scope("suite-of-the-future"), ScopeExistence, false},
+		{ScopeHuman, Scope("suite-of-the-future"), false},
 	}
 
 	for _, c := range cases {

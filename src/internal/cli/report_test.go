@@ -57,8 +57,14 @@ func TestTheStructuredViewCarriesTheScope(t *testing.T) {
 		}
 		// A dry run proves nothing, and the report has to say so rather than
 		// looking like a verified delivery.
-		if artifact.Scope != string(fsm.ScopeExistence) {
-			t.Errorf("%s: a rehearsal proves existence, got %q", artifact.Name, artifact.Scope)
+		//
+		// It says so in the detail rather than in the scope: a rehearsal claims
+		// the scope the contract declared, because claiming existence would block
+		// every stage whose contract names a command and the machinery those
+		// stages exercise is the point of the rehearsal. The scope says what was
+		// asked for; the detail says nothing ran.
+		if !strings.Contains(artifact.Detail, "dry run") {
+			t.Errorf("%s: a rehearsal must say nothing ran, got detail %q", artifact.Name, artifact.Detail)
 		}
 	}
 }
