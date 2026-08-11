@@ -50,6 +50,7 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0042](0042-four-harnesses-four-ways-to-deny-a-tool.md) — Four harnesses, four ways to deny a tool — `Accepted`
 - [ADR-0041](0041-the-reviewer-cannot-write-and-its-report-is-the-handoff.md) — The reviewer cannot write, and its report is the handoff — `Accepted`
 - [ADR-0040](0040-a-role-resolves-to-an-agent-and-mechanical-stages-have-none.md) — A role resolves to an agent, and mechanical stages have none — `Accepted`
 - [ADR-0039](0039-a-role-per-stage-and-what-carries-context-between-them.md) — A role per stage, and what carries context between them — `Accepted`
