@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/brunoomariano/luna/src/internal/cli"
+	"github.com/brunoomariano/luna/src/internal/interpret"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -62,6 +63,9 @@ func run(args []string) error {
 		Err:    os.Stderr,
 		In:     os.Stdin,
 		Edit:   cli.Editor(cfg),
+		// Luna hosts no model: the interpreter is one of the official harnesses
+		// run non-interactively (ADR-0044).
+		Interpret: interpret.Harness{Agent: cfg.Interpreter},
 	}, args)
 }
 

@@ -17,6 +17,12 @@
 #   4. $VISUAL
 editor = "vim"
 
+# Which official harness `luna chat` asks to understand what you said. Luna hosts
+# no model: it runs one of claude, pi, codex or opencode non-interactively and
+# reads the command back. Defaults to claude.
+#
+# interpreter = "pi"
+
 # ── gate profiles ────────────────────────────────────────────────────────────
 #
 # A profile names which gates stop a task and wait for a person. It is chosen per

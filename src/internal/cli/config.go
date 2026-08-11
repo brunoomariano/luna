@@ -21,6 +21,10 @@ type Config struct {
 	// like `code --wait`.
 	Editor string
 
+	// Interpreter is which official harness `luna chat` asks to understand what a
+	// person said. Empty means the house default (ADR-0044).
+	Interpreter string
+
 	// Profiles are the gate policies this project defines, by name. A project
 	// that names none inherits the three shipped ones; naming one that already
 	// exists replaces it, which is what makes `turbo` adjustable rather than
@@ -372,11 +376,14 @@ func assignRoot(cfg *Config, key, value, where string) error {
 	case "editor":
 		cfg.Editor = strings.Trim(value, `"`)
 		return nil
+	case "interpreter":
+		cfg.Interpreter = strings.Trim(value, `"`)
+		return nil
 	default:
 		// An unknown key is an error rather than a warning: a typo in `editor`
 		// would otherwise leave the setting silently unapplied, and the person
 		// would conclude the feature does not work.
-		return fmt.Errorf("%s: unknown setting %q", where, key)
+		return fmt.Errorf("%s: unknown setting %q (expected editor, interpreter)", where, key)
 	}
 }
 
