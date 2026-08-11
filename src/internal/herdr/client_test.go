@@ -10,11 +10,16 @@ import (
 	"testing"
 )
 
-// serveOnce answers one request on a temporary Unix socket and returns its path.
+// serveOnce answers requests on a temporary Unix socket and returns its path.
 //
 // A real socket rather than a mock of the connection: the thing under test is the
 // framing — one JSON object per line — and a mock of the transport would assert
 // the framing I wrote rather than the one herdr expects.
+//
+// It answers each connection once and then hangs up, which is what herdr does.
+// An earlier version of this helper served a single connection and kept it open;
+// it agreed with a client that reused one connection, and both were wrong. Only
+// the real server disagreed.
 func serveOnce(t *testing.T, reply string) string {
 	t.Helper()
 
@@ -26,17 +31,18 @@ func serveOnce(t *testing.T, reply string) string {
 	t.Cleanup(func() { _ = listener.Close() })
 
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read the request line so the client's write completes, then answer
+			// and hang up — one exchange per connection.
+			if _, err := bufio.NewReader(conn).ReadBytes('\n'); err == nil {
+				_, _ = conn.Write([]byte(reply + "\n"))
+			}
+			_ = conn.Close()
 		}
-		defer func() { _ = conn.Close() }()
-
-		// Read the request line so the client's write completes, then answer.
-		if _, err := bufio.NewReader(conn).ReadBytes('\n'); err != nil {
-			return
-		}
-		_, _ = conn.Write([]byte(reply + "\n"))
 	}()
 
 	return path
@@ -45,7 +51,7 @@ func serveOnce(t *testing.T, reply string) string {
 // TestACallRoundTripsOverTheSocket covers the framing herdr documents: newline
 // delimited JSON, not JSON-RPC 2.0.
 func TestACallRoundTripsOverTheSocket(t *testing.T) {
-	path := serveOnce(t, `{"id":1,"result":{"workspace_id":"ws-7"}}`)
+	path := serveOnce(t, `{"id":"1","result":{"workspace_id":"ws-7"}}`)
 
 	client, err := Dial(path)
 	if err != nil {
@@ -77,20 +83,21 @@ func TestTheRequestCarriesIDAndMethod(t *testing.T) {
 	}
 	defer func() { _ = listener.Close() }()
 
-	seen := make(chan string, 1)
+	// Serves every connection, not one: Dial spends a connection proving herdr is
+	// reachable, and each Call opens its own after that.
+	seen := make(chan string, 4)
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			if line, err := bufio.NewReader(conn).ReadBytes('\n'); err == nil {
+				seen <- string(line)
+				_, _ = conn.Write([]byte(`{"id":"1","result":{}}` + "\n"))
+			}
+			_ = conn.Close()
 		}
-		defer func() { _ = conn.Close() }()
-
-		line, err := bufio.NewReader(conn).ReadBytes('\n')
-		if err != nil {
-			return
-		}
-		seen <- string(line)
-		_, _ = conn.Write([]byte(`{"id":1,"result":{}}` + "\n"))
 	}()
 
 	client, err := Dial(path)
@@ -103,15 +110,22 @@ func TestTheRequestCarriesIDAndMethod(t *testing.T) {
 		t.Fatalf("calling: %v", err)
 	}
 
+	wire := <-seen
+
 	var sent request
-	if err := json.Unmarshal([]byte(<-seen), &sent); err != nil {
+	if err := json.Unmarshal([]byte(wire), &sent); err != nil {
 		t.Fatalf("the request must be one JSON object per line: %v", err)
 	}
 	if sent.Method != "ping" {
 		t.Errorf("want the method on the wire, got %q", sent.Method)
 	}
-	if sent.ID == 0 {
+	if sent.ID == "" {
 		t.Error("every request carries an id")
+	}
+	// herdr refuses a numeric id outright, so the field must serialise as a
+	// string. A fake that accepted anything would not have caught this.
+	if !strings.Contains(wire, `"id":"`) {
+		t.Error("the id must go on the wire as a string")
 	}
 }
 
@@ -120,7 +134,7 @@ func TestTheRequestCarriesIDAndMethod(t *testing.T) {
 // It must stay distinguishable from herdr going away: one is an answer, the other
 // is the absence of one, and they lead to different transitions (ADR-0033).
 func TestAnErrorReplyComesBackAsAnError(t *testing.T) {
-	path := serveOnce(t, `{"id":1,"error":{"code":"target_busy","message":"the pane is occupied"}}`)
+	path := serveOnce(t, `{"id":"1","error":{"code":"target_busy","message":"the pane is occupied"}}`)
 
 	client, err := Dial(path)
 	if err != nil {
@@ -161,13 +175,25 @@ func TestALostConnectionIsErrGone(t *testing.T) {
 		t.Fatalf("listening: %v", err)
 	}
 
+	// Answer the dial's ping, then hang up on everything after it — which is what
+	// a herdr exiting mid-run looks like from the client's side.
 	go func() {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
-		// Hang up without answering, which is what a herdr exiting looks like.
+		if _, err := bufio.NewReader(conn).ReadBytes('\n'); err == nil {
+			_, _ = conn.Write([]byte(`{"id":"1","result":{}}` + "\n"))
+		}
 		_ = conn.Close()
+
+		for {
+			next, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = next.Close()
+		}
 	}()
 
 	client, err := Dial(path)
@@ -175,7 +201,6 @@ func TestALostConnectionIsErrGone(t *testing.T) {
 		t.Fatalf("dialling: %v", err)
 	}
 	defer func() { _ = client.Close() }()
-	_ = listener.Close()
 
 	if err := client.Call("ping", nil, nil); !errors.Is(err, ErrGone) {
 		t.Errorf("want ErrGone when the connection dies, got %v", err)
@@ -237,7 +262,7 @@ func TestSocketPathFollowsTheDocumentedOrder(t *testing.T) {
 
 // TestDialWithNoPathResolvesTheEnvironment covers the empty-path branch.
 func TestDialWithNoPathResolvesTheEnvironment(t *testing.T) {
-	path := serveOnce(t, `{"id":1,"result":{}}`)
+	path := serveOnce(t, `{"id":"1","result":{}}`)
 	t.Setenv("HERDR_SOCKET_PATH", path)
 
 	client, err := Dial("")

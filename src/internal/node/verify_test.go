@@ -1,0 +1,373 @@
+package node
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/brunoomariano/luna/src/internal/fsm"
+)
+
+// TestProveRecordsWhatTheCommandAnswered covers the happy path end to end: a
+// command that exits zero produces evidence carrying the verdict, the exit code,
+// the command verbatim, the scope the verifier declared, and the log position.
+//
+// Each of those fields answers a question the audit will ask later, and evidence
+// missing any of them says a stage closed without saying on what grounds
+// (ADR-0024).
+func TestProveRecordsWhatTheCommandAnswered(t *testing.T) {
+	shell := Shell{Dir: t.TempDir()}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 7)
+	if err != nil {
+		t.Fatalf("a command that runs and succeeds is not an error: %v", err)
+	}
+
+	if got.Verdict != fsm.VerdictPassed {
+		t.Errorf("want passed, got %q", got.Verdict)
+	}
+	if got.ExitCode != 0 {
+		t.Errorf("want exit 0, got %d", got.ExitCode)
+	}
+	if got.Command != "true" {
+		t.Errorf("the audit needs the command verbatim, got %q", got.Command)
+	}
+	if got.Scope != fsm.ScopeFull {
+		t.Errorf("the scope is what the verifier declared, got %q", got.Scope)
+	}
+	if got.RecordedAt != 7 {
+		t.Errorf("the log position is what staleness compares against, got %d", got.RecordedAt)
+	}
+}
+
+// TestProveHonoursTheDeclaredScope covers the direction of ADR-0028: the node
+// layer reports the scope the contract declared and never invents a wider one.
+//
+// A targeted run that came back as full would be exactly the laundering the
+// scope exists to prevent, and this is the only place it could be introduced.
+func TestProveHonoursTheDeclaredScope(t *testing.T) {
+	cases := []struct {
+		name    string
+		command fsm.Command
+		want    fsm.Scope
+	}{
+		{"declared full", fsm.Command{Run: "true", Scope: fsm.ScopeFull}, fsm.ScopeFull},
+		{"declared targeted", fsm.Command{Run: "true", Scope: fsm.ScopeTargeted}, fsm.ScopeTargeted},
+		{"unstated falls to the cautious one", fsm.Command{Run: "true"}, fsm.ScopeTargeted},
+	}
+
+	shell := Shell{Dir: t.TempDir()}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := shell.Prove(context.Background(), c.command, 1)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Scope != c.want {
+				t.Errorf("want scope %q, got %q", c.want, got.Scope)
+			}
+		})
+	}
+}
+
+// TestAFailingCommandIsAVerdictNotAnError covers the distinction the whole file
+// turns on: a non-zero exit is the tool's answer, so it comes back as evidence.
+//
+// Returning an error here would make the caller unable to tell "the tests ran
+// and lost" from "the check never happened", and the reducer needs the first to
+// be a recordable fact.
+func TestAFailingCommandIsAVerdictNotAnError(t *testing.T) {
+	shell := Shell{Dir: t.TempDir()}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "exit 3", Scope: fsm.ScopeFull}, 2)
+	if err != nil {
+		t.Fatalf("a check that ran and failed is not a failure to ask: %v", err)
+	}
+
+	if got.Verdict != fsm.VerdictFailed {
+		t.Errorf("want failed, got %q", got.Verdict)
+	}
+	if got.ExitCode != 3 {
+		t.Errorf("the exit code is the tool's answer, got %d", got.ExitCode)
+	}
+	if !got.Delivered() {
+		t.Error("a failed check still produced a record")
+	}
+}
+
+// TestAVerifierThatExecutesNothingRunsNothing covers ADR-0032's honest floor:
+// existence is a claim about delivery, not about a check.
+//
+// The proof is a directory that does not exist. Any attempt to run a command
+// there would fail, so a successful call is evidence that nothing was executed —
+// and the scope stays existence rather than being upgraded to a passing check.
+func TestAVerifierThatExecutesNothingRunsNothing(t *testing.T) {
+	shell := Shell{Dir: filepath.Join(t.TempDir(), "no-such-worktree")}
+
+	got, err := shell.Prove(context.Background(), fsm.Existence{}, 5)
+	if err != nil {
+		t.Fatalf("existence does not touch the filesystem: %v", err)
+	}
+
+	if got.Scope != fsm.ScopeExistence {
+		t.Errorf("want existence, got %q", got.Scope)
+	}
+	if got.Verdict != fsm.VerdictPassed {
+		t.Errorf("the artifact was delivered, got %q", got.Verdict)
+	}
+	if got.Command != "" {
+		t.Errorf("nothing ran, so there is no command to name, got %q", got.Command)
+	}
+	if got.RecordedAt != 5 {
+		t.Errorf("the log position is recorded either way, got %d", got.RecordedAt)
+	}
+}
+
+// TestACheckThatNeverHappenedIsAnError covers the other side of the same line: a
+// command that could not run at all produces an error, never failing evidence.
+//
+// A deadline is the clearest case — the check did not finish, so there is
+// nothing to conclude about the work. Recording it as VerdictFailed would tell
+// the audit the tests ran and lost, which is a lie the log would keep forever.
+func TestACheckThatNeverHappenedIsAnError(t *testing.T) {
+	shell := Shell{Dir: t.TempDir(), Timeout: 50 * time.Millisecond}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "sleep 5", Scope: fsm.ScopeFull}, 9)
+	if err == nil {
+		t.Fatalf("a timeout is not a verdict, got evidence %+v", got)
+	}
+
+	if !strings.Contains(err.Error(), "did not finish within") {
+		t.Errorf("the error should say the deadline hit, got %q", err)
+	}
+	if !strings.Contains(err.Error(), "50ms") {
+		t.Errorf("the error should carry the deadline that was applied, got %q", err)
+	}
+	if got.Delivered() {
+		t.Errorf("nothing was observed, so the evidence is zero, got %+v", got)
+	}
+	if got.Verdict == fsm.VerdictFailed {
+		t.Error("a check that never happened must not read as a check that lost")
+	}
+}
+
+// TestTheCommandRunsInTheWorktree covers the promise of Shell.Dir: the check is
+// run against the task's worktree, not against whatever directory the process
+// happens to sit in.
+//
+// A verification that silently ran somewhere else would produce evidence about
+// the wrong tree, which is worse than no evidence at all.
+func TestTheCommandRunsInTheWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	marker := filepath.Join(worktree, "marker")
+	if err := os.WriteFile(marker, []byte("delivered\n"), 0o600); err != nil {
+		t.Fatalf("preparing the worktree: %v", err)
+	}
+
+	shell := Shell{Dir: worktree}
+
+	inside, err := shell.Prove(context.Background(), fsm.Command{Run: "test -f marker", Scope: fsm.ScopeFull}, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inside.Verdict != fsm.VerdictPassed {
+		t.Errorf("the marker is in the worktree, so the check passes, got %q", inside.Verdict)
+	}
+
+	// The same command in a different tree must not find it — otherwise the pass
+	// above would prove nothing about Dir.
+	elsewhere := Shell{Dir: t.TempDir()}
+	outside, err := elsewhere.Prove(context.Background(), fsm.Command{Run: "test -f marker", Scope: fsm.ScopeFull}, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outside.Verdict != fsm.VerdictFailed {
+		t.Errorf("another worktree has no marker, got %q", outside.Verdict)
+	}
+}
+
+// TestACommandThatCannotStartIsAnError covers the non-deadline half of "the
+// check never happened": a worktree that is not there.
+//
+// The shell itself cannot be started, and that is a failure to ask, not an
+// answer — so it must not arrive as evidence at all.
+func TestACommandThatCannotStartIsAnError(t *testing.T) {
+	shell := Shell{Dir: filepath.Join(t.TempDir(), "no-such-worktree")}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 1)
+	if err == nil {
+		t.Fatalf("a missing worktree cannot produce a verdict, got %+v", got)
+	}
+	if !strings.Contains(err.Error(), "true") {
+		t.Errorf("the error should name the command that could not run, got %q", err)
+	}
+	if got.Delivered() {
+		t.Errorf("nothing was observed, so the evidence is zero, got %+v", got)
+	}
+}
+
+// TestAPassingCheckCarriesNoDetail covers why success is quiet: the exit code
+// already says everything, and copying a green suite's output into the log
+// buries the records that matter.
+func TestAPassingCheckCarriesNoDetail(t *testing.T) {
+	shell := Shell{Dir: t.TempDir()}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "echo everything is fine", Scope: fsm.ScopeFull}, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Detail != "" {
+		t.Errorf("a passing check needs no detail, got %q", got.Detail)
+	}
+}
+
+// TestAFailingCheckCarriesTheTail covers where a human looks after a red run.
+//
+// The reason a build failed is at the end of its output, not in its banner, so
+// the summary keeps the last lines and drops the head.
+func TestAFailingCheckCarriesTheTail(t *testing.T) {
+	shell := Shell{Dir: t.TempDir()}
+	command := fsm.Command{
+		Run:   "echo banner; echo noise; echo third-last; echo second-last; echo the real reason; exit 1",
+		Scope: fsm.ScopeFull,
+	}
+
+	got, err := shell.Prove(context.Background(), command, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(got.Detail, "the real reason") {
+		t.Errorf("the last line is why it failed, got %q", got.Detail)
+	}
+	if strings.Contains(got.Detail, "banner") {
+		t.Errorf("the head is not the reason, got %q", got.Detail)
+	}
+	if strings.Contains(got.Detail, "noise") {
+		t.Errorf("only the tail is kept, got %q", got.Detail)
+	}
+}
+
+// TestSummariseKeepsTheLastLines covers the tail rule directly, where stating
+// the expected string is clearer than reading it out of a shell's output.
+//
+// Three lines is the budget, joined so one evidence record stays one line.
+func TestSummariseKeepsTheLastLines(t *testing.T) {
+	output := "first\nsecond\nthird\nfourth\nfifth\n"
+
+	if got := summarise(output, fsm.VerdictFailed); got != "third · fourth · fifth" {
+		t.Errorf("want the last three lines joined, got %q", got)
+	}
+
+	// Fewer lines than the budget are kept whole — there is nothing to drop.
+	if got := summarise("only\ntwo", fsm.VerdictFailed); got != "only · two" {
+		t.Errorf("want both lines, got %q", got)
+	}
+}
+
+// TestSummariseIsSilentWhenThereIsNothingToSay covers the two cases that produce
+// no detail at all: a verdict that does not need one, and output that is blank.
+//
+// An empty Detail is a positive statement — there is nothing here worth reading
+// — and it stays distinguishable from whitespace a tool happened to print.
+func TestSummariseIsSilentWhenThereIsNothingToSay(t *testing.T) {
+	cases := []struct {
+		name    string
+		output  string
+		verdict fsm.Verdict
+	}{
+		{"a passing check says it with the exit code", "lots of green output", fsm.VerdictPassed},
+		{"a passing check with no output either", "", fsm.VerdictPassed},
+		{"a failing check that printed nothing", "", fsm.VerdictFailed},
+		{"a failing check that printed only whitespace", "  \n\t\n ", fsm.VerdictFailed},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := summarise(c.output, c.verdict); got != "" {
+				t.Errorf("want no detail, got %q", got)
+			}
+		})
+	}
+}
+
+// TestSummariseIsCapped covers the bound on one evidence record.
+//
+// A stack trace or a diff dumped whole would make the log unreadable and the
+// store expensive; the record points at the failure, it does not reproduce it.
+func TestSummariseIsCapped(t *testing.T) {
+	long := strings.Repeat("x", 1000)
+
+	got := summarise(long, fsm.VerdictFailed)
+	if len(got) != 300 {
+		t.Errorf("want the detail capped at 300 characters, got %d", len(got))
+	}
+	if got != long[:300] {
+		t.Error("the cap keeps the beginning of the kept tail, not a rewritten string")
+	}
+
+	// A detail already inside the budget is left alone.
+	short := strings.Repeat("y", 299)
+	if summarise(short, fsm.VerdictFailed) != short {
+		t.Error("a short detail is not truncated")
+	}
+}
+
+// TestZeroTimeoutFallsBackToTheDefault covers the guard against a wedged path:
+// every external process gets a deadline, including one nobody configured.
+//
+// The assertion is on the constant rather than on waiting for it — the point is
+// that an unset Timeout does not mean "no deadline".
+func TestZeroTimeoutFallsBackToTheDefault(t *testing.T) {
+	if DefaultTimeout <= 0 {
+		t.Fatalf("a default of %s would leave a hang unbounded", DefaultTimeout)
+	}
+
+	// A zero Timeout still runs, so the fallback is a real duration rather than
+	// an immediately expired context.
+	shell := Shell{Dir: t.TempDir()}
+	if shell.Timeout != 0 {
+		t.Fatalf("this test is about the unset field, got %s", shell.Timeout)
+	}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 1)
+	if err != nil {
+		t.Fatalf("an unset timeout must not expire the command: %v", err)
+	}
+	if got.Verdict != fsm.VerdictPassed {
+		t.Errorf("want passed, got %q", got.Verdict)
+	}
+
+	// And the deadline that would be reported is the constant, not the zero the
+	// caller left in the field.
+	tight := Shell{Dir: t.TempDir(), Timeout: 50 * time.Millisecond}
+	_, err = tight.Prove(context.Background(), fsm.Command{Run: "sleep 5", Scope: fsm.ScopeFull}, 1)
+	if err == nil {
+		t.Fatal("the tight deadline should have hit")
+	}
+	if strings.Contains(err.Error(), DefaultTimeout.String()) {
+		t.Errorf("a stated timeout wins over the default, got %q", err)
+	}
+}
+
+// TestACancelledContextIsNotAVerdict covers the caller's own deadline: when the
+// run is abandoned from outside, the check did not finish either.
+//
+// Luna cancels work when a task is stopped, and that must not leave a
+// VerdictFailed behind claiming the work was checked and found wanting.
+func TestACancelledContextIsNotAVerdict(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	shell := Shell{Dir: t.TempDir()}
+	got, err := shell.Prove(ctx, fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 1)
+	if err == nil {
+		t.Fatalf("an abandoned run has no verdict, got %+v", got)
+	}
+	if got.Delivered() {
+		t.Errorf("nothing was observed, so the evidence is zero, got %+v", got)
+	}
+}

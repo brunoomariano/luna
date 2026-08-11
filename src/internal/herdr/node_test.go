@@ -21,10 +21,6 @@ type fakeHerdr struct {
 	// exits maps a command to the code it returns. Absent means zero.
 	exits map[string]int
 
-	// verifyErr makes the verification impossible to run at all, which is a
-	// different situation from a check that ran and failed.
-	verifyErr error
-
 	prompted []string
 	ran      []string
 	started  string
@@ -34,7 +30,7 @@ func (f *fakeHerdr) OpenWorktree(context.Context, string, string) (Workspace, er
 	return Workspace{ID: "ws-1", RootPane: "pane-1", Path: "/tmp/wt"}, nil
 }
 
-func (f *fakeHerdr) StartAgent(_ context.Context, _ Workspace, kind string) (string, error) {
+func (f *fakeHerdr) StartAgent(_ context.Context, _ Workspace, kind, _ string) (string, error) {
 	f.started = kind
 	return "pane-1", nil
 }
@@ -47,12 +43,53 @@ func (f *fakeHerdr) Prompt(_ context.Context, _, text string) (AgentStatus, erro
 	return f.settlesAt, nil
 }
 
-func (f *fakeHerdr) Verify(_ context.Context, _ Workspace, command string) (int, string, error) {
-	f.ran = append(f.ran, command)
-	if f.verifyErr != nil {
-		return 0, "", f.verifyErr
+// recordingProver runs the contract's checks the way the node package would, and
+// remembers what it was asked to run so a test can assert that a check happened
+// — or did not.
+type recordingProver struct {
+	exits *map[string]int
+	ran   *[]string
+}
+
+func (r recordingProver) Prove(_ context.Context, v fsm.Verifier, seq int) (fsm.Evidence, error) {
+	command, ok := v.(fsm.Command)
+	if !ok {
+		return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
 	}
-	return f.exits[command], "output line\nsecond line", nil
+
+	*r.ran = append(*r.ran, command.Run)
+
+	verdict := fsm.VerdictPassed
+	exit := (*r.exits)[command.Run]
+	if exit != 0 {
+		verdict = fsm.VerdictFailed
+	}
+	return fsm.Evidence{
+		Scope:      command.Proves(),
+		Verdict:    verdict,
+		Command:    command.Run,
+		ExitCode:   exit,
+		RecordedAt: seq,
+	}, nil
+}
+
+// proving wires a node to a recordingProver backed by this fake's answers.
+func (f *fakeHerdr) proving() func(Workspace) Prover {
+	if f.exits == nil {
+		f.exits = map[string]int{}
+	}
+	return func(Workspace) Prover {
+		return recordingProver{exits: &f.exits, ran: &f.ran}
+	}
+}
+
+// brokenProver stands in for a check that cannot run at all — a missing tool, an
+// unreadable worktree. Distinct from a check that ran and failed, which is a
+// verdict rather than an error.
+type brokenProver struct{ err error }
+
+func (b brokenProver) Prove(context.Context, fsm.Verifier, int) (fsm.Evidence, error) {
+	return fsm.Evidence{}, b.err
 }
 
 // stageWithTests is a stage that produces one artifact proven by a real command.
@@ -70,7 +107,7 @@ func stageWithTests() fsm.Stage {
 // agent settled, the real tool ran, and the verdict is what closes the stage.
 func TestAPassingCommandBecomesPassingEvidence(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -101,7 +138,7 @@ func TestIdleDoesNotCloseAStageOnItsOwn(t *testing.T) {
 		settlesAt: StatusIdle,
 		exits:     map[string]int{"go test ./...": 1},
 	}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -130,7 +167,7 @@ func TestDoneIsNotAVerdictEither(t *testing.T) {
 		settlesAt: StatusDone,
 		exits:     map[string]int{"go test ./...": 2},
 	}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -148,7 +185,7 @@ func TestDoneIsNotAVerdictEither(t *testing.T) {
 // read as success. It settles, so the check runs — and the check decides.
 func TestUnknownStillVerifies(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusUnknown}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -170,7 +207,7 @@ func TestUnknownStillVerifies(t *testing.T) {
 // escalate — and the message names the pane so someone can find it.
 func TestABlockedAgentIsReportedForEscalation(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusBlocked}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -189,7 +226,7 @@ func TestABlockedAgentIsReportedForEscalation(t *testing.T) {
 // ADR-0032: prose has no exit code, and saying so beats inventing a check.
 func TestAnArtifactWithNoVerifierClosesOnExistence(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 	stage := fsm.Stage{ID: "scenarios", Produces: []fsm.Artifact{"scenarios"}}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stage)
@@ -216,8 +253,12 @@ func TestAnArtifactWithNoVerifierClosesOnExistence(t *testing.T) {
 // Recording that as a failing test would tell the audit the tests ran and lost.
 func TestAnUnrunnableCheckIsNotAFailedCheck(t *testing.T) {
 	broken := errors.New("no such tool")
-	herdr := &fakeHerdr{settlesAt: StatusIdle, verifyErr: broken}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: herdr,
+		Agent:  "claude",
+		Prove:  func(Workspace) Prover { return brokenProver{err: broken} },
+	}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -231,7 +272,7 @@ func TestAnUnrunnableCheckIsNotAFailedCheck(t *testing.T) {
 // quietly skipped it.
 func TestTheHumanReportIsVerifiedToo(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 	stage := fsm.Stage{
 		ID:               "verify",
 		Produces:         []fsm.Artifact{"ci_green"},
@@ -304,11 +345,11 @@ func (f *failingRunner) OpenWorktree(ctx context.Context, id, branch string) (Wo
 	return f.fakeHerdr.OpenWorktree(ctx, id, branch)
 }
 
-func (f *failingRunner) StartAgent(ctx context.Context, ws Workspace, kind string) (string, error) {
+func (f *failingRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string) (string, error) {
 	if f.failAt == "start" {
 		return "", f.err
 	}
-	return f.fakeHerdr.StartAgent(ctx, ws, kind)
+	return f.fakeHerdr.StartAgent(ctx, ws, kind, name)
 }
 
 func (f *failingRunner) Prompt(ctx context.Context, pane, text string) (AgentStatus, error) {
@@ -327,7 +368,7 @@ func TestAnInfrastructureFailureStopsBeforeVerifying(t *testing.T) {
 	for _, step := range []string{"worktree", "start", "prompt"} {
 		broken := errors.New("herdr said no at " + step)
 		runner := &failingRunner{failAt: step, err: broken}
-		node := &Node{Runner: runner, Agent: "claude"}
+		node := &Node{Runner: runner, Agent: "claude", Prove: runner.proving()}
 
 		_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -349,6 +390,7 @@ func TestTheConfiguredPromptIsWhatTheAgentGets(t *testing.T) {
 	node := &Node{
 		Runner: herdr,
 		Agent:  "claude",
+		Prove:  herdr.proving(),
 		Prompt: func(state fsm.TaskState, stage fsm.Stage) string {
 			return "custom brief for " + string(stage.ID)
 		},
@@ -367,7 +409,7 @@ func TestTheConfiguredPromptIsWhatTheAgentGets(t *testing.T) {
 // to be useful enough that a missing configuration is not a silent mystery.
 func TestTheDefaultPromptNamesTheTaskAndStage(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude"}
+	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
 
 	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-9", ""), stageWithTests()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -383,37 +425,6 @@ func TestTheDefaultPromptNamesTheTaskAndStage(t *testing.T) {
 	}
 }
 
-// TestEvidenceDetailIsOneLine covers the trimming.
-//
-// A build log in an evidence record makes `luna task show` unreadable and bloats
-// every replay; the summary line is what a person needs.
-func TestEvidenceDetailIsOneLine(t *testing.T) {
-	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude"}
-
-	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if detail := result.Evidence["tests_green"].Detail; detail != "output line" {
-		t.Errorf("want just the first line, got %q", detail)
-	}
-}
-
-// TestALongSingleLineIsTruncated covers the other branch of the trimming: output
-// with no newline at all must not carry a whole log into the record.
-func TestALongSingleLineIsTruncated(t *testing.T) {
-	long := strings.Repeat("x", 500)
-
-	if got := firstLine(long); len(got) != 200 {
-		t.Errorf("want a bounded detail, got %d chars", len(got))
-	}
-	if got := firstLine("short"); got != "short" {
-		t.Errorf("a short line is left alone, got %q", got)
-	}
-}
-
 // TestAStallIsTranslatedIntoLunasVocabulary covers ADR-0034's boundary rule.
 //
 // herdr answers `agent_prompt_stalled`. Nothing above this package should have to
@@ -424,7 +435,7 @@ func TestAStallIsTranslatedIntoLunasVocabulary(t *testing.T) {
 		failAt: "prompt",
 		err:    &apiError{Code: "agent_prompt_stalled", Message: "no observed state change within 5000 ms"},
 	}
-	node := &Node{Runner: runner, Agent: "claude"}
+	node := &Node{Runner: runner, Agent: "claude", Prove: runner.proving()}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -465,7 +476,7 @@ func TestAnOrdinaryFailureIsNotAStall(t *testing.T) {
 		failAt: "prompt",
 		err:    &apiError{Code: "target_busy", Message: "the pane is occupied"},
 	}
-	node := &Node{Runner: runner, Agent: "claude"}
+	node := &Node{Runner: runner, Agent: "claude", Prove: runner.proving()}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -474,5 +485,41 @@ func TestAnOrdinaryFailureIsNotAStall(t *testing.T) {
 	}
 	if err == nil {
 		t.Error("it is still an error")
+	}
+}
+
+// TestTheAgentNameFitsHerdrsRules covers the constraints a live herdr enforces.
+//
+// Names are unique across the whole server and must match [a-z][a-z0-9_-]{0,31}.
+// Both were learned by being refused: `agent_name_taken` on the second task, then
+// `invalid_agent_name` on an id with capitals in it.
+func TestTheAgentNameFitsHerdrsRules(t *testing.T) {
+	cases := map[string]string{
+		"LUNA-1":                             "luna-luna-1",
+		"feature/big-thing":                  "luna-feature-big-thing",
+		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "luna-aaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+
+	for taskID, want := range cases {
+		got := agentName(taskID)
+		if got != want {
+			t.Errorf("%q → %q, want %q", taskID, got, want)
+		}
+		if len(got) > 32 {
+			t.Errorf("%q produced %d characters, over herdr's limit", taskID, len(got))
+		}
+		for i, r := range got {
+			ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_'
+			first := r >= 'a' && r <= 'z'
+			if !ok || (i == 0 && !first) {
+				t.Errorf("%q produced %q, which herdr refuses", taskID, got)
+				break
+			}
+		}
+	}
+
+	// Different tasks must not collide: the name is what herdr keys on.
+	if agentName("LUNA-1") == agentName("LUNA-2") {
+		t.Error("two tasks must not share an agent name")
 	}
 }

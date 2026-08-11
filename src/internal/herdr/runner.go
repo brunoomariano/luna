@@ -1,0 +1,278 @@
+package herdr
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// socketRunner drives herdr over its socket. It is the real Runner; the node is
+// tested against a fake, and this is what a live run uses.
+//
+// Every method here is a translation: Luna's vocabulary in, herdr's method names
+// out, and nothing but observed fact back. No decision is taken in this file.
+//
+// The shapes below were read off a running herdr 0.8.0 (protocol 19) rather than
+// from documentation. Two things that only a live server tells you: the request
+// id is a string, and every call gets its own connection because herdr hangs up
+// after answering.
+type socketRunner struct {
+	client *Client
+
+	// Repo is the checkout worktrees are cut from. herdr refuses to make one
+	// outside a git work tree, so this has to be a real repository.
+	Repo string
+
+	// Settle bounds how long a prompt waits for the agent to stop working. It is
+	// the budget the profile decided (ADR-0034), handed down by the caller.
+	Settle time.Duration
+}
+
+// NewRunner builds a Runner backed by a herdr socket.
+func NewRunner(client *Client, repo string, settle time.Duration) Runner {
+	return &socketRunner{client: client, Repo: repo, Settle: settle}
+}
+
+// worktreeCreated is herdr's answer: the whole home for a task at once.
+type worktreeCreated struct {
+	Workspace struct {
+		WorkspaceID string `json:"workspace_id"`
+	} `json:"workspace"`
+	RootPane struct {
+		PaneID string `json:"pane_id"`
+		CWD    string `json:"cwd"`
+	} `json:"root_pane"`
+	Worktree struct {
+		Path string `json:"path"`
+	} `json:"worktree"`
+}
+
+// OpenWorktree creates the task's worktree and returns where it lives.
+//
+// herdr answers workspace, tab, root pane and worktree in one call, which is why
+// one worktree per task maps cleanly onto one workspace per task (ADR-0027).
+//
+// An existing branch is reopened rather than treated as a failure: a task that
+// already ran once has its worktree, and a second `luna run` must resume it.
+func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (Workspace, error) {
+	params := map[string]any{
+		"cwd":    r.Repo,
+		"branch": branch,
+		"label":  taskID,
+		"focus":  false,
+	}
+
+	var created worktreeCreated
+	err := r.client.Call("worktree.create", params, &created)
+	if err != nil && reusable(err) {
+		err = r.client.Call("worktree.open", params, &created)
+	}
+	if err != nil {
+		return Workspace{}, fmt.Errorf("opening the worktree for %s: %w", taskID, err)
+	}
+
+	path := created.Worktree.Path
+	if path == "" {
+		path = created.RootPane.CWD
+	}
+	return Workspace{
+		ID:       created.Workspace.WorkspaceID,
+		RootPane: created.RootPane.PaneID,
+		Path:     path,
+	}, nil
+}
+
+// StartAgent puts an agent into the workspace's root pane.
+//
+// The kind must be one herdr supports — 21 of them in 0.8.0 (ADR-0031) — and the
+// pane must already be sitting at an interactive shell prompt, which the worktree
+// call just produced. herdr blocks until the agent is detected and ready, which
+// removes a race the node would otherwise have to handle itself.
+func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string) (string, error) {
+	var started struct {
+		Agent struct {
+			PaneID string `json:"pane_id"`
+		} `json:"agent"`
+	}
+
+	// A freshly created worktree's pane is not at its prompt yet, and herdr
+	// refuses to start an agent in one that is still busy. Observed against a
+	// live 0.8.0: the identical call fails and then succeeds seconds later with
+	// nothing else changed. Retrying briefly is the difference between a working
+	// run and a block on the first stage of every task.
+	err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
+		return r.client.Call("agent.start", map[string]any{
+			"name":       name,
+			"kind":       kind,
+			"pane_id":    ws.RootPane,
+			"timeout_ms": startTimeout.Milliseconds(),
+		}, &started)
+	}, paneBusy)
+
+	// The agent belongs to the task, not to the stage: the second stage finds the
+	// one the first started and reuses it. herdr says so by refusing the name, and
+	// the refusal carries the pane it is already running in.
+	if err != nil && nameTaken(err) {
+		return r.reuse(name, ws)
+	}
+	if err != nil {
+		return "", fmt.Errorf("starting %q as %q in %s: %w", kind, name, ws.RootPane, err)
+	}
+
+	if started.Agent.PaneID != "" {
+		return started.Agent.PaneID, nil
+	}
+	// herdr started it where we asked and did not echo the pane back.
+	return ws.RootPane, nil
+}
+
+// Prompt submits the stage's brief and waits for the agent to settle.
+//
+// One call, not two. herdr's own documentation says the combined form exists to
+// avoid the race between submitting and arming the wait — the agent can finish in
+// between — and it is also what produces `agent_prompt_stalled` when nothing
+// reacts at all, which the node translates for the lead (ADR-0034).
+//
+// `blocked` is among the states waited for: an agent asking a person has stopped,
+// and Luna needs to hear about it rather than wait out the budget (ADR-0029).
+func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStatus, error) {
+	deadline := r.Settle
+	if deadline <= 0 {
+		deadline = 30 * time.Minute
+	}
+
+	var settled struct {
+		Agent struct {
+			AgentStatus AgentStatus `json:"agent_status"`
+		} `json:"agent"`
+		AgentStatus AgentStatus `json:"agent_status"`
+	}
+	// The agent is registered before it is interactive, so a prompt sent straight
+	// after `agent.start` can be refused with `agent_not_ready`. Same shape as the
+	// pane race above: the identical call succeeds moments later.
+	err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
+		return r.client.Call("agent.prompt", map[string]any{
+			"target": pane,
+			"text":   text,
+			// wait is an object, not a flag: herdr refuses a bare `true` outright.
+			// Submitting and waiting in one call is what avoids the race between the
+			// two, and what produces `agent_prompt_stalled` when nothing reacts.
+			"wait": map[string]any{
+				"until":      []AgentStatus{StatusIdle, StatusDone, StatusBlocked, StatusUnknown},
+				"timeout_ms": deadline.Milliseconds(),
+			},
+		}, &settled)
+	}, notReady)
+	if err != nil {
+		return "", err
+	}
+
+	if settled.Agent.AgentStatus != "" {
+		return settled.Agent.AgentStatus, nil
+	}
+	if settled.AgentStatus != "" {
+		return settled.AgentStatus, nil
+	}
+	// herdr answered without naming a state. Unknown is the honest reading, and
+	// it still triggers verification — it just claims nothing (ADR-0028).
+	return StatusUnknown, nil
+}
+
+// reusable reports whether herdr refused because the worktree is already there,
+// which is a resumable situation rather than a failure.
+func reusable(err error) bool {
+	lowered := strings.ToLower(err.Error())
+	return strings.Contains(lowered, "exists") || strings.Contains(lowered, "already")
+}
+
+// How long to keep trying a pane that is not yet at its shell prompt.
+//
+// The numbers are small on purpose: this covers a startup race of a few seconds,
+// not an unavailable herdr. A pane that is still busy after this is a real
+// problem, and the error says so rather than being retried forever.
+const (
+	paneSettleAttempts = 6
+	paneSettleWait     = 2 * time.Second
+	startTimeout       = 30 * time.Second
+)
+
+// reuse finds the pane a task's agent is already running in.
+//
+// Reusing rather than restarting is what keeps one agent per task: a fresh agent
+// per stage would lose whatever context the previous one built, and would leave
+// the abandoned one holding a pane.
+func (r *socketRunner) reuse(name string, ws Workspace) (string, error) {
+	var listed struct {
+		Agents []struct {
+			Name   string `json:"name"`
+			PaneID string `json:"pane_id"`
+		} `json:"agents"`
+	}
+	if err := r.client.Call("agent.list", map[string]any{}, &listed); err != nil {
+		return "", fmt.Errorf("looking for the agent already named %q: %w", name, err)
+	}
+
+	for _, agent := range listed.Agents {
+		if agent.Name == name {
+			return agent.PaneID, nil
+		}
+	}
+	// herdr refused the name and then did not list it. Nothing here can resolve
+	// that, and guessing a pane would prompt the wrong agent.
+	return "", fmt.Errorf("herdr holds the name %q but reports no agent using it", name)
+}
+
+// nameTaken reports the name colliding with an agent this task already started.
+func nameTaken(err error) bool {
+	var api *apiError
+	if errors.As(err, &api) {
+		return api.Code == "agent_name_taken"
+	}
+	return false
+}
+
+// notReady reports herdr refusing a prompt to an agent it has registered but not
+// yet marked interactive — the same startup race as paneBusy, one layer up.
+func notReady(err error) bool {
+	var api *apiError
+	if errors.As(err, &api) {
+		return api.Code == "agent_not_ready"
+	}
+	return false
+}
+
+// paneBusy reports herdr's refusal to start an agent in a pane that is not yet a
+// shell. It is the one error worth retrying, so it is matched by code rather than
+// by message text.
+func paneBusy(err error) bool {
+	var api *apiError
+	if errors.As(err, &api) {
+		return api.Code == "agent_pane_busy"
+	}
+	return false
+}
+
+// retry runs an operation again while a specific condition holds.
+//
+// It takes a predicate rather than retrying every failure: retrying blindly would
+// turn a genuine refusal into a long wait ending in the same refusal, and would
+// hide a misconfigured agent kind behind a timeout.
+func retry(ctx context.Context, attempts int, wait time.Duration, op func() error, again func(error) bool) error {
+	var err error
+	for attempt := range attempts {
+		if err = op(); err == nil || !again(err) {
+			return err
+		}
+		if attempt == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return err
+}

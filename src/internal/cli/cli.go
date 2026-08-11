@@ -56,6 +56,10 @@ func Run(env Env, args []string) error {
 	switch args[0] {
 	case "task":
 		return runTask(env, args[1:])
+	case "run":
+		return runTaskCommand(env, args[1:])
+	case "unblock":
+		return unblockCommand(env, args[1:])
 	case "gates":
 		return runGates(env, args[1:])
 	case "gate":
@@ -79,6 +83,13 @@ luna — deterministic orchestration for AI agents
 
   luna task show <id>
         the task's current state and what it has produced
+
+  luna run <id> [--agent <kind>] [--dry-run]
+        drive the task until it needs a person or finishes.
+        --dry-run exercises the flow with no herdr and no agent.
+
+  luna unblock <id>
+        clear a block once whatever caused it is dealt with
 
   luna gates
         every task waiting on a person
@@ -436,7 +447,7 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 }
 
 // valuelessFlags are the switches: present or absent, never `--flag value`.
-var valuelessFlags = map[string]bool{"stdin": true}
+var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true}
 
 // parseFlags reads --name=value and --name value pairs.
 func parseFlags(args []string) (map[string]string, error) {

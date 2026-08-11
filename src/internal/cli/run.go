@@ -1,0 +1,214 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/herdr"
+	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/node"
+)
+
+// runTask drives a task until it needs a person or reaches the end.
+//
+// This is where the two systems meet: herdr hosts the agent, Luna decides and
+// verifies (ADR-0027). Everything it assembles is an implementation of an
+// interface the lead already declared, so none of the wiring reaches the engine.
+func runTaskCommand(env Env, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%w: run needs a task id", ErrUsage)
+	}
+	id := args[0]
+
+	opts, err := parseRunOptions(args[1:])
+	if err != nil {
+		return err
+	}
+
+	events, err := env.Store.Events(id)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("no task %q — create it with `luna task new %s`", id, id)
+	}
+
+	// The budget comes from the profile this task was created under, read from
+	// its own log. Taking it from a fixed profile would give a nightly run the
+	// supervised timeout — backwards, since the run with nobody watching is the
+	// one whose watchdog is its only net (ADR-0034).
+	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	if err != nil {
+		return err
+	}
+
+	conductor, cleanup, err := conduct(env, opts, state.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	state, err = conductor.Run(context.Background(), id)
+	if err != nil {
+		// Losing herdr is not a task failure, and the message says which it was
+		// so nobody goes looking for a bug in the flow (ADR-0033).
+		if errors.Is(err, herdr.ErrGone) {
+			return fmt.Errorf("herdr went away while %s was running: %w", id, err)
+		}
+		return err
+	}
+
+	return reportRun(env, id, state)
+}
+
+// runOptions is how this run is driven.
+type runOptions struct {
+	// Agent is the herdr agent kind to start (ADR-0031).
+	Agent string
+
+	// Socket overrides where herdr listens; empty resolves the usual way.
+	Socket string
+
+	// Repo is the checkout worktrees are cut from.
+	Repo string
+
+	// Dry runs with no herdr and no agent: the engine, the log and the gates
+	// exercised end to end. It is what tells a broken flow apart from a broken
+	// integration.
+	Dry bool
+}
+
+// parseRunOptions reads the flags `luna run` accepts.
+func parseRunOptions(args []string) (runOptions, error) {
+	opts := runOptions{Agent: "claude", Repo: "."}
+
+	flags, err := parseFlags(args)
+	if err != nil {
+		return opts, err
+	}
+
+	for name, value := range flags {
+		switch name {
+		case "agent":
+			opts.Agent = value
+		case "socket":
+			opts.Socket = value
+		case "repo":
+			opts.Repo = value
+		case "dry-run":
+			opts.Dry = true
+		default:
+			return opts, fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		}
+	}
+	return opts, nil
+}
+
+// conduct assembles the lead for this run.
+//
+// The node is chosen here and nowhere else: swapping herdr for something else is
+// one more branch in this function, not a change to the lead or the engine
+// (ADR-0030).
+func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(), error) {
+	cfg := env.profiles()
+	conductor := &lead.Lead{Store: env.Store, Gates: cfg}
+
+	if opts.Dry {
+		conductor.Node = dryNode{}
+		return conductor, func() {}, nil
+	}
+
+	client, err := herdr.Dial(opts.Socket)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w — is herdr running?", err)
+	}
+
+	conductor.Node = &herdr.Node{
+		Runner: herdr.NewRunner(client, opts.Repo, cfg.Budgets(profile).Idle),
+		Agent:  opts.Agent,
+		Prove: func(ws herdr.Workspace) herdr.Prover {
+			// The verification runs in the worktree herdr made, executed by Luna
+			// rather than through a pane (ADR-0035).
+			return node.Shell{Dir: ws.Path}
+		},
+	}
+	return conductor, func() { _ = client.Close() }, nil
+}
+
+// dryNode delivers whatever the contract asks for, without running anything.
+//
+// It exists so the machine can be exercised without the world: the flow, the
+// contract checks, the gates and the replay all run, and the evidence says
+// `existence` because that is the truth about what was proven — nothing.
+type dryNode struct{}
+
+func (dryNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	evidence := make(map[fsm.Artifact]fsm.Evidence, len(owed))
+	for _, artifact := range owed {
+		evidence[artifact] = fsm.Exists(state.Seq)
+	}
+	return lead.Result{Delivered: owed, Evidence: evidence}, nil
+}
+
+// reportRun prints where the task stopped and what to do about it.
+func reportRun(env Env, id string, state fsm.TaskState) error {
+	switch state.Status {
+	case fsm.StatusDone:
+		fmt.Fprintf(env.Out, "%s finished\n", id)
+	case fsm.StatusAwaitingGate:
+		reason := ""
+		if state.Gate != nil {
+			reason = state.Gate.Reason
+		}
+		fmt.Fprintf(env.Out, "%s is waiting at %s: %s\n", id, state.Stage, reason)
+		fmt.Fprintf(env.Out, "  answer it with `luna gate show %s`\n", id)
+	case fsm.StatusBlocked:
+		fmt.Fprintf(env.Out, "%s is blocked: %s\n", id, state.Blocked)
+		fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", id)
+	default:
+		fmt.Fprintf(env.Out, "%s stopped at %s (%s)\n", id, state.Stage, state.Status)
+	}
+	return nil
+}
+
+// unblockCommand clears a block so the task can be run again.
+//
+// Every path into a block ends here: a stall, a lost herdr, a stage whose
+// verification failed. The person decides the situation is dealt with, and the
+// retry budget resets because the block was the escalation.
+func unblockCommand(env Env, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%w: unblock needs a task id", ErrUsage)
+	}
+	id := args[0]
+
+	// Replaying an empty log yields a healthy zero state, so a task that was
+	// never created would be reported as "ready, not blocked" — which tells the
+	// person it exists. The other commands guard this the same way.
+	events, err := env.Store.Events(id)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("no task %q", id)
+	}
+
+	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	if err != nil {
+		return err
+	}
+	if state.Status != fsm.StatusBlocked {
+		return fmt.Errorf("%s is %s, not blocked", id, state.Status)
+	}
+
+	if err := env.Store.AppendAction(id, fsm.Unblock{}); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(env.Out, "%s unblocked — run it again with `luna run %s`\n", id, id)
+	return nil
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
@@ -64,16 +65,23 @@ type Runner interface {
 	OpenWorktree(ctx context.Context, taskID, branch string) (Workspace, error)
 
 	// StartAgent puts an agent into a pane in that workspace and waits until it
-	// is interactive. The kind must be one herdr knows (ADR-0031).
-	StartAgent(ctx context.Context, ws Workspace, kind string) (string, error)
+	// is interactive. The kind must be one herdr knows (ADR-0031); the name is
+	// herdr-wide and must be unique, so it carries the task id.
+	StartAgent(ctx context.Context, ws Workspace, kind, name string) (string, error)
 
 	// Prompt submits text and waits for the agent to settle, returning the status
 	// it settled at. Prompt and wait are one call because two would race.
 	Prompt(ctx context.Context, pane, text string) (AgentStatus, error)
+}
 
-	// Verify runs a command in the worktree and reports how it exited. This is
-	// what produces evidence: the real tool, not a status (INV-core-4).
-	Verify(ctx context.Context, ws Workspace, command string) (exitCode int, output string, err error)
+// Prover runs the checks that prove an artifact.
+//
+// It is deliberately not part of Runner: verification is not a herdr operation
+// (ADR-0035). herdr creates the worktree and hosts the agent; the check runs
+// against a real exit code somewhere else, which is what keeps the evidence the
+// tool's answer rather than something scraped off a screen.
+type Prover interface {
+	Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence, error)
 }
 
 // Workspace is herdr's home for one task: the worktree, its workspace and the
@@ -94,6 +102,10 @@ type Node struct {
 	// Prompt builds what the agent is told for a stage. Injected rather than
 	// built here so the wording is configuration, not code.
 	Prompt func(state fsm.TaskState, stage fsm.Stage) string
+
+	// Prove runs the contract's checks. It takes the worktree path, because that
+	// is where the commands run, and the node is what knows it (ADR-0035).
+	Prove func(ws Workspace) Prover
 }
 
 // Run drives one stage and reports what it delivered.
@@ -108,12 +120,17 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 		return lead.Result{}, err
 	}
 
-	pane, err := n.Runner.StartAgent(ctx, ws, n.Agent)
+	name := agentName(state.ID)
+
+	pane, err := n.Runner.StartAgent(ctx, ws, n.Agent, name)
 	if err != nil {
 		return lead.Result{}, err
 	}
 
-	status, err := n.Runner.Prompt(ctx, pane, n.prompt(state, stage))
+	// The prompt targets the agent by name rather than by pane. herdr resolves a
+	// pane id to a terminal, not to "the named agent running in it", and refuses
+	// with `agent_not_ready` — the name is the handle it wants.
+	status, err := n.Runner.Prompt(ctx, name, n.prompt(state, stage))
 	if err != nil {
 		// A stall is translated here so nothing above this package has to read
 		// herdr's error codes. What crosses the boundary is Luna's vocabulary
@@ -148,8 +165,9 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 		Evidence:  make(map[fsm.Artifact]fsm.Evidence, len(owed)),
 	}
 
+	prover := n.prover(ws)
 	for _, artifact := range owed {
-		evidence, err := n.prove(ctx, ws, state.Seq, fsm.VerifierFor(stage, artifact))
+		evidence, err := prover.Prove(ctx, fsm.VerifierFor(stage, artifact), state.Seq)
 		if err != nil {
 			return lead.Result{}, err
 		}
@@ -158,35 +176,21 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 	return result, nil
 }
 
-// prove runs one verifier and records what it observed.
-func (n *Node) prove(ctx context.Context, ws Workspace, seq int, v fsm.Verifier) (fsm.Evidence, error) {
-	command, ok := v.(fsm.Command)
-	if !ok {
-		// Existence, and anything else that runs nothing: the artifact was
-		// delivered and that is all this claims.
-		return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
+// prover is what proves this stage's artifacts, defaulting to one that runs
+// nothing. The default keeps a zero Node usable — a stage still closes, on
+// existence evidence, which is the truth about what a Node with no prover proved.
+func (n *Node) prover(ws Workspace) Prover {
+	if n.Prove != nil {
+		return n.Prove(ws)
 	}
+	return existenceOnly{}
+}
 
-	exit, output, err := n.Runner.Verify(ctx, ws, command.Run)
-	if err != nil {
-		// The command could not be run at all — a missing tool, a dead socket.
-		// That is not a failing check, and reporting it as one would tell the
-		// audit the tests ran and lost.
-		return fsm.Evidence{}, err
-	}
+// existenceOnly records delivery without running anything.
+type existenceOnly struct{}
 
-	verdict := fsm.VerdictPassed
-	if exit != 0 {
-		verdict = fsm.VerdictFailed
-	}
-	return fsm.Evidence{
-		Scope:      command.Proves(),
-		Verdict:    verdict,
-		Command:    command.Run,
-		ExitCode:   exit,
-		Detail:     firstLine(output),
-		RecordedAt: seq,
-	}, nil
+func (existenceOnly) Prove(_ context.Context, v fsm.Verifier, seq int) (fsm.Evidence, error) {
+	return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
 }
 
 func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage) string {
@@ -196,19 +200,32 @@ func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage) string {
 	return fmt.Sprintf("Task %s, stage %s.", state.ID, stage.ID)
 }
 
+// agentName is what herdr calls this task's agent.
+//
+// Two constraints, both learned from a live herdr rather than from documentation.
+// Names are unique across the whole server, not per workspace, so a second task
+// reusing one is refused with `agent_name_taken` — naming it after the task makes
+// that impossible and keeps the pane findable by anyone who knows the task id.
+// And the name must match `[a-z][a-z0-9_-]{0,31}`, so a task id like "LUNA-1" has
+// to be folded rather than passed through.
+func agentName(taskID string) string {
+	var b strings.Builder
+	b.WriteString("luna-")
+
+	for _, r := range strings.ToLower(taskID) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+		if b.Len() >= 32 {
+			break
+		}
+	}
+	return b.String()
+}
+
 // branchFor is the branch a task's worktree lives on. One per task, named after
 // it, so the checkout is findable without consulting Luna.
 func branchFor(taskID string) string { return "luna/" + taskID }
-
-// firstLine keeps evidence readable: the summary line, not the whole build log.
-func firstLine(s string) string {
-	for i, r := range s {
-		if r == '\n' {
-			return s[:i]
-		}
-	}
-	if len(s) > 200 {
-		return s[:200]
-	}
-	return s
-}

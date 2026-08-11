@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 )
 
@@ -30,15 +31,20 @@ import (
 var ErrGone = errors.New("herdr is not reachable")
 
 // request is the envelope herdr expects: one JSON object per line.
+//
+// The id is a string, not a number. herdr refuses an integer outright
+// ("invalid type: integer `1`, expected a string"), which is the kind of thing
+// only a real server tells you — a fake would have accepted whatever it was
+// handed.
 type request struct {
-	ID     int    `json:"id"`
+	ID     string `json:"id"`
 	Method string `json:"method"`
 	Params any    `json:"params,omitempty"`
 }
 
 // response is what comes back. Either result or error is set, never both.
 type response struct {
-	ID     int             `json:"id"`
+	ID     string          `json:"id"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *apiError       `json:"error,omitempty"`
 }
@@ -50,15 +56,18 @@ type apiError struct {
 
 func (e *apiError) Error() string { return fmt.Sprintf("herdr %s: %s", e.Code, e.Message) }
 
-// Client is one connection to herdr, safe for concurrent callers.
+// Client talks to herdr, one connection per request.
 //
-// Requests are serialised through a mutex rather than multiplexed by id. The
-// traffic is a handful of calls per stage, so a queue costs nothing and removes
-// the class of bug where two replies get crossed.
+// herdr closes the socket after answering — it is request/response, not a
+// session. Reusing a connection works exactly once and then fails with a broken
+// pipe on the second call, which is the sort of thing a fake server never
+// reveals: mine answered once too, and agreed with the bug.
+//
+// Dialling per call also removes the need to multiplex replies by id, and means a
+// dropped connection costs one request rather than the whole run.
 type Client struct {
 	mu   sync.Mutex
-	conn net.Conn
-	rd   *bufio.Reader
+	path string
 	seq  int
 }
 
@@ -77,11 +86,17 @@ func Dial(socket string) (*Client, error) {
 		}
 	}
 
-	conn, err := net.Dial("unix", path)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrGone, path, err)
+	// Reachability is checked by asking, not by opening a socket and dropping it:
+	// a bare connect would spend a request herdr has already accepted, and every
+	// call opens its own connection anyway.
+	client := &Client{path: path}
+	if err := client.Call("ping", nil, nil); err != nil && errors.Is(err, ErrGone) {
+		// Only unreachability stops the dial. A herdr that answers — even to
+		// refuse, even unintelligibly — is a herdr that is there, and whatever it
+		// said is the caller's problem to interpret, not a reason to give up.
+		return nil, err
 	}
-	return &Client{conn: conn, rd: bufio.NewReader(conn)}, nil
+	return client, nil
 }
 
 // SocketPath is where herdr listens, by the documented resolution order.
@@ -107,19 +122,26 @@ func SocketPath() (string, error) {
 // different transitions (ADR-0033).
 func (c *Client) Call(method string, params, out any) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	c.seq++
-	line, err := json.Marshal(request{ID: c.seq, Method: method, Params: params})
+	id := strconv.Itoa(c.seq)
+	c.mu.Unlock()
+
+	line, err := json.Marshal(request{ID: id, Method: method, Params: params})
 	if err != nil {
 		return fmt.Errorf("encoding %s: %w", method, err)
 	}
 
-	if _, err := c.conn.Write(append(line, '\n')); err != nil {
+	conn, err := net.Dial("unix", c.path)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrGone, c.path, err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if _, err := conn.Write(append(line, '\n')); err != nil {
 		return fmt.Errorf("%w: writing %s: %w", ErrGone, method, err)
 	}
 
-	raw, err := c.rd.ReadBytes('\n')
+	raw, err := bufio.NewReader(conn).ReadBytes('\n')
 	if err != nil {
 		return fmt.Errorf("%w: reading the reply to %s: %w", ErrGone, method, err)
 	}
@@ -140,9 +162,6 @@ func (c *Client) Call(method string, params, out any) error {
 	return nil
 }
 
-// Close hangs up.
-func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.conn.Close()
-}
+// Close exists so callers can defer it. There is no persistent connection to
+// release: each call opens and closes its own.
+func (c *Client) Close() error { return nil }
