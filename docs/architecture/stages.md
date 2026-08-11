@@ -19,20 +19,25 @@ cosmetic:
 
 | # | Stage | Role | Gate | Condition | Requires | Produces for the flow | Produces for human |
 |---|---|---|---|---|---|---|---|
-| 1 | `discovery` | — | confirm-repos | | `task_id` | `repos` | |
+| 1 | `discovery` | `scout` | confirm-repos | | `task_id` | `repos` | |
 | 2 | `setup` | — | | | `repos` | `worktree` | |
-| 3 | `intake` | analyst | | | `task_id`, `worktree` | `briefing`, `kind` | |
-| 4 | `diagnose` | — | | is a bug | `briefing` | `root_cause` | `min_case` |
-| 5 | `scenarios` | gherkin author | approve-plan | | `briefing`, `kind` | `scenarios`, `approach` | |
-| 6 | `spec` | — | approve-spec ⇄ | feature or bug | `approach` | `contract` | |
-| 7 | `build` | implementer | | 🔁 | `scenarios`, `approach`, `worktree`, `contract`* | `code`, `tests_green` | |
-| 8 | `refactor` | cleaner | | 🔁 | `code`, `tests_green` | `code` | |
-| 9 | `verify` | — | | 🔁 | `code`, `scenarios` | `ci_green` | `dod_checked` |
-| 10 | `qa` | QA tester | | not a chore | `ci_green`, `briefing` | | `qa_report` |
-| 11 | `code-review` | reviewer | | not docs | `code`, `ci_green` | | `review_report` |
-| 12 | `harden` | hardener | | feature or bug | `tests_green`, `code` | | `mutation_report` |
-| 13 | `architecture` | architect | | touches structure † | `code` | | `arch_report` |
+| 3 | `intake` | `analyst` | | | `task_id`, `worktree` | `briefing`, `kind` | |
+| 4 | `diagnose` | `investigator` | | is a bug | `briefing` | `root_cause` | `min_case` |
+| 5 | `scenarios` | `gherkin` | approve-plan | | `briefing`, `kind` | `scenarios`, `approach` | |
+| 6 | `spec` | `specifier` | approve-spec ⇄ | feature or bug | `approach` | `contract` | |
+| 7 | `build` | `implementer` | | 🔁 | `scenarios`, `approach`, `worktree`, `contract`* | `code`, `tests_green` | |
+| 8 | `refactor` | `cleaner` | | 🔁 | `code`, `tests_green` | `code` | |
+| 9 | `verify` | `verifier` | | 🔁 | `code`, `scenarios` | `ci_green` | `dod_checked` |
+| 10 | `qa` | `qa` | | not a chore | `ci_green`, `briefing` | | `qa_report` |
+| 11 | `code-review` | `reviewer` | | not docs | `code`, `ci_green` | | `review_report` |
+| 12 | `harden` | `hardener` | | feature or bug | `tests_green`, `code` | | `mutation_report` |
+| 13 | `architecture` | `architect` | | touches structure † | `code` | | `arch_report` |
 | 14 | `commit` | — | confirm-write | | `ci_green`, `code` | `commit_sha` | |
+
+The role names are the ones `DefaultFlow()` declares, and
+`TestDefaultFlowMatchesDocumentedStages` compares them against this table. Only `setup` and
+`commit` are mechanical — a stage that produces a judgement and names no role is refused by
+`AuditRoles` ([ADR-0040](../ADRs/0040-a-role-resolves-to-an-agent-and-mechanical-stages-have-none.md)).
 
 🔁 = takes part in the convergence loop. ⇄ = gate that **carries an artifact** for review.
 † = condition over a **fact discovered during execution**, not over the nature of the

@@ -120,25 +120,31 @@ rewriting along the chain.
 
 ## Roles
 
-A role can cover several stages. Each one declares what it owns, what it does **not** own,
-and the tools it has access to:
+A role names the agent that runs it, the brief that opens its context, and the tools it is
+denied:
 
 ```toml
-# src/stock/roles/reviewer.toml
-stages      = ["code-review"]
-tools_allow = ["Read", "Grep", "Bash"]
-tools_deny  = ["Edit", "Write"]
-owns        = "..."
-not_owns    = "..."
+[role.reviewer]
+agent      = "claude"
+brief      = "You review. You report findings; you do not edit."
+tools_deny = ["Edit", "Write"]
 ```
 
-The `not_owns` is the specialization mechanism, and separation by negation is deliberate:
-whoever writes does not review. Part of the separation is also economic — mutation tests are
-expensive, so only one role runs them.
+The stage names its role, rather than the role listing its stages — the flow is the one
+place that decides who runs what ([ADR-0039](../ADRs/0039-a-role-per-stage-and-what-carries-context-between-them.md)).
 
-The `tools_allow`/`tools_deny` is the mechanical gating: the FSM restricts the tools before
-the agent starts. One file, two consumers — the FSM reads the metadata, the agent reads
-the prose.
+Separation by negation is deliberate: whoever writes does not review. Part of the
+separation is also economic — mutation tests are expensive, so only one role runs them.
+
+The `tools_deny` is the mechanical gating: the FSM restricts the tools before
+the agent starts. Its floor is stated in
+[INV-core-7](../invariants/core.md) — it removes the named tools, not the shell.
+
+> **Not built yet.** Roles ship hardcoded in Go (`ShippedRoles()`), not as files under
+> `src/stock/roles/`, and `skills` parses but is read by nothing. Tracked in
+> [RFC-0001](../RFCs/rfc-0001-close-the-gap-between-decided-and-built.md).
+
+One declaration, two consumers — the FSM reads the gating, the agent reads the brief.
 
 ## Failure
 
@@ -247,13 +253,20 @@ core.
 
 Everything that defines behavior has a default version and a user version:
 
-| What | Default | Extension |
-|---|---|---|
-| Stages | the ones in `src/stock/stages/` | disable, edit, create |
-| Roles | the ones in `src/stock/roles/` | your own |
-| Gate profiles | three | your own, in `.luna/config.toml` — **built** |
-| Loops | one | declare others, with rules |
-| Skills | Luna's, installed alongside | point to your own directory |
+| What | Default | Extension | Built? |
+|---|---|---|---|
+| Stages | `DefaultFlow()` | disable, edit, create | not yet — see below |
+| Roles | `ShippedRoles()` | your own, in `.luna/config.toml` | agent, brief and `tools_deny` |
+| Gate profiles | three | your own, in `.luna/config.toml` | yes |
+| Loops | one | declare others, with rules | not yet |
+| Skills | Luna's, installed alongside | point to your own directory | not yet |
+
+> **The defaults live in Go, not in `src/stock/`.** That directory is the intended home
+> and is currently empty, so stages and loops have no configuration surface at all. This is
+> the reason a stage cannot yet declare how its artifacts are verified — the mechanism
+> exists in the engine ([ADR-0032](../ADRs/0032-the-contract-declares-how-each-artifact-is-verified.md))
+> and there is no file through which to reach it. Tracked in
+> [RFC-0001](../RFCs/rfc-0001-close-the-gap-between-decided-and-built.md).
 
 Skills deserve a note: there are **Luna's** (installed in the harness, they explain the structure
 to the agent), the **user bundle's** (pointed to in configuration) and the
