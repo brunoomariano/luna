@@ -703,3 +703,38 @@ func deadHerdrSocket(t *testing.T) string {
 
 	return path
 }
+
+// TestRunRefusesToStartWhenTheStoreCannotAnswer covers the guard before anything
+// is driven.
+//
+// A store that will not answer is not a task problem, and starting a run against
+// it would append events on top of a log nobody could read back.
+func TestRunRefusesToStartWhenTheStoreCannotAnswer(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+
+	if err := h.env.Store.Close(); err != nil {
+		t.Fatalf("closing the store: %v", err)
+	}
+
+	err := h.run(t, "run", "LUNA-1", "--dry-run")
+
+	if err == nil {
+		t.Fatal("a run against an unreadable store must fail")
+	}
+}
+
+// TestUnblockRefusesWhenTheStoreCannotAnswer covers the same guard on the other
+// command that reads before writing.
+func TestUnblockRefusesWhenTheStoreCannotAnswer(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+
+	if err := h.env.Store.Close(); err != nil {
+		t.Fatalf("closing the store: %v", err)
+	}
+
+	if err := h.run(t, "unblock", "LUNA-1"); err == nil {
+		t.Fatal("unblocking against an unreadable store must fail")
+	}
+}

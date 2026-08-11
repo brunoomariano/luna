@@ -572,3 +572,110 @@ func TestAPromptWithNoBudgetStillHasADeadline(t *testing.T) {
 		t.Errorf("an unset budget must still produce a deadline, got %s", params)
 	}
 }
+
+// TestTheWorktreeFollowsTheHouseNaming covers where a task's checkout lives.
+//
+// `../wt-<repo>-<id>`, a sibling of the repository. herdr's own default puts it
+// under a directory of its own, which is fine for herdr and wrong here: this
+// project's worktrees follow one convention regardless of what created them, so
+// `ls ../wt-*` finds every one.
+func TestTheWorktreeFollowsTheHouseNaming(t *testing.T) {
+	server, path := newFakeServer(t)
+	server.reply("worktree.create", worktreeReply)
+
+	runner := NewRunner(dialFake(t, path), "/home/someone/repos/api", time.Minute)
+	if _, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	params, _ := json.Marshal(server.sent("worktree.create")[0].Params)
+	if !strings.Contains(string(params), `"path":"/home/someone/repos/wt-api-LUNA-1"`) {
+		t.Errorf("want the sibling path, got %s", params)
+	}
+}
+
+// TestTheCheckoutIsASiblingNeverAChild covers the guardrail that matters most.
+//
+// A checkout nested inside the repository is caught by every recursive walk the
+// repository does to itself, and one inside a tool's directory is caught by that
+// tool's cleanup.
+func TestTheCheckoutIsASiblingNeverAChild(t *testing.T) {
+	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.HasPrefix(got, "/home/someone/repos/api/") {
+		t.Errorf("the checkout must not live inside the repository, got %q", got)
+	}
+	if filepath.Dir(got) != "/home/someone/repos" {
+		t.Errorf("want a sibling of the repository, got %q", got)
+	}
+}
+
+// TestARelativeRepositoryStillResolves covers `--repo .`, which is what someone
+// running from inside their checkout will type.
+func TestARelativeRepositoryStillResolves(t *testing.T) {
+	got, err := checkoutPath(".", "LUNA-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !filepath.IsAbs(got) {
+		t.Errorf("herdr needs an absolute path, got %q", got)
+	}
+	if !strings.Contains(filepath.Base(got), "-LUNA-1") {
+		t.Errorf("the task id must survive the resolution, got %q", got)
+	}
+}
+
+// TestHerdrsAnswerWinsOverTheRequestedPath covers reopening.
+//
+// A worktree made before this convention existed lives somewhere else, and the
+// verification has to run where the checkout actually is (ADR-0035) rather than
+// where it would be created today.
+func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
+	server, path := newFakeServer(t)
+	server.reply("worktree.create", `{"id":"1","error":{"code":"worktree_exists","message":"already checked out"}}`)
+	server.reply("worktree.open", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1"},"worktree":{"path":"/somewhere/older"}}}`)
+
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	ws, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ws.Path != "/somewhere/older" {
+		t.Errorf("want where the checkout actually is, got %q", ws.Path)
+	}
+}
+
+// TestARepositoryThatNamesNothingIsRefused covers the guardrail's own edge.
+//
+// The filesystem root has no name to build a sibling from, and `wt--LUNA-1` at
+// the root is not a checkout anyone meant to create. Refusing beats guessing.
+func TestARepositoryThatNamesNothingIsRefused(t *testing.T) {
+	if _, err := checkoutPath("/", "LUNA-1"); err == nil {
+		t.Error("the filesystem root does not name a repository")
+	}
+}
+
+// TestOpenWorktreeRefusesAnUnusableRepository covers the path resolution failing
+// before anything is asked of herdr.
+//
+// A repository that cannot be resolved is a mistake in the command, and reporting
+// it here keeps herdr from being blamed for it.
+func TestOpenWorktreeRefusesAnUnusableRepository(t *testing.T) {
+	server, path := newFakeServer(t)
+	server.reply("worktree.create", worktreeReply)
+
+	runner := NewRunner(dialFake(t, path), "/", time.Minute)
+	_, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+
+	if err == nil {
+		t.Fatal("an unusable repository must be reported")
+	}
+	if len(server.sent("worktree.create")) != 0 {
+		t.Error("nothing should have been asked of herdr")
+	}
+}

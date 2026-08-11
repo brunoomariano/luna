@@ -50,6 +50,7 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0037](0037-worktrees-are-siblings-named-by-the-house-convention.md) — Worktrees are siblings, named by the house convention — `Accepted`
 - [ADR-0036](0036-herdr-facts-learned-from-a-running-server.md) — herdr's contract is read from a running server, not from its docs — `Accepted`
 - [ADR-0035](0035-luna-runs-the-verification-itself.md) — Luna runs the verification itself — `Accepted`
 - [ADR-0034](0034-the-watchdog-delegates-detection-and-owns-the-verdict.md) — The watchdog delegates detection and owns the verdict — `Accepted`

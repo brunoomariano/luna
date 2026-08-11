@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -57,15 +58,21 @@ type worktreeCreated struct {
 // An existing branch is reopened rather than treated as a failure: a task that
 // already ran once has its worktree, and a second `luna run` must resume it.
 func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (Workspace, error) {
+	path, err := checkoutPath(r.Repo, taskID)
+	if err != nil {
+		return Workspace{}, err
+	}
+
 	params := map[string]any{
 		"cwd":    r.Repo,
 		"branch": branch,
+		"path":   path,
 		"label":  taskID,
 		"focus":  false,
 	}
 
 	var created worktreeCreated
-	err := r.client.Call("worktree.create", params, &created)
+	err = r.client.Call("worktree.create", params, &created)
 	if err != nil && reusable(err) {
 		err = r.client.Call("worktree.open", params, &created)
 	}
@@ -73,14 +80,19 @@ func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (W
 		return Workspace{}, fmt.Errorf("opening the worktree for %s: %w", taskID, err)
 	}
 
-	path := created.Worktree.Path
-	if path == "" {
-		path = created.RootPane.CWD
+	// Prefer what herdr confirmed over what was asked for: reopening an existing
+	// worktree returns wherever it actually is, which may predate this convention.
+	checkout := created.Worktree.Path
+	if checkout == "" {
+		checkout = created.RootPane.CWD
+	}
+	if checkout == "" {
+		checkout = path
 	}
 	return Workspace{
 		ID:       created.Workspace.WorkspaceID,
 		RootPane: created.RootPane.PaneID,
-		Path:     path,
+		Path:     checkout,
 	}, nil
 }
 
@@ -178,6 +190,31 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 	// herdr answered without naming a state. Unknown is the honest reading, and
 	// it still triggers verification — it just claims nothing (ADR-0028).
 	return StatusUnknown, nil
+}
+
+// checkoutPath is where a task's worktree lives: `../wt-<repo>-<id>`, a sibling
+// of the repository.
+//
+// herdr would otherwise put it under its own directory, which is fine for herdr
+// and wrong here — this project's worktrees follow one convention regardless of
+// what made them, so `ls ../wt-*` finds every one and a person can clean up
+// without knowing which tool created what.
+//
+// A sibling rather than a child on purpose: a checkout nested inside the
+// repository, or inside a tool's directory, gets caught by that tool's own
+// cleanup and by every recursive walk the repository does to itself.
+func checkoutPath(repo, taskID string) (string, error) {
+	absolute, err := filepath.Abs(repo)
+	if err != nil {
+		return "", fmt.Errorf("resolving the repository path %q: %w", repo, err)
+	}
+
+	name := filepath.Base(absolute)
+	if name == "." || name == string(filepath.Separator) {
+		return "", fmt.Errorf("%q does not name a repository directory", repo)
+	}
+
+	return filepath.Join(filepath.Dir(absolute), "wt-"+name+"-"+taskID), nil
 }
 
 // reusable reports whether herdr refused because the worktree is already there,
