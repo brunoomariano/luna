@@ -45,6 +45,11 @@ type Env struct {
 	// injected rather than called directly so a test does not need $EDITOR — and
 	// so that a headless run can fail loudly instead of hanging on a terminal.
 	Edit func(current string) (string, error)
+
+	// Interpret is what turns plain language into commands for `luna chat`.
+	// Injected because Luna hosts no model, and nil means the command says so
+	// rather than pretending to work (ADR-0043).
+	Interpret Interpreter
 }
 
 // Run dispatches a command line. args excludes the program name.
@@ -60,6 +65,8 @@ func Run(env Env, args []string) error {
 		return runTaskCommand(env, args[1:])
 	case "unblock":
 		return unblockCommand(env, args[1:])
+	case "chat":
+		return chatCommand(env, args[1:])
 	case "gates":
 		return runGates(env, args[1:])
 	case "gate":
@@ -81,7 +88,7 @@ luna — deterministic orchestration for AI agents
   luna task new <id> --kind <kind> [--profile <profile>]
         open a task's log
 
-  luna task show <id>
+  luna task show <id> [--json]
         the task's current state and what it has produced
 
   luna run <id> [--agent <kind>] [--dry-run]
@@ -91,7 +98,12 @@ luna — deterministic orchestration for AI agents
   luna unblock <id>
         clear a block once whatever caused it is dealt with
 
-  luna gates
+  luna chat
+        say what you want in plain language. It runs Luna commands for you
+        and reads the answers back — it never decides a stage, and it asks
+        before approving a gate.
+
+  luna gates [--json]
         every task waiting on a person
 
   luna gate show <id>
@@ -212,6 +224,11 @@ func taskShow(env Env, args []string) error {
 	}
 	id := args[0]
 
+	asJSON, err := wantsJSON(args[1:])
+	if err != nil {
+		return err
+	}
+
 	events, err := env.Store.Events(id)
 	if err != nil {
 		return err
@@ -225,6 +242,20 @@ func taskShow(env Env, args []string) error {
 		return err
 	}
 
+	if asJSON {
+		return writeJSON(env.Out, taskReport(env.profiles(), state, len(events)))
+	}
+
+	printTask(env, state, len(events))
+	return nil
+}
+
+// printTask writes the form a person reads.
+//
+// Split from taskShow so the two output shapes stay separable: the structured one
+// is a contract (ADR-0043) and this one is prose, and mixing their construction
+// is how they drift.
+func printTask(env Env, state fsm.TaskState, events int) {
 	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, state.Status)
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
 	fmt.Fprintf(env.Out, "  profile  %s%s\n", state.Profile, undefinedProfileNote(env.profiles(), state.Profile))
@@ -234,33 +265,40 @@ func taskShow(env Env, args []string) error {
 	if state.Blocked != "" {
 		fmt.Fprintf(env.Out, "  blocked  %s\n", state.Blocked)
 	}
-	fmt.Fprintf(env.Out, "  events   %d\n", len(events))
+	fmt.Fprintf(env.Out, "  events   %d\n", events)
 
-	if artifacts := sortedArtifacts(state.Context.Artifacts); len(artifacts) > 0 {
-		fmt.Fprintf(env.Out, "\nproduced\n")
-		for _, a := range artifacts {
-			// Evidence is what the tool reported (ADR-0024). Showing it is the
-			// difference between knowing a stage closed and knowing on what
-			// grounds — and the scope is what separates a green suite from a file
-			// that merely exists (ADR-0032).
-			if evidence := state.Evidence[a]; evidence.Delivered() {
-				fmt.Fprintf(env.Out, "  %-16s %s\n", a, evidence)
-				continue
-			}
-			fmt.Fprintf(env.Out, "  %s\n", a)
-		}
+	artifacts := sortedArtifacts(state.Context.Artifacts)
+	if len(artifacts) == 0 {
+		return
 	}
-	return nil
+
+	fmt.Fprintf(env.Out, "\nproduced\n")
+	for _, a := range artifacts {
+		// Evidence is what the tool reported (ADR-0024). Showing it is the
+		// difference between knowing a stage closed and knowing on what grounds —
+		// and the scope is what separates a green suite from a file that merely
+		// exists (ADR-0032).
+		if evidence := state.Evidence[a]; evidence.Delivered() {
+			fmt.Fprintf(env.Out, "  %-16s %s\n", a, evidence)
+			continue
+		}
+		fmt.Fprintf(env.Out, "  %s\n", a)
+	}
 }
 
 func runGates(env Env, args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("%w: gates takes no arguments", ErrUsage)
+	asJSON, err := wantsJSON(args)
+	if err != nil {
+		return err
 	}
 
 	waiting, err := env.Store.AwaitingGate(fsm.DefaultFlow())
 	if err != nil {
 		return err
+	}
+
+	if asJSON {
+		return writeJSON(env.Out, gatesReport(env.profiles(), waiting))
 	}
 
 	if len(waiting) == 0 {
@@ -447,7 +485,7 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 }
 
 // valuelessFlags are the switches: present or absent, never `--flag value`.
-var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true}
+var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true, "json": true}
 
 // parseFlags reads --name=value and --name value pairs.
 func parseFlags(args []string) (map[string]string, error) {
