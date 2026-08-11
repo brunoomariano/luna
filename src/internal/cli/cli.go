@@ -67,6 +67,8 @@ func Run(env Env, args []string) error {
 		return unblockCommand(env, args[1:])
 	case "chat":
 		return chatCommand(env, args[1:])
+	case "plugin":
+		return pluginCommand(env, args[1:])
 	case "gates":
 		return runGates(env, args[1:])
 	case "gate":
@@ -102,6 +104,10 @@ luna — deterministic orchestration for AI agents
         say what you want in plain language. It runs Luna commands for you
         and reads the answers back — it never decides a stage, and it asks
         before approving a gate.
+
+  luna plugin install | uninstall | status
+        register luna chat as a herdr pane, so the conversation sits
+        beside the tasks it is about. Optional: chat works in any terminal.
 
   luna gates [--json]
         every task waiting on a person

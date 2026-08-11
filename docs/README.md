@@ -95,6 +95,8 @@ The system structure and the **why** behind it. Describes *how it is assembled* 
   failure, gates, state, extension.
 - [`architecture/stages.md`](architecture/stages.md) — the standard stages, with role,
   gate, condition, `requires` and `produces`.
+- [`architecture/herdr-proxy.md`](architecture/herdr-proxy.md) — installing and removing
+  the herdr pane that runs `luna chat`.
 
 *Does not belong:* the specific, dated decision that led to a choice (ADR), the
 step-by-step of a feature (PRD).
