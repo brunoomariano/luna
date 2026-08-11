@@ -79,11 +79,28 @@ var harnesses = []Harness{
 		},
 	},
 	{
-		Kind:    "opencode",
-		Precise: true,
-		// The denial lives in the agent's own file (`permission: edit: deny`),
-		// written before the agent starts rather than passed on the command line.
-		Deny: func([]fsm.Capability) ([]string, error) { return nil, nil },
+		Kind: "opencode",
+		// Not precise, and not gateable from the command line at all. opencode
+		// denies through `permission` in its own config file, and Luna writes no
+		// such file — so a role gated here would start fully capable.
+		//
+		// It refuses rather than returning no arguments. That is the whole reason
+		// the table is closed (ADR-0042): a harness that cannot deny must say so,
+		// because the alternative is an ungated reviewer with nothing in the log
+		// saying the denial did not take.
+		//
+		// Measured against opencode 1.17.7, the config route is worse than absent:
+		// an invalid *value* exits 1 with a clear error, while a mistyped *key*
+		// exits 0 in silence and the whole permission block disappears. Wiring
+		// this up needs a check that the denial took effect, not just that a file
+		// was written.
+		Deny: func(denied []fsm.Capability) ([]string, error) {
+			return nil, fmt.Errorf(
+				"opencode denies %s through its config file, which Luna does not write yet "+
+					"(try claude or pi, or codex for a read-only role)",
+				list(denied),
+			)
+		},
 	},
 }
 

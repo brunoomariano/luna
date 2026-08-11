@@ -25,8 +25,6 @@ func TestEachHarnessSpeaksItsOwnVocabulary(t *testing.T) {
 		"pi": {"--exclude-tools", "edit,write"},
 		// No tool names at all: the sandbox denies writing wholesale.
 		"codex": {"-s", "read-only"},
-		// The denial lives in the agent's own file, so nothing goes on argv.
-		"opencode": nil,
 	}
 
 	for kind, want := range cases {
@@ -43,6 +41,37 @@ func TestEachHarnessSpeaksItsOwnVocabulary(t *testing.T) {
 		}
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Errorf("%s: want %v, got %v", kind, want, got)
+		}
+	}
+}
+
+// TestOpencodeRefusesToGateRatherThanPretending is the case the table exists for.
+//
+// opencode denies through its own config file and Luna writes no such file, so
+// there is no argv that gates it. It used to answer with no arguments and no
+// error, which reads as success — and the earlier version of this test asserted
+// exactly that, so the suite agreed with the bug.
+//
+// An empty argv is indistinguishable from a denial that worked, and the failure
+// is silent: an agent that should not be able to write starts able to. Refusing
+// is what ADR-0042 means by not failing open.
+func TestOpencodeRefusesToGateRatherThanPretending(t *testing.T) {
+	harness, ok := HarnessFor("opencode")
+	if !ok {
+		t.Fatal("opencode is an official harness and must be in the table")
+	}
+
+	args, err := harness.Deny(noWriting)
+	if err == nil {
+		t.Fatalf("opencode cannot gate from argv; want a refusal, got args %v", args)
+	}
+	if args != nil {
+		t.Errorf("a refusal carries no arguments, got %v", args)
+	}
+	// The message has to name the way out, or it reads as Luna being broken.
+	for _, want := range []string{"opencode", "claude", "codex"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal should mention %q, got %q", want, err)
 		}
 	}
 }

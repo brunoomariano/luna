@@ -271,6 +271,29 @@ func TestPhraseAnswersInWords(t *testing.T) {
 	}
 }
 
+// TestAnEmptyInterpretationIsAnError covers the silent-success trap.
+//
+// This is the bug `opencode --print` was: not a flag opencode has, and instead of
+// refusing it printed a banner and exited 0. Nothing errored, the empty answer
+// became an empty reply, and the person got a blank line with nothing anywhere
+// saying the invocation was wrong.
+//
+// Note that Phrase does the opposite with silence — it falls back to Luna's own
+// output — because there it has something to fall back to. Here it does not.
+func TestAnEmptyInterpretationIsAnError(t *testing.T) {
+	fakeHarness(t, "")
+
+	_, err := Harness{}.Interpret("what is waiting", "nothing waiting")
+	if err == nil {
+		t.Fatal("a harness that exits 0 saying nothing has not answered")
+	}
+	// The message has to name the invocation, because the fix is almost always
+	// the argv rather than anything the person typed.
+	if !strings.Contains(err.Error(), "--print") {
+		t.Errorf("the error should show how the harness was called, got %q", err)
+	}
+}
+
 // TestAnEmptyPhrasingFallsBackToTheOutput covers a harness that says nothing.
 //
 // An empty answer is worse than a raw one: the person asked something and would

@@ -15,3 +15,9 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+// The study clones third-party repositories under docs/luna_study/repos/, and
+// several are Go modules. Without this, `go mod tidy` walks into them and pulls
+// their dependencies into ours — the same trap that made lint-docs recurse into
+// 1,697 vendored markdown files.
+ignore docs/luna_study

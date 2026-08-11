@@ -45,10 +45,15 @@ type Harness struct {
 // A closed table for the same reason the gating one is closed: an agent Luna
 // guesses at fails in a way nobody sees until a person is already talking to it.
 var nonInteractive = map[string][]string{
-	"claude":   {"--print"},
-	"pi":       {"--print"},
-	"codex":    {"exec"},
-	"opencode": {"--print"},
+	"claude": {"--print"},
+	"pi":     {"--print"},
+	"codex":  {"exec"},
+	// `run`, not `--print`. Measured against opencode 1.17.7: `--print` is not a
+	// flag it has, and instead of refusing it prints the banner and exits 0 with
+	// no answer — so the empty output read as a successful turn and the person
+	// got a blank line. A harness that fails silently is worse than one that is
+	// absent, which is why this table is checked against the binaries.
+	"opencode": {"run"},
 }
 
 // DefaultInterpreter is the harness asked when none is configured, from the house
@@ -59,6 +64,9 @@ const DefaultInterpreter = "claude"
 func (h Harness) Interpret(said, state string) (cli.Intent, error) {
 	answer, err := h.ask(interpretPrompt(said, state))
 	if err != nil {
+		return cli.Intent{}, err
+	}
+	if err := silence(h.agent(), answer); err != nil {
 		return cli.Intent{}, err
 	}
 
@@ -88,11 +96,16 @@ func (h Harness) Phrase(said string, command []string, output string) (string, e
 }
 
 // ask runs the harness once and returns what it said.
-func (h Harness) ask(prompt string) (string, error) {
-	agent := h.Agent
-	if agent == "" {
-		agent = DefaultInterpreter
+// agent is which harness this one asks, resolving the house default.
+func (h Harness) agent() string {
+	if h.Agent == "" {
+		return DefaultInterpreter
 	}
+	return h.Agent
+}
+
+func (h Harness) ask(prompt string) (string, error) {
+	agent := h.agent()
 
 	args, ok := nonInteractive[agent]
 	if !ok {
@@ -123,6 +136,25 @@ func (h Harness) ask(prompt string) (string, error) {
 		return "", fmt.Errorf("running %s: %w", agent, err)
 	}
 	return string(out), nil
+}
+
+// silence is what a harness that exited 0 and said nothing looks like.
+//
+// It is an error at the interpreting boundary and not at the asking one, because
+// the two callers want opposite things from silence: Phrase falls back to Luna's
+// own output, while Interpret has nothing to fall back to — an empty answer there
+// becomes an empty reply, printed as a blank line, with nothing saying the
+// invocation was wrong. That is how `opencode --print` went unnoticed: it is not
+// a flag opencode has, and instead of refusing it printed a banner and exited 0.
+//
+// Exit code zero is not proof that a turn happened.
+func silence(agent string, answer string) error {
+	if strings.TrimSpace(answer) != "" {
+		return nil
+	}
+	invocation := append([]string{agent}, nonInteractive[agent]...)
+	return fmt.Errorf("%s exited 0 without answering — check that `%s` is how it takes a prompt",
+		agent, strings.Join(invocation, " "))
 }
 
 // interpretPrompt asks for a command and nothing else.
