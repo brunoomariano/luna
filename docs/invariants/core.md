@@ -66,21 +66,52 @@ delivered without verification; a transition that ignores a missing `requires`.
 
 ---
 
-## INV-core-4: delivery is verified by running the tool, not by checking format
+## INV-core-4: delivery is verified by running the tool, out of the agent's reach
 
 **Rule.** What the stage produced is validated by executing the real tool: the test
-passes, the file exists, the commit resolves to exactly one object and that object is a
-commit.
+passes, the commit resolves to exactly one object and that object is a commit. The
+verification runs where the agent under verification **could not have influenced it** —
+neither the command, nor the environment that resolves it, nor the inputs it reads.
 
 **Why it holds.** A well-formed JSON can describe something that does not exist, and a CLI
 exiting with code zero does not mean the work turned out right. Checking format validates
 the appearance of the delivery, not the delivery.
 
-**How it is preserved.** The output check of each stage invokes the tool. See
-[ADR-0005](../ADRs/0005-validate-output-by-running-the-tool.md).
+The second half of the rule is why this is the invariant that carries the adversarial
+posture of [ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md).
+A check the agent could steer produces the one failure the flow cannot absorb: not a wrong
+artifact, which review rejects, but a **false record** — an assertion with the authority of
+a verified fact, written into a log that exists to be the audit. The evidence is the
+product, and a product that can be forged has no value.
 
-**What would violate it.** Accepting a `produces` because the field came filled in; validating
-by schema instead of execution; trusting the process exit code.
+**How it is preserved.** The output check of each stage invokes the tool, and the tool runs
+outside the agent's reach. See
+[ADR-0005](../ADRs/0005-validate-output-by-running-the-tool.md),
+[ADR-0035](../ADRs/0035-luna-runs-the-verification-itself.md) and
+[ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md).
+
+**What would violate it.** Accepting a `produces` because the field came filled in;
+validating by schema instead of execution; trusting the process exit code; **running the
+verification in a tree the agent wrote, with a command or a `PATH` it could have
+changed**.
+
+**Deliberate floor.** Not every artifact is mechanically provable — a written report is
+delivered, not passed. Evidence carries the **scope** of what was proven
+(`full`/`targeted`/`existence`/`human`), and `existence` is the honest floor for prose:
+it says the file is there and claims nothing more. That is not an exception to this
+invariant but the shape of it — the rule is that evidence never claims more than the check
+proved, and scope has no upgrade path
+([ADR-0032](../ADRs/0032-the-contract-declares-how-each-artifact-is-verified.md)).
+
+**Acceptance criteria** — the code is not considered done without:
+
+- every artifact in the shipped flow that is mechanically provable declaring a verifier
+  that runs a command; an artifact closing on `existence` alone must be a **declared**
+  choice, not the default that nobody noticed;
+- a test that the recorded evidence's scope satisfies the scope the contract asked for —
+  an `existence` proof does not close a stage whose contract wanted a command;
+- a test that the verification does not observe changes an agent made after the delivery
+  it is verifying.
 
 ---
 
@@ -130,23 +161,37 @@ handoff; the receiver trusting the sender's description instead of reading the s
 **Why it holds.** It is the separation that gives the review its value. An agent evaluating its own
 work is not a review, it is a confirmation.
 
-**How it is preserved.** Each role declares `not_owns`, and tool gating
-(`tools_allow`/`tools_deny`) is applied by the FSM **before** the agent starts — the
-`reviewer` has neither `Edit` nor `Write`. The gating **blocks the call**, it does not instruct the
-agent to avoid it (see [ADR-0018](../ADRs/0018-tool-gating-by-pretooluse-hook.md)).
+**How it is preserved.** The separation is **structural**: the flow assigns a different
+role to the stage that produces and the stage that evaluates, and the engine refuses a
+review action from a stage that is not a review stage. On top of that, tool gating is
+applied by the FSM **before** the agent starts — the `reviewer` is started with `Edit` and
+`Write` denied (see [ADR-0018](../ADRs/0018-tool-gating-by-pretooluse-hook.md) and
+[ADR-0042](../ADRs/0042-four-harnesses-four-ways-to-deny-a-tool.md)).
+
+**Where the floor is, stated plainly.** Tool gating removes the **named** tools. It does
+not remove the shell, so a role denied `Edit` and `Write` can still write through `Bash` on
+any harness whose denial is per-tool rather than per-capability. This is a known and
+accepted limit, not a defect to be discovered later: under
+[ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md) a
+reviewer that writes corrupts a **review**, which the flow catches — not a **record**,
+which it could not. Containment strong enough to be a guarantee belongs at the evidence
+boundary ([INV-core-4](#inv-core-4-delivery-is-verified-by-running-the-tool-out-of-the-agents-reach)),
+and that is where it is spent.
 
 **What would violate it.** The `implementer` running `code-review`; the `cleaner` running
-`harden`; a role with `tools_allow` that contradicts its `not_owns`; **a role whose
-restriction exists only as text in the prompt**.
+`harden`; a role whose separation exists **only** as text in the prompt, with no structural
+counterpart in the flow; a harness whose denial silently does nothing while Luna reports
+that it applied.
 
 **Acceptance criteria** — the code is not considered done without:
 
-- a test that tries to use a denied tool and verifies that the call is **refused**,
-  not merely discouraged;
-- a test that detects `tools_allow` contradicting `not_owns` when loading the role, failing
-  at load time and not at runtime;
-- in a harness without pre-execution blocking, **explicit and reported** degradation — never
-  silent.
+- a test that a review action originating from a non-review stage is **refused** by the
+  engine, so the separation does not depend on the agent honouring its brief;
+- a test that a role whose harness cannot express its declared denial fails **at load
+  time**, naming the harness and the capability — never starting an ungated agent and
+  reporting success;
+- degradation that is **explicit and reported**: where a denial cannot be enforced, the log
+  says so.
 
 ---
 
