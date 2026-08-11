@@ -66,8 +66,11 @@ type Runner interface {
 
 	// StartAgent puts an agent into a pane in that workspace and waits until it
 	// is interactive. The kind must be one herdr knows (ADR-0031); the name is
-	// herdr-wide and must be unique, so it carries the task id.
-	StartAgent(ctx context.Context, ws Workspace, kind, name string) (string, error)
+	// herdr-wide and must be unique, so it carries the task and the stage.
+	//
+	// args are passed through to the agent itself, which is how a denied
+	// capability reaches it (ADR-0042).
+	StartAgent(ctx context.Context, ws Workspace, kind, name string, args []string) (string, error)
 
 	// Prompt submits text and waits for the agent to settle, returning the status
 	// it settled at. Prompt and wait are one call because two would race.
@@ -137,7 +140,15 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 
 	name := agentName(state.ID, stage.ID)
 
-	pane, err := n.Runner.StartAgent(ctx, ws, role.Agent, name)
+	// A gated role starts without what it must not have — the tool is absent
+	// rather than discouraged (ADR-0018). A harness Luna cannot gate stops the
+	// stage instead of running an ungated review (ADR-0041).
+	args, err := gateArgs(role)
+	if err != nil {
+		return lead.Result{}, fmt.Errorf("stage %q: %w", stage.ID, err)
+	}
+
+	pane, err := n.Runner.StartAgent(ctx, ws, role.Agent, name, args)
 	if err != nil {
 		return lead.Result{}, err
 	}

@@ -83,10 +83,25 @@ editor = "vim"
 # and it is not the separation INV-core-7 asks for, which needs the reviewer to
 # not HAVE Edit and Write rather than to be told not to use them.
 
+# A role may also declare what it must NOT be able to do. The four review roles
+# — qa, reviewer, hardener, architect — ship denying Edit and Write, because a
+# role that judges someone else's work must not be able to change it. The brief
+# says so too, and the brief is not what enforces it: a restriction that lives
+# only in the prompt is exactly what INV-core-7 names as the violation.
+#
+# `tools_deny` names the capability, never a harness's spelling of it. claude
+# says `Edit`, pi says `edit`, codex takes no names at all and denies writing
+# with a sandbox mode — Luna translates. That is what lets you move a role
+# between agents without rewriting it.
+#
+# Luna can gate claude, pi, codex and opencode. A gated role on any other agent
+# stops the stage rather than running ungated.
+
 # [role.reviewer]
-# agent  = "codex"
-# brief  = "You review. You report findings; you do not edit."
-# skills = ["code-review"]
+# agent      = "codex"
+# brief      = "You review. You report findings; you do not edit."
+# skills     = ["code-review"]
+# tools_deny = ["Edit", "Write"]
 
 # [role.implementer]
 # agent = "claude"

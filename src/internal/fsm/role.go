@@ -1,5 +1,10 @@
 package fsm
 
+import (
+	"fmt"
+	"strings"
+)
+
 // RoleName is what a stage calls the kind of worker it needs.
 //
 // The engine holds the name and nothing else. What the name *means* — which agent
@@ -28,6 +33,70 @@ type Role struct {
 
 	// Skills are the capability bundles this role loads.
 	Skills []string
+
+	// ToolsDeny names capabilities this role must not have — `Edit`, `Write`.
+	//
+	// It names what the role cannot do, never how a harness spells it: claude says
+	// `Edit`, pi says `edit`, codex takes no names at all and denies writing with
+	// a sandbox mode. Keeping the vocabulary out of here is what lets a project
+	// move `reviewer` from one agent to another without rewriting the role, and
+	// what stops a role from silently ceasing to deny anything when its agent
+	// changes (ADR-0042).
+	ToolsDeny []Capability
+}
+
+// Capability is something a role may be denied.
+//
+// A closed set rather than free strings: a typo in a denial fails open — the role
+// runs with the tool it was supposed to lose, and nothing says so. That is the
+// direction INV-core-7 cares about most.
+type Capability string
+
+const (
+	// CapEdit is changing a file that already exists.
+	CapEdit Capability = "Edit"
+
+	// CapWrite is creating one.
+	CapWrite Capability = "Write"
+)
+
+// KnownCapabilities are the ones a role may name.
+func KnownCapabilities() []Capability { return []Capability{CapEdit, CapWrite} }
+
+// ParseCapability turns a configured name into a capability, refusing what it
+// does not know.
+func ParseCapability(name string) (Capability, error) {
+	for _, known := range KnownCapabilities() {
+		if Capability(name) == known {
+			return known, nil
+		}
+	}
+	return "", fmt.Errorf("unknown capability %q (%s)", name, capabilityList())
+}
+
+// Gated reports whether this role must be started with something denied.
+func (r Role) Gated() bool { return len(r.ToolsDeny) > 0 }
+
+// DeniesWriting reports whether the role is barred from changing the worktree.
+//
+// It is the question the coarse harnesses can actually answer: codex denies
+// writing wholesale with a sandbox mode and takes no tool names, so a role that
+// denies both Edit and Write maps onto it exactly, and one that denies only Edit
+// does not (ADR-0042).
+func (r Role) DeniesWriting() bool {
+	denied := map[Capability]bool{}
+	for _, capability := range r.ToolsDeny {
+		denied[capability] = true
+	}
+	return denied[CapEdit] && denied[CapWrite]
+}
+
+func capabilityList() string {
+	names := make([]string, 0, len(KnownCapabilities()))
+	for _, capability := range KnownCapabilities() {
+		names = append(names, string(capability))
+	}
+	return strings.Join(names, ", ")
 }
 
 // Mechanical reports whether a stage runs without an agent at all.

@@ -275,16 +275,44 @@ func assignRole(cfg *Config, name, key, value, where string) error {
 			return err
 		}
 		role.Skills = skills
+	case "tools_deny":
+		denied, err := parseCapabilities(value, where, name)
+		if err != nil {
+			return err
+		}
+		role.ToolsDeny = denied
 	default:
 		// An unknown key is an error rather than a warning, for the same reason it
 		// is in a profile: a misspelled `agent` would leave the role resolving to
 		// nothing and the stage running with whatever the fallback is.
-		return fmt.Errorf("%s: unknown setting %q in [role.%s] (expected agent, brief, skills)",
+		return fmt.Errorf("%s: unknown setting %q in [role.%s] (expected agent, brief, skills, tools_deny)",
 			where, key, name)
 	}
 
 	cfg.Roles[fsm.RoleName(name)] = role
 	return nil
+}
+
+// parseCapabilities reads `tools_deny`, refusing a name Luna does not know.
+//
+// A typo here fails open — the role runs with the tool it was supposed to lose,
+// and nothing says so. That is the direction INV-core-7 cares about most, which
+// is why an unknown capability stops the load rather than being skipped.
+func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
+	names, err := parseStringArray(value, where)
+	if err != nil {
+		return nil, err
+	}
+
+	denied := make([]fsm.Capability, 0, len(names))
+	for _, name := range names {
+		capability, err := fsm.ParseCapability(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s: [role.%s]: %w", where, role, err)
+		}
+		denied = append(denied, capability)
+	}
+	return denied, nil
 }
 
 // assignProfile places one setting inside a `[profile.<name>]` section.
@@ -396,6 +424,11 @@ func parseSection(header, where string) (sectionRef, error) {
 func ShippedRoles() map[fsm.RoleName]fsm.Role {
 	const agent = "claude"
 
+	// Whoever writes does not review, and the reviewer cannot write: both
+	// capabilities go, because a role that could still create a file has not been
+	// stopped from changing the work it is judging.
+	noWriting := []fsm.Capability{fsm.CapEdit, fsm.CapWrite}
+
 	return map[fsm.RoleName]fsm.Role{
 		"scout":        {Agent: agent, Brief: "You find which repositories the task touches. You do not change them."},
 		"analyst":      {Agent: agent, Brief: "You turn a request into a briefing the next stage can act on."},
@@ -405,10 +438,14 @@ func ShippedRoles() map[fsm.RoleName]fsm.Role {
 		"implementer":  {Agent: agent, Brief: "You make the scenarios pass. You do not review your own work."},
 		"cleaner":      {Agent: agent, Brief: "You improve the code without changing what it does."},
 		"verifier":     {Agent: agent, Brief: "You check the delivery against the scenarios it promised."},
-		"qa":           {Agent: agent, Brief: "You look for what the tests do not cover. You report; you do not fix."},
-		"reviewer":     {Agent: agent, Brief: "You review. You report findings; you do not edit."},
-		"hardener":     {Agent: agent, Brief: "You look for what breaks under load, attack, or absence."},
-		"architect":    {Agent: agent, Brief: "You judge whether the shape still holds. You report; you do not edit."},
+		// The four review roles start without the tools they must not use. The
+		// brief says the same thing, and the brief is not what enforces it — a
+		// restriction that lives only in the prompt is the violation INV-core-7
+		// names (ADR-0041).
+		"qa":        {Agent: agent, Brief: "You look for what the tests do not cover. You report; you do not fix.", ToolsDeny: noWriting},
+		"reviewer":  {Agent: agent, Brief: "You review. You report findings; you do not edit.", ToolsDeny: noWriting},
+		"hardener":  {Agent: agent, Brief: "You look for what breaks under load, attack, or absence.", ToolsDeny: noWriting},
+		"architect": {Agent: agent, Brief: "You judge whether the shape still holds. You report; you do not edit.", ToolsDeny: noWriting},
 	}
 }
 

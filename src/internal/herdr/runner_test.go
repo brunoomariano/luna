@@ -219,7 +219,7 @@ func TestStartAgentWaitsForThePaneToReachItsPrompt(t *testing.T) {
 	)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
-	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1")
+	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
 	if err != nil {
 		t.Fatalf("a busy pane is a wait, not a failure: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestStartAgentDoesNotRetryARealRefusal(t *testing.T) {
 	server.reply("agent.start", `{"id":"1","error":{"code":"invalid_request","message":"unsupported interactive agent kind nope"}}`)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
-	_, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "nope", "luna-1")
+	_, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "nope", "luna-1", nil)
 
 	if err == nil {
 		t.Fatal("an unsupported kind must be reported")
@@ -264,7 +264,7 @@ func TestATaskReusesItsOwnAgent(t *testing.T) {
 	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[{"name":"other","pane_id":"w9:p9"},{"name":"luna-1","pane_id":"w1:p1"}]}}`)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
-	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1")
+	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
 	if err != nil {
 		t.Fatalf("a taken name means reuse, not failure: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestAnUnfindableAgentIsReported(t *testing.T) {
 	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[]}}`)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
-	_, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1")
+	_, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
 
 	if err == nil {
 		t.Fatal("a name held by nothing must be reported")

@@ -102,7 +102,7 @@ func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (W
 // pane must already be sitting at an interactive shell prompt, which the worktree
 // call just produced. herdr blocks until the agent is detected and ready, which
 // removes a race the node would otherwise have to handle itself.
-func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string) (string, error) {
+func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string, args []string) (string, error) {
 	var started struct {
 		Agent struct {
 			PaneID string `json:"pane_id"`
@@ -114,13 +114,21 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 	// live 0.8.0: the identical call fails and then succeeds seconds later with
 	// nothing else changed. Retrying briefly is the difference between a working
 	// run and a block on the first stage of every task.
+	params := map[string]any{
+		"name":       name,
+		"kind":       kind,
+		"pane_id":    ws.RootPane,
+		"timeout_ms": startTimeout.Milliseconds(),
+	}
+	if len(args) > 0 {
+		// herdr passes these through to the agent, which is how a denied
+		// capability reaches it (ADR-0042). The field is `args`: `agent_args`
+		// is accepted and silently ignored, which is the trap ADR-0036 names.
+		params["args"] = args
+	}
+
 	err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
-		return r.client.Call("agent.start", map[string]any{
-			"name":       name,
-			"kind":       kind,
-			"pane_id":    ws.RootPane,
-			"timeout_ms": startTimeout.Milliseconds(),
-		}, &started)
+		return r.client.Call("agent.start", params, &started)
 	}, paneBusy)
 
 	// The agent belongs to the task, not to the stage: the second stage finds the

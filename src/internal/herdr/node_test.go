@@ -24,14 +24,19 @@ type fakeHerdr struct {
 	prompted []string
 	ran      []string
 	started  string
+
+	// startArgs is what was passed through to the agent, which is how a denied
+	// capability reaches it (ADR-0042).
+	startArgs []string
 }
 
 func (f *fakeHerdr) OpenWorktree(context.Context, string, string) (Workspace, error) {
 	return Workspace{ID: "ws-1", RootPane: "pane-1", Path: "/tmp/wt"}, nil
 }
 
-func (f *fakeHerdr) StartAgent(_ context.Context, _ Workspace, kind, _ string) (string, error) {
+func (f *fakeHerdr) StartAgent(_ context.Context, _ Workspace, kind, _ string, args []string) (string, error) {
 	f.started = kind
+	f.startArgs = args
 	return "pane-1", nil
 }
 
@@ -355,11 +360,11 @@ func (f *failingRunner) OpenWorktree(ctx context.Context, id, branch string) (Wo
 	return f.fakeHerdr.OpenWorktree(ctx, id, branch)
 }
 
-func (f *failingRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string) (string, error) {
+func (f *failingRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string, args []string) (string, error) {
 	if f.failAt == "start" {
 		return "", f.err
 	}
-	return f.fakeHerdr.StartAgent(ctx, ws, kind, name)
+	return f.fakeHerdr.StartAgent(ctx, ws, kind, name, args)
 }
 
 func (f *failingRunner) Prompt(ctx context.Context, pane, text string) (AgentStatus, error) {

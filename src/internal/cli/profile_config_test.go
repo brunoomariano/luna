@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
@@ -523,5 +524,98 @@ func TestASectionWithNoNameIsRefused(t *testing.T) {
 		if _, err := LoadConfig(writeConfig(t, header+"\n")); err == nil {
 			t.Errorf("%s names nothing and must be refused", header)
 		}
+	}
+}
+
+// TestEveryReviewRoleShipsUnableToWrite is INV-core-7 as a test rather than a
+// description.
+//
+// The invariant names the failure directly: "a role whose restriction exists only
+// as text in the prompt". Every role that judges someone else's work has to start
+// without the tools to change it.
+func TestEveryReviewRoleShipsUnableToWrite(t *testing.T) {
+	roles := ShippedRoles()
+
+	for _, name := range []fsm.RoleName{"qa", "reviewer", "hardener", "architect"} {
+		role, ok := roles[name]
+		if !ok {
+			t.Errorf("%q is a review role and must ship", name)
+			continue
+		}
+		if !role.Gated() {
+			t.Errorf("%q reviews other people's work and must not be able to change it", name)
+			continue
+		}
+		// Both capabilities: a role that could still create a file has not been
+		// stopped from changing the work it is judging.
+		if !role.DeniesWriting() {
+			t.Errorf("%q must be denied both Edit and Write, got %v", name, role.ToolsDeny)
+		}
+	}
+}
+
+// TestTheRolesThatWriteAreNotGated covers the other side.
+//
+// Denying the implementer would stop the task rather than protect it — gating is
+// for the roles that judge, not for every role.
+func TestTheRolesThatWriteAreNotGated(t *testing.T) {
+	roles := ShippedRoles()
+
+	for _, name := range []fsm.RoleName{"implementer", "cleaner", "specifier"} {
+		if role := roles[name]; role.Gated() {
+			t.Errorf("%q produces work and must keep its tools, got %v", name, role.ToolsDeny)
+		}
+	}
+}
+
+// TestEveryGatedRoleShipsOnAHarnessThatCanGateIt guards the seam between the two
+// tables.
+//
+// A role denying tools on an agent Luna cannot gate stops the task. Shipping that
+// combination by default would mean every review stage fails on a fresh install.
+func TestEveryGatedRoleShipsOnAHarnessThatCanGateIt(t *testing.T) {
+	for name, role := range ShippedRoles() {
+		if !role.Gated() {
+			continue
+		}
+		if _, ok := herdr.HarnessFor(role.Agent); !ok {
+			t.Errorf("role %q denies tools on %q, which Luna cannot gate", name, role.Agent)
+		}
+	}
+}
+
+// TestAProjectCanDenyToolsOnItsOwnRole covers the configured path.
+func TestAProjectCanDenyToolsOnItsOwnRole(t *testing.T) {
+	cfg := load(t, `
+[role.auditor]
+agent      = "pi"
+tools_deny = ["Edit", "Write"]
+`)
+
+	role, ok := cfg.Role("auditor")
+	if !ok {
+		t.Fatal("want the configured role")
+	}
+	if !role.DeniesWriting() {
+		t.Errorf("want both capabilities denied, got %v", role.ToolsDeny)
+	}
+}
+
+// TestAnUnknownCapabilityIsRefused covers the direction a typo fails in.
+//
+// A misspelled capability would leave the role running with the tool it was
+// supposed to lose, and nothing saying so — which is the failure INV-core-7 cares
+// about most.
+func TestAnUnknownCapabilityIsRefused(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[role.auditor]\ntools_deny = [\"Edt\"]\n"))
+
+	if err == nil {
+		t.Fatal("a misspelled capability must stop the load")
+	}
+	if !strings.Contains(err.Error(), "Edt") {
+		t.Errorf("the error should name what was typed, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Edit") {
+		t.Errorf("the error should name what was expected, got %v", err)
 	}
 }
