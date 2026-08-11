@@ -389,3 +389,139 @@ func TestAnUnknownProfileKeyNamesTheAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// TestAProjectCanDefineARole covers what ADR-0040 makes configurable.
+func TestAProjectCanDefineARole(t *testing.T) {
+	cfg := load(t, `
+[role.reviewer]
+agent  = "codex"
+brief  = "You review. You do not write."
+skills = ["code-review", "security"]
+`)
+
+	role, ok := cfg.Role("reviewer")
+	if !ok {
+		t.Fatal("want the configured role")
+	}
+	if role.Agent != "codex" {
+		t.Errorf("want the configured agent, got %q", role.Agent)
+	}
+	if role.Brief != "You review. You do not write." {
+		t.Errorf("want the configured brief, got %q", role.Brief)
+	}
+	if len(role.Skills) != 2 {
+		t.Errorf("want both skills, got %v", role.Skills)
+	}
+}
+
+// TestNamingOneRoleKeepsTheOthers covers the difference from profiles.
+//
+// A config that names profiles replaces the whole set, because a project may want
+// `nightly` gone. Roles are the opposite: the flow names roles the config never
+// mentions, and deleting them would leave a stage with nothing to run.
+func TestNamingOneRoleKeepsTheOthers(t *testing.T) {
+	cfg := load(t, "[role.reviewer]\nagent = \"codex\"\n")
+
+	if role, _ := cfg.Role("reviewer"); role.Agent != "codex" {
+		t.Errorf("the named role is replaced, got %q", role.Agent)
+	}
+	if _, ok := cfg.Role("implementer"); !ok {
+		t.Error("naming one role must not delete the others")
+	}
+}
+
+// TestEveryRoleTheShippedFlowNamesResolves is the check that keeps the two in
+// step.
+//
+// A stage whose role resolves to nothing stops the task, so a role added to the
+// flow without a default is a task that dies on that stage.
+func TestEveryRoleTheShippedFlowNamesResolves(t *testing.T) {
+	cfg := Config{Roles: ShippedRoles()}
+
+	for _, stage := range fsm.DefaultFlow() {
+		if stage.Mechanical() {
+			continue
+		}
+		role, ok := cfg.Role(fsm.RoleName(stage.Role))
+		if !ok {
+			t.Errorf("stage %q names role %q, which ships with nothing", stage.ID, stage.Role)
+			continue
+		}
+		if role.Agent == "" {
+			t.Errorf("role %q ships without an agent to run it", stage.Role)
+		}
+	}
+}
+
+// TestAnUnknownRoleKeyIsRefused covers the strict parsing, for the same reason it
+// applies to profiles: a misspelled `agent` would leave the role resolving to
+// nothing and the stage stopping for a reason nobody could see.
+func TestAnUnknownRoleKeyIsRefused(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[role.reviewer]\nagnet = \"codex\"\n"))
+
+	if err == nil {
+		t.Fatal("an unknown key inside a role must be reported")
+	}
+	if !strings.Contains(err.Error(), "agnet") {
+		t.Errorf("the error should name what was typed, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "agent") {
+		t.Errorf("the error should name what was expected, got %v", err)
+	}
+}
+
+// TestAnUnknownSectionKindIsRefused covers the header now that two kinds exist.
+func TestAnUnknownSectionKindIsRefused(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[roles.reviewer]\nagent = \"codex\"\n"))
+
+	if err == nil {
+		t.Fatal("a mistyped section must be reported")
+	}
+	if !strings.Contains(err.Error(), "role.<name>") {
+		t.Errorf("the error should say what a section looks like, got %v", err)
+	}
+}
+
+// TestRolesAndProfilesCoexist covers a file that declares both.
+func TestRolesAndProfilesCoexist(t *testing.T) {
+	cfg := load(t, `
+editor = "hx"
+
+[profile.paranoid]
+waits = ["confirm"]
+
+[role.reviewer]
+agent = "codex"
+`)
+
+	if cfg.Editor != "hx" {
+		t.Errorf("want the root setting, got %q", cfg.Editor)
+	}
+	if _, ok := cfg.Profile("paranoid"); !ok {
+		t.Error("want the profile")
+	}
+	if role, _ := cfg.Role("reviewer"); role.Agent != "codex" {
+		t.Errorf("want the role, got %q", role.Agent)
+	}
+}
+
+// TestAMalformedRoleSkillListIsRefused covers the array inside a role section.
+func TestAMalformedRoleSkillListIsRefused(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[role.reviewer]\nskills = \"code-review\"\n"))
+
+	if err == nil {
+		t.Fatal("skills that are not a list must be reported")
+	}
+}
+
+// TestASectionWithNoNameIsRefused covers the header that opens nothing.
+//
+// `[profile]` and `[role]` name no thing to configure, and accepting them would
+// file every setting under an empty name.
+func TestASectionWithNoNameIsRefused(t *testing.T) {
+	for _, header := range []string{"[profile]", "[role]", "[]"} {
+		if _, err := LoadConfig(writeConfig(t, header+"\n")); err == nil {
+			t.Errorf("%s names nothing and must be refused", header)
+		}
+	}
+}

@@ -19,16 +19,19 @@ import (
 // TestRunOptionsDefaultToClaudeInTheCurrentRepo covers what an unflagged run means.
 //
 // The defaults are the whole command line someone types when they type nothing:
-// the usual agent, the checkout they are standing in, and a real run rather than a
-// rehearsal. Dry defaulting to true would be the dangerous one — a person would
-// watch a task "finish" having proven nothing.
-func TestRunOptionsDefaultToClaudeInTheCurrentRepo(t *testing.T) {
+// the checkout they are standing in, and a real run rather than a rehearsal. Dry
+// defaulting to true would be the dangerous one — a person would watch a task
+// "finish" having proven nothing.
+//
+// The agent defaults to empty on purpose: each stage's role decides which agent
+// runs it (ADR-0040), and a default here would silently override all of them.
+func TestRunOptionsDefaultToTheCurrentRepoAndTheRolesAgents(t *testing.T) {
 	opts, err := parseRunOptions(nil)
 	if err != nil {
 		t.Fatalf("no flags is a valid command line: %v", err)
 	}
-	if opts.Agent != "claude" {
-		t.Errorf("want claude by default, got %q", opts.Agent)
+	if opts.Agent != "" {
+		t.Errorf("an unstated agent leaves the roles to decide, got %q", opts.Agent)
 	}
 	if opts.Repo != "." {
 		t.Errorf("want the current checkout by default, got %q", opts.Repo)
@@ -577,8 +580,13 @@ func TestConductDialsHerdrForARealRun(t *testing.T) {
 	if !ok {
 		t.Fatalf("want the herdr node, got %T", conductor.Node)
 	}
-	if node.Agent != "codex" {
-		t.Errorf("want the configured agent kind, got %q", node.Agent)
+	// --agent overrides every role's agent, which is what makes a run reproducible
+	// against one harness while the roles are still being tuned (ADR-0040).
+	if node.Roles == nil {
+		t.Fatal("the node needs roles to resolve")
+	}
+	if role, ok := node.Roles("implementer"); !ok || role.Agent != "codex" {
+		t.Errorf("want the override applied to every role, got %+v (found=%v)", role, ok)
 	}
 	if node.Runner == nil {
 		t.Error("the node needs something to drive herdr with")

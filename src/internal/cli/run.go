@@ -65,7 +65,8 @@ func runTaskCommand(env Env, args []string) error {
 
 // runOptions is how this run is driven.
 type runOptions struct {
-	// Agent is the herdr agent kind to start (ADR-0031).
+	// Agent overrides every role's agent. Empty means each role decides, which is
+	// the ordinary case (ADR-0040).
 	Agent string
 
 	// Socket overrides where herdr listens; empty resolves the usual way.
@@ -82,7 +83,7 @@ type runOptions struct {
 
 // parseRunOptions reads the flags `luna run` accepts.
 func parseRunOptions(args []string) (runOptions, error) {
-	opts := runOptions{Agent: "claude", Repo: "."}
+	opts := runOptions{Repo: "."}
 
 	flags, err := parseFlags(args)
 	if err != nil {
@@ -127,7 +128,10 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 
 	conductor.Node = &herdr.Node{
 		Runner: herdr.NewRunner(client, opts.Repo, cfg.Budgets(profile).Idle),
-		Agent:  opts.Agent,
+		// The stage's role decides which agent runs it (ADR-0040). --agent
+		// overrides every role, which is what makes a run reproducible against one
+		// harness while the roles are still being tuned.
+		Roles: rolesFor(cfg, opts.Agent),
 		Prove: func(ws herdr.Workspace) herdr.Prover {
 			// The verification runs in the worktree herdr made, executed by Luna
 			// rather than through a pane (ADR-0035).
@@ -135,6 +139,22 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		},
 	}
 	return conductor, func() { _ = client.Close() }, nil
+}
+
+// rolesFor resolves roles from the config, optionally forcing one agent.
+//
+// The override exists for the same reason `--dry-run` does: pinning every stage
+// to one harness makes a run reproducible while the roles are still being tuned.
+// It changes which agent runs, never which role the stage names — so the flow and
+// the log stay honest about who was supposed to do what.
+func rolesFor(cfg Config, override string) func(fsm.RoleName) (fsm.Role, bool) {
+	return func(name fsm.RoleName) (fsm.Role, bool) {
+		role, ok := cfg.Role(name)
+		if ok && override != "" {
+			role.Agent = override
+		}
+		return role, ok
+	}
 }
 
 // dryNode delivers whatever the contract asks for, without running anything.

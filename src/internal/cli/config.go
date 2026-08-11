@@ -26,6 +26,27 @@ type Config struct {
 	// exists replaces it, which is what makes `turbo` adjustable rather than
 	// merely extendable (ADR-0017).
 	Profiles map[fsm.Profile]Policy
+
+	// Roles are what each role name resolves to: the agent that runs it, what it
+	// is told, and the skills it loads. A project that names none inherits the
+	// shipped set; naming one replaces just that one, because a flow names roles
+	// the config never mentions (ADR-0040).
+	Roles map[fsm.RoleName]fsm.Role
+}
+
+// sectionKind is which `[...]` block the parser is inside.
+type sectionKind int
+
+const (
+	sectionNone sectionKind = iota
+	sectionProfile
+	sectionRole
+)
+
+// sectionRef is the section currently open, and what it names.
+type sectionRef struct {
+	kind sectionKind
+	name string
 }
 
 // Policy is everything one profile decides: which gates stop the task, and how
@@ -133,7 +154,7 @@ func (c Config) ProfileNames() []string {
 func LoadConfig(path string) (Config, error) {
 	content, err := os.ReadFile(path) //nolint:gosec // the path comes from the CLI, not from input
 	if os.IsNotExist(err) {
-		return Config{Profiles: ShippedProfiles()}, nil
+		return Config{Profiles: ShippedProfiles(), Roles: ShippedRoles()}, nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
@@ -153,8 +174,11 @@ func LoadConfig(path string) (Config, error) {
 // line worth keeping; if the config ever takes a shape not listed above, that is
 // the point to replace this rather than extend it.
 func parseConfig(content, path string) (Config, error) {
-	cfg := Config{Profiles: map[fsm.Profile]Policy{}}
-	section := ""
+	cfg := Config{
+		Profiles: map[fsm.Profile]Policy{},
+		Roles:    map[fsm.RoleName]fsm.Role{},
+	}
+	var section sectionRef
 
 	for number, raw := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(stripComment(raw))
@@ -163,16 +187,12 @@ func parseConfig(content, path string) (Config, error) {
 		}
 		where := fmt.Sprintf("%s:%d", path, number+1)
 
-		if name, ok := sectionName(line); ok {
-			profile, err := profileSection(name, where)
+		if header, ok := sectionName(line); ok {
+			parsed, err := openSection(&cfg, header, where)
 			if err != nil {
 				return Config{}, err
 			}
-			section = profile
-			// An empty section still declares the profile: `[profile.yolo]` with no
-			// `waits` is a profile that stops at nothing, which is a thing someone
-			// may legitimately want to write.
-			cfg.Profiles[fsm.Profile(profile)] = Policy{Gates: map[fsm.GateKind]bool{}, Budgets: fsm.DefaultBudgets()}
+			section = parsed
 			continue
 		}
 
@@ -189,19 +209,86 @@ func parseConfig(content, path string) (Config, error) {
 	}
 
 	// A file that names no profiles still gets the shipped ones, so setting an
-	// editor does not silently cost someone their `--profile nightly`.
+	// editor does not silently cost someone their `--profile nightly`. Roles work
+	// the same way: declaring one role must not delete the other eleven, because a
+	// flow names roles the config never mentions.
 	if len(cfg.Profiles) == 0 {
 		cfg.Profiles = ShippedProfiles()
 	}
+	cfg.Roles = withShippedRoles(cfg.Roles)
 	return cfg, nil
 }
 
-// assign places one setting, in the root or inside a profile section.
-func assign(cfg *Config, section, key, value, where string) error {
-	if section == "" {
-		return assignRoot(cfg, key, value, where)
+// openSection declares what a `[...]` header opens.
+//
+// An empty section still declares the thing: `[profile.yolo]` with no `waits` is
+// a profile that stops at nothing, and `[role.scout]` with no agent is a role
+// someone is about to fill in. Both are legitimate to write, and refusing them
+// would make the file order-dependent.
+func openSection(cfg *Config, header, where string) (sectionRef, error) {
+	parsed, err := parseSection(header, where)
+	if err != nil {
+		return sectionRef{}, err
 	}
 
+	// Every kind is named rather than relying on a default: when a third section
+	// is added, this is the place that has to decide about it instead of silently
+	// declaring nothing.
+	switch parsed.kind {
+	case sectionNone:
+		return sectionRef{}, fmt.Errorf("%s: section [%s] names nothing", where, header)
+	case sectionProfile:
+		cfg.Profiles[fsm.Profile(parsed.name)] = Policy{
+			Gates:   map[fsm.GateKind]bool{},
+			Budgets: fsm.DefaultBudgets(),
+		}
+	case sectionRole:
+		cfg.Roles[fsm.RoleName(parsed.name)] = fsm.Role{}
+	}
+	return parsed, nil
+}
+
+// assign places one setting, in the root or inside a section.
+func assign(cfg *Config, section sectionRef, key, value, where string) error {
+	switch section.kind {
+	case sectionProfile:
+		return assignProfile(cfg, section.name, key, value, where)
+	case sectionRole:
+		return assignRole(cfg, section.name, key, value, where)
+	default:
+		return assignRoot(cfg, key, value, where)
+	}
+}
+
+// assignRole places one setting inside a `[role.<name>]` section.
+func assignRole(cfg *Config, name, key, value, where string) error {
+	role := cfg.Roles[fsm.RoleName(name)]
+
+	switch key {
+	case "agent":
+		role.Agent = strings.Trim(value, `"`)
+	case "brief":
+		role.Brief = strings.Trim(value, `"`)
+	case "skills":
+		skills, err := parseStringArray(value, where)
+		if err != nil {
+			return err
+		}
+		role.Skills = skills
+	default:
+		// An unknown key is an error rather than a warning, for the same reason it
+		// is in a profile: a misspelled `agent` would leave the role resolving to
+		// nothing and the stage running with whatever the fallback is.
+		return fmt.Errorf("%s: unknown setting %q in [role.%s] (expected agent, brief, skills)",
+			where, key, name)
+	}
+
+	cfg.Roles[fsm.RoleName(name)] = role
+	return nil
+}
+
+// assignProfile places one setting inside a `[profile.<name>]` section.
+func assignProfile(cfg *Config, section, key, value, where string) error {
 	policy := cfg.Profiles[fsm.Profile(section)]
 
 	switch key {
@@ -273,19 +360,78 @@ func sectionName(line string) (string, bool) {
 	return strings.TrimSpace(line[1 : len(line)-1]), true
 }
 
-// profileSection validates a section header and returns the profile it names.
+// parseSection reads a section header into the kind it opens and the thing it
+// names.
 //
-// Only `[profile.<name>]` exists. Refusing anything else keeps a mistyped header
-// from quietly swallowing every setting under it.
-func profileSection(name, where string) (string, error) {
-	prefix, profile, found := strings.Cut(name, ".")
-	if !found || prefix != "profile" || profile == "" {
-		return "", fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>])", where, name)
+// Two kinds exist and an unknown one is refused: a mistyped header would
+// otherwise swallow every setting under it, and the file would parse into
+// something nobody wrote.
+func parseSection(header, where string) (sectionRef, error) {
+	kind, name, found := strings.Cut(header, ".")
+	if !found || name == "" {
+		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>] or [role.<name>])", where, header)
 	}
-	if strings.Contains(profile, ".") {
-		return "", fmt.Errorf("%s: profile names hold no dots, got %q", where, profile)
+	if strings.Contains(name, ".") {
+		return sectionRef{}, fmt.Errorf("%s: names hold no dots, got %q", where, name)
 	}
-	return strings.Trim(profile, `"`), nil
+
+	name = strings.Trim(name, `"`)
+	switch kind {
+	case "profile":
+		return sectionRef{kind: sectionProfile, name: name}, nil
+	case "role":
+		return sectionRef{kind: sectionRole, name: name}, nil
+	default:
+		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>] or [role.<name>])", where, header)
+	}
+}
+
+// ShippedRoles is what each role in the default flow resolves to before a project
+// says otherwise.
+//
+// Every role names the same agent kind today, which is honest: the independence
+// that matters is the one INV-core-7 asks for — the reviewer not HAVING Edit —
+// and that needs tool denial rather than a different vendor. Naming different
+// agents here is available to a project and is not pretended to be a substitute.
+func ShippedRoles() map[fsm.RoleName]fsm.Role {
+	const agent = "claude"
+
+	return map[fsm.RoleName]fsm.Role{
+		"scout":        {Agent: agent, Brief: "You find which repositories the task touches. You do not change them."},
+		"analyst":      {Agent: agent, Brief: "You turn a request into a briefing the next stage can act on."},
+		"investigator": {Agent: agent, Brief: "You find the root cause and the smallest case that shows it."},
+		"gherkin":      {Agent: agent, Brief: "You write the scenarios and the approach. You do not implement them."},
+		"specifier":    {Agent: agent, Brief: "You write the contract: what is required and what is produced."},
+		"implementer":  {Agent: agent, Brief: "You make the scenarios pass. You do not review your own work."},
+		"cleaner":      {Agent: agent, Brief: "You improve the code without changing what it does."},
+		"verifier":     {Agent: agent, Brief: "You check the delivery against the scenarios it promised."},
+		"qa":           {Agent: agent, Brief: "You look for what the tests do not cover. You report; you do not fix."},
+		"reviewer":     {Agent: agent, Brief: "You review. You report findings; you do not edit."},
+		"hardener":     {Agent: agent, Brief: "You look for what breaks under load, attack, or absence."},
+		"architect":    {Agent: agent, Brief: "You judge whether the shape still holds. You report; you do not edit."},
+	}
+}
+
+// withShippedRoles fills in the roles a project did not name.
+//
+// Naming one role must not delete the other eleven: a flow names roles the config
+// never mentions, and a stage whose role vanished would have nothing to run.
+func withShippedRoles(configured map[fsm.RoleName]fsm.Role) map[fsm.RoleName]fsm.Role {
+	roles := ShippedRoles()
+	for name, role := range configured {
+		roles[name] = role
+	}
+	return roles
+}
+
+// Role resolves a name to what runs it.
+//
+// A name with no role is reported rather than defaulted: a stage whose role does
+// not resolve must stop loudly, because the alternative is running it with some
+// fallback agent and calling the result the reviewer's opinion.
+func (c Config) Role(name fsm.RoleName) (fsm.Role, bool) {
+	role, ok := c.Roles[name]
+	return role, ok
 }
 
 // parseStringArray reads `["a", "b"]` on a single line.

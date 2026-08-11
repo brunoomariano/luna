@@ -201,7 +201,7 @@ func parseTaskOptions(cfg Config, args []string) (fsm.TaskKind, fsm.Profile, err
 // loads a config, and a missing file already yields the shipped set.
 func (e Env) profiles() Config {
 	if len(e.Config.Profiles) == 0 {
-		return Config{Editor: e.Config.Editor, Profiles: ShippedProfiles()}
+		return Config{Editor: e.Config.Editor, Profiles: ShippedProfiles(), Roles: ShippedRoles()}
 	}
 	return e.Config
 }

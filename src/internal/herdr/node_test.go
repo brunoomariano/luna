@@ -92,10 +92,19 @@ func (b brokenProver) Prove(context.Context, fsm.Verifier, int) (fsm.Evidence, e
 	return fsm.Evidence{}, b.err
 }
 
+// fixedRole resolves every role to one agent, which is what a test that is not
+// about role resolution wants.
+func fixedRole(agent string) func(fsm.RoleName) (fsm.Role, bool) {
+	return func(fsm.RoleName) (fsm.Role, bool) {
+		return fsm.Role{Agent: agent}, true
+	}
+}
+
 // stageWithTests is a stage that produces one artifact proven by a real command.
 func stageWithTests() fsm.Stage {
 	return fsm.Stage{
 		ID:       "build",
+		Role:     "implementer",
 		Produces: []fsm.Artifact{"tests_green"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"tests_green": fsm.Command{Run: "go test ./...", Scope: fsm.ScopeFull},
@@ -107,7 +116,7 @@ func stageWithTests() fsm.Stage {
 // agent settled, the real tool ran, and the verdict is what closes the stage.
 func TestAPassingCommandBecomesPassingEvidence(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -138,7 +147,7 @@ func TestIdleDoesNotCloseAStageOnItsOwn(t *testing.T) {
 		settlesAt: StatusIdle,
 		exits:     map[string]int{"go test ./...": 1},
 	}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -167,7 +176,7 @@ func TestDoneIsNotAVerdictEither(t *testing.T) {
 		settlesAt: StatusDone,
 		exits:     map[string]int{"go test ./...": 2},
 	}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -185,7 +194,7 @@ func TestDoneIsNotAVerdictEither(t *testing.T) {
 // read as success. It settles, so the check runs — and the check decides.
 func TestUnknownStillVerifies(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusUnknown}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 	if err != nil {
@@ -207,7 +216,7 @@ func TestUnknownStillVerifies(t *testing.T) {
 // escalate — and the message names the pane so someone can find it.
 func TestABlockedAgentIsReportedForEscalation(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusBlocked}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -226,8 +235,8 @@ func TestABlockedAgentIsReportedForEscalation(t *testing.T) {
 // ADR-0032: prose has no exit code, and saying so beats inventing a check.
 func TestAnArtifactWithNoVerifierClosesOnExistence(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
-	stage := fsm.Stage{ID: "scenarios", Produces: []fsm.Artifact{"scenarios"}}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
+	stage := fsm.Stage{ID: "scenarios", Role: "gherkin", Produces: []fsm.Artifact{"scenarios"}}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stage)
 	if err != nil {
@@ -256,7 +265,7 @@ func TestAnUnrunnableCheckIsNotAFailedCheck(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{
 		Runner: herdr,
-		Agent:  "claude",
+		Roles:  fixedRole("claude"),
 		Prove:  func(Workspace) Prover { return brokenProver{err: broken} },
 	}
 
@@ -272,9 +281,10 @@ func TestAnUnrunnableCheckIsNotAFailedCheck(t *testing.T) {
 // quietly skipped it.
 func TestTheHumanReportIsVerifiedToo(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 	stage := fsm.Stage{
 		ID:               "verify",
+		Role:             "verifier",
 		Produces:         []fsm.Artifact{"ci_green"},
 		ProducesForHuman: []fsm.Artifact{"dod_checked"},
 	}
@@ -295,7 +305,7 @@ func TestTheHumanReportIsVerifiedToo(t *testing.T) {
 // herdr's allowlist, and the node passes through what it was given.
 func TestTheAgentKindIsWhatWasConfigured(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "codex"}
+	node := &Node{Runner: herdr, Roles: fixedRole("codex")}
 
 	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -368,7 +378,7 @@ func TestAnInfrastructureFailureStopsBeforeVerifying(t *testing.T) {
 	for _, step := range []string{"worktree", "start", "prompt"} {
 		broken := errors.New("herdr said no at " + step)
 		runner := &failingRunner{failAt: step, err: broken}
-		node := &Node{Runner: runner, Agent: "claude", Prove: runner.proving()}
+		node := &Node{Runner: runner, Roles: fixedRole("claude"), Prove: runner.proving()}
 
 		_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -389,7 +399,7 @@ func TestTheConfiguredPromptIsWhatTheAgentGets(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{
 		Runner: herdr,
-		Agent:  "claude",
+		Roles:  fixedRole("claude"),
 		Prove:  herdr.proving(),
 		Prompt: func(state fsm.TaskState, stage fsm.Stage) string {
 			return "custom brief for " + string(stage.ID)
@@ -409,7 +419,7 @@ func TestTheConfiguredPromptIsWhatTheAgentGets(t *testing.T) {
 // to be useful enough that a missing configuration is not a silent mystery.
 func TestTheDefaultPromptNamesTheTaskAndStage(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Agent: "claude", Prove: herdr.proving()}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
 
 	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-9", ""), stageWithTests()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -435,7 +445,7 @@ func TestAStallIsTranslatedIntoLunasVocabulary(t *testing.T) {
 		failAt: "prompt",
 		err:    &apiError{Code: "agent_prompt_stalled", Message: "no observed state change within 5000 ms"},
 	}
-	node := &Node{Runner: runner, Agent: "claude", Prove: runner.proving()}
+	node := &Node{Runner: runner, Roles: fixedRole("claude"), Prove: runner.proving()}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -476,7 +486,7 @@ func TestAnOrdinaryFailureIsNotAStall(t *testing.T) {
 		failAt: "prompt",
 		err:    &apiError{Code: "target_busy", Message: "the pane is occupied"},
 	}
-	node := &Node{Runner: runner, Agent: "claude", Prove: runner.proving()}
+	node := &Node{Runner: runner, Roles: fixedRole("claude"), Prove: runner.proving()}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
 
@@ -495,13 +505,13 @@ func TestAnOrdinaryFailureIsNotAStall(t *testing.T) {
 // `invalid_agent_name` on an id with capitals in it.
 func TestTheAgentNameFitsHerdrsRules(t *testing.T) {
 	cases := map[string]string{
-		"LUNA-1":                             "luna-luna-1",
-		"feature/big-thing":                  "luna-feature-big-thing",
+		"LUNA-1":                             "luna-luna-1-build",
+		"feature/big-thing":                  "luna-feature-big-thing-build",
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "luna-aaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}
 
 	for taskID, want := range cases {
-		got := agentName(taskID)
+		got := agentName(taskID, "build")
 		if got != want {
 			t.Errorf("%q → %q, want %q", taskID, got, want)
 		}
@@ -519,7 +529,199 @@ func TestTheAgentNameFitsHerdrsRules(t *testing.T) {
 	}
 
 	// Different tasks must not collide: the name is what herdr keys on.
-	if agentName("LUNA-1") == agentName("LUNA-2") {
+	if agentName("LUNA-1", "build") == agentName("LUNA-2", "build") {
 		t.Error("two tasks must not share an agent name")
+	}
+
+	// Nor may two stages of the same task. An agent is born for its stage now
+	// (ADR-0039), and herdr refusing a repeated name is what makes a collision
+	// loud instead of silently reusing the previous stage's agent.
+	if agentName("LUNA-1", "build") == agentName("LUNA-1", "code-review") {
+		t.Error("two stages must not share an agent name")
+	}
+}
+
+// TestAMechanicalStageStartsNoAgent is the point of ADR-0040.
+//
+// `setup` is a worktree and `commit` is git. Starting a model to run those pays
+// tokens for something deterministic and lets it fail creatively at something
+// Luna would get right.
+func TestAMechanicalStageStartsNoAgent(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
+	stage := fsm.Stage{ID: "setup", Produces: []fsm.Artifact{"worktree"}}
+
+	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if herdr.started != "" {
+		t.Errorf("no agent should have started, got %q", herdr.started)
+	}
+	if len(herdr.prompted) != 0 {
+		t.Errorf("nothing should have been prompted, got %v", herdr.prompted)
+	}
+	// It still has to prove what it produced: mechanical is not exempt from the
+	// contract, it is exempt from the agent.
+	if !result.Evidence["worktree"].Delivered() {
+		t.Error("a mechanical stage still owes evidence")
+	}
+}
+
+// TestAMechanicalStageStillRunsItsVerifier covers the half that is easy to lose.
+//
+// `verify` running the pipeline is mechanical and is exactly where the evidence
+// has to come from a real exit code (INV-core-4).
+func TestAMechanicalStageStillRunsItsVerifier(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
+	stage := fsm.Stage{
+		ID:       "commit",
+		Produces: []fsm.Artifact{"commit_sha"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"commit_sha": fsm.Command{Run: "git rev-parse HEAD", Scope: fsm.ScopeFull},
+		},
+	}
+
+	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stage); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(herdr.ran) != 1 || herdr.ran[0] != "git rev-parse HEAD" {
+		t.Errorf("the verifier must run even with no agent, got %v", herdr.ran)
+	}
+}
+
+// TestTheStagesRoleDecidesTheAgent covers the lookup that replaced the fixed
+// field.
+func TestTheStagesRoleDecidesTheAgent(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: herdr,
+		Prove:  herdr.proving(),
+		Roles: func(name fsm.RoleName) (fsm.Role, bool) {
+			if name != "implementer" {
+				t.Errorf("want the stage's own role, got %q", name)
+			}
+			return fsm.Role{Agent: "codex"}, true
+		},
+	}
+
+	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if herdr.started != "codex" {
+		t.Errorf("want the role's agent, got %q", herdr.started)
+	}
+}
+
+// TestARoleThatResolvesToNothingStopsTheStage covers the refusal.
+//
+// Running the stage on some fallback agent would produce work attributed to a
+// role nobody defined — worse than stopping, because it looks like it worked.
+func TestARoleThatResolvesToNothingStopsTheStage(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+
+	for name, node := range map[string]*Node{
+		"no roles configured": {Runner: herdr, Prove: herdr.proving()},
+		"role not found": {
+			Runner: herdr,
+			Prove:  herdr.proving(),
+			Roles:  func(fsm.RoleName) (fsm.Role, bool) { return fsm.Role{}, false },
+		},
+		"role names no agent": {
+			Runner: herdr,
+			Prove:  herdr.proving(),
+			Roles:  func(fsm.RoleName) (fsm.Role, bool) { return fsm.Role{}, true },
+		},
+	} {
+		_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+
+		if err == nil {
+			t.Errorf("%s: the stage must stop rather than guess", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "implementer") {
+			t.Errorf("%s: the error should name the role, got %v", name, err)
+		}
+	}
+}
+
+// TestThePromptCarriesTheHandoff covers what an agent is told when it starts.
+//
+// The agent is new: it did not run the previous stage. What crosses is the
+// contract and pointers, generated by Luna — never a prose summary of what
+// happened, which would degrade at every hop (INV-core-6).
+func TestThePromptCarriesTheHandoff(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: herdr,
+		Prove:  herdr.proving(),
+		Roles: func(fsm.RoleName) (fsm.Role, bool) {
+			return fsm.Role{Agent: "claude", Brief: "You make the scenarios pass."}, true
+		},
+	}
+
+	stage := fsm.Stage{
+		ID:       "build",
+		Role:     "implementer",
+		Requires: []fsm.Artifact{"scenarios"},
+		Produces: []fsm.Artifact{"tests_green"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"tests_green": fsm.Command{Run: "go test ./...", Scope: fsm.ScopeFull},
+		},
+	}
+
+	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
+	state.Evidence["scenarios"] = fsm.Exists(1)
+
+	if _, err := node.Run(context.Background(), state, stage); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(herdr.prompted) != 1 {
+		t.Fatalf("want one prompt, got %v", herdr.prompted)
+	}
+
+	prompt := herdr.prompted[0]
+	for _, want := range []string{
+		"You make the scenarios pass.", // the role's brief
+		"LUNA-1",                       // which task
+		"build",                        // which stage
+		"scenarios",                    // what it may read
+		"tests_green",                  // what it owes
+		"go test ./...",                // what it will be held to
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt must carry %q, got:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestThePromptNamesTheScopeOfWhatItInherits covers the detail that keeps an
+// agent from over-trusting its input.
+//
+// Reading an artifact proven by a full suite and one that merely exists are
+// different situations, and the scope is what says which (ADR-0032).
+func TestThePromptNamesTheScopeOfWhatItInherits(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
+
+	stage := fsm.Stage{
+		ID:       "qa",
+		Role:     "qa",
+		Requires: []fsm.Artifact{"ci_green"},
+		Produces: []fsm.Artifact{"code"},
+	}
+
+	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
+	state.Evidence["ci_green"] = fsm.Evidence{Scope: fsm.ScopeFull, Verdict: fsm.VerdictPassed}
+
+	if _, err := node.Run(context.Background(), state, stage); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(herdr.prompted[0], string(fsm.ScopeFull)) {
+		t.Errorf("the prompt should say how its input was proven, got:\n%s", herdr.prompted[0])
 	}
 }

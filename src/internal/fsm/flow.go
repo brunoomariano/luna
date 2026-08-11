@@ -16,6 +16,7 @@ func DefaultFlow() []Stage {
 	return []Stage{
 		{
 			ID:       "discovery",
+			Role:     "scout",
 			Requires: []Artifact{TaskID},
 			Produces: []Artifact{"repos"},
 		},
@@ -32,6 +33,7 @@ func DefaultFlow() []Stage {
 		},
 		{
 			ID:               "diagnose",
+			Role:             "investigator",
 			Requires:         []Artifact{"briefing"},
 			Produces:         []Artifact{"root_cause"},
 			ProducesForHuman: []Artifact{"min_case"},
@@ -45,6 +47,7 @@ func DefaultFlow() []Stage {
 		},
 		{
 			ID:       "spec",
+			Role:     "specifier",
 			Requires: []Artifact{"approach"},
 			Produces: []Artifact{"contract"},
 			When:     isFeatureOrBug,
@@ -67,7 +70,11 @@ func DefaultFlow() []Stage {
 			Produces: []Artifact{"code"},
 		},
 		{
-			ID:               "verify",
+			ID: "verify",
+			// The pipeline is a command and the checklist is a judgement, so this
+			// stage has both — and a role, because the artifact that needs one
+			// decides (ADR-0040).
+			Role:             "verifier",
 			Requires:         []Artifact{"code", "scenarios"},
 			Produces:         []Artifact{"ci_green"},
 			ProducesForHuman: []Artifact{"dod_checked"},

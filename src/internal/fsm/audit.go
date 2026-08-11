@@ -55,3 +55,39 @@ func missingFrom(required []Artifact, available map[Artifact]bool) []Artifact {
 	}
 	return missing
 }
+
+// RoleGap is a stage that produces something only judgement can produce and names
+// no role to produce it.
+type RoleGap struct {
+	Stage    StageID
+	Produces []Artifact
+}
+
+// AuditRoles reports every stage that needs an agent and has none.
+//
+// It exists because the mechanical path is silent by nature. A stage with no role
+// runs without an agent (ADR-0040), which is right for `setup` and `commit` and
+// catastrophic for one that was supposed to write a contract: it would run,
+// deliver nothing, and look like it worked.
+//
+// Like AuditContract, this catches a flow broken on paper — before any agent is
+// called, and before a task spends an afternoon producing nothing.
+func AuditRoles(flow []Stage) []RoleGap {
+	var gaps []RoleGap
+
+	for _, stage := range flow {
+		if !stage.NeedsRole() {
+			continue
+		}
+
+		var needing []Artifact
+		for _, artifact := range append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...) {
+			if judgement[artifact] {
+				needing = append(needing, artifact)
+			}
+		}
+		gaps = append(gaps, RoleGap{Stage: stage.ID, Produces: needing})
+	}
+
+	return gaps
+}

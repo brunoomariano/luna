@@ -96,8 +96,10 @@ type Workspace struct {
 type Node struct {
 	Runner Runner
 
-	// Agent is the herdr agent kind to start, from herdr's allowlist (ADR-0031).
-	Agent string
+	// Roles resolves a stage's role to what runs it. A stage whose role does not
+	// resolve stops loudly rather than running under some fallback agent and
+	// having the result called that role's opinion (ADR-0040).
+	Roles func(fsm.RoleName) (fsm.Role, bool)
 
 	// Prompt builds what the agent is told for a stage. Injected rather than
 	// built here so the wording is configuration, not code.
@@ -120,9 +122,22 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 		return lead.Result{}, err
 	}
 
-	name := agentName(state.ID)
+	// A mechanical stage runs no agent at all: `setup` is a worktree, `commit` is
+	// git, and paying a model to run those buys nothing and can lose something
+	// (ADR-0040). The verification still runs, so the stage still has to prove
+	// what it produced.
+	if stage.Mechanical() {
+		return n.verify(ctx, ws, state, stage)
+	}
 
-	pane, err := n.Runner.StartAgent(ctx, ws, n.Agent, name)
+	role, err := n.role(stage)
+	if err != nil {
+		return lead.Result{}, err
+	}
+
+	name := agentName(state.ID, stage.ID)
+
+	pane, err := n.Runner.StartAgent(ctx, ws, role.Agent, name)
 	if err != nil {
 		return lead.Result{}, err
 	}
@@ -130,7 +145,7 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 	// The prompt targets the agent by name rather than by pane. herdr resolves a
 	// pane id to a terminal, not to "the named agent running in it", and refuses
 	// with `agent_not_ready` — the name is the handle it wants.
-	status, err := n.Runner.Prompt(ctx, name, n.prompt(state, stage))
+	status, err := n.Runner.Prompt(ctx, name, n.prompt(state, stage, role))
 	if err != nil {
 		// A stall is translated here so nothing above this package has to read
 		// herdr's error codes. What crosses the boundary is Luna's vocabulary
@@ -193,14 +208,92 @@ func (existenceOnly) Prove(_ context.Context, v fsm.Verifier, seq int) (fsm.Evid
 	return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
 }
 
-func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage) string {
+func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	if n.Prompt != nil {
 		return n.Prompt(state, stage)
 	}
-	return fmt.Sprintf("Task %s, stage %s.", state.ID, stage.ID)
+	return brief(state, stage, role)
 }
 
-// agentName is what herdr calls this task's agent.
+// brief is what an agent is told when it starts.
+//
+// It has to carry the handoff, because the agent is new: it did not run the
+// previous stage and has no memory of it. What crosses is pointers and the
+// contract — never a prose summary of what happened, which would degrade at every
+// hop (INV-core-6).
+//
+// The body is generated here rather than written by an agent, which is what stops
+// one stage from injecting narrative into the next.
+func brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
+	var b strings.Builder
+
+	if role.Brief != "" {
+		b.WriteString(role.Brief)
+		b.WriteString("\n\n")
+	}
+
+	fmt.Fprintf(&b, "Task %s (%s), stage %s.\n", state.ID, state.Context.Kind, stage.ID)
+	fmt.Fprintf(&b, "Worktree: the directory you are in.\n")
+
+	if len(stage.Requires) > 0 {
+		fmt.Fprintf(&b, "\nAlready produced, and yours to read:\n")
+		for _, artifact := range stage.Requires {
+			fmt.Fprintf(&b, "  - %s%s\n", artifact, provenance(state, artifact))
+		}
+	}
+
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	if len(owed) > 0 {
+		fmt.Fprintf(&b, "\nThis stage does not close until it delivers:\n")
+		for _, artifact := range owed {
+			fmt.Fprintf(&b, "  - %s%s\n", artifact, howProven(stage, artifact))
+		}
+	}
+
+	return b.String()
+}
+
+// provenance names how a required artifact was proven, so the agent knows whether
+// it is reading something checked or something merely delivered (ADR-0032).
+func provenance(state fsm.TaskState, artifact fsm.Artifact) string {
+	evidence, ok := state.Evidence[artifact]
+	if !ok || !evidence.Delivered() {
+		return ""
+	}
+	return fmt.Sprintf(" (%s)", evidence.Scope)
+}
+
+// howProven names the check an artifact will face, so the agent knows what it is
+// being held to before it starts rather than after it fails.
+func howProven(stage fsm.Stage, artifact fsm.Artifact) string {
+	verifier := fsm.VerifierFor(stage, artifact)
+	if _, runs := verifier.(fsm.Command); !runs {
+		return ""
+	}
+	return fmt.Sprintf(" — checked by `%s`", verifier.Describe())
+}
+
+// role resolves the stage's role, refusing rather than falling back.
+//
+// A role that does not resolve is a configuration mistake, and running the stage
+// on some default agent would produce work attributed to a role nobody defined —
+// which is worse than stopping, because it looks like it worked.
+func (n *Node) role(stage fsm.Stage) (fsm.Role, error) {
+	if n.Roles == nil {
+		return fsm.Role{}, fmt.Errorf("stage %q names role %q and no roles are configured", stage.ID, stage.Role)
+	}
+
+	role, ok := n.Roles(fsm.RoleName(stage.Role))
+	if !ok {
+		return fsm.Role{}, fmt.Errorf("stage %q names role %q, which resolves to nothing", stage.ID, stage.Role)
+	}
+	if role.Agent == "" {
+		return fsm.Role{}, fmt.Errorf("role %q names no agent to run it", stage.Role)
+	}
+	return role, nil
+}
+
+// agentName is what herdr calls this stage's agent.
 //
 // Two constraints, both learned from a live herdr rather than from documentation.
 // Names are unique across the whole server, not per workspace, so a second task
@@ -208,11 +301,11 @@ func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage) string {
 // that impossible and keeps the pane findable by anyone who knows the task id.
 // And the name must match `[a-z][a-z0-9_-]{0,31}`, so a task id like "LUNA-1" has
 // to be folded rather than passed through.
-func agentName(taskID string) string {
+func agentName(taskID string, stage fsm.StageID) string {
 	var b strings.Builder
 	b.WriteString("luna-")
 
-	for _, r := range strings.ToLower(taskID) {
+	for _, r := range strings.ToLower(taskID + "-" + string(stage)) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
 			b.WriteRune(r)

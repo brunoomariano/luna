@@ -66,3 +66,27 @@ editor = "vim"
 # A profile of your own — this one reviews the contract but trusts the rest.
 # [profile.spec-only]
 # waits = ["review-artifact", "confirm-write"]
+
+# ── roles ────────────────────────────────────────────────────────────────────
+#
+# A role is what a stage asks for: `build` wants an implementer, `code-review`
+# wants a reviewer. Each one resolves to the agent that runs it, what it is told
+# about being that role, and the skills it loads.
+#
+# Twelve roles ship with the default flow — scout, analyst, investigator,
+# gherkin, specifier, implementer, cleaner, verifier, qa, reviewer, hardener,
+# architect. Naming one here replaces just that one; the rest keep their
+# defaults, because the flow names roles this file never mentions.
+#
+# `agent` is one of the kinds herdr supports. Putting a different model behind
+# `reviewer` than behind `implementer` is the cheapest independence available —
+# and it is not the separation INV-core-7 asks for, which needs the reviewer to
+# not HAVE Edit and Write rather than to be told not to use them.
+
+# [role.reviewer]
+# agent  = "codex"
+# brief  = "You review. You report findings; you do not edit."
+# skills = ["code-review"]
+
+# [role.implementer]
+# agent = "claude"
