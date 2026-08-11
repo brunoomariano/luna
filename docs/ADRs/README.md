@@ -50,6 +50,7 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0040](0040-a-role-resolves-to-an-agent-and-mechanical-stages-have-none.md) — A role resolves to an agent, and mechanical stages have none — `Accepted`
 - [ADR-0039](0039-a-role-per-stage-and-what-carries-context-between-them.md) — A role per stage, and what carries context between them — `Accepted`
 - [ADR-0038](0038-the-conversation-translates-it-never-decides.md) — The conversation translates; it never decides — `Accepted`
 - [ADR-0037](0037-worktrees-are-siblings-named-by-the-house-convention.md) — Worktrees are siblings, named by the house convention — `Accepted`
