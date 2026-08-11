@@ -50,6 +50,7 @@ Do not record an ADR for trivial choices, or ones reversible at no cost.
 <!-- List the ADRs here as they are created, from newest to oldest. -->
 <!-- - [ADR-0001](0001-title.md) — <title> — `Accepted` -->
 
+- [ADR-0044](0044-the-proxy-is-a-plugin-pane-and-the-interpreter-is-a-harness.md) — The proxy is a plugin pane, and the interpreter is a harness — `Accepted`
 - [ADR-0043](0043-luna-chat-is-the-layer-and-the-pane-is-a-proxy.md) — `luna chat` is the layer, and the pane is a proxy to it — `Accepted`
 - [ADR-0042](0042-four-harnesses-four-ways-to-deny-a-tool.md) — Four harnesses, four ways to deny a tool — `Accepted`
 - [ADR-0041](0041-the-reviewer-cannot-write-and-its-report-is-the-handoff.md) — The reviewer cannot write, and its report is the handoff — `Accepted`
