@@ -316,16 +316,12 @@ func TestAProfileCanTightenItsWatchdog(t *testing.T) {
 	cfg := load(t, `
 [profile.nightly]
 waits = []
-idle_budget = "10m"
-tool_budget = "45m"
+turn_budget = "45m"
 `)
 
 	budgets := cfg.Budgets("nightly")
-	if budgets.Idle != 10*time.Minute {
-		t.Errorf("want the configured idle budget, got %s", budgets.Idle)
-	}
-	if budgets.Tool != 45*time.Minute {
-		t.Errorf("want the configured tool budget, got %s", budgets.Tool)
+	if budgets.Turn != 45*time.Minute {
+		t.Errorf("want the configured turn budget, got %s", budgets.Turn)
 	}
 
 	// The gates in the same section still work: the two settings coexist rather
@@ -360,15 +356,15 @@ func TestADeletedProfileStillHasAWatchdog(t *testing.T) {
 
 // TestAMalformedBudgetIsRefused covers the fail-loud rule.
 //
-// Someone who wrote `idle_budget = "30"` believes they tightened the watchdog. A
+// Someone who wrote `turn_budget = "30"` believes they tightened the watchdog. A
 // silent fallback would leave them believing it.
 func TestAMalformedBudgetIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.p]\nidle_budget = \"30\"\n"))
+	_, err := LoadConfig(writeConfig(t, "[profile.p]\nturn_budget = \"30\"\n"))
 
 	if err == nil {
 		t.Fatal("a budget that is not a duration must be reported")
 	}
-	if !strings.Contains(err.Error(), "idle_budget") {
+	if !strings.Contains(err.Error(), "turn_budget") {
 		t.Errorf("the error should name the setting, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "30m") {
@@ -384,7 +380,7 @@ func TestAnUnknownProfileKeyNamesTheAlternatives(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unknown key must be reported")
 	}
-	for _, want := range []string{"waits", "idle_budget", "tool_budget"} {
+	for _, want := range []string{"waits", "turn_budget"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error should list %q, got %v", want, err)
 		}
@@ -617,5 +613,24 @@ func TestAnUnknownCapabilityIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Edit") {
 		t.Errorf("the error should name what was expected, got %v", err)
+	}
+}
+
+// TestTheOldBudgetNamesAreRefusedWithTheirReason covers the rename of ADR-0051.
+//
+// Neither name behaved as it said: Luna cannot tell a tool in flight from an agent
+// thinking, so the idle window was bounding whole turns and the tool one was read
+// and discarded. Quietly mapping them onto the new name would carry that wrong
+// mental model forward, which is why they are refused and told why.
+func TestTheOldBudgetNamesAreRefusedWithTheirReason(t *testing.T) {
+	for _, old := range []string{"idle_budget", "tool_budget"} {
+		_, err := LoadConfig(writeConfig(t, "[profile.p]\n"+old+" = \"30m\"\n"))
+		if err == nil {
+			t.Errorf("%s no longer exists and must be refused", old)
+			continue
+		}
+		if !strings.Contains(err.Error(), "turn_budget") {
+			t.Errorf("%s: the refusal must name what to use instead, got %v", old, err)
+		}
 	}
 }

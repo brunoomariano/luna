@@ -6,38 +6,25 @@ import (
 	"time"
 )
 
-// TestTheToolBudgetIsTheLargerWindow is the distinction the two budgets exist for.
+// TestTheTurnBudgetIsTwoHours pins the shipped default to the case that applies.
 //
-// Silence while a tool runs is a build; silence with nothing running is an agent
-// that stopped. One window would either kill legitimate work or catch nothing
-// (ADR-0034).
-func TestTheToolBudgetIsTheLargerWindow(t *testing.T) {
-	b := DefaultBudgets()
-
-	if b.For(true) <= b.For(false) {
-		t.Errorf("a tool in flight gets more room, got tool=%s idle=%s", b.For(true), b.For(false))
-	}
-	if b.For(false) != 30*time.Minute {
-		t.Errorf("want the shipped idle budget, got %s", b.For(false))
-	}
-	if b.For(true) != 2*time.Hour {
-		t.Errorf("want the shipped tool budget, got %s", b.For(true))
+// A turn may contain a build, and thirty minutes — the old idle value — was a
+// wrong answer no configuration could fix, because the field that would have fixed
+// it was read and discarded (ADR-0051).
+func TestTheTurnBudgetIsTwoHours(t *testing.T) {
+	if got := DefaultBudgets().Turn; got != 2*time.Hour {
+		t.Errorf("a turn may contain a build; want 2h, got %s", got)
 	}
 }
 
-// TestAnUnstatedBudgetFallsBackToTheDefault covers the profile that names one and
-// not the other, and the one written before budgets existed.
-//
-// Both are ordinary, not errors: a profile keeps working when the feature grows
-// under it.
 func TestAnUnstatedBudgetFallsBackToTheDefault(t *testing.T) {
-	partial := Budgets{Idle: 5 * time.Minute}.Resolve()
+	stated := Budgets{Turn: 5 * time.Minute}.Resolve()
 
-	if partial.Idle != 5*time.Minute {
-		t.Errorf("a stated budget is honoured, got %s", partial.Idle)
+	if stated.Turn != 5*time.Minute {
+		t.Errorf("a stated budget is honoured, got %s", stated.Turn)
 	}
-	if partial.Tool != DefaultBudgets().Tool {
-		t.Errorf("an unstated one falls back, got %s", partial.Tool)
+	if unstated := (Budgets{}).Resolve(); unstated.Turn != DefaultBudgets().Turn {
+		t.Errorf("an unstated one falls back, got %s", unstated.Turn)
 	}
 
 	// A profile from before the feature existed behaves exactly as the defaults.
@@ -51,7 +38,7 @@ func TestAnUnstatedBudgetFallsBackToTheDefault(t *testing.T) {
 // A budget of zero or less would mean "call it stuck immediately", which is never
 // what someone meant to write.
 func TestANegativeBudgetIsNotABudget(t *testing.T) {
-	resolved := Budgets{Idle: -time.Second, Tool: 0}.Resolve()
+	resolved := Budgets{Turn: -time.Second}.Resolve()
 
 	if resolved != DefaultBudgets() {
 		t.Errorf("a non-positive budget falls back rather than firing at once, got %+v", resolved)

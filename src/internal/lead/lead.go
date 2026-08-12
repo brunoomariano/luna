@@ -25,6 +25,18 @@ import (
 // talking stops in silence (ADR-0019).
 var ErrStalled = errors.New("the task stopped making progress")
 
+// ErrInfrastructure is returned when the machinery around the task broke rather
+// than the work in it — herdr went away, a socket died, a worktree vanished.
+//
+// It is kept apart from an ordinary failure because the retry budget is for a
+// stage that failed, and infrastructure says nothing about the stage (ADR-0011,
+// ADR-0033). Retrying it would also be retrying the wrong thing: a herdr that is
+// not running will not be running on the second attempt either.
+//
+// The node layer wraps whatever its own transport reported, so the lead learns the
+// distinction without importing the transport (ADR-0030).
+var ErrInfrastructure = errors.New("the machinery around the task broke")
+
 // Node runs one stage and reports what came back.
 //
 // This is the boundary between the engine and the world. The implementation
@@ -81,27 +93,19 @@ type GatePolicy interface {
 	Waits(profile fsm.Profile, gate fsm.GateKind) bool
 }
 
-// Watchdog reports whether a task has stopped making progress.
-//
-// Separate from Node because the question is different: a node that returns an
-// error failed, and a node that returns nothing at all may simply be slow. Only
-// something outside the call can tell those apart (ADR-0019).
-type Watchdog interface {
-	// Stalled is consulted after each transition. Returning true turns the task
-	// into the same decision path as a failure — the model chooses what to do.
-	Stalled(state fsm.TaskState) bool
-}
-
 // Lead conducts one task. One per task, never shared: the parallelism is between
 // tasks, not inside them (ADR-0003).
+// There is no watchdog field, and the absence is deliberate. ADR-0019 imagined one
+// polling the state between transitions; ADR-0034 replaced that with delegation,
+// and delegation is what shipped — herdr bounds the wait and a stall arrives as
+// ErrStalled from Node.Run, which the loop below already handles. A second
+// interface asking a replayed TaskState whether it looks stuck could only answer
+// from a clock the state does not carry, which is why nothing but a test fake ever
+// implemented it (ADR-0051).
 type Lead struct {
 	Store *store.Store
 	Node  Node
 	Judge Judge
-
-	// Watchdog is optional. Without one, a node that hangs hangs the lead — which
-	// is the honest behaviour until wave 5 gives it something to measure.
-	Watchdog Watchdog
 
 	// Gates is optional. Without one the lead records no gate decision, and the
 	// replay falls back to the shipped policy — the same behaviour as a log
@@ -163,10 +167,6 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 
 	stage := stageIn(flow, state.Stage)
 
-	if l.Watchdog != nil && l.Watchdog.Stalled(state) {
-		return l.stall(taskID, fmt.Sprintf("%s at stage %q", ErrStalled, state.Stage))
-	}
-
 	result, err := l.Node.Run(ctx, state, stage)
 	if err != nil {
 		// A stall is a decision, not a judgement call: the node observed that the
@@ -175,6 +175,12 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		// is for a stage that failed, and a stall says nothing about the stage.
 		if errors.Is(err, ErrStalled) {
 			return l.stall(taskID, err.Error())
+		}
+		// Infrastructure blocks without consulting anyone and without spending the
+		// budget: there is no judgement to make about a herdr that went away, and
+		// the budget belongs to the stage (ADR-0033).
+		if errors.Is(err, ErrInfrastructure) {
+			return l.record(taskID, fsm.Block{Reason: err.Error()})
 		}
 		return l.handleFailure(ctx, taskID, state, err.Error())
 	}

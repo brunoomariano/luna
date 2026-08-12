@@ -330,22 +330,26 @@ func assignProfile(cfg *Config, section, key, value, where string) error {
 			return err
 		}
 		policy.Gates = gates
-	case "idle_budget", "tool_budget":
+	case "turn_budget":
 		budget, err := fsm.ParseBudget(strings.Trim(value, `"`))
 		if err != nil {
 			return fmt.Errorf("%s: %s in [profile.%s]: %w", where, key, section, err)
 		}
-		if key == "idle_budget" {
-			policy.Budgets.Idle = budget
-		} else {
-			policy.Budgets.Tool = budget
-		}
+		policy.Budgets.Turn = budget
+	case "idle_budget", "tool_budget":
+		// Refused rather than mapped onto the new name. The two never behaved as
+		// their names said — Luna cannot tell a tool in flight from an agent
+		// thinking, so the idle window was bounding whole turns and the tool one
+		// was read and discarded (ADR-0051). Quietly accepting either would carry
+		// the wrong mental model forward.
+		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — one budget bounds a whole "+
+			"turn now, tool time included, so use turn_budget (ADR-0051)", where, key, section)
 	default:
 		// An unknown key is an error rather than a warning, for the same reason a
 		// misspelled gate kind is: the profile would parse, apply, and wait for
 		// nothing, and nobody would learn why until an unattended run wrote
 		// something it should have asked about.
-		return fmt.Errorf("%s: unknown setting %q in [profile.%s] (expected waits, idle_budget, tool_budget)",
+		return fmt.Errorf("%s: unknown setting %q in [profile.%s] (expected waits, turn_budget)",
 			where, key, section)
 	}
 

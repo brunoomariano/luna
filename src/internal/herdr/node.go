@@ -120,6 +120,19 @@ type Node struct {
 // passing verification comes back with failing evidence, and the reducer turns
 // that into a block — this layer never decides a transition.
 func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
+	result, err := n.conduct(ctx, state, stage)
+	// herdr going away is the machinery breaking, not the stage failing. Marking it
+	// here rather than at each return keeps the lead from importing this package to
+	// tell the two apart (ADR-0030, ADR-0033).
+	if errors.Is(err, ErrGone) {
+		return result, fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
+	}
+	return result, err
+}
+
+// conduct is Run without the error classification, so the wrapper above has one
+// place to mark what came from the transport rather than from the stage.
+func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
 	ws, err := n.Runner.OpenWorktree(ctx, state.ID, branchFor(state.ID))
 	if err != nil {
 		return lead.Result{}, err

@@ -80,18 +80,14 @@ func (j *alwaysBlocks) OnFailure(context.Context, fsm.TaskState, string) Decisio
 // stallingNode reports the stall the node layer observes — what herdr answers as
 // `agent_prompt_stalled`. Named rather than inline because it stands in for a
 // real external condition.
+//
+// This is the only way a stall reaches the lead. There is no watchdog interface
+// beside it, because nothing in a replayed TaskState says "stuck" — the state
+// carries no clock, so only the node, which was there, can tell (ADR-0051).
 type stallingNode struct{}
 
 func (stallingNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, error) {
 	return Result{}, fmt.Errorf("%w: the agent did not react", ErrStalled)
-}
-
-// stalledWatchdog reports a task as stuck the moment it is asked.
-type stalledWatchdog struct{ asked int }
-
-func (w *stalledWatchdog) Stalled(fsm.TaskState) bool {
-	w.asked++
-	return true
 }
 
 func newStore(t *testing.T) *store.Store {
@@ -383,18 +379,14 @@ func TestAStalledTaskBlocksWithoutConsultingTheJudge(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
-	watchdog := &stalledWatchdog{}
 	judge := &alwaysBlocks{}
-	l := &Lead{Store: s, Node: &deliveringNode{}, Judge: judge, Watchdog: watchdog}
+	l := &Lead{Store: s, Node: stallingNode{}, Judge: judge}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if watchdog.asked == 0 {
-		t.Error("the watchdog must be consulted while a stage is running")
-	}
 	if judge.asked != 0 {
 		t.Errorf("a stall is decided in code, not by the model (got %d calls)", judge.asked)
 	}
@@ -415,7 +407,7 @@ func TestAStallDoesNotSpendTheRetryBudget(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
-	l := &Lead{Store: s, Node: &deliveringNode{}, Watchdog: &stalledWatchdog{}}
+	l := &Lead{Store: s, Node: stallingNode{}}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
 	if err != nil {
@@ -460,11 +452,9 @@ func TestAStalledNodeBlocksToo(t *testing.T) {
 	}
 }
 
-// TestWithoutAWatchdogNothingIsChecked covers the optional field.
-//
-// A lead with no watchdog runs exactly as before. That is the honest behaviour
-// until wave 5 provides something that can actually measure progress.
-func TestWithoutAWatchdogNothingIsChecked(t *testing.T) {
+// TestANodeThatAnswersIsNotStalled is the other side: a stall comes from the node
+// reporting one, so a node that answers normally is never treated as stuck.
+func TestANodeThatAnswersIsNotStalled(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
@@ -579,4 +569,92 @@ func TestAStageOutsideTheFlowIsHandledGracefully(t *testing.T) {
 	if len(stage.Requires) != 0 || len(stage.Produces) != 0 {
 		t.Error("a stage that is not in the flow declares nothing")
 	}
+}
+
+// ── the judge that ships (ADR-0051) ──────────────────────────────────────────
+
+// TestTheBudgetJudgeSpendsTheBudgetBeforeBlocking is why it exists.
+//
+// Without a Judge the lead blocked on the first failure, so ADR-0011's retry
+// budget was never spent and the hybrid lead of ADR-0002 was, in production, a
+// purely deterministic one. That was a behaviour nobody chose — it was the zero
+// value of an optional field.
+func TestTheBudgetJudgeSpendsTheBudgetBeforeBlocking(t *testing.T) {
+	cases := []struct {
+		attempts int
+		max      int
+		want     Decision
+	}{
+		{attempts: 0, max: 2, want: DecideRetry},
+		{attempts: 1, max: 2, want: DecideRetry},
+		{attempts: 2, max: 2, want: DecideBlock},
+		{attempts: 3, max: 2, want: DecideBlock},
+		// A task with no budget at all blocks immediately, which is the honest
+		// reading of "no attempts allowed".
+		{attempts: 0, max: 0, want: DecideBlock},
+	}
+
+	for _, c := range cases {
+		state := fsm.TaskState{Retry: fsm.Retry{Attempts: c.attempts, Max: c.max}}
+		got := BudgetJudge{}.OnFailure(context.Background(), state, "the node broke")
+		if got != c.want {
+			t.Errorf("%d of %d attempts spent: want %q, got %q", c.attempts, c.max, c.want, got)
+		}
+	}
+}
+
+// TestTheJudgeReadsTheBudgetFromTheState keeps it from holding a second copy.
+//
+// A counter kept here would disagree with the log after the first restart, and
+// the log is the state (INV-core-2). This is the same reason the reducer owns
+// every other count.
+func TestTheJudgeReadsTheBudgetFromTheState(t *testing.T) {
+	generous := fsm.TaskState{Retry: fsm.Retry{Attempts: 4, Max: 9}}
+	if got := (BudgetJudge{}).OnFailure(context.Background(), generous, ""); got != DecideRetry {
+		t.Errorf("a task with a larger budget keeps retrying, got %q", got)
+	}
+}
+
+// TestInfrastructureBlocksWithoutSpendingTheBudget covers ADR-0033 through the
+// path that now exists.
+//
+// A herdr that went away is not a stage that failed, and it will not be back on
+// the second attempt. Wiring the judge is what made this visible: with the lead
+// blocking on everything, nothing distinguished the two.
+func TestInfrastructureBlocksWithoutSpendingTheBudget(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindChore)
+
+	judge := &countingJudge{}
+	l := &Lead{Store: s, Node: brokenMachineryNode{}, Judge: judge}
+
+	state, err := l.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if state.Status != fsm.StatusBlocked {
+		t.Errorf("want the task blocked, got %q", state.Status)
+	}
+	if state.Retry.Attempts != 0 {
+		t.Errorf("infrastructure costs no retries, got %d spent", state.Retry.Attempts)
+	}
+	if judge.asked != 0 {
+		t.Errorf("there is nothing to judge about a herdr that is gone, got %d calls", judge.asked)
+	}
+}
+
+// brokenMachineryNode stands in for the transport failing rather than the stage.
+type brokenMachineryNode struct{}
+
+func (brokenMachineryNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, error) {
+	return Result{}, fmt.Errorf("%w: herdr is not reachable", ErrInfrastructure)
+}
+
+// countingJudge records whether it was consulted at all.
+type countingJudge struct{ asked int }
+
+func (j *countingJudge) OnFailure(context.Context, fsm.TaskState, string) Decision {
+	j.asked++
+	return DecideRetry
 }

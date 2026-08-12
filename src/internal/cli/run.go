@@ -114,7 +114,10 @@ func parseRunOptions(args []string) (runOptions, error) {
 // (ADR-0030).
 func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(), error) {
 	cfg := env.profiles()
-	conductor := &lead.Lead{Store: env.Store, Gates: cfg}
+	// The judge is what makes the retry budget real: without one the lead blocks on
+	// the first failure and ADR-0011's budget is never spent (ADR-0051). This one
+	// carries no model — it reads the budget the task already has.
+	conductor := &lead.Lead{Store: env.Store, Gates: cfg, Judge: lead.BudgetJudge{}}
 
 	if opts.Dry {
 		conductor.Node = dryNode{}
@@ -127,7 +130,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 	}
 
 	conductor.Node = &herdr.Node{
-		Runner: herdr.NewRunner(client, opts.Repo, cfg.Budgets(profile).Idle),
+		Runner: herdr.NewRunner(client, opts.Repo, cfg.Budgets(profile).Resolve().Turn),
 		// The stage's role decides which agent runs it (ADR-0040). --agent
 		// overrides every role, which is what makes a run reproducible against one
 		// harness while the roles are still being tuned.
@@ -203,10 +206,30 @@ func reportRun(env Env, id string, state fsm.TaskState) error {
 	case fsm.StatusBlocked:
 		fmt.Fprintf(env.Out, "%s is blocked: %s\n", id, state.Blocked)
 		fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", id)
+		notifyBlocked(env, id, state.Blocked)
 	default:
 		fmt.Fprintf(env.Out, "%s stopped at %s (%s)\n", id, state.Stage, state.Status)
 	}
 	return nil
+}
+
+// notifyBlocked tells a person a task stopped, which is what INV-core-8 means by
+// a block being *notified*.
+//
+// Printing to stdout is not notifying: the run that most needs it is the
+// unattended one, where nobody is reading the terminal. This is the third ending
+// the invariant names, and it was the one with nothing behind it.
+//
+// A notification that fails is reported and does not fail the run. The block is
+// the fact worth keeping; the banner is only how it was announced, and losing the
+// announcement must not lose the task.
+func notifyBlocked(env Env, id, reason string) {
+	if env.Notify == nil {
+		return
+	}
+	if err := env.Notify(context.Background(), id, reason); err != nil {
+		fmt.Fprintf(env.Err, "  (could not notify: %v)\n", err)
+	}
 }
 
 // unblockCommand clears a block so the task can be run again.

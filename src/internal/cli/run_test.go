@@ -537,22 +537,22 @@ func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
 func TestTheWatchdogBudgetComesFromTheTasksOwnProfile(t *testing.T) {
 	h := newHarness(t)
 	h.env.Config = Config{Profiles: map[fsm.Profile]Policy{
-		"tight": {Gates: map[fsm.GateKind]bool{}, Budgets: fsm.Budgets{Idle: time.Minute}},
-		"loose": {Gates: map[fsm.GateKind]bool{}, Budgets: fsm.Budgets{Idle: time.Hour}},
+		"tight": {Gates: map[fsm.GateKind]bool{}, Budgets: fsm.Budgets{Turn: time.Minute}},
+		"loose": {Gates: map[fsm.GateKind]bool{}, Budgets: fsm.Budgets{Turn: time.Hour}},
 	}}
 
 	// The two profiles differ only in their budgets, so whichever the run picks up
 	// is observable.
-	if got := h.env.profiles().Budgets("tight").Idle; got != time.Minute {
+	if got := h.env.profiles().Budgets("tight").Turn; got != time.Minute {
 		t.Fatalf("the config must carry the profile's own budget, got %s", got)
 	}
-	if got := h.env.profiles().Budgets("loose").Idle; got != time.Hour {
+	if got := h.env.profiles().Budgets("loose").Turn; got != time.Hour {
 		t.Fatalf("the config must carry the profile's own budget, got %s", got)
 	}
 
 	// A profile the config never defined still gets a net rather than none:
 	// deleting a profile must not turn its running tasks into ones that hang.
-	if got := h.env.profiles().Budgets("deleted").Idle; got != fsm.DefaultBudgets().Idle {
+	if got := h.env.profiles().Budgets("deleted").Resolve().Turn; got != fsm.DefaultBudgets().Turn {
 		t.Errorf("an undefined profile falls back to the shipped budget, got %s", got)
 	}
 }

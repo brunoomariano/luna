@@ -241,9 +241,17 @@ an exception swallowed between transitions; a node that stops progressing withou
 
 - a test that forces retry exhaustion and verifies that the final state is `blocked` **and**
   that the notification was emitted;
-- a test that simulates a node with no progress beyond the limit and verifies that the watchdog
-  turns it into a decision, not into an indefinite wait;
+- a test that a node reporting a stall becomes a **decision** rather than an indefinite
+  wait — and that it does not spend the retry budget, since a stall says nothing about the
+  stage;
 - no `running` path that ends without `blocked`, `awaiting_gate` or `done`.
+
+**On the missing third.** An agent that is busy and achieving nothing is not covered: what
+exists bounds a turn, and a task circling without converging never exceeds it. `Loop.NoProgress`
+is the counter for that and nothing feeds it, because the loops it counts do not run yet
+([PRD node-0002](../PRDs/node/node-0002-no-progress-detection-and-the-shape-of-timeouts.md)).
+That is a gap in coverage rather than in this invariant — the failure would still end in a
+block once a budget runs out, just far later than it should.
 
 ---
 

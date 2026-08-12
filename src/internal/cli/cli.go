@@ -8,6 +8,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -45,6 +46,11 @@ type Env struct {
 	// injected rather than called directly so a test does not need $EDITOR — and
 	// so that a headless run can fail loudly instead of hanging on a terminal.
 	Edit func(current string) (string, error)
+
+	// Notify tells a person a task stopped. Injected for the same reason as Edit:
+	// a test must not draw a banner, and a machine with no notifier should print
+	// and carry on rather than fail the run (INV-core-8).
+	Notify func(ctx context.Context, taskID, reason string) error
 
 	// Interpret is what turns plain language into commands for `luna chat`.
 	// Injected because Luna hosts no model, and nil means the command says so

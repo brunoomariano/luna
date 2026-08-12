@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -169,5 +171,126 @@ func TestTaskNewStillTakesOrdinaryIds(t *testing.T) {
 		if err := h.run(t, "task", "new", id); err != nil {
 			t.Errorf("%q is an ordinary id: %v", id, err)
 		}
+	}
+}
+
+// TestABlockedTaskNotifies is the third ending INV-core-8 names.
+//
+// "Every task ends in a commit, a gate or a notified block" — and the third had
+// nothing behind it. Printing to stdout is not notifying: the run that most needs
+// it is the unattended one, where nobody is reading the terminal.
+func TestABlockedTaskNotifies(t *testing.T) {
+	h := newHarness(t)
+
+	var gotTask, gotReason string
+	h.env.Notify = func(_ context.Context, taskID, reason string) error {
+		gotTask, gotReason = taskID, reason
+		return nil
+	}
+
+	blocked := fsm.TaskState{Status: fsm.StatusBlocked, Blocked: "the node broke"}
+	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
+		t.Fatalf("reporting: %v", err)
+	}
+
+	if gotTask != "LUNA-1" {
+		t.Errorf("the notification must name the task, got %q", gotTask)
+	}
+	if gotReason != "the node broke" {
+		t.Errorf("the notification must carry the reason, got %q", gotReason)
+	}
+}
+
+// TestOnlyABlockNotifies keeps the banner for the ending that needs a person now.
+//
+// A gate is a planned pause and is discoverable with `luna gates`; a finished task
+// needs nobody. Notifying on either would train people to ignore the notification
+// that matters.
+func TestOnlyABlockNotifies(t *testing.T) {
+	for _, state := range []fsm.TaskState{
+		{Status: fsm.StatusDone},
+		{Status: fsm.StatusAwaitingGate, Gate: &fsm.PendingGate{Reason: "confirm"}},
+	} {
+		h := newHarness(t)
+		notified := false
+		h.env.Notify = func(context.Context, string, string) error {
+			notified = true
+			return nil
+		}
+
+		if err := reportRun(h.env, "LUNA-1", state); err != nil {
+			t.Fatalf("reporting: %v", err)
+		}
+		if notified {
+			t.Errorf("%q needs no banner", state.Status)
+		}
+	}
+}
+
+// TestAFailedNotificationDoesNotFailTheRun covers the direction that matters.
+//
+// The block is the fact worth keeping; the banner is only how it was announced.
+// Losing the announcement must not lose the task — and the person still has the
+// printed line and the log.
+func TestAFailedNotificationDoesNotFailTheRun(t *testing.T) {
+	h := newHarness(t)
+	h.env.Notify = func(context.Context, string, string) error {
+		return errors.New("no herdr running")
+	}
+
+	blocked := fsm.TaskState{Status: fsm.StatusBlocked, Blocked: "the node broke"}
+	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
+		t.Errorf("a notifier that failed must not fail the run: %v", err)
+	}
+	if !strings.Contains(h.out.String(), "blocked") {
+		t.Error("the block is still reported to the terminal")
+	}
+}
+
+// TestNoNotifierIsNotAnError covers the machine with nothing to notify through.
+func TestNoNotifierIsNotAnError(t *testing.T) {
+	h := newHarness(t)
+	h.env.Notify = nil
+
+	blocked := fsm.TaskState{Status: fsm.StatusBlocked, Blocked: "the node broke"}
+	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
+		t.Errorf("no notifier is a machine without one, not a failure: %v", err)
+	}
+}
+
+// TestRetryExhaustionBlocksAndNotifies is INV-core-8's first acceptance criterion,
+// and it was unreachable until this round.
+//
+// Both halves were missing: with no Judge the lead blocked on the first failure,
+// so the budget was never exhausted, and with no notifier there was nothing to
+// emit. The criterion asked for a test of behaviour that had no code path.
+func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
+	h := newHarness(t)
+
+	notified := 0
+	h.env.Notify = func(context.Context, string, string) error {
+		notified++
+		return nil
+	}
+
+	// A task whose budget is spent: the next failure is the one that escalates.
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+
+	blocked := fsm.TaskState{
+		Status:  fsm.StatusBlocked,
+		Blocked: `stage "build" failed 3 times: the node broke`,
+		Retry:   fsm.Retry{Attempts: 3, Max: 2},
+	}
+	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
+		t.Fatalf("reporting: %v", err)
+	}
+
+	if notified != 1 {
+		t.Errorf("an exhausted budget must notify exactly once, got %d", notified)
+	}
+	if !strings.Contains(h.out.String(), "blocked") {
+		t.Errorf("and say so in the terminal too, got %q", h.out.String())
 	}
 }
