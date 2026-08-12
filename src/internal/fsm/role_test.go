@@ -185,3 +185,30 @@ func TestTheCapabilityErrorNamesTheAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// TestDenyingAShellIsRefusedWithItsOwnReason covers the one capability Luna knows
+// about and will not deny.
+//
+// Someone writing `tools_deny = ["Bash"]` is asking for something coherent — it is
+// the obvious response to learning that a denied reviewer can still write. Telling
+// them it is a name Luna never heard of would answer a different question, and
+// they would try again with `bash` or `shell`.
+func TestDenyingAShellIsRefusedWithItsOwnReason(t *testing.T) {
+	_, err := ParseCapability(string(CapBash))
+	if err == nil {
+		t.Fatal("a shell cannot be denied, and saying so is the point")
+	}
+
+	// The message has to explain, not just refuse: this is the floor INV-core-7
+	// declares, and whoever meets it is entitled to know why it is there.
+	for _, want := range []string{"tests", "sandbox", "INV-core-7"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal should mention %q, got %q", want, err)
+		}
+	}
+
+	// And it must not read as a typo, which is what the generic message implies.
+	if strings.Contains(err.Error(), "unknown capability") {
+		t.Errorf("a shell is known and refused, not unknown: %q", err)
+	}
+}

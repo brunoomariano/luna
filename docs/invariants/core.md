@@ -66,12 +66,12 @@ delivered without verification; a transition that ignores a missing `requires`.
 
 ---
 
-## INV-core-4: delivery is verified by running the tool, out of the agent's reach
+## INV-core-4: delivery is verified by running the tool, over what was delivered
 
 **Rule.** What the stage produced is validated by executing the real tool: the test
 passes, the commit resolves to exactly one object and that object is a commit. The
-verification runs where the agent under verification **could not have influenced it** —
-neither the command, nor the environment that resolves it, nor the inputs it reads.
+verification runs over **what the stage delivered**, not over whatever was left in the
+working tree.
 
 **Why it holds.** A well-formed JSON can describe something that does not exist, and a CLI
 exiting with code zero does not mean the work turned out right. Checking format validates
@@ -79,21 +79,32 @@ the appearance of the delivery, not the delivery.
 
 The second half of the rule is why this is the invariant that carries the adversarial
 posture of [ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md).
-A check the agent could steer produces the one failure the flow cannot absorb: not a wrong
+A verdict about the wrong tree produces the one failure the flow cannot absorb: not a wrong
 artifact, which review rejects, but a **false record** — an assertion with the authority of
 a verified fact, written into a log that exists to be the audit. The evidence is the
 product, and a product that can be forged has no value.
 
+The dominant way that goes wrong is not sabotage. Measured across coding agents, it is
+incoherence: an uncommitted file, a local `.env`, a test edited and never committed, a stale
+build artifact — a tree that passes and a delivery that does not. Verifying the delivery
+rather than the tree closes that class outright, and it does so without confining anything.
+
 **How it is preserved.** The output check of each stage invokes the tool, and the tool runs
-outside the agent's reach. See
+against a checkout of what was committed rather than against the tree the agent worked in.
+See
 [ADR-0005](../ADRs/0005-validate-output-by-running-the-tool.md),
 [ADR-0035](../ADRs/0035-luna-runs-the-verification-itself.md) and
 [ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md).
 
 **What would violate it.** Accepting a `produces` because the field came filled in;
-validating by schema instead of execution; trusting the process exit code; **running the
-verification in a tree the agent wrote, with a command or a `PATH` it could have
-changed**.
+validating by schema instead of execution; trusting the process exit code; **reporting a
+verdict about a tree that is not the delivery it names**.
+
+**What this does not claim.** It is not containment. An agent that controls what it commits
+controls what is verified, and nothing here prevents that — confining the process belongs to
+a sandbox, which Luna delegates rather than builds
+([INV-core-7](#inv-core-7-whoever-writes-does-not-review)). The guarantee is narrower and
+worth having on its own: the verdict describes the delivery.
 
 **Deliberate floor.** Not every artifact is mechanically provable — a written report is
 delivered, not passed. Evidence carries the **scope** of what was proven
@@ -110,8 +121,8 @@ proved, and scope has no upgrade path
   choice, not the default that nobody noticed;
 - a test that the recorded evidence's scope satisfies the scope the contract asked for —
   an `existence` proof does not close a stage whose contract wanted a command;
-- a test that the verification does not observe changes an agent made after the delivery
-  it is verifying.
+- a test that a change left in the working tree and not delivered does **not** reach the
+  verification.
 
 ---
 
@@ -170,28 +181,42 @@ applied by the FSM **before** the agent starts — the `reviewer` is started wit
 
 **Where the floor is, stated plainly.** Tool gating removes the **named** tools. It does
 not remove the shell, so a role denied `Edit` and `Write` can still write through `Bash` on
-any harness whose denial is per-tool rather than per-capability. This is a known and
-accepted limit, not a defect to be discovered later: under
-[ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md) a
-reviewer that writes corrupts a **review**, which the flow catches — not a **record**,
-which it could not. Containment strong enough to be a guarantee belongs at the evidence
-boundary ([INV-core-4](#inv-core-4-delivery-is-verified-by-running-the-tool-out-of-the-agents-reach)),
-and that is where it is spent.
+any harness whose denial is per-tool rather than per-capability. Measured against the
+installed binaries: `claude` and `pi` leave the shell open, `codex -s read-only` does not,
+and `opencode` cannot be gated from the command line at all.
+
+**This is accepted, not deferred.** The reviewer's brief tells it not to edit, and on three
+of the four harnesses that instruction is the barrier. Under
+[ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md) that is
+the correct place to spend nothing: a reviewer that writes corrupts a **review**, which the
+next stage reads and a person can reject. It does not corrupt a **record**, which nothing
+downstream could catch.
+
+**Containment strong enough to be a guarantee is delegated, not built.** Luna spawns agents
+through a harness under a multiplexer; a sandbox that confines the process belongs to that
+layer, and reimplementing it here would be a worse copy of something the environment already
+provides. Where a sandbox is present the guarantee is the sandbox's; where it is absent, the
+floor above is what holds, and this invariant claims nothing more.
+
+What the engine does guarantee is the **separation**, which is structural and does not
+depend on any harness honouring a flag.
 
 **What would violate it.** The `implementer` running `code-review`; the `cleaner` running
 `harden`; a role whose separation exists **only** as text in the prompt, with no structural
 counterpart in the flow; a harness whose denial silently does nothing while Luna reports
 that it applied.
 
+Note what is **not** on that list: a reviewer that writes through a shell. That is the
+declared floor, not a violation — and the distinction matters, because an invariant that
+forbids what the code permits teaches people to stop believing invariants.
+
 **Acceptance criteria** — the code is not considered done without:
 
 - a test that a review action originating from a non-review stage is **refused** by the
   engine, so the separation does not depend on the agent honouring its brief;
-- a test that a role whose harness cannot express its declared denial fails **at load
-  time**, naming the harness and the capability — never starting an ungated agent and
-  reporting success;
-- degradation that is **explicit and reported**: where a denial cannot be enforced, the log
-  says so.
+- a test that a role naming a harness Luna cannot gate fails **before the agent starts**,
+  naming the harness and the capability — never starting an ungated agent and reporting
+  success.
 
 ---
 

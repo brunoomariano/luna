@@ -144,6 +144,17 @@ the agent starts. Its floor is stated in
 > `src/stock/roles/`, and `skills` parses but is read by nothing. Tracked in
 > [RFC-0001](../RFCs/rfc-0001-close-the-gap-between-decided-and-built.md).
 
+**Containment is delegated, not built.** Gating removes named tools; it does not remove the
+shell, so on most harnesses the reviewer's brief is what keeps it from editing. That floor is
+declared in [INV-core-7](../invariants/core.md) rather than hidden, and the reason it is
+acceptable is [ADR-0045](../ADRs/0045-the-agent-is-fallible-except-at-the-evidence-boundary.md):
+a reviewer that writes corrupts a review, which the next stage reads.
+
+Where a stronger guarantee is wanted, it comes from the environment — a sandbox that confines
+the process, which the agent is already spawned inside. Luna does not reimplement one: it
+would be a worse copy of something the layer below already does, and a guarantee that only
+holds when Luna happens to be the thing spawning is not a guarantee.
+
 One declaration, two consumers — the FSM reads the gating, the agent reads the brief.
 
 ## Failure

@@ -63,6 +63,20 @@ const (
 // KnownCapabilities are the ones a role may name.
 func KnownCapabilities() []Capability { return []Capability{CapEdit, CapWrite} }
 
+// CapBash is naming a shell, which Luna knows about and cannot deny.
+//
+// It is not in KnownCapabilities on purpose, and the omission is worth stating
+// rather than leaving as an accident of the list. Denying a shell would make a
+// reviewer useless — it could not run the tests it is reviewing — and denying
+// `Edit` and `Write` while leaving it open does not prevent writing, only make it
+// inconvenient. That floor is declared in INV-core-7.
+//
+// The reason it is named here at all: `tools_deny = ["Bash"]` is a reasonable
+// thing for someone to write, and the refusal should say why rather than
+// listing it among values that were never heard of. Containment over what a
+// process may touch is a sandbox's job, which Luna delegates.
+const CapBash Capability = "Bash"
+
 // ParseCapability turns a configured name into a capability, refusing what it
 // does not know.
 func ParseCapability(name string) (Capability, error) {
@@ -70,6 +84,15 @@ func ParseCapability(name string) (Capability, error) {
 		if Capability(name) == known {
 			return known, nil
 		}
+	}
+	// A shell is refused with its own reason. Someone writing `tools_deny =
+	// ["Bash"]` is asking for something coherent, and telling them it is a name
+	// Luna never heard of would be answering a different question.
+	if Capability(name) == CapBash {
+		return "", fmt.Errorf("%q cannot be denied: a role with no shell cannot run the tests "+
+			"it is reviewing, and denying Edit and Write with a shell open does not stop "+
+			"writing (see INV-core-7). Confining what a process may touch belongs to a sandbox",
+			name)
 	}
 	return "", fmt.Errorf("unknown capability %q (%s)", name, capabilityList())
 }

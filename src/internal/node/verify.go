@@ -29,13 +29,24 @@ import (
 // against it.
 const DefaultTimeout = 10 * time.Minute
 
-// Shell runs verification commands in a worktree.
+// Shell runs verification commands over what a stage delivered.
 type Shell struct {
-	// Dir is the worktree the commands run in.
+	// Dir is the task's worktree — where the agent worked, and the repository the
+	// delivery is checked out from.
 	Dir string
 
 	// Timeout bounds one command. Zero means DefaultTimeout.
 	Timeout time.Duration
+
+	// OverWorkingTree runs the commands in Dir itself rather than over a checkout
+	// of what was committed.
+	//
+	// It exists for the callers that have no delivery to check out — a test with a
+	// directory that is not a repository, mainly — and never for a real run: a
+	// verdict about the working tree is a verdict about uncommitted files, local
+	// configuration and stale build output, which is the incoherence INV-core-4
+	// exists to keep out of the log.
+	OverWorkingTree bool
 }
 
 // Prove runs a verifier and reports what it observed.
@@ -49,7 +60,22 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 		return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
 	}
 
-	exit, output, err := s.run(ctx, command.Run)
+	// The command runs over what was delivered, not over the tree the agent worked
+	// in (INV-core-4). A stage with nothing committed yet has no delivery to check
+	// out, and then the working tree is all there is to verify.
+	where := s.Dir
+	if !s.OverWorkingTree {
+		delivered, err := CheckoutDelivered(ctx, s.Dir)
+		if err != nil {
+			return fsm.Evidence{}, err
+		}
+		if delivered != nil {
+			defer delivered.Close()
+			where = delivered.Path
+		}
+	}
+
+	exit, output, err := s.runIn(ctx, where, command.Run)
 	if err != nil {
 		// The command could not be run at all — no shell, no such directory, the
 		// deadline hit. That is not a failing check, and recording it as one would
@@ -76,7 +102,7 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 // `sh -c` rather than an argv: a contract will want pipes and `&&`, and the
 // command comes from the project's own configuration rather than from a model
 // (ADR-0035).
-func (s Shell) run(ctx context.Context, command string) (int, string, error) {
+func (s Shell) runIn(ctx context.Context, dir, command string) (int, string, error) {
 	timeout := s.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -87,7 +113,7 @@ func (s Shell) run(ctx context.Context, command string) (int, string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command) //nolint:gosec // the command is project configuration
-	cmd.Dir = s.Dir
+	cmd.Dir = dir
 
 	out, err := cmd.CombinedOutput()
 
