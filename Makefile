@@ -58,11 +58,18 @@ mod: ## check go.mod/go.sum consistency and module integrity
 	@go mod verify
 
 # ── tests ────────────────────────────────────────────────────────────────────
+# Tests run through the pinned toolchain, not whatever is on the caller's PATH.
+# The registry tests drive the real `bd` and skip without it — so a run that does
+# not see it reports a green suite that never exercised the adapter against the
+# binary it adapts. That is the failure mode this project keeps finding: a test
+# that passes without proving anything.
+GO_TEST = mise exec -- go test
+
 test: ## run the tests
-	@go test ./src/...
+	@$(GO_TEST) ./src/...
 
 cover: ## tests with coverage, failing below COVER_MIN
-	@go test -coverprofile=coverage.out ./src/... >/dev/null
+	@$(GO_TEST) -coverprofile=coverage.out ./src/... >/dev/null
 	@go tool cover -func=coverage.out | tail -1
 	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
 	  gsub(/%/,"",$$3); \
