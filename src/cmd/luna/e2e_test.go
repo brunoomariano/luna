@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -159,4 +160,42 @@ func field(out, name string) string {
 	}
 	rest := out[i+len(name):]
 	return strings.TrimRight(strings.Fields(rest)[0], ")\n")
+}
+
+// TestE2ETwoProcessesCannotCorruptOneLog is ADR-0047 through two real processes.
+//
+// The in-package test uses two store handles, which is close but not the thing:
+// this is what actually happens when someone approves a gate in one terminal
+// while a run advances the same task in another. Before the conditional append,
+// the second write landed and the log stopped replaying for good.
+func TestE2ETwoProcessesCannotCorruptOneLog(t *testing.T) {
+	run := luna(t)
+
+	if out, err := run("task", "new", "LUNA-1", "--kind", "chore"); err != nil {
+		t.Fatalf("creating: %v\n%s", err, out)
+	}
+
+	// `task new` leaves the task at the first gate, so two approvals of the same
+	// gate is the collision: both processes read a task waiting, both decide to
+	// approve, and only one of them can be right.
+	var wg sync.WaitGroup
+	results := make([]error, 2)
+	outputs := make([]string, 2)
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			outputs[i], results[i] = run("run", "LUNA-1", "--dry-run")
+		}(i)
+	}
+	wg.Wait()
+
+	// Whatever the two processes did to each other, the log has to still be
+	// readable — that is the property the conditional append protects, and the one
+	// that had no recovery when it was lost.
+	shown, err := run("task", "show", "LUNA-1")
+	if err != nil {
+		t.Fatalf("the log must still replay after a collision: %v\n%s\n%s\n%s",
+			err, shown, outputs[0], outputs[1])
+	}
 }

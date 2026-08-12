@@ -131,3 +131,18 @@ func TestAnAbandonedTaskShowsWhy(t *testing.T) {
 		t.Errorf("the reason must survive in the log, got %q", out)
 	}
 }
+
+// TestFlowRefusesAnUnknownSubcommand keeps a typo from looking like a no-op.
+func TestFlowRefusesAnUnknownSubcommand(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "flow"); err == nil {
+		t.Error("flow with no subcommand must say what it takes")
+	}
+	if err := h.run(t, "flow", "frobnicate"); err == nil {
+		t.Error("an unknown flow subcommand must be refused")
+	}
+	if err := h.run(t, "flow", "check", "extra"); err == nil {
+		t.Error("flow check takes no arguments")
+	}
+}

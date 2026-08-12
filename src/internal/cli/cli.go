@@ -537,7 +537,11 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 	if _, err := fsm.Reduce(state, action); err != nil {
 		return err
 	}
-	if err := env.Store.AppendAction(id, action); err != nil {
+	// Conditional on the log still ending where it was read: a gate approved from
+	// one terminal while a run advances the same task in another is exactly the
+	// case ADR-0047 exists for, and it is the likeliest one — a gate frees the
+	// slot, so the approval arrives from somewhere else by design (ADR-0012).
+	if err := env.Store.AppendActionAt(id, state.Seq, action); err != nil {
 		return err
 	}
 

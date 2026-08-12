@@ -239,7 +239,11 @@ func unblockCommand(env Env, args []string) error {
 		return fmt.Errorf("%s is %s, not blocked", id, state.Status)
 	}
 
-	if err := env.Store.AppendAction(id, fsm.Unblock{}); err != nil {
+	// Conditional on the log not having moved since the status was read: whoever
+	// clears a block is rarely the process that set it, so the check that the task
+	// is still blocked has to hold at the moment of writing, not only at the moment
+	// of asking (ADR-0047).
+	if err := env.Store.AppendActionAt(id, state.Seq, fsm.Unblock{}); err != nil {
 		return err
 	}
 

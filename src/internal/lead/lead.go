@@ -260,7 +260,14 @@ func (l *Lead) record(taskID string, action fsm.Action) error {
 	if _, err := fsm.Reduce(state, action); err != nil {
 		return fmt.Errorf("refusing to record %T on %s: %w", action, taskID, err)
 	}
-	return l.Store.AppendAction(taskID, action)
+
+	// Conditional on the log still ending where it was read. The dry run above
+	// validated this action against `state`, and between reading it and writing
+	// there is a window: something landing in it means the decision was made
+	// against a task that has since moved, and appending anyway would put two
+	// decisions taken from one state into a log that cannot be repaired
+	// (ADR-0047).
+	return l.Store.AppendActionAt(taskID, state.Seq, action)
 }
 
 func stageIn(flow []fsm.Stage, id fsm.StageID) fsm.Stage {

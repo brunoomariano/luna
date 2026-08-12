@@ -2,8 +2,10 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -645,5 +647,189 @@ func TestAnUnreadableTaskDoesNotHideTheOthers(t *testing.T) {
 	}
 	if len(waiting) != 1 || waiting[0].TaskID != "LUNA-2" {
 		t.Errorf("want the healthy task still listed, got %+v", waiting)
+	}
+}
+
+// TestAConditionalAppendRefusesAStaleDecision is ADR-0047's reason for existing.
+//
+// Two writers replay the same state, both validate the same action against it,
+// and both try to write. Before this, the second one landed: the log ended up
+// holding two decisions taken from one state, and replaying it produced an
+// illegal transition forever — with no repair possible, because the store has no
+// UPDATE and no DELETE.
+func TestAConditionalAppendRefusesAStaleDecision(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+
+	// Both read the same state. This is the window: everything after here was
+	// decided against a log that says the task is at `seq`.
+	first, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	second := first
+
+	if err := s.AppendActionAt("LUNA-1", first.Seq, fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
+		t.Fatalf("the first writer must win: %v", err)
+	}
+
+	err = s.AppendActionAt("LUNA-1", second.Seq, fsm.Advance{Flow: fsm.DefaultFlow()})
+	if !errors.Is(err, ErrConcurrentWrite) {
+		t.Fatalf("want ErrConcurrentWrite for a decision made against a moved task, got %v", err)
+	}
+	// The message has to say where it was and where it is, or the reader cannot
+	// tell a stale decision from a corrupt one.
+	if !strings.Contains(err.Error(), "LUNA-1") {
+		t.Errorf("the refusal should name the task, got %q", err)
+	}
+
+	// The point of refusing: the log still replays.
+	if _, err := s.Replay("LUNA-1", fsm.DefaultFlow()); err != nil {
+		t.Errorf("refusing the second writer keeps the log readable, got %v", err)
+	}
+}
+
+// TestAnAppendAtTheCurrentPositionLands is the other half: the check must not
+// refuse the ordinary case, which is every append a single writer makes.
+func TestAnAppendAtTheCurrentPositionLands(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+
+	// A real sequence rather than the same action three times: each append reads
+	// the log, decides, and writes, which is the loop the lead runs.
+	for _, action := range []fsm.Action{
+		fsm.Advance{Flow: fsm.DefaultFlow()}, // into discovery, which gates
+		fsm.GateApprove{},
+		fsm.Abandon{Reason: "done proving the point"},
+	} {
+		state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+		if err != nil {
+			t.Fatalf("replaying: %v", err)
+		}
+		if err := s.AppendActionAt("LUNA-1", state.Seq, action); err != nil {
+			t.Fatalf("an append from a fresh read must land: %v", err)
+		}
+	}
+
+	events, err := s.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	if len(events) != 4 {
+		t.Errorf("want 4 events, got %d", len(events))
+	}
+}
+
+// TestTheReducersSequenceIsTheLogPosition is the invariant the conditional append
+// rests on.
+//
+// `state.Seq` counts transitions the reducer applied; `MAX(seq)` counts events in
+// the log. They agree because every applied action is one event — and if they ever
+// stopped agreeing, every conditional append would be refused against a position
+// nobody could reach, so this is worth pinning rather than assuming.
+func TestTheReducersSequenceIsTheLogPosition(t *testing.T) {
+	s := openTemp(t)
+
+	for _, action := range []fsm.Action{
+		fsm.TaskCreated{Kind: fsm.KindChore},
+		fsm.Advance{Flow: fsm.DefaultFlow()},
+		fsm.GateApprove{},
+	} {
+		if err := s.AppendAction("LUNA-1", action); err != nil {
+			t.Fatalf("appending %T: %v", action, err)
+		}
+	}
+
+	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	events, err := s.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+
+	if state.Seq != events[len(events)-1].Seq {
+		t.Errorf("the reducer is at %d and the log ends at %d — a conditional append "+
+			"would never match", state.Seq, events[len(events)-1].Seq)
+	}
+}
+
+// TestConcurrentAppendsAllLand covers the SQLITE_BUSY half of ADR-0047.
+//
+// Without WAL, a busy timeout and BEGIN IMMEDIATE, this lost 19 of 20 appends —
+// and each loss aborted a task without recording a block, which is the silent
+// failure INV-core-8 forbids.
+//
+// Two stores over one file rather than one store used twice, because that is the
+// real case: nothing stops a second `luna` from running against the same
+// `.luna/luna.db`, and a single store's connection pool already serialises its
+// own writers. Different tasks, because this is about contention on the file
+// rather than ordering within one log.
+func TestConcurrentAppendsAllLand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "luna.db")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("opening a second handle: %v", err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+
+	const writers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+
+	for i := range writers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s := first
+			if i%2 == 1 {
+				s = second
+			}
+			id := fmt.Sprintf("LUNA-%d", i)
+			if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("a concurrent append must wait for the lock, not fail: %v", err)
+	}
+
+	ids, err := first.Tasks()
+	if err != nil {
+		t.Fatalf("listing: %v", err)
+	}
+	if len(ids) != writers {
+		t.Errorf("want %d tasks, got %d", writers, len(ids))
+	}
+}
+
+// TestAConditionalAppendRefusesAnActionItCannotEncode keeps the conditional path
+// from being the one place an unknown action slips through.
+//
+// It has to fail before the transaction rather than inside it: an action the
+// codec cannot write is a programming error, and a half-open write transaction
+// waiting on a lock is a poor way to report one.
+func TestAConditionalAppendRefusesAnActionItCannotEncode(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendActionAt("LUNA-1", 0, nil); !errors.Is(err, ErrUnknownAction) {
+		t.Errorf("want ErrUnknownAction, got %v", err)
 	}
 }

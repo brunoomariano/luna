@@ -42,9 +42,23 @@ var ErrUnknownAction = errors.New("unknown action in the log")
 // this is ended with `luna task abandon`.
 var ErrFlowChanged = errors.New("the flow changed under an open task")
 
+// ErrConcurrentWrite is returned when an append was conditional on the log ending
+// somewhere and it does not (ADR-0047).
+//
+// It means two writers decided from the same state. Refusing the second is the
+// point: letting it land would put two decisions taken from one state into the
+// log, and replaying that yields ErrIllegalTransition forever with no way to
+// repair it, since the store has no UPDATE and no DELETE (INV-core-2).
+var ErrConcurrentWrite = errors.New("the task moved since it was read")
+
 // firstSeq is the sequence of a task's opening event. Sequences start at 1, and
 // TaskCreated is always first — which is what makes the log self-describing.
 const firstSeq = 1
+
+// unconditional is the `after` for an append by a caller that did not read the
+// log first — creating a task, or storing a handoff blob. Negative rather than
+// zero, because zero is a real position: the state of a task whose log is empty.
+const unconditional = -1
 
 // Event is one recorded transition. Seq orders it within its task; Blob points at
 // the snapshot taken at that moment, when there is one.
@@ -97,10 +111,31 @@ func Open(path string) (*Store, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite", path)
+	// The pragmas are not tuning, they are what makes a second luna process a
+	// wait instead of a failure. Without them a plain `sql.Open` gives rollback
+	// journalling and no busy handler, so two commands on one store lose almost
+	// every append to SQLITE_BUSY — measured at 19 of 20, and each loss aborted a
+	// task without recording a block.
+	//
+	//   - WAL lets a reader and a writer work at once, which is the ordinary case
+	//     here: `luna gates` replays every task while a run is mid-flight.
+	//   - busy_timeout makes a writer wait for the lock rather than fail on
+	//     contact. Five seconds is far longer than an append needs and far shorter
+	//     than a person waits before assuming something hung.
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("opening %s: %w", path, err)
 	}
+	// One connection per store. SQLite serialises writers anyway, and the pool was
+	// producing the contention it looks like it should relieve: two connections
+	// from the same process race for the write lock without either of them going
+	// through the busy handler, so the second gets SQLITE_BUSY immediately. With a
+	// single connection, database/sql queues them instead — waiting rather than
+	// failing is the whole point.
+	//
+	// Cross-process contention is what busy_timeout above is for.
+	db.SetMaxOpenConns(1)
+
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("creating the schema in %s: %w", path, err)
@@ -112,12 +147,29 @@ func Open(path string) (*Store, error) {
 // Close releases the database handle.
 func (s *Store) Close() error { return s.db.Close() }
 
+// beginImmediate starts a write transaction that waits for the lock instead of
+// failing on contact with another writer.
+//
+// database/sql has no option for it — `BeginTx` always issues a deferred BEGIN —
+// so the statement is sent by hand on the connection the transaction will use.
+func (s *Store) beginImmediate() (*sql.Tx, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec("ROLLBACK; BEGIN IMMEDIATE"); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
+}
+
 // Append records an event at the end of a task's log.
 //
 // There is no counterpart that replaces or removes one: the history is the audit
 // trail, and a store that could rewrite it would not be one (INV-core-2).
 func (s *Store) Append(taskID string, e Event) error {
-	_, err := s.appendTx(taskID, e, nil)
+	_, err := s.appendTx(taskID, e, nil, unconditional)
 	return err
 }
 
@@ -125,7 +177,7 @@ func (s *Store) Append(taskID string, e Event) error {
 // transaction. Either both land or neither does — a process dying between the two
 // would otherwise leave an orphan blob or a dangling reference (ADR-0025).
 func (s *Store) AppendWithBlob(taskID string, e Event, content []byte) (string, error) {
-	return s.appendTx(taskID, e, content)
+	return s.appendTx(taskID, e, content, unconditional)
 }
 
 // AppendAction records a reducer action, which is the form the log actually takes
@@ -138,8 +190,45 @@ func (s *Store) AppendAction(taskID string, action fsm.Action) error {
 	return s.Append(taskID, Event{Action: name, Payload: payload})
 }
 
-func (s *Store) appendTx(taskID string, e Event, content []byte) (string, error) {
-	tx, err := s.db.Begin()
+// AppendActionAt records an action only if the log is still where the caller last
+// read it (ADR-0047).
+//
+// `after` is the sequence the caller's state was replayed from — the append lands
+// at `after + 1` or not at all. Anyone who decided from a state and then writes
+// should use this rather than Append: between the replay and the append there is a
+// window, and something landing in it means the decision was made against a task
+// that has since moved.
+//
+// Without it the second writer wins silently and the log ends up holding two
+// decisions taken from the same state, which replays into ErrIllegalTransition
+// forever. There is no repair — the store has no UPDATE and no DELETE — so the
+// only way out of that is to abandon the task.
+func (s *Store) AppendActionAt(taskID string, after int, action fsm.Action) error {
+	name, payload, err := encodeAction(action)
+	if err != nil {
+		return err
+	}
+	_, err = s.appendTx(taskID, Event{Action: name, Payload: payload}, nil, after)
+	return err
+}
+
+// appendTx writes one event, and optionally the blob it points at, atomically.
+//
+// A non-negative `after` makes the append conditional on the log still ending
+// there. Callers that have not read the log pass unconditional.
+func (s *Store) appendTx(taskID string, e Event, content []byte, after int) (string, error) {
+	// BEGIN IMMEDIATE rather than a plain Begin, which is the difference between
+	// waiting and failing.
+	//
+	// A deferred transaction takes a read lock first and asks to upgrade it on the
+	// first write. SQLite refuses that upgrade immediately with SQLITE_BUSY when
+	// another writer holds the lock — the busy handler is deliberately skipped,
+	// because two readers both waiting to upgrade would deadlock. So busy_timeout
+	// does nothing for this path, which is why the pragma alone left most
+	// concurrent appends failing.
+	//
+	// IMMEDIATE takes the write lock up front, where the busy handler does apply.
+	tx, err := s.beginImmediate()
 	if err != nil {
 		return "", fmt.Errorf("starting a transaction: %w", err)
 	}
@@ -158,12 +247,22 @@ func (s *Store) appendTx(taskID string, e Event, content []byte) (string, error)
 		}
 	}
 
-	var next int
+	var last int
 	// COALESCE because MAX over no rows is NULL: a task's first event is seq 1.
-	row := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM events WHERE task_id = ?`, taskID)
-	if err := row.Scan(&next); err != nil {
+	row := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id = ?`, taskID)
+	if err := row.Scan(&last); err != nil {
 		return "", fmt.Errorf("finding the next sequence for %s: %w", taskID, err)
 	}
+
+	// The write lock is held from BEGIN IMMEDIATE, so what this read sees is what
+	// the insert will land on. Comparing here is the whole optimistic check: a
+	// caller decided from the log as it stood at `after`, and if it no longer ends
+	// there, something else decided in between.
+	if after >= 0 && last != after {
+		return "", fmt.Errorf("%w: %s was at %d when the decision was made and is now at %d",
+			ErrConcurrentWrite, taskID, after, last)
+	}
+	next := last + 1
 
 	if _, err := tx.Exec(
 		`INSERT INTO events (task_id, seq, action, payload, blob) VALUES (?, ?, ?, ?, ?)`,
