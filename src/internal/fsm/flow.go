@@ -13,6 +13,7 @@ func DefaultFlow() []Stage {
 		{
 			ID:       "discovery",
 			Role:     "scout",
+			Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm the repositories"},
 			Requires: []Artifact{TaskID},
 			Produces: []Artifact{"repos"},
 		},
@@ -38,12 +39,16 @@ func DefaultFlow() []Stage {
 		{
 			ID:       "scenarios",
 			Role:     "gherkin",
+			Gate:     &GateSpec{Kind: GateConfirm, Reason: "approve the plan"},
 			Requires: []Artifact{"briefing", "kind"},
 			Produces: []Artifact{"scenarios", "approach"},
 		},
 		{
-			ID:       "spec",
-			Role:     "specifier",
+			ID:   "spec",
+			Role: "specifier",
+			Gate: &GateSpec{
+				Kind: GateReviewArtifact, Artifact: "contract", Reason: "review the contract",
+			},
 			Requires: []Artifact{"approach"},
 			Produces: []Artifact{"contract"},
 			When:     IsFeatureOrBug,
@@ -94,28 +99,48 @@ func DefaultFlow() []Stage {
 			},
 		},
 		{
-			ID:               "qa",
+			ID: "qa",
+			Review: &ReviewSpec{
+				SendsBackTo: "build",
+				// The green attested to code that no longer exists (ADR-0020).
+				Invalidates: []Artifact{"ci_green", "tests_green"},
+			},
 			Role:             "qa",
 			Requires:         []Artifact{"ci_green", "briefing"},
 			ProducesForHuman: []Artifact{"qa_report"},
 			When:             NotChore,
 		},
 		{
-			ID:               "code-review",
+			ID: "code-review",
+			Review: &ReviewSpec{
+				SendsBackTo: "build",
+				// The green attested to code that no longer exists (ADR-0020).
+				Invalidates: []Artifact{"ci_green", "tests_green"},
+			},
 			Role:             "reviewer",
 			Requires:         []Artifact{"code", "ci_green"},
 			ProducesForHuman: []Artifact{"review_report"},
 			When:             NotDocs,
 		},
 		{
-			ID:               "harden",
+			ID: "harden",
+			Review: &ReviewSpec{
+				SendsBackTo: "build",
+				// The green attested to code that no longer exists (ADR-0020).
+				Invalidates: []Artifact{"ci_green", "tests_green"},
+			},
 			Role:             "hardener",
 			Requires:         []Artifact{"tests_green", "code"},
 			ProducesForHuman: []Artifact{"mutation_report"},
 			When:             IsFeatureOrBug,
 		},
 		{
-			ID:               "architecture",
+			ID: "architecture",
+			Review: &ReviewSpec{
+				SendsBackTo: "build",
+				// The green attested to code that no longer exists (ADR-0020).
+				Invalidates: []Artifact{"ci_green", "tests_green"},
+			},
 			Role:             "architect",
 			Requires:         []Artifact{"code"},
 			ProducesForHuman: []Artifact{"arch_report"},
@@ -126,6 +151,7 @@ func DefaultFlow() []Stage {
 		},
 		{
 			ID:       "commit",
+			Gate:     &GateSpec{Kind: GateConfirmWrite, Reason: "confirm the write"},
 			Requires: []Artifact{"ci_green", "code"},
 			Produces: []Artifact{"commit_sha"},
 			Verifiers: map[Artifact]Verifier{

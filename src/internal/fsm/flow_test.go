@@ -1,6 +1,9 @@
 package fsm
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // TestDefaultFlowHasNoContractGap is the test that matters most in this package.
 //
@@ -215,5 +218,91 @@ func TestTheEngineDoesNotDependOnTheShippedFlow(t *testing.T) {
 		if sawTranslate != wantTranslate {
 			t.Errorf("%s: translate visited=%v, want %v (visited %v)", kind, sawTranslate, wantTranslate, visited)
 		}
+	}
+}
+
+// TestACustomFlowCanOpenItsOwnGates is what ADR-0049 bought.
+//
+// Gates used to be a switch over the shipped stage ids, so a project bringing its
+// own flow got no gates at all — and the same for where a review sends work back
+// and what that invalidates. A flow that cannot pause for a person is not a flow
+// anyone would choose; it was just what the code did.
+func TestACustomFlowCanOpenItsOwnGates(t *testing.T) {
+	custom := []Stage{
+		{
+			ID: "draft", Requires: []Artifact{TaskID}, Produces: []Artifact{"text"},
+			Gate: &GateSpec{Kind: GateReviewArtifact, Artifact: "text", Reason: "read the draft"},
+		},
+		{
+			ID: "critique", Requires: []Artifact{"text"}, ProducesForHuman: []Artifact{"notes"},
+			Review: &ReviewSpec{SendsBackTo: "draft", Invalidates: []Artifact{"text"}},
+		},
+	}
+
+	state := NewTaskState("LUNA-1", KindDocs)
+	state, err := Reduce(state, Advance{Flow: custom})
+	if err != nil {
+		t.Fatalf("entering the first stage: %v", err)
+	}
+
+	if state.Status != StatusAwaitingGate {
+		t.Fatalf("a custom flow's gate must stop the task, got %q", state.Status)
+	}
+	if state.Gate == nil || state.Gate.Artifact != "text" {
+		t.Errorf("the gate must carry what the stage declared, got %+v", state.Gate)
+	}
+}
+
+// TestACustomReviewSendsWorkWhereItSays covers the other half.
+func TestACustomReviewSendsWorkWhereItSays(t *testing.T) {
+	custom := []Stage{
+		{
+			ID: "draft", Requires: []Artifact{TaskID}, Produces: []Artifact{"text"},
+			// Proven by a command rather than by existence: existence survives an
+			// edit on purpose — the file still exists — so only a real check has
+			// anything to go stale.
+			Verifiers: map[Artifact]Verifier{"text": Command{Run: "make lint", Scope: ScopeTargeted}},
+		},
+		{
+			ID: "critique", Requires: []Artifact{"text"}, ProducesForHuman: []Artifact{"notes"},
+			Review: &ReviewSpec{SendsBackTo: "draft", Invalidates: []Artifact{"text"}},
+		},
+	}
+
+	// Drive to the review stage with its input in hand.
+	state := NewTaskState("LUNA-1", KindDocs)
+	state.Profile = ProfileTurbo
+	state = mustReduce(t, state, Advance{Flow: custom})
+	state = mustReduce(t, state, Complete{
+		Delivered: []Artifact{"text"},
+		Evidence:  passing(custom[0], []Artifact{"text"}),
+		Flow:      custom,
+	})
+	state = mustReduce(t, state, Advance{Flow: custom})
+
+	state = mustReduce(t, state, ReviewFinding{Aligned: true, Summary: "needs work", Flow: custom})
+
+	if state.Stage != "draft" {
+		t.Errorf("the finding must send the work where the stage says, got %q", state.Stage)
+	}
+	if state.Context.HasArtifact("text") {
+		t.Error("what the review invalidated must leave the context")
+	}
+	if state.Evidence["text"].Verdict != VerdictStale {
+		t.Errorf("the evidence goes stale rather than disappearing, got %+v", state.Evidence["text"])
+	}
+}
+
+// TestAStageThatDoesNotReviewCannotSendWorkBack is INV-core-7 inside the engine.
+//
+// It used to be a hardcoded set of four stage ids, so renaming `code-review` in a
+// custom flow lost the protection silently. Now the refusal comes from the stage's
+// own declaration.
+func TestAStageThatDoesNotReviewCannotSendWorkBack(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+
+	_, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "my own work looks wrong"})
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a stage that does not review must not send work back, got %v", err)
 	}
 }

@@ -98,6 +98,12 @@ type ReviewFinding struct {
 	Summary string
 	Limits  LoopLimits
 
+	// Flow is carried for the same reason Advance and Complete carry it: the
+	// stage's own declaration says where a finding sends the work back and what
+	// stops being true when it does, and a task may run a flow other than the
+	// shipped one (ADR-0017, ADR-0049).
+	Flow []Stage `json:"-"`
+
 	// GateDecision is what the profile decided about the loop-ceiling gate, for
 	// the same reason Advance carries one: the decision is history and the policy
 	// behind it is not (ADR-0026). It is consulted only when a ceiling is actually
@@ -143,12 +149,6 @@ func (ReviewFinding) isAction() {}
 func (Block) isAction()         {}
 func (Unblock) isAction()       {}
 func (Abandon) isAction()       {}
-
-// reviewStages are the only ones allowed to produce a finding. An implementer
-// sending its own work back would be the self-review INV-core-7 rules out.
-var reviewStages = map[StageID]bool{
-	"qa": true, "code-review": true, "harden": true, "architecture": true,
-}
 
 // Reduce applies an action to a task and returns the resulting state.
 //
@@ -387,7 +387,17 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 }
 
 func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
-	if !reviewStages[state.Stage] {
+	flow := a.Flow
+	if len(flow) == 0 {
+		flow = DefaultFlow()
+	}
+
+	// Only a review stage may send work back. This is INV-core-7 inside the
+	// engine: an implementer returning its own work would be reviewing itself, and
+	// the refusal has to come from the stage's own declaration rather than a list
+	// of names the engine keeps, or a renamed stage loses the protection silently.
+	stage := stageIn(flow, state.Stage)
+	if stage.Review == nil {
 		return state, fmt.Errorf("%w: %q is not a review stage", ErrIllegalTransition, state.Stage)
 	}
 
@@ -408,15 +418,22 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	}
 	state.Loop.Visited = append(state.Loop.Visited, state.Stage)
 
-	// Going back invalidates the green: ci_green attested to code that no longer
-	// exists, and qa, code-review and commit all consume it (ADR-0020).
-	delete(state.Context.Artifacts, "ci_green")
+	// Going back invalidates what the work had proven: the green attested to code
+	// that no longer exists (ADR-0020). Which artifacts those are is the stage's
+	// to declare — a flow whose green is called something else keeps the behaviour.
+	//
+	// Only the flow's own products leave the context. An artifact a stage produces
+	// for a human to read was never an input, so removing it would be removing
+	// something that is not there (INV-core-11).
+	for _, artifact := range stage.Review.Invalidates {
+		delete(state.Context.Artifacts, artifact)
+	}
 
 	// The evidence for it does not disappear, it goes stale. Dropping the record
 	// would leave an audit that cannot tell "never checked" from "checked, then
 	// invalidated" — and the second is the interesting one (ADR-0032).
-	stale(state.Evidence, []Artifact{"ci_green", "tests_green"}, state.Seq)
-	state.Stage = "build"
+	stale(state.Evidence, stage.Review.Invalidates, state.Seq)
+	state.Stage = stage.Review.SendsBackTo
 	state.Status = StatusRunning
 
 	// A spent ceiling opens a gate rather than blocking. Not converging is a
@@ -546,17 +563,14 @@ func gateWaits(decision GateWaited, profile Profile, gate GateKind) bool {
 // gateFor returns the gate a stage opens, or nil. The profile decides whether it
 // actually waits for a human; this only says one exists.
 func gateFor(stage Stage) *PendingGate {
-	switch stage.ID {
-	case "discovery":
-		return &PendingGate{Kind: GateConfirm, Stage: stage.ID, Reason: "confirm the repositories"}
-	case "scenarios":
-		return &PendingGate{Kind: GateConfirm, Stage: stage.ID, Reason: "approve the plan"}
-	case "spec":
-		return &PendingGate{Kind: GateReviewArtifact, Stage: stage.ID, Artifact: "contract", Reason: "review the contract"}
-	case "commit":
-		return &PendingGate{Kind: GateConfirmWrite, Stage: stage.ID, Reason: "confirm the write"}
-	default:
+	if stage.Gate == nil {
 		return nil
+	}
+	return &PendingGate{
+		Kind:     stage.Gate.Kind,
+		Stage:    stage.ID,
+		Reason:   stage.Gate.Reason,
+		Artifact: stage.Gate.Artifact,
 	}
 }
 

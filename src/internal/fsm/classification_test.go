@@ -33,6 +33,8 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"ProducesForHuman": "history", // the same check, and INV-core-11
 		"When":             "history", // AppliesTo decides which stages a task walks
 		"Verifiers":        "history", // partly: the scope it declares, never its command
+		"Gate":             "history", // gateFor decides whether a past Advance suspended
+		"Review":           "history", // decides whether a past finding was legal, and where it went
 		"Role":             "policy",  // only internal/herdr reads it
 	}
 
@@ -69,6 +71,8 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		Produces:         []Artifact{"a"},
 		ProducesForHuman: []Artifact{"report"},
 		When:             NotChore,
+		Gate:             &GateSpec{Kind: GateConfirm, Reason: "confirm something"},
+		Review:           &ReviewSpec{SendsBackTo: "only", Invalidates: []Artifact{"a"}},
 		Verifiers:        map[Artifact]Verifier{"a": Command{Run: "make test", Scope: ScopeTargeted}},
 		Role:             "somebody",
 	}}
@@ -80,6 +84,15 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		"Produces":         func(s *Stage) { s.Produces = []Artifact{"different"} },
 		"ProducesForHuman": func(s *Stage) { s.ProducesForHuman = nil },
 		"When":             func(s *Stage) { s.When = NotDocs },
+		// The kind, not the reason: rewording the prompt a person reads cannot
+		// change whether a past Advance suspended, so only the kind and the
+		// artifact reach the digest.
+		"Gate": func(s *Stage) {
+			s.Gate = &GateSpec{Kind: GateConfirmWrite, Reason: "confirm something"}
+		},
+		"Review": func(s *Stage) {
+			s.Review = &ReviewSpec{SendsBackTo: "elsewhere", Invalidates: []Artifact{"a"}}
+		},
 		"Verifiers": func(s *Stage) {
 			s.Verifiers = map[Artifact]Verifier{"a": Command{Run: "make test", Scope: ScopeFull}}
 		},
@@ -94,12 +107,26 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		}
 	}
 
-	// And the policy field must not move it, or every brief edit becomes a refused
-	// replay.
-	altered := base[0]
-	altered.Role = "somebody-else"
-	if got := Fingerprint([]Stage{altered}); got != want {
-		t.Errorf("Stage.Role is policy and the fingerprint moved: %s want %s", got, want)
+	// And what is deliberately excluded must not move it, or every reworded prompt
+	// and renamed Makefile target becomes a refused replay.
+	unmoved := map[string]func(*Stage){
+		"Role, which only internal/herdr reads": func(s *Stage) {
+			s.Role = "somebody-else"
+		},
+		"a gate's reason, which is prose a person reads at the moment they are asked": func(s *Stage) {
+			s.Gate = &GateSpec{Kind: GateConfirm, Reason: "reworded entirely"}
+		},
+		"a verifier's command, since evidence records what actually ran": func(s *Stage) {
+			s.Verifiers = map[Artifact]Verifier{"a": Command{Run: "go test ./...", Scope: ScopeTargeted}}
+		},
+	}
+
+	for what, change := range unmoved {
+		altered := base[0]
+		change(&altered)
+		if got := Fingerprint([]Stage{altered}); got != want {
+			t.Errorf("%s is excluded on purpose and the fingerprint moved: %s want %s", what, got, want)
+		}
 	}
 }
 

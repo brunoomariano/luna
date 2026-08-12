@@ -114,6 +114,46 @@ type Stage struct {
 	// should have walked through — and a bare function has no identity a
 	// fingerprint could record (ADR-0048).
 	When Condition
+
+	// Gate is the decision a person makes on entering this stage, when there is
+	// one (ADR-0049).
+	//
+	// It lives on the stage rather than in a switch over stage ids because a flow
+	// is meant to be replaceable (ADR-0017), and a custom flow with no gates at
+	// all was not a flow anyone would want — it was what the code did.
+	Gate *GateSpec
+
+	// Review declares that this stage judges work rather than doing it, and what
+	// its verdict costs when it sends the work back.
+	//
+	// Nil means the stage produces nothing to review. Only a review stage may
+	// emit a ReviewFinding, which is INV-core-7 in the engine: an implementer
+	// sending its own work back would be reviewing itself.
+	Review *ReviewSpec
+}
+
+// GateSpec is a gate a stage opens, declared as part of the contract.
+type GateSpec struct {
+	Kind   GateKind
+	Reason string
+
+	// Artifact is what the human reads, for a review-artifact gate. Empty for the
+	// kinds that only ask yes or no.
+	Artifact Artifact
+}
+
+// ReviewSpec is what a review stage does when its finding lands.
+//
+// Both fields were constants in the reducer, which meant a project could rename
+// `build` or invalidate a differently-named green and lose the behaviour without
+// anything saying so (ADR-0049).
+type ReviewSpec struct {
+	// SendsBackTo is the stage the work returns to when a finding is aligned.
+	SendsBackTo StageID
+
+	// Invalidates are the artifacts that stop being true once the work goes back —
+	// the green attested to code that no longer exists (ADR-0020).
+	Invalidates []Artifact
 }
 
 // ProducesArtifact reports whether the stage delivers the artifact for the flow

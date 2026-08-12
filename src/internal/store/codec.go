@@ -96,6 +96,11 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 			a.Flow = flow
 			return a
 		})
+	case actionReviewFinding:
+		return decodeWithFlow(e.Payload, flow, func(a fsm.ReviewFinding) fsm.ReviewFinding {
+			a.Flow = flow
+			return a
+		})
 	}
 
 	if decode, ok := fromPayload[e.Action]; ok {
@@ -110,13 +115,12 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 // list is long enough that the shape was hiding among the two cases that are
 // genuinely different.
 var fromPayload = map[string]func(string) (fsm.Action, error){
-	actionTaskCreated:   decodeJSON[fsm.TaskCreated],
-	actionFail:          decodeJSON[fsm.Fail],
-	actionGateAdjust:    decodeJSON[fsm.GateAdjust],
-	actionGateReject:    decodeJSON[fsm.GateReject],
-	actionReviewFinding: decodeJSON[fsm.ReviewFinding],
-	actionAbandon:       decodeJSON[fsm.Abandon],
-	actionBlock:         decodeJSON[fsm.Block],
+	actionTaskCreated: decodeJSON[fsm.TaskCreated],
+	actionFail:        decodeJSON[fsm.Fail],
+	actionGateAdjust:  decodeJSON[fsm.GateAdjust],
+	actionGateReject:  decodeJSON[fsm.GateReject],
+	actionAbandon:     decodeJSON[fsm.Abandon],
+	actionBlock:       decodeJSON[fsm.Block],
 }
 
 // decodeWithFlow rebuilds an action and supplies the flow it should check

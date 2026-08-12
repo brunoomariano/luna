@@ -77,6 +77,10 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 		writeArtifacts(&b, stage.ProducesForHuman)
 		b.WriteString("|")
 		writeProofs(&b, stage)
+		b.WriteString("|")
+		writeGate(&b, stage.Gate)
+		b.WriteString("|")
+		writeReview(&b, stage.Review)
 		b.WriteString(")")
 	}
 
@@ -84,6 +88,37 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 	// Half the digest: this distinguishes flows a person wrote, not adversarial
 	// collisions, and a short value is one someone can compare by eye in a log.
 	return FlowFingerprint(hex.EncodeToString(sum[:8]))
+}
+
+// writeGate renders the gate a stage opens, if it opens one.
+//
+// The kind and the artifact only. The reason is prose a person reads at the
+// moment they are asked — rewording "confirm the repositories" cannot change
+// whether a past Advance suspended, and refusing a replay over it would be the
+// noise ADR-0048 keeps out.
+func writeGate(b *strings.Builder, gate *GateSpec) {
+	if gate == nil {
+		return
+	}
+	b.WriteString(string(gate.Kind))
+	if gate.Artifact != "" {
+		b.WriteString(":")
+		b.WriteString(string(gate.Artifact))
+	}
+}
+
+// writeReview renders what a review stage's finding costs.
+//
+// Both fields count: where the work goes back decides the stage a past finding
+// moved the task to, and what it invalidates decides which artifacts left the
+// context — so a replay under a changed spec would rebuild a different state.
+func writeReview(b *strings.Builder, review *ReviewSpec) {
+	if review == nil {
+		return
+	}
+	b.WriteString(string(review.SendsBackTo))
+	b.WriteString("<")
+	writeArtifacts(b, review.Invalidates)
 }
 
 // writeProofs renders how much each owed artifact has to be proven.

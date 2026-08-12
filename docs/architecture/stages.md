@@ -39,6 +39,14 @@ The role names are the ones `DefaultFlow()` declares, and
 `commit` are mechanical — a stage that produces a judgement and names no role is refused by
 `AuditRoles` ([ADR-0040](../ADRs/0040-a-role-resolves-to-an-agent-and-mechanical-stages-have-none.md)).
 
+**Every column above is a field of the stage**, including the gate and the condition. That
+was not always so: gates were a `switch` over these four stage ids inside the reducer, which
+meant a flow replaced under [ADR-0017](../ADRs/0017-defaults-plus-customization-everywhere.md)
+got no gates at all, and a renamed review stage silently lost the right to send work back
+([ADR-0049](../ADRs/0049-a-stage-declares-its-gate-and-what-a-review-costs.md)). The four
+review stages also declare where a finding returns the work and what that invalidates —
+`build`, and the green it attested to.
+
 🔁 = takes part in the convergence loop. ⇄ = gate that **carries an artifact** for review.
 † = condition over a **fact discovered during execution**, not over the nature of the
 task: you only know the change touched the structure after looking at what `build`
