@@ -324,14 +324,21 @@ block still notifies, and the notifier already delegates to herdr.
 
 - [x] **How does swarm-forge merge today?** Answered above: deterministically, by a daemon,
       with the model gated out by an exit code.
-- [ ] **Does the conflict-resolving stage exist from the start, or does Luna refuse and ask a
-      person?** Refusing is the honest floor and needs no new role. swarm-forge needed the
-      role, but they run many more agents in parallel than Luna will at first.
-- [ ] **How does a blocked merge become visible?** swarm-forge's own `bugs.md` records a
-      multi-hour stall where the dashboard never said why: *"UI never surfaced 'merge conflict
-      on acceptance/runner.clj'"*. In a system where the merge is code, a block is
-      first-class data — the surface that answers "why is nothing moving" belongs in the
-      design rather than after it.
+- [x] **Does the conflict-resolving stage exist from the start?** Yes, with a dedicated
+      `merger` role. Refusing and asking a person was the cheaper floor, but a conflict is
+      ordinary rather than exceptional once several agents share a base, and a system that
+      stops on every one of them is a system a person babysits.
+- [x] **How does a blocked merge become visible?** The watchdog notices and tells the lead,
+      which brings it to the person. swarm-forge's own `bugs.md` records the failure this
+      avoids — a multi-hour stall where the dashboard never said why: *"UI never surfaced
+      'merge conflict on acceptance/runner.clj'"*. Nothing waits for hours with nobody
+      knowing.
+
+      Worth noting what this changes: the watchdog interface was **removed** in the last
+      round, because a replayed state carries no clock and nothing but a test fake could
+      implement it. A blocked merge is the first thing it can genuinely observe — a fact with
+      a timestamp, sitting in the registry — so the watchdog comes back with something real
+      to watch rather than as an interface waiting for a purpose.
 - [ ] **Does the lead see the whole flow, or only its next order?** Only the next order keeps
       it obedient; seeing the flow makes it a better conversational partner. These pull
       against each other.
