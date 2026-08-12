@@ -59,10 +59,23 @@ func Stalled(err error) bool {
 // deliberately small: four operations are the whole of what driving a stage
 // requires.
 type Runner interface {
-	// OpenWorktree creates the worktree for a task and returns the workspace that
-	// holds it. One worktree per task (ADR-0027), and the binding anchors on the
-	// workspace because pane ids move.
-	OpenWorktree(ctx context.Context, taskID, branch string) (Workspace, error)
+	// OpenWorktree creates the worktree a stage works in and returns the
+	// workspace that holds it. The binding anchors on the workspace because pane
+	// ids move.
+	//
+	// One worktree per task *and* role, branched from the base (ADR-0055). The
+	// role is what makes "whoever writes does not review" a property of the
+	// filesystem rather than a line in a brief (INV-core-7), and the base is what
+	// makes the handoff the previous stage's commit rather than a description of
+	// it (INV-core-6).
+	OpenWorktree(ctx context.Context, w WorktreeSpec) (Workspace, error)
+
+	// CloseWorktree removes it again.
+	//
+	// A worktree that outlives its stage is the failure swarm-forge's own fork
+	// documented: a role branch that is never reset accumulates divergence that
+	// "compounds at every hop", so feature N faces N-1 features of drift.
+	CloseWorktree(ctx context.Context, ws Workspace) error
 
 	// StartAgent puts an agent into a pane in that workspace and waits until it
 	// is interactive. The kind must be one herdr knows (ADR-0031); the name is
@@ -87,12 +100,38 @@ type Prover interface {
 	Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence, error)
 }
 
-// Workspace is herdr's home for one task: the worktree, its workspace and the
+// Workspace is herdr's home for one stage: the worktree, its workspace and the
 // pane the agent runs in.
 type Workspace struct {
 	ID       string
 	RootPane string
 	Path     string
+}
+
+// WorktreeSpec is what a stage needs a checkout to be.
+//
+// It is a struct rather than three parameters because the three travel together
+// and one of them is easy to leave out: a call that forgot the base would branch
+// from whatever the repository is on, silently discarding every stage before it
+// — and it would look like it worked.
+type WorktreeSpec struct {
+	TaskID string
+	Role   fsm.RoleName
+
+	// Base is the commit to branch from — the previous stage's delivery. Empty
+	// means the repository's own head, which is the first stage of a task.
+	Base string
+}
+
+// Branch is where this stage's work lives.
+//
+// Named after the task and the role so a checkout is findable without consulting
+// Luna, and so two roles on one task cannot land on the same branch.
+func (w WorktreeSpec) Branch() string {
+	if w.Role == "" {
+		return "luna/" + w.TaskID
+	}
+	return "luna/" + w.TaskID + "/" + string(w.Role)
 }
 
 // Node runs a stage inside herdr. It satisfies lead.Node (ADR-0030).
@@ -111,6 +150,18 @@ type Node struct {
 	// Prove runs the contract's checks. It takes the worktree path, because that
 	// is where the commands run, and the node is what knows it (ADR-0035).
 	Prove func(ws Workspace) Prover
+
+	// Warn reports something that went wrong beside the work rather than in it —
+	// a worktree that would not be removed. Nil discards, because a node with no
+	// reporter configured should still run a stage.
+	Warn func(format string, args ...any)
+}
+
+// warn reports a problem that must not fail the stage.
+func (n *Node) warn(format string, args ...any) {
+	if n.Warn != nil {
+		n.Warn(format, args...)
+	}
 }
 
 // Run drives one stage and reports what it delivered.
@@ -133,10 +184,28 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 // conduct is Run without the error classification, so the wrapper above has one
 // place to mark what came from the transport rather than from the stage.
 func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
-	ws, err := n.Runner.OpenWorktree(ctx, state.ID, branchFor(state.ID))
+	ws, err := n.Runner.OpenWorktree(ctx, WorktreeSpec{
+		TaskID: state.ID,
+		Role:   fsm.RoleName(stage.Role),
+		Base:   state.Base,
+	})
 	if err != nil {
 		return lead.Result{}, err
 	}
+
+	// The worktree lasts exactly as long as the stage. What survives is the
+	// commit, which is the handoff — so the next role starts from the artifact
+	// and never from a directory somebody else was working in (ADR-0055).
+	//
+	// A failure to clean up does not fail the stage: the work is committed by
+	// then, and turning "the stage delivered" into "the stage failed" because a
+	// directory would not go away would lose the more important of the two. It
+	// is reported rather than swallowed.
+	defer func() {
+		if err := n.Runner.CloseWorktree(context.WithoutCancel(ctx), ws); err != nil {
+			n.warn("could not remove the worktree for %s at %s: %v", state.ID, stage.ID, err)
+		}
+	}()
 
 	// A mechanical stage runs no agent at all: `setup` is a worktree, `commit` is
 	// git, and paying a model to run those buys nothing and can lose something
@@ -352,7 +421,3 @@ func agentName(taskID string, stage fsm.StageID) string {
 // agentNameLimit is what herdr accepts for an agent name, verified against a
 // running server: `[a-z][a-z0-9_-]{0,31}` (ADR-0036).
 const agentNameLimit = 32
-
-// branchFor is the branch a task's worktree lives on. One per task, named after
-// it, so the checkout is findable without consulting Luna.
-func branchFor(taskID string) string { return "luna/" + taskID }

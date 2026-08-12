@@ -28,10 +28,22 @@ type fakeHerdr struct {
 	// startArgs is what was passed through to the agent, which is how a denied
 	// capability reaches it (ADR-0042).
 	startArgs []string
+
+	// opened and closed record the worktree lifecycle, which is what the
+	// per-role topology is asserted on (ADR-0055).
+	opened   []WorktreeSpec
+	closed   []string
+	closeErr error
 }
 
-func (f *fakeHerdr) OpenWorktree(context.Context, string, string) (Workspace, error) {
+func (f *fakeHerdr) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspace, error) {
+	f.opened = append(f.opened, w)
 	return Workspace{ID: "ws-1", RootPane: "pane-1", Path: "/tmp/wt"}, nil
+}
+
+func (f *fakeHerdr) CloseWorktree(_ context.Context, ws Workspace) error {
+	f.closed = append(f.closed, ws.ID)
+	return f.closeErr
 }
 
 func (f *fakeHerdr) StartAgent(_ context.Context, _ Workspace, kind, _ string, args []string) (string, error) {
@@ -353,11 +365,11 @@ type failingRunner struct {
 	err    error
 }
 
-func (f *failingRunner) OpenWorktree(ctx context.Context, id, branch string) (Workspace, error) {
+func (f *failingRunner) OpenWorktree(ctx context.Context, w WorktreeSpec) (Workspace, error) {
 	if f.failAt == "worktree" {
 		return Workspace{}, f.err
 	}
-	return f.fakeHerdr.OpenWorktree(ctx, id, branch)
+	return f.fakeHerdr.OpenWorktree(ctx, w)
 }
 
 func (f *failingRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string, args []string) (string, error) {

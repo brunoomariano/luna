@@ -140,7 +140,7 @@ func TestOpenWorktreeReadsHerdrsFieldNames(t *testing.T) {
 	server.reply("worktree.create", worktreeReply)
 
 	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
-	ws, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestOpenWorktreeSendsTheRepository(t *testing.T) {
 	server.reply("worktree.create", worktreeReply)
 
 	runner := NewRunner(dialFake(t, path), "/some/repo", time.Minute)
-	if _, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1"); err != nil {
+	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 	server.reply("worktree.open", worktreeReply)
 
 	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
-	ws, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("an existing worktree is resumable, not fatal: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestEveryRequestCarriesAStringID(t *testing.T) {
 	server.reply("worktree.create", worktreeReply)
 
 	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
-	if _, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1"); err != nil {
+	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -499,7 +499,7 @@ func TestAWorktreeThatCannotBeMadeIsReported(t *testing.T) {
 	server.reply("worktree.create", `{"id":"1","error":{"code":"invalid_request","message":"require a workspace inside a Git work tree"}}`)
 
 	runner := NewRunner(dialFake(t, path), "/not/a/repo", time.Minute)
-	_, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 
 	if err == nil {
 		t.Fatal("a repository that is not one must be reported")
@@ -523,7 +523,7 @@ func TestTheCheckoutPathFallsBackToThePanesDirectory(t *testing.T) {
 	server.reply("worktree.create", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1","cwd":"/from/the/pane"},"worktree":{}}}`)
 
 	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
-	ws, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestTheWorktreeFollowsTheHouseNaming(t *testing.T) {
 	server.reply("worktree.create", worktreeReply)
 
 	runner := NewRunner(dialFake(t, path), "/home/someone/repos/api", time.Minute)
-	if _, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1"); err != nil {
+	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -640,7 +640,7 @@ func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
 	server.reply("worktree.open", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1"},"worktree":{"path":"/somewhere/older"}}}`)
 
 	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
-	ws, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -670,7 +670,7 @@ func TestOpenWorktreeRefusesAnUnusableRepository(t *testing.T) {
 	server.reply("worktree.create", worktreeReply)
 
 	runner := NewRunner(dialFake(t, path), "/", time.Minute)
-	_, err := runner.OpenWorktree(context.Background(), "LUNA-1", "luna/LUNA-1")
+	_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 
 	if err == nil {
 		t.Fatal("an unusable repository must be reported")

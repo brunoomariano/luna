@@ -50,25 +50,41 @@ type worktreeCreated struct {
 	} `json:"worktree"`
 }
 
-// OpenWorktree creates the task's worktree and returns where it lives.
+// OpenWorktree creates the worktree a stage works in and returns where it lives.
 //
 // herdr answers workspace, tab, root pane and worktree in one call, which is why
-// one worktree per task maps cleanly onto one workspace per task (ADR-0027).
+// one worktree maps cleanly onto one workspace (ADR-0027).
 //
-// An existing branch is reopened rather than treated as a failure: a task that
-// already ran once has its worktree, and a second `luna run` must resume it.
-func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (Workspace, error) {
-	path, err := checkoutPath(r.Repo, taskID)
+// The checkout is per task *and* role, branched from the base the order carried
+// (ADR-0055). `base` is a parameter herdr's `worktree.create` already takes —
+// checked against the binary, like every other fact about this protocol
+// (ADR-0036) — so branching from the previous stage's commit costs nothing but
+// passing it.
+//
+// An existing branch is reopened rather than treated as a failure: a stage that
+// was retried has its worktree, and the second attempt must resume it.
+func (r *socketRunner) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspace, error) {
+	label := w.TaskID
+	if w.Role != "" {
+		label = w.TaskID + "-" + string(w.Role)
+	}
+
+	path, err := checkoutPath(r.Repo, label)
 	if err != nil {
 		return Workspace{}, err
 	}
 
 	params := map[string]any{
 		"cwd":    r.Repo,
-		"branch": branch,
+		"branch": w.Branch(),
 		"path":   path,
-		"label":  taskID,
+		"label":  label,
 		"focus":  false,
+	}
+	// Sent only when there is one: an empty base would ask herdr to branch from
+	// a ref named "", where omitting it means the repository's own head.
+	if w.Base != "" {
+		params["base"] = w.Base
 	}
 
 	var created worktreeCreated
@@ -77,7 +93,7 @@ func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (W
 		err = r.client.Call("worktree.open", params, &created)
 	}
 	if err != nil {
-		return Workspace{}, fmt.Errorf("opening the worktree for %s: %w", taskID, err)
+		return Workspace{}, fmt.Errorf("opening the worktree for %s: %w", label, err)
 	}
 
 	// Prefer what herdr confirmed over what was asked for: reopening an existing
@@ -94,6 +110,26 @@ func (r *socketRunner) OpenWorktree(_ context.Context, taskID, branch string) (W
 		RootPane: created.RootPane.PaneID,
 		Path:     checkout,
 	}, nil
+}
+
+// CloseWorktree removes the checkout when the stage is over.
+//
+// `--force` because the tree will not be clean: the agent's build artifacts and
+// anything it did not commit are still there, and that is exactly what should
+// not survive. What survives is the commit (INV-core-6).
+//
+// A workspace with no id is not an error. It is a stage that failed before herdr
+// gave one back, and there is nothing to remove.
+func (r *socketRunner) CloseWorktree(_ context.Context, ws Workspace) error {
+	if ws.ID == "" {
+		return nil
+	}
+
+	params := map[string]any{"workspace": ws.ID, "force": true}
+	if err := r.client.Call("worktree.remove", params, nil); err != nil {
+		return fmt.Errorf("removing the worktree at %s: %w", ws.Path, err)
+	}
+	return nil
 }
 
 // StartAgent puts an agent into the workspace's root pane.

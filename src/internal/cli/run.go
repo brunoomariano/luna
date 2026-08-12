@@ -140,6 +140,12 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 			// rather than through a pane (ADR-0035).
 			return node.Shell{Dir: ws.Path}
 		},
+		// A worktree that would not go away does not fail the stage, but it does
+		// accumulate: a checkout left behind on every run eventually fills a disk,
+		// and the first anyone would hear of it is that.
+		Warn: func(format string, args ...any) {
+			fmt.Fprintf(env.Err, format+"\n", args...)
+		},
 	}
 	return conductor, func() { _ = client.Close() }, nil
 }
