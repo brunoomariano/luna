@@ -311,19 +311,29 @@ block still notifies, and the notifier already delegates to herdr.
 
 ## Rollout plan (phased)
 
-1. **Phase 0 — settle the merge.** The swarm-forge investigation lands, and the merge's shape
-   is decided. Nothing is written before this.
-2. **Phase 1 — the order.** `luna next` and `luna done` as the interface between the FSM and
-   the lead, still over the current store. The contract and verification are untouched, so
-   this is additive and reversible.
-3. **Phase 2 — beads.** The registry moves. The store's retirement happens here, and it is
-   the irreversible step.
-4. **Phase 3 — per-role worktrees and the merge.** The topology changes and the merge is
-   implemented.
-5. **Phase 4 — the lead as an agent.** Its brief, the knob, the conversation.
+1. **Phase 1a — the order.** `luna next` and `luna done` as the interface between the FSM
+   and the lead, in text and JSON, still over the current store and still driven by the Go
+   loop. Additive and reversible.
+2. **Phase 1b — the deterministic merge.** One owner, dry run in a throwaway worktree
+   separate from the real merge, `merge_ready` / `merge_blocked` as the verdict. Testable
+   today against a single worktree, before the topology changes.
+3. **Phase 1c — the watchdog over a blocked merge.** Its first real subject: a fact with a
+   timestamp, sitting in the registry. This is what keeps a conflict from waiting for hours
+   with nobody knowing.
+4. **Phase 2 — beads.** The registry moves and the store retires. The irreversible step.
+5. **Phase 3 — per-task-and-role worktrees.** The topology changes; the merge built in 1b
+   now has several branches to integrate rather than one.
+6. **Phase 4 — the lead as an agent.** Its brief, the knob, the conversation.
+
+The merge sits in phase 1 rather than beside the topology change, and the reason is the
+watchdog. A blocked merge is the only thing the watchdog can genuinely observe, and leaving
+it until phase 3 would mean the failure this design most wants to avoid — something stuck
+for hours with nobody knowing — is the last thing to be addressed rather than among the
+first.
 
 - Feature flag? no. The phases are ordered so each leaves the system usable.
-- Rollback: phases 1 and 2 are separable; after phase 3 the old topology is gone.
+- Rollback: 1a through 1c are separable and reversible; after phase 2 the store is gone, and
+  after phase 3 the old topology is.
 
 ## Open questions
 
