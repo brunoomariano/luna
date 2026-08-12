@@ -101,28 +101,28 @@ const (
 // running anything itself.
 type Evidence struct {
 	// Scope is how much this proves. Never upgraded after the fact.
-	Scope Scope
+	Scope Scope `json:"scope"`
 
 	// Verdict is what the check concluded.
-	Verdict Verdict
+	Verdict Verdict `json:"verdict"`
 
 	// Command is what was run, verbatim, or empty for evidence that ran nothing.
 	// An audit that says a stage closed but not on what grounds answers half the
 	// question.
-	Command string
+	Command string `json:"command,omitempty"`
 
 	// ExitCode is what the command returned. Meaningless when Command is empty,
 	// which is why Scope carries the real distinction.
-	ExitCode int
+	ExitCode int `json:"exit_code,omitempty"`
 
 	// Detail is a short human-readable summary: the failing test, the missing
 	// file, the person's note on a gate adjustment.
-	Detail string
+	Detail string `json:"detail,omitempty"`
 
 	// RecordedAt is a monotonic sequence, not a clock — the position in the log
 	// at which this was observed. It is what makes the staleness rule a pure
 	// comparison rather than a call to time.Now (ADR-0024).
-	RecordedAt int
+	RecordedAt int `json:"recorded_at"`
 }
 
 // Passing reports whether this evidence currently counts as proof.

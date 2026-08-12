@@ -19,8 +19,8 @@ type Action interface{ isAction() }
 // makes the log self-describing: the kind and the profile come out of the history
 // rather than having to be supplied alongside it.
 type TaskCreated struct {
-	Kind    TaskKind
-	Profile Profile
+	Kind    TaskKind `json:"kind"`
+	Profile Profile  `json:"profile,omitempty"`
 
 	// Flow identifies the flow this task was born under (ADR-0046).
 	//
@@ -69,34 +69,40 @@ type Advance struct {
 // shipped flow when empty, so a log written before this field existed still
 // replays.
 type Complete struct {
-	Delivered []Artifact
-	Evidence  map[Artifact]Evidence
-	Flow      []Stage `json:"-"`
+	Delivered []Artifact            `json:"delivered"`
+	Evidence  map[Artifact]Evidence `json:"evidence,omitempty"`
+	Flow      []Stage               `json:"-"`
 }
 
 // Fail reports that the node broke. Retry until the budget is spent, then block
 // and notify (ADR-0011).
-type Fail struct{ Reason string }
+type Fail struct {
+	Reason string `json:"reason"`
+}
 
 // GateApprove accepts what the gate was holding, as it is.
 type GateApprove struct{}
 
 // GateAdjust accepts a human-edited version. The replacement is what carries on,
 // and the edit is recorded (ADR-0022).
-type GateAdjust struct{ Payload string }
+type GateAdjust struct {
+	Payload string `json:"payload"`
+}
 
 // GateReject refuses the artifact. It does not enter the context, and the stage
 // that produced it runs again with the rejection in hand.
-type GateReject struct{ Reason string }
+type GateReject struct {
+	Reason string `json:"reason"`
+}
 
 // ReviewFinding is what a review stage found. Aligned sends the work back to
 // build; out of scope becomes a separate task and the flow carries on. The
 // distinction is a judgement call, which is why it arrives as a decision rather
 // than being computed here.
 type ReviewFinding struct {
-	Aligned bool
-	Summary string
-	Limits  LoopLimits
+	Aligned bool       `json:"aligned"`
+	Summary string     `json:"summary,omitempty"`
+	Limits  LoopLimits `json:"limits,omitempty"`
 
 	// Flow is carried for the same reason Advance and Complete carry it: the
 	// stage's own declaration says where a finding sends the work back and what
@@ -118,7 +124,9 @@ type ReviewFinding struct {
 // one decision to escalate. The history is the audit trail (INV-core-2), and an
 // audit that shows retries that never happened is a worse kind of wrong than a
 // second path into the same state.
-type Block struct{ Reason string }
+type Block struct {
+	Reason string `json:"reason"`
+}
 
 // Unblock is a human clearing a block.
 type Unblock struct{}
@@ -136,7 +144,9 @@ type Unblock struct{}
 //
 // It is also not a reclassification of `blocked`. A block is an anomaly a person
 // can clear with Unblock; abandoning is the explicit act of saying it is over.
-type Abandon struct{ Reason string }
+type Abandon struct {
+	Reason string `json:"reason"`
+}
 
 func (TaskCreated) isAction()   {}
 func (Advance) isAction()       {}

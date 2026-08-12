@@ -1,0 +1,33 @@
+{
+  "ends": {
+    "seq": 4,
+    "stage": "setup",
+    "status": "running"
+  },
+  "events": [
+    {
+      "Seq": 1,
+      "Action": "TaskCreated",
+      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"c0c9ff4d121b43fc\"}",
+      "Blob": ""
+    },
+    {
+      "Seq": 2,
+      "Action": "Advance",
+      "Payload": "{}",
+      "Blob": ""
+    },
+    {
+      "Seq": 3,
+      "Action": "Complete",
+      "Payload": "{\"delivered\":[\"repos\"],\"evidence\":{\"repos\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}",
+      "Blob": ""
+    },
+    {
+      "Seq": 4,
+      "Action": "Advance",
+      "Payload": "{}",
+      "Blob": ""
+    }
+  ]
+}

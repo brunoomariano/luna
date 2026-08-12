@@ -1,0 +1,1 @@
+{"delivered":["code","tests_green"],"evidence":{"tests_green":{"scope":"targeted","verdict":"passed","command":"make test","detail":"12 passed","recorded_at":7}}}

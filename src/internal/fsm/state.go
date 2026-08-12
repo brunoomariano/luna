@@ -188,9 +188,9 @@ type LoopCounters struct {
 
 // LoopLimits are the ceilings themselves, configurable per loop.
 type LoopLimits struct {
-	MaxRounds   int
-	NoProgress  int
-	Oscillation int
+	MaxRounds   int `json:"max_rounds"`
+	NoProgress  int `json:"no_progress"`
+	Oscillation int `json:"oscillation"`
 }
 
 // DefaultLoopLimits are the values the design settled on.
