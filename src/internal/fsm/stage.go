@@ -103,12 +103,17 @@ type Stage struct {
 	// static check warns about so the floor stays a choice.
 	Verifiers map[Artifact]Verifier
 
-	// When decides whether the stage enters the flow. Nil means unconditional.
+	// When decides whether the stage enters the flow. The zero value is
+	// unconditional.
 	//
 	// It receives the whole context rather than just the kind: not every
 	// condition is about the nature of the task. diagnose looks at the kind;
 	// architecture looks at a fact discovered during execution.
-	When func(TaskContext) bool
+	//
+	// It carries a name because it is history — it decides which stages a task
+	// should have walked through — and a bare function has no identity a
+	// fingerprint could record (ADR-0048).
+	When Condition
 }
 
 // ProducesArtifact reports whether the stage delivers the artifact for the flow
@@ -140,8 +145,5 @@ func containsArtifact(list []Artifact, want Artifact) bool {
 
 // AppliesTo reports whether the stage enters the flow in this context.
 func (s Stage) AppliesTo(ctx TaskContext) bool {
-	if s.When == nil {
-		return true
-	}
-	return s.When(ctx)
+	return s.When.Met(ctx)
 }

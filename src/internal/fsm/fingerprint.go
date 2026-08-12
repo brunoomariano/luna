@@ -19,15 +19,34 @@ type FlowFingerprint string
 
 // Fingerprint reduces a flow to what changes how its history reads.
 //
-// Covered: each stage's id, in order, with the artifacts it requires, produces,
-// and produces for a human. Those decide whether a past Advance entered and a
-// past Complete closed, so changing them rewrites what the log means.
+// The rule for what belongs, from the field's own behaviour rather than from
+// taste: a field read *inside the reducer* decides what a past event means, so it
+// is history; a field only the node layer reads decides what happens next, so it
+// is policy (ADR-0048).
 //
-// Not covered: Role, Verifiers, and the body of a When condition. Those are read
-// at the moment of use — changing them alters what happens next, not what already
-// happened. A fingerprint that covered them would refuse a replay because someone
-// edited a brief, and a check that fires on changes that do not matter is one
-// people learn to route around.
+// Covered:
+//
+//   - the stage's id and position — NextStage resolves by both;
+//   - Requires — the entry check decides whether a past Advance entered;
+//   - Produces and ProducesForHuman — the exit check decides whether a past
+//     Complete closed;
+//   - the *name* of the When condition — AppliesTo decides which stages a task
+//     should have walked through at all;
+//   - the *scope* each verifier declares — since the exit check compares the
+//     recorded scope against the declared one, lowering a requirement makes a
+//     past Complete that blocked start closing.
+//
+// Not covered:
+//
+//   - Role, which only internal/herdr reads. Verified by grep, not by assumption.
+//   - The verifier's command. `make test` becoming `go test ./...` changes how an
+//     artifact is proven, not how much was proven, and evidence records what
+//     actually ran (ADR-0024). Including it would refuse a replay because someone
+//     renamed a Makefile target, and a check that fires on changes that do not
+//     matter is one people learn to route around.
+//   - The body of a condition, which no fingerprint can see. The name is the
+//     handle a person maintains deliberately, the same discipline the log's
+//     hand-written action names already rely on.
 //
 // The empty flow has an empty fingerprint rather than the hash of nothing, so a
 // caller that never had a flow is not told it disagrees with one.
@@ -42,6 +61,11 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 	var b strings.Builder
 	for _, stage := range flow {
 		b.WriteString(string(stage.ID))
+		// The condition's name, empty when the stage is unconditional — so a flow
+		// that never used conditions renders the same as one that spells the
+		// default out.
+		b.WriteString("?")
+		b.WriteString(stage.When.Name)
 		b.WriteString("(")
 		writeArtifacts(&b, stage.Requires)
 		b.WriteString("->")
@@ -51,6 +75,8 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 		// it (ADR-0021), and that is a different flow.
 		b.WriteString("+")
 		writeArtifacts(&b, stage.ProducesForHuman)
+		b.WriteString("|")
+		writeProofs(&b, stage)
 		b.WriteString(")")
 	}
 
@@ -58,6 +84,29 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 	// Half the digest: this distinguishes flows a person wrote, not adversarial
 	// collisions, and a short value is one someone can compare by eye in a log.
 	return FlowFingerprint(hex.EncodeToString(sum[:8]))
+}
+
+// writeProofs renders how much each owed artifact has to be proven.
+//
+// The scope only, never the command: what a past Complete had to satisfy is the
+// requirement, and lowering it is what makes a blocked stage start closing.
+//
+// It walks the owed artifacts in declaration order rather than ranging over the
+// Verifiers map, because Go randomises map iteration and a fingerprint that
+// changed between two runs of the same binary would refuse every replay. That is
+// the kind of nondeterminism the reducer's purity rules out by design, and it
+// would have entered here through the back door.
+func writeProofs(b *strings.Builder, stage Stage) {
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	for i, artifact := range owed {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(string(artifact))
+		b.WriteString(":")
+		b.WriteString(string(VerifierFor(stage, artifact).Proves()))
+	}
 }
 
 // writeArtifacts renders a stage's artifact list in declaration order.

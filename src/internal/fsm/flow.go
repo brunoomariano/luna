@@ -1,9 +1,5 @@
 package fsm
 
-// isFeatureOrBug is the condition governing the stages whose cost only pays off
-// when there is new behavior or a defect to fix.
-func isFeatureOrBug(c TaskContext) bool { return c.Kind == KindFeature || c.Kind == KindBug }
-
 // DefaultFlow is the flow Luna ships with — the 14 stages of
 // docs/architecture/stages.md.
 //
@@ -37,7 +33,7 @@ func DefaultFlow() []Stage {
 			Requires:         []Artifact{"briefing"},
 			Produces:         []Artifact{"root_cause"},
 			ProducesForHuman: []Artifact{"min_case"},
-			When:             func(c TaskContext) bool { return c.Kind == KindBug },
+			When:             IsBug,
 		},
 		{
 			ID:       "scenarios",
@@ -50,7 +46,7 @@ func DefaultFlow() []Stage {
 			Role:     "specifier",
 			Requires: []Artifact{"approach"},
 			Produces: []Artifact{"contract"},
-			When:     isFeatureOrBug,
+			When:     IsFeatureOrBug,
 		},
 		{
 			ID:   "build",
@@ -102,21 +98,21 @@ func DefaultFlow() []Stage {
 			Role:             "qa",
 			Requires:         []Artifact{"ci_green", "briefing"},
 			ProducesForHuman: []Artifact{"qa_report"},
-			When:             func(c TaskContext) bool { return c.Kind != KindChore },
+			When:             NotChore,
 		},
 		{
 			ID:               "code-review",
 			Role:             "reviewer",
 			Requires:         []Artifact{"code", "ci_green"},
 			ProducesForHuman: []Artifact{"review_report"},
-			When:             func(c TaskContext) bool { return c.Kind != KindDocs },
+			When:             NotDocs,
 		},
 		{
 			ID:               "harden",
 			Role:             "hardener",
 			Requires:         []Artifact{"tests_green", "code"},
 			ProducesForHuman: []Artifact{"mutation_report"},
-			When:             isFeatureOrBug,
+			When:             IsFeatureOrBug,
 		},
 		{
 			ID:               "architecture",
@@ -126,7 +122,7 @@ func DefaultFlow() []Stage {
 			// Unlike the others, this condition is not about the nature of the
 			// task: whether the change touched the structure is only knowable
 			// after looking at what build produced.
-			When: func(c TaskContext) bool { return c.HasFact(TouchesStructure) },
+			When: TouchedStructure,
 		},
 		{
 			ID:       "commit",

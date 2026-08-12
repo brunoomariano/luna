@@ -80,7 +80,7 @@ func TestConditionalStageAppliesByKind(t *testing.T) {
 		ID:       "spec",
 		Requires: []Artifact{"approach"},
 		Produces: []Artifact{"contract"},
-		When:     func(c TaskContext) bool { return c.Kind == KindFeature || c.Kind == KindBug },
+		When:     IsFeatureOrBug,
 	}
 
 	cases := []struct {
@@ -126,7 +126,7 @@ func TestStageConditionedOnDiscoveredFact(t *testing.T) {
 		ID:               "architecture",
 		Requires:         []Artifact{"code"},
 		ProducesForHuman: []Artifact{"arch_report"},
-		When:             func(c TaskContext) bool { return c.HasFact(TouchesStructure) },
+		When:             TouchedStructure,
 	}
 
 	ctx := NewTaskContext(KindFeature)

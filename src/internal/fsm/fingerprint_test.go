@@ -18,6 +18,9 @@ func TestFingerprintCoversWhatChangesHistory(t *testing.T) {
 		what  string
 		flow  []Stage
 		alike bool
+		// like names another case this one must agree with, for the pairs whose
+		// point is that they match each other rather than the base.
+		like string
 	}{
 		{
 			what:  "the same flow built twice",
@@ -69,21 +72,65 @@ func TestFingerprintCoversWhatChangesHistory(t *testing.T) {
 			alike: true,
 		},
 		{
-			what: "a changed verifier — evidence records what ran, so the contract's claim is not history",
+			what: "a verifier demanding more than existence — the exit check compares scopes, " +
+				"so raising the bar changes whether a past Complete closed",
 			flow: []Stage{
 				{
 					ID: "first", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"},
-					Verifiers: map[Artifact]Verifier{"a": Command{Run: "make test"}},
+					Verifiers: map[Artifact]Verifier{"a": Command{Run: "make test", Scope: ScopeTargeted}},
 				},
 				{ID: "second", Requires: []Artifact{"a"}, Produces: []Artifact{"b"}, ProducesForHuman: []Artifact{"report"}},
 			},
+		},
+		{
+			what: "the same scope reached by a different command — how much was proven is unchanged",
+			flow: []Stage{
+				{
+					ID: "first", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"},
+					Verifiers: map[Artifact]Verifier{"a": Command{Run: "go test ./...", Scope: ScopeTargeted}},
+				},
+				{
+					ID: "second", Requires: []Artifact{"a"}, Produces: []Artifact{"b"},
+					ProducesForHuman: []Artifact{"report"},
+				},
+			},
+			// Compared against the case above rather than against base: both declare
+			// targeted, so they must agree with each other.
+			like: "a verifier demanding more than existence — the exit check compares scopes, " +
+				"so raising the bar changes whether a past Complete closed",
+		},
+		{
+			what: "a renamed condition — the rule is not the rule it was",
+			flow: []Stage{
+				{ID: "first", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}, When: NotChore},
+				{ID: "second", Requires: []Artifact{"a"}, Produces: []Artifact{"b"}, ProducesForHuman: []Artifact{"report"}},
+			},
+		},
+		{
+			what: "a condition removed — the stage now enters for every task",
+			flow: []Stage{
+				{ID: "first", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}, When: Always},
+				{ID: "second", Requires: []Artifact{"a"}, Produces: []Artifact{"b"}, ProducesForHuman: []Artifact{"report"}},
+			},
+			// base has no condition either: the zero value and Always are the same rule.
 			alike: true,
 		},
 	}
 
 	want := Fingerprint(base)
+	seen := map[string]FlowFingerprint{}
 	for _, c := range changes {
 		got := Fingerprint(c.flow)
+		seen[c.what] = got
+
+		if c.like != "" {
+			if other, ok := seen[c.like]; !ok {
+				t.Errorf("%s: names a case that has not run yet", c.what)
+			} else if got != other {
+				t.Errorf("%s: should match %q, got %s want %s", c.what, c.like, got, other)
+			}
+			continue
+		}
 		if c.alike && got != want {
 			t.Errorf("%s: should not change the fingerprint, got %s want %s", c.what, got, want)
 		}

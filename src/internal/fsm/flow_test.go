@@ -160,7 +160,7 @@ func TestTheEngineDoesNotDependOnTheShippedFlow(t *testing.T) {
 		{
 			ID: "translate", Role: "translator",
 			Requires: []Artifact{"text"}, Produces: []Artifact{"translated"},
-			When: func(c TaskContext) bool { return c.Kind == KindFeature },
+			When: Condition{Name: "is-feature", Applies: func(c TaskContext) bool { return c.Kind == KindFeature }},
 		},
 		{ID: "publish", Requires: []Artifact{"text"}, Produces: []Artifact{"url"}},
 	}
