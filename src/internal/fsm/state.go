@@ -32,6 +32,13 @@ const (
 
 	// StatusDone is a task that reached the end of its flow.
 	StatusDone Status = "done"
+
+	// StatusAbandoned is a task a person ended before it finished (ADR-0046).
+	//
+	// Terminal like done, and deliberately not the same word: an audit that could
+	// not tell a task that delivered from one that was called off would be missing
+	// the more interesting of the two.
+	StatusAbandoned Status = "abandoned"
 )
 
 // Profile names which gates actually wait for a human. It is chosen per task
@@ -213,6 +220,14 @@ type TaskState struct {
 	// task run overnight must not replay as though it had been supervised.
 	Profile Profile
 
+	// Flow identifies the flow this task was born under, from its opening event
+	// (ADR-0046). It is here for the same reason as Profile: a replay has to know
+	// which contract the history was written against, and asking the caller for
+	// what the log already holds would let the two disagree.
+	//
+	// Empty means a log written before the field existed.
+	Flow FlowFingerprint
+
 	Gate  *PendingGate
 	Loop  LoopCounters
 	Retry Retry
@@ -247,8 +262,12 @@ func NewTaskState(id string, kind TaskKind) TaskState {
 
 // IsTerminal reports whether the task has finished and will not transition again
 // on its own.
+//
+// Blocked is deliberately absent: it is an anomaly a person clears with Unblock,
+// and counting it as an ending would erase the difference between "this failed
+// and someone should look" and "this is over" (ADR-0046).
 func (s TaskState) IsTerminal() bool {
-	return s.Status == StatusDone
+	return s.Status == StatusDone || s.Status == StatusAbandoned
 }
 
 // NeedsHuman reports whether the task is waiting on a person — either planned

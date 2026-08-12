@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -546,5 +547,103 @@ func TestTasksOfDifferentKindsCoexist(t *testing.T) {
 
 	if bug.Context.Kind != fsm.KindBug || chore.Context.Kind != fsm.KindChore {
 		t.Errorf("each task keeps its own kind: %q and %q", bug.Context.Kind, chore.Context.Kind)
+	}
+}
+
+// TestReplayRefusesALogWrittenUnderAnotherFlow is the whole point of ADR-0046.
+//
+// Before the fingerprint, a renamed stage replayed as the new name with no error
+// at all, and a stage inserted mid-flow made a task re-run work it had already
+// finished. Both were silent, and silence is the failure mode the log exists to
+// prevent.
+func TestReplayRefusesALogWrittenUnderAnotherFlow(t *testing.T) {
+	s := openTemp(t)
+
+	born := []fsm.Stage{
+		{ID: "first", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"a"}},
+		{ID: "second", Requires: []fsm.Artifact{"a"}, Produces: []fsm.Artifact{"b"}},
+	}
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind: fsm.KindChore, Flow: fsm.Fingerprint(born),
+	}); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+
+	// The same flow it was born under: nothing to complain about.
+	if _, err := s.Replay("LUNA-1", born); err != nil {
+		t.Fatalf("replaying against its own flow: %v", err)
+	}
+
+	// The rename that used to pass in silence.
+	renamed := []fsm.Stage{
+		{ID: "first", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"a"}},
+		{ID: "second-v2", Requires: []fsm.Artifact{"a"}, Produces: []fsm.Artifact{"b"}},
+	}
+	_, err := s.Replay("LUNA-1", renamed)
+	if !errors.Is(err, ErrFlowChanged) {
+		t.Fatalf("want ErrFlowChanged when the flow changed underneath, got %v", err)
+	}
+	// The message has to name both sides: "it changed" without saying from what to
+	// what leaves the reader to diff two builds by hand.
+	if !strings.Contains(err.Error(), string(fsm.Fingerprint(born))) ||
+		!strings.Contains(err.Error(), string(fsm.Fingerprint(renamed))) {
+		t.Errorf("the refusal should name both fingerprints, got %q", err)
+	}
+}
+
+// TestALogWithoutAFingerprintStillReplays covers the compatibility rule.
+//
+// Adding a field to the opening event must not orphan every task already in the
+// store, so a log written before fingerprints existed replays as it always did.
+func TestALogWithoutAFingerprintStillReplays(t *testing.T) {
+	s := openTemp(t)
+
+	// No Flow: exactly what a log written before ADR-0046 holds.
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature}); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := s.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
+		t.Fatalf("advancing: %v", err)
+	}
+
+	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("an old log must still replay: %v", err)
+	}
+	if state.Stage != "discovery" {
+		t.Errorf("want the task where its log left it, got %q", state.Stage)
+	}
+}
+
+// TestAnUnreadableTaskDoesNotHideTheOthers covers INV-core-12 under ADR-0046.
+//
+// A task whose flow changed cannot be read, and returning an error from the
+// listing would let that one task hide every other task waiting on a person —
+// which is the exact failure the invariant exists to prevent.
+func TestAnUnreadableTaskDoesNotHideTheOthers(t *testing.T) {
+	s := openTemp(t)
+
+	// One task born under a flow that no longer exists.
+	stale := []fsm.Stage{{ID: "gone", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"x"}}}
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(stale)}); err != nil {
+		t.Fatalf("creating the stale task: %v", err)
+	}
+
+	// One healthy task, waiting at a gate.
+	if err := s.AppendAction("LUNA-2", fsm.TaskCreated{
+		Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow()),
+	}); err != nil {
+		t.Fatalf("creating the healthy task: %v", err)
+	}
+	if err := s.AppendAction("LUNA-2", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
+		t.Fatalf("advancing: %v", err)
+	}
+
+	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("one unreadable task must not fail the listing: %v", err)
+	}
+	if len(waiting) != 1 || waiting[0].TaskID != "LUNA-2" {
+		t.Errorf("want the healthy task still listed, got %+v", waiting)
 	}
 }

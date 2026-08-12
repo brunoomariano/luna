@@ -59,26 +59,34 @@ func Run(env Env, args []string) error {
 	}
 
 	switch args[0] {
-	case "task":
-		return runTask(env, args[1:])
-	case "run":
-		return runTaskCommand(env, args[1:])
-	case "unblock":
-		return unblockCommand(env, args[1:])
-	case "chat":
-		return chatCommand(env, args[1:])
-	case "plugin":
-		return pluginCommand(env, args[1:])
-	case "gates":
-		return runGates(env, args[1:])
-	case "gate":
-		return runGate(env, args[1:])
 	case "help", "-h", "--help":
 		fmt.Fprintln(env.Out, Usage())
 		return nil
-	default:
+	}
+
+	// A table rather than a switch arm each: adding a command is adding a row, and
+	// the dispatch was the most complex function in the package without deciding
+	// anything.
+	//
+	// Built here rather than as a package variable because `chat` runs Luna
+	// commands for you, so its entry refers back to this function — a package-level
+	// table would be an initialisation cycle.
+	commands := map[string]func(Env, []string) error{
+		"task":    runTask,
+		"run":     runTaskCommand,
+		"unblock": unblockCommand,
+		"chat":    chatCommand,
+		"plugin":  pluginCommand,
+		"gates":   runGates,
+		"gate":    runGate,
+		"flow":    runFlow,
+	}
+
+	command, ok := commands[args[0]]
+	if !ok {
 		return fmt.Errorf("%w: unknown command %q\n%s", ErrUsage, args[0], Usage())
 	}
+	return command(env, args[1:])
 }
 
 // Usage is the help text. It is a function rather than a constant so the command
@@ -97,8 +105,16 @@ luna — deterministic orchestration for AI agents
         drive the task until it needs a person or finishes.
         --dry-run exercises the flow with no herdr and no agent.
 
+  luna task abandon <id> <reason>
+        end a task that will not be finished. The log keeps everything —
+        abandoning records that a person called it off, and why.
+
   luna unblock <id>
         clear a block once whatever caused it is dealt with
+
+  luna flow check
+        what flow this build carries, and whether anything is open.
+        Changing the flow under an open task stops it replaying.
 
   luna chat
         say what you want in plain language. It runs Luna commands for you
@@ -134,7 +150,7 @@ profiles: interactive (default), turbo, nightly, plus any the project
 
 func runTask(env Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%w: task needs a subcommand (new, show)", ErrUsage)
+		return fmt.Errorf("%w: task needs a subcommand (new, show, abandon)", ErrUsage)
 	}
 
 	switch args[0] {
@@ -142,9 +158,45 @@ func runTask(env Env, args []string) error {
 		return taskNew(env, args[1:])
 	case "show":
 		return taskShow(env, args[1:])
+	case "abandon":
+		return taskAbandon(env, args[1:])
 	default:
 		return fmt.Errorf("%w: unknown task subcommand %q", ErrUsage, args[0])
 	}
+}
+
+// taskAbandon ends a task a person decided not to finish (ADR-0046).
+//
+// It is the one command that does not replay before acting, and that is the whole
+// reason it exists. A task whose flow changed under it no longer replays at all,
+// so a command that read the state first could never end the tasks that most need
+// ending. It appends against the log's existence instead, and lets the reducer
+// refuse on the next read if the task had already finished.
+//
+// The cost is accepted knowingly: abandoning an already-done task writes an event
+// that will fail to replay. That is a worse trade than it sounds only if it can
+// happen by accident, and it cannot — nothing reaches this without a person
+// typing the id and a reason.
+func taskAbandon(env Env, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("%w: task abandon needs a task and a reason", ErrUsage)
+	}
+	id, reason := args[0], strings.Join(args[1:], " ")
+
+	events, err := env.Store.Events(id)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("no task %q", id)
+	}
+
+	if err := env.Store.AppendAction(id, fsm.Abandon{Reason: reason}); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(env.Out, "%s abandoned: %s\n", id, reason)
+	return nil
 }
 
 func taskNew(env Env, args []string) error {
@@ -169,11 +221,14 @@ func taskNew(env Env, args []string) error {
 		return fmt.Errorf("task %q already exists, with %d events", id, len(events))
 	}
 
-	if err := env.Store.AppendAction(id, fsm.TaskCreated{Kind: kind, Profile: profile}); err != nil {
+	// The flow the task is born under is recorded with it, so a later replay can
+	// tell it is being read against a different one (ADR-0046).
+	flow := fsm.Fingerprint(fsm.DefaultFlow())
+	if err := env.Store.AppendAction(id, fsm.TaskCreated{Kind: kind, Profile: profile, Flow: flow}); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s)\n", id, kind, profile)
+	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s flow=%s)\n", id, kind, profile, flow)
 	return nil
 }
 

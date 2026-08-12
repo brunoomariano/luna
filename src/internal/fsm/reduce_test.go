@@ -743,3 +743,103 @@ func TestShippedProfilesAreTheDefaults(t *testing.T) {
 		}
 	}
 }
+
+// ── block M: ending a task that will not finish (ADR-0046) ───────────────────
+
+// TestAbandonEndsATaskFromWhereverItIs covers the reason abandon is wider than
+// the other human actions.
+//
+// The cases it exists for are the ones nobody planned — a task whose flow changed
+// under it, or one simply superseded — so it accepts any state that has not
+// already ended.
+func TestAbandonEndsATaskFromWhereverItIs(t *testing.T) {
+	for _, from := range []struct {
+		what  string
+		state TaskState
+	}{
+		{"ready, before anything ran", readyTask(KindFeature)},
+		{"running mid-flow", atStage(t, KindFeature, "build")},
+		{"waiting at a gate", mustReduce(t, readyTask(KindFeature), Advance{Flow: DefaultFlow()})},
+	} {
+		state, err := Reduce(from.state, Abandon{Reason: "superseded"})
+		if err != nil {
+			t.Errorf("%s: abandoning must work: %v", from.what, err)
+			continue
+		}
+		if state.Status != StatusAbandoned {
+			t.Errorf("%s: want abandoned, got %q", from.what, state.Status)
+		}
+		if !state.IsTerminal() {
+			t.Errorf("%s: an abandoned task has ended", from.what)
+		}
+		if state.Blocked != "superseded" {
+			t.Errorf("%s: the reason must be kept, got %q", from.what, state.Blocked)
+		}
+	}
+}
+
+// TestAbandonClearsAPendingGate keeps an ended task out of the gate listing.
+//
+// A gate left pending on a task nobody will finish would sit in `luna gates`
+// forever, waiting for a decision that no longer means anything (INV-core-12).
+func TestAbandonClearsAPendingGate(t *testing.T) {
+	waiting := mustReduce(t, readyTask(KindFeature), Advance{Flow: DefaultFlow()})
+	if waiting.Status != StatusAwaitingGate || waiting.Gate == nil {
+		t.Fatalf("setup: want a task waiting at a gate, got %q", waiting.Status)
+	}
+
+	state := mustReduce(t, waiting, Abandon{Reason: "not doing this one"})
+	if state.Gate != nil {
+		t.Errorf("an ended task holds no pending gate, got %+v", state.Gate)
+	}
+}
+
+// TestAbandonRefusesATaskThatAlreadyEnded keeps a second ending out of the log.
+//
+// A history showing a task finish twice is worse than an error the caller has to
+// read, and the log has no way to take an event back (INV-core-2).
+func TestAbandonRefusesATaskThatAlreadyEnded(t *testing.T) {
+	ended := mustReduce(t, readyTask(KindChore), Abandon{Reason: "first"})
+
+	if _, err := Reduce(ended, Abandon{Reason: "second"}); !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("want an illegal transition ending an ended task, got %v", err)
+	}
+}
+
+// TestAbandonNeedsAReason covers the one thing the engine insists on.
+//
+// The whole value of abandoning over deleting is that the audit says why, so an
+// empty reason is the one case that defeats the point.
+func TestAbandonNeedsAReason(t *testing.T) {
+	if _, err := Reduce(readyTask(KindChore), Abandon{}); !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("want a refusal without a reason, got %v", err)
+	}
+}
+
+// TestBlockedIsNotTerminal is the distinction ADR-0046 declined to blur.
+//
+// A block is an anomaly a person clears with Unblock. Counting it as an ending
+// would erase the difference between "this failed and someone should look" and
+// "this is over" — and it is exactly the shortcut that would have made abandon
+// unnecessary and the audit poorer.
+func TestBlockedIsNotTerminal(t *testing.T) {
+	blocked := mustReduce(t, atStage(t, KindFeature, "build"), Block{Reason: "the node died"})
+
+	if blocked.Status != StatusBlocked {
+		t.Fatalf("setup: want blocked, got %q", blocked.Status)
+	}
+	if blocked.IsTerminal() {
+		t.Error("a blocked task is recoverable, not ended")
+	}
+}
+
+// mustReduce applies one action and fails the test if it was refused.
+func mustReduce(t *testing.T, state TaskState, action Action) TaskState {
+	t.Helper()
+
+	next, err := Reduce(state, action)
+	if err != nil {
+		t.Fatalf("applying %T: %v", action, err)
+	}
+	return next
+}

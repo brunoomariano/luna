@@ -140,3 +140,80 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 		}
 	}
 }
+
+// TestTheEngineDoesNotDependOnTheShippedFlow is ADR-0017 as a test.
+//
+// The promise is that a project can bring its own flow. Every other test in this
+// package drives DefaultFlow(), so an assumption about the shipped fourteen
+// stages could sit in the engine for a long time without anything noticing —
+// which is how a flow becomes hardcoded by accident rather than by decision.
+//
+// The shape is borrowed from Erlang/OTP's gen_statem suite, which runs the same
+// test bodies under both callback modes: if the observable behaviour has to be
+// identical, one test proves both.
+func TestTheEngineDoesNotDependOnTheShippedFlow(t *testing.T) {
+	// A flow with nothing in common with the shipped one but its shape: different
+	// stage names, different artifacts, a conditional stage, and a mechanical one.
+	custom := []Stage{
+		{ID: "gather", Requires: []Artifact{TaskID}, Produces: []Artifact{"notes"}},
+		{ID: "draft", Role: "writer", Requires: []Artifact{"notes"}, Produces: []Artifact{"text"}},
+		{
+			ID: "translate", Role: "translator",
+			Requires: []Artifact{"text"}, Produces: []Artifact{"translated"},
+			When: func(c TaskContext) bool { return c.Kind == KindFeature },
+		},
+		{ID: "publish", Requires: []Artifact{"text"}, Produces: []Artifact{"url"}},
+	}
+
+	if gaps := AuditContract(custom); len(gaps) > 0 {
+		t.Fatalf("the custom flow must be well-formed to prove anything: %v", gaps)
+	}
+
+	for _, kind := range []TaskKind{KindFeature, KindChore} {
+		state := NewTaskState("LUNA-1", kind)
+		state.Profile = ProfileTurbo // no gates: this is about the flow, not the pauses
+
+		var visited []StageID
+		for range custom {
+			next, err := Reduce(state, Advance{Flow: custom})
+			if err != nil {
+				t.Fatalf("%s: advancing: %v", kind, err)
+			}
+			if next.IsTerminal() {
+				state = next
+				break
+			}
+			visited = append(visited, next.Stage)
+
+			stage := stageIn(custom, next.Stage)
+			owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+			state, err = Reduce(next, Complete{Delivered: owed, Evidence: passing(stage, owed), Flow: custom})
+			if err != nil {
+				t.Fatalf("%s: completing %q: %v", kind, next.Stage, err)
+			}
+		}
+
+		// Fall off the end, unless a skipped stage already got us there: a flow
+		// with a condition ends after a different number of advances per kind,
+		// which is itself part of what this proves.
+		if !state.IsTerminal() {
+			state = mustReduce(t, state, Advance{Flow: custom})
+		}
+		if state.Status != StatusDone {
+			t.Errorf("%s: a custom flow finishes like any other, got %q (%s)", kind, state.Status, state.Blocked)
+		}
+
+		// The conditional stage is the part that proves the engine read *this*
+		// flow's rules rather than falling back to what it knows.
+		wantTranslate := kind == KindFeature
+		var sawTranslate bool
+		for _, id := range visited {
+			if id == "translate" {
+				sawTranslate = true
+			}
+		}
+		if sawTranslate != wantTranslate {
+			t.Errorf("%s: translate visited=%v, want %v (visited %v)", kind, sawTranslate, wantTranslate, visited)
+		}
+	}
+}

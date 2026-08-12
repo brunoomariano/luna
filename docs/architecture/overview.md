@@ -245,6 +245,18 @@ The FSM state lives in **append-only** SQLite: no `UPDATE`, the history is the a
 Transitions are atomic — killing the process and restarting rebuilds the exact state, because
 it was never only in memory.
 
+**The log says which flow it was written under.** A task's opening event carries a
+fingerprint of the flow it was born under — the stage ids, in order, with the artifacts each
+requires and produces. Replaying a log against a different flow is refused rather than
+attempted, because a renamed stage used to replay as the new name and a stage inserted
+mid-flow made a task re-run work it had already finished, both in silence
+([ADR-0046](../ADRs/0046-the-log-records-which-flow-it-was-written-under.md)).
+
+The flow itself stays in configuration and stays editable: what is recorded is its
+*identity*, not its content. `luna flow check` reports whether anything is open before you
+change it, and a task that will not be finished is ended with `luna task abandon` — which
+adds a fact rather than removing any, since the store has no `DELETE`.
+
 **The FSM knows no issue tracker.** Plane, Jira, GitHub or nothing: the task enters
 through `luna task new` or through an import adapter, which is a command separate from the
 core.

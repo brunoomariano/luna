@@ -32,6 +32,20 @@ var ErrNoSuchBlob = errors.New("no blob for that hash")
 // guessing, because guessing would rebuild the task into a state it was never in.
 var ErrUnknownAction = errors.New("unknown action in the log")
 
+// ErrFlowChanged is returned when a log was written under a different flow than
+// the one it is being replayed against (ADR-0046).
+//
+// The same refusal as ErrUnknownAction and for the same reason, except that this
+// one used to be silent: a renamed stage replayed as the new name with no error
+// at all, and a stage inserted mid-flow made the task re-run work it had already
+// completed. There is no recovery inside an append-only log, so a task that meets
+// this is ended with `luna task abandon`.
+var ErrFlowChanged = errors.New("the flow changed under an open task")
+
+// firstSeq is the sequence of a task's opening event. Sequences start at 1, and
+// TaskCreated is always first — which is what makes the log self-describing.
+const firstSeq = 1
+
 // Event is one recorded transition. Seq orders it within its task; Blob points at
 // the snapshot taken at that moment, when there is one.
 type Event struct {
@@ -230,6 +244,22 @@ func (s *Store) Replay(taskID string, flow []fsm.Stage) (fsm.TaskState, error) {
 		if err != nil {
 			return fsm.TaskState{}, fmt.Errorf("replaying %s at seq %d: %w", taskID, e.Seq, err)
 		}
+
+		// Checked right after the opening event rather than up front, because the
+		// fingerprint arrives in the log rather than alongside it — the same reason
+		// kind and profile are not parameters.
+		//
+		// Reading further would rebuild the task against a contract it never ran
+		// under, and the failure is silent: a renamed stage simply becomes the new
+		// name, and a stage inserted mid-flow makes the task re-run work it had
+		// already finished (ADR-0046).
+		if e.Seq == firstSeq && !state.Flow.Matches(flow) {
+			return fsm.TaskState{}, fmt.Errorf(
+				"%w: %s ran under flow %s and this build's flow is %s — "+
+					"the log cannot be read against a flow it was not written under",
+				ErrFlowChanged, taskID, state.Flow, fsm.Fingerprint(flow),
+			)
+		}
 	}
 	return state, nil
 }
@@ -248,6 +278,14 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 	var waiting []Waiting
 	for _, id := range ids {
 		state, err := s.Replay(id, flow)
+		// A task written under a different flow is skipped rather than fatal. It
+		// cannot be read, but the listing exists so nothing waits forever unseen
+		// (INV-core-12), and returning an error here would let one unreadable task
+		// hide every other task waiting on a person. `luna flow check` is where
+		// those surface, by name.
+		if errors.Is(err, ErrFlowChanged) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

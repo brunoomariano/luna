@@ -21,6 +21,7 @@ const (
 	actionReviewFinding = "ReviewFinding"
 	actionBlock         = "Block"
 	actionUnblock       = "Unblock"
+	actionAbandon       = "Abandon"
 )
 
 // valueless are the actions that carry nothing but their name, so decoding them
@@ -65,6 +66,8 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionReviewFinding, a)
 	case fsm.Block:
 		return withPayload(actionBlock, a)
+	case fsm.Abandon:
+		return withPayload(actionAbandon, a)
 	default:
 		return "", "", fmt.Errorf("%w: cannot record %T", ErrUnknownAction, action)
 	}
@@ -80,32 +83,40 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 		return action, nil
 	}
 
+	// The two that need the flow injected back, which is what keeps them out of
+	// the table below: half of each is recorded and half is supplied (ADR-0026).
 	switch e.Action {
 	case actionAdvance:
 		return decodeWithFlow(e.Payload, flow, func(a fsm.Advance) fsm.Advance {
 			a.Flow = flow
 			return a
 		})
-	case actionTaskCreated:
-		return decodeJSON[fsm.TaskCreated](e.Payload)
 	case actionComplete:
 		return decodeWithFlow(e.Payload, flow, func(a fsm.Complete) fsm.Complete {
 			a.Flow = flow
 			return a
 		})
-	case actionFail:
-		return decodeJSON[fsm.Fail](e.Payload)
-	case actionGateAdjust:
-		return decodeJSON[fsm.GateAdjust](e.Payload)
-	case actionGateReject:
-		return decodeJSON[fsm.GateReject](e.Payload)
-	case actionReviewFinding:
-		return decodeJSON[fsm.ReviewFinding](e.Payload)
-	case actionBlock:
-		return decodeJSON[fsm.Block](e.Payload)
-	default:
-		return nil, fmt.Errorf("%w: %q", ErrUnknownAction, e.Action)
 	}
+
+	if decode, ok := fromPayload[e.Action]; ok {
+		return decode(e.Payload)
+	}
+	return nil, fmt.Errorf("%w: %q", ErrUnknownAction, e.Action)
+}
+
+// fromPayload are the actions that rebuild from their JSON alone.
+//
+// A table rather than a switch arm each: they all say the same thing, and the
+// list is long enough that the shape was hiding among the two cases that are
+// genuinely different.
+var fromPayload = map[string]func(string) (fsm.Action, error){
+	actionTaskCreated:   decodeJSON[fsm.TaskCreated],
+	actionFail:          decodeJSON[fsm.Fail],
+	actionGateAdjust:    decodeJSON[fsm.GateAdjust],
+	actionGateReject:    decodeJSON[fsm.GateReject],
+	actionReviewFinding: decodeJSON[fsm.ReviewFinding],
+	actionAbandon:       decodeJSON[fsm.Abandon],
+	actionBlock:         decodeJSON[fsm.Block],
 }
 
 // decodeWithFlow rebuilds an action and supplies the flow it should check

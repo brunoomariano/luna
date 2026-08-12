@@ -21,6 +21,17 @@ type Action interface{ isAction() }
 type TaskCreated struct {
 	Kind    TaskKind
 	Profile Profile
+
+	// Flow identifies the flow this task was born under (ADR-0046).
+	//
+	// It is recorded, unlike Advance.Flow, and the difference is the same one
+	// ADR-0026 draws for gates: which flow a task ran under is history, while the
+	// flow's content is configuration. Storing the identity keeps the flow
+	// editable and still lets a replay notice it is reading a log against a
+	// contract that is not the one it was written under.
+	//
+	// Empty means a log written before this field existed, which replays as before.
+	Flow FlowFingerprint `json:"flow,omitempty"`
 }
 
 // Advance moves to the next stage of the flow, applying the contract's entry
@@ -106,6 +117,21 @@ type Block struct{ Reason string }
 // Unblock is a human clearing a block.
 type Unblock struct{}
 
+// Abandon ends a task by human decision, without it having finished (ADR-0046).
+//
+// It is the answer to a task that will not be completed and has no way out
+// otherwise: one whose flow changed under it and no longer replays, or one that
+// was simply superseded. Without it, such a task stays open forever — the store
+// has no UPDATE and no DELETE (INV-core-2), so nothing else could end it.
+//
+// It is deliberately not a delete. The log keeps every event, and abandoning adds
+// one more fact rather than removing any: the audit should show that a person
+// ended this, and why.
+//
+// It is also not a reclassification of `blocked`. A block is an anomaly a person
+// can clear with Unblock; abandoning is the explicit act of saying it is over.
+type Abandon struct{ Reason string }
+
 func (TaskCreated) isAction()   {}
 func (Advance) isAction()       {}
 func (Complete) isAction()      {}
@@ -116,6 +142,7 @@ func (GateReject) isAction()    {}
 func (ReviewFinding) isAction() {}
 func (Block) isAction()         {}
 func (Unblock) isAction()       {}
+func (Abandon) isAction()       {}
 
 // reviewStages are the only ones allowed to produce a finding. An implementer
 // sending its own work back would be the self-review INV-core-7 rules out.
@@ -158,6 +185,8 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 		return block(state, a)
 	case Unblock:
 		return unblock(state)
+	case Abandon:
+		return abandon(state, a)
 	default:
 		return state, fmt.Errorf("%w: unknown action %T", ErrIllegalTransition, action)
 	}
@@ -198,6 +227,11 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 	if state.Profile == "" {
 		state.Profile = ProfileInteractive
 	}
+	// Carried into the state so a replay can compare it against the flow it was
+	// handed. The reducer records it and never checks it: comparing is the store's
+	// job, because the reducer sees one action at a time and the mismatch is a
+	// property of the whole replay (ADR-0046).
+	state.Flow = a.Flow
 	return state, nil
 }
 
@@ -409,6 +443,36 @@ func block(state TaskState, a Block) (TaskState, error) {
 
 	state.Status = StatusBlocked
 	state.Blocked = a.Reason
+	state.Gate = nil
+	return state, nil
+}
+
+// abandon ends a task a person decided not to finish (ADR-0046).
+//
+// It accepts any state that is not already terminal, which is wider than the
+// other human actions on purpose: the cases it exists for are the ones nobody
+// planned. A task can be running, waiting at a gate, or blocked, and the reason a
+// person is calling it off is not the engine's business.
+//
+// Ending an already-ended task is refused rather than ignored: it would put a
+// second ending in the log, and a history that shows a task finishing twice is
+// worse than an error the caller has to read.
+func abandon(state TaskState, a Abandon) (TaskState, error) {
+	if state.IsTerminal() {
+		return state, fmt.Errorf("%w: the task already ended as %q", ErrIllegalTransition, state.Status)
+	}
+	if a.Reason == "" {
+		return state, fmt.Errorf("%w: abandoning a task needs a reason", ErrIllegalTransition)
+	}
+
+	// Kept in Blocked rather than a field of its own: it is the same question —
+	// why did this task stop — and a second field would mean two places to look
+	// and one of them usually empty.
+	state.Status = StatusAbandoned
+	state.Blocked = a.Reason
+	// The gate goes with it. A gate left pending on an ended task would keep it in
+	// `luna gates`, waiting for a decision that no longer means anything
+	// (INV-core-12).
 	state.Gate = nil
 	return state, nil
 }
