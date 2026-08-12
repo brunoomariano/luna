@@ -5,9 +5,9 @@
 **Source issue:** —
 **PRD:** —
 
-> **Nothing is built from this yet.** One question in §3 is waiting on an investigation of
-> how swarm-forge handles the merge today, and it is the question that decides the shape of
-> the rest.
+> **Nothing is built from this yet.** The merge question that was blocking §3 has been
+> answered — see "How swarm-forge solved this" below — and the answer changed one part of the
+> design.
 
 ## Motivation
 
@@ -34,7 +34,7 @@ So this proposes a different assembly of the same idea, using parts that are alr
 | audit trail | append-only event log | **git commits** |
 | handoff | pointers plus a content-addressed snapshot | **the commit itself** |
 | lead | a Go loop | **an agent**, driven by closed orders |
-| worktree | one per task | **one per agent role** |
+| worktree | one per task | **one per task and role, ephemeral** |
 | flow control | the FSM, in code | the FSM, in code — unchanged |
 
 The last row is the point. Everything else can be borrowed; that one cannot, and it is
@@ -117,21 +117,83 @@ Where the lead does exercise judgement is exactly where ADR-0002 already allows 
 do about a failure**, bounded by the autonomy knob. That carve-out exists and is not being
 widened here.
 
-### One worktree per agent, and a merge that is code
+### One worktree per task and role, and a merge that is code
 
-Each role works in `wt-<repo>-<task>-<role>` and finishes with a commit. The next agent's
-base is the previous commit, so the handoff is the artifact rather than a description of it.
+Each role works in `wt-<repo>-<task>-<role>`, branched from the current integrated state, and
+finishes with a commit. The worktree is removed when the stage ends. The next agent's base is
+the previous commit, so the handoff is the artifact rather than a description of it.
 
-This is swarm-forge's shape, deliberately. What Luna does differently is the merge:
-swarm-forge's `merge_and_process` is generated into every handoff prompt and **defined
-nowhere in the repository** — the central verb of the pipeline is a phrase the model
-interprets. That is the single sharpest finding of the original study, and it is precisely
-where a deterministic engine has something to offer.
+This is swarm-forge's shape, deliberately — and the part Luna was going to do differently
+turns out to be the part swarm-forge has since rebuilt.
 
-> **Open, and blocking.** How swarm-forge handles this *today* is under investigation — the
-> studied clone is pinned at 2026-07-10 and the project has moved. The answer decides whether
-> Luna's merge is a fast-forward, a rebase, or something with conflict handling, and nothing
-> is built until it lands.
+#### How swarm-forge solved this
+
+The studied clone was pinned at 2026-07-10 and `main` is still there. The work moved to a
+branch called `squad`, active through 2026-08-12, and the merge stopped being prose.
+
+`merge_and_process` is still defined nowhere — it was reported as
+[issue #29](https://github.com/unclebob/swarm-forge/issues/29), still open, with a Codex
+agent passing it to Bash and stopping on `command not found`. A fork documented the damage in
+the meantime: `git merge -X theirs`, an agent discarding its own work in silence, and *"no
+consistent conflict-resolution policy"*.
+
+What replaced it, verified in the branch's source:
+
+**One owner of the shared git, enforced by code.**
+
+```clojure
+(defn ensure-main-git-owner!
+  "Reject merge-ready/accept-merge unless caller is the daemon owner."
+  [op]
+  (when (and (= "daemon" (main-git-owner)) (not (main-git-allowed?)))
+    (exit! 3 (str "MAIN_GIT_OWNER: only squadd may run " op) ...)))
+```
+
+Not a convention in a prompt — an exit code. The role prompt says the same thing in prose,
+but the prose is redundant.
+
+**A dry run, separate from the merge, in a throwaway worktree.**
+
+```clojure
+(defn dry-run-merge [root commit]
+  (with-merge-check-worktree root
+    (fn [worktree] (sh-at worktree "git" "merge" "--no-commit" "--no-ff" commit))))
+```
+
+A conflict becomes `merge_blocked` without the main repository being touched.
+
+**No automatic resolution, deliberately.** Searching the whole branch for `-X theirs`,
+`--ours` or `rerere` returns nothing. Having watched an agent silently discard its own work,
+they refused the shortcut.
+
+**Conflict resolution is a role, and its output re-enters the pipeline.** A dedicated,
+transient `merger` agent proposes a commit; the same deterministic dry-run-then-merge path
+validates and applies it. The model proposes, the code decides — never the reverse. Two
+numeric limits guard it, both scar tissue from real bugs: `max_merger_depth 2` for endless
+`*-merge-merge` chains, and a singleton merger against *"parallel-merger thrash"*.
+
+#### What Luna takes from that
+
+Four amendments, three adopted outright and one that changes this RFC's own design.
+
+1. **One owner of the shared git.** Luna is the only thing that merges, and it is enforced
+   rather than asked for. An agent works in its own worktree and commits there; nothing else.
+2. **The dry run is the verification, and its result is the verdict.** This maps onto
+   [ADR-0024](../ADRs/0024-the-reducer-is-pure-verification-runs-outside.md) exactly: the
+   merge check runs outside the engine and `merge_ready` / `merge_blocked` arrives inside the
+   action.
+3. **Conflict resolution is a stage with a contract, bounded by a ceiling.** It cannot be
+   deterministic — `git merge` is decidable, resolving a semantic conflict is not — so the
+   indeterminacy is isolated in a stage whose output goes back through the deterministic
+   path. The loop ceilings of [ADR-0023](../ADRs/0023-three-separate-loop-ceilings.md)
+   already exist for this shape.
+4. **The worktree is per task *and* role, and ephemeral.** This is the amendment. The
+   original sketch said one worktree per role, which is what the fork had — and its own issue
+   documents why that fails: role branches are *"permanent and never reset"*, so divergence
+   *"compounds at every hop"* and feature N faces N-1 features of drift. swarm-forge creates
+   the worktree from `HEAD` at each assignment and destroys it on retire. Luna does the same:
+   `wt-<repo>-<task>-<role>`, branched from the current integrated state, removed when the
+   stage ends.
 
 ### What beads holds, and what git holds
 
@@ -260,9 +322,16 @@ block still notifies, and the notifier already delegates to herdr.
 
 ## Open questions
 
-- [ ] **How does swarm-forge merge today?** Under investigation, and it blocks phase 0.
-- [ ] **What does Luna's merge do on conflict?** Refusing and asking a person is the honest
-      floor. Anything cleverer is a decision a model would be making.
+- [x] **How does swarm-forge merge today?** Answered above: deterministically, by a daemon,
+      with the model gated out by an exit code.
+- [ ] **Does the conflict-resolving stage exist from the start, or does Luna refuse and ask a
+      person?** Refusing is the honest floor and needs no new role. swarm-forge needed the
+      role, but they run many more agents in parallel than Luna will at first.
+- [ ] **How does a blocked merge become visible?** swarm-forge's own `bugs.md` records a
+      multi-hour stall where the dashboard never said why: *"UI never surfaced 'merge conflict
+      on acceptance/runner.clj'"*. In a system where the merge is code, a block is
+      first-class data — the surface that answers "why is nothing moving" belongs in the
+      design rather than after it.
 - [ ] **Does the lead see the whole flow, or only its next order?** Only the next order keeps
       it obedient; seeing the flow makes it a better conversational partner. These pull
       against each other.
