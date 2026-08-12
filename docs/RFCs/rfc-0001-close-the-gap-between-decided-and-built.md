@@ -214,6 +214,13 @@ timing stays as it is.
       in the engine and no surface through which anyone can use it. `src/stock/` is the
       intended home for shipped defaults and is currently empty — loading stages from TOML
       is larger than this RFC and likely deserves its own.
+
+      Since this was written, the rest of a stage became plain data:
+      [ADR-0048](../ADRs/0048-a-field-read-by-the-reducer-is-history.md) gave conditions
+      names and [ADR-0049](../ADRs/0049-a-stage-declares-its-gate-and-what-a-review-costs.md)
+      turned gates and review behaviour into fields. `Verifier` is now the only field of
+      `Stage` still holding something a config file cannot express, which narrows the
+      question rather than answering it.
 - [ ] **Does `AuditContract` run in production?** It is implemented and tested and no CLI
       path invokes it, so a flow broken on paper is only caught by tests.
 - [ ] **What replaces the second INV-core-7 acceptance criterion?** It asked for detecting
