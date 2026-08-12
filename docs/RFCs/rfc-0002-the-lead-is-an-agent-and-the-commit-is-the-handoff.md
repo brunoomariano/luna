@@ -113,6 +113,11 @@ The resolution is that **the FSM emits an order, not advice**. `luna next` retur
 command: which stage, which agent, which worktree, which base commit, which brief, which
 tools denied. The lead executes it and reports back. It chooses nothing about the happy path.
 
+The order comes in **both shapes**: plain `key=value` by default, and `--json` for a caller
+that parses. Text is what a person reads while checking the machine by hand — which is how
+phase 1 is meant to be exercised before any agent is driving it — and JSON is what the lead
+reads once one is. The same pattern `luna gates` already follows.
+
 Where the lead does exercise judgement is exactly where ADR-0002 already allows it: **what to
 do about a failure**, bounded by the autonomy knob. That carve-out exists and is not being
 widened here.
