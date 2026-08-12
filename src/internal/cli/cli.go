@@ -86,6 +86,9 @@ func Run(env Env, args []string) error {
 		"gates":   runGates,
 		"gate":    runGate,
 		"flow":    runFlow,
+		"next":    nextCommand,
+		"done":    doneCommand,
+		"status":  statusCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -106,6 +109,20 @@ luna — deterministic orchestration for AI agents
 
   luna task show <id> [--json]
         the task's current state and what it has produced
+
+  luna next <id> [--json]
+        the order for this task: which stage, which role, which worktree,
+        which base commit, what is denied. It is an instruction, not advice,
+        and reading it changes nothing.
+
+  luna done <id> --delivered <a,b> [--commit <sha>]
+        report the running stage finished, and hand in the commit it
+        produced. Luna checks the delivery against the contract — a stage
+        that owed more than it delivered does not close.
+
+  luna status <id> [--json]
+        the whole flow and where the task stands in it. Separate from
+        next on purpose: an order carries no view of what comes after it.
 
   luna run <id> [--agent <kind>] [--dry-run]
         drive the task until it needs a person or finishes.

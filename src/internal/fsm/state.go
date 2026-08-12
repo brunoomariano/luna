@@ -228,6 +228,14 @@ type TaskState struct {
 	// Empty means a log written before the field existed.
 	Flow FlowFingerprint
 
+	// Base is the commit the last closed stage delivered, and the one the next
+	// stage branches from. It is the handoff: the next agent starts from the
+	// artifact rather than from a description of it (INV-core-6, RFC-0002).
+	//
+	// Empty on a task that has not closed a stage yet, which means the next
+	// worktree branches from whatever the repository already is.
+	Base string
+
 	Gate  *PendingGate
 	Loop  LoopCounters
 	Retry Retry

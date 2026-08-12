@@ -72,6 +72,17 @@ type Complete struct {
 	Delivered []Artifact            `json:"delivered"`
 	Evidence  map[Artifact]Evidence `json:"evidence,omitempty"`
 	Flow      []Stage               `json:"-"`
+
+	// Commit is what the stage delivered, as a git object. It becomes the next
+	// stage's base, which is what makes the handoff the artifact itself rather
+	// than a description of it (INV-core-6, RFC-0002).
+	//
+	// Optional, and the omission is deliberate: a mechanical stage may produce no
+	// commit at all, and a log written before the field existed still replays. An
+	// empty commit leaves the base where it was rather than clearing it — losing
+	// the base would send the next stage back to the repository's own HEAD and
+	// silently discard every stage before it.
+	Commit string `json:"commit,omitempty"`
 }
 
 // Fail reports that the node broke. Retry until the budget is spent, then block
@@ -346,6 +357,15 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// itself.
 	state.Status = StatusStageDone
 	state.Retry.Attempts = 0
+
+	// The base advances only here, on the path where the stage actually closed.
+	// A delivery that failed its verification is recorded above and returns
+	// early, so work that did not pass never becomes the next stage's starting
+	// point — which is the whole reason the base is a separate field rather than
+	// "whatever the last commit was".
+	if a.Commit != "" {
+		state.Base = a.Commit
+	}
 	return state, nil
 }
 
