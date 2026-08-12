@@ -64,22 +64,36 @@ func CheckoutDelivered(ctx context.Context, worktree string) (*Delivered, error)
 		return nil, nil //nolint:nilnil // "no delivery yet" is not an error
 	}
 
-	dir, err := os.MkdirTemp("", "luna-delivered-")
+	return throwawayCheckout(ctx, worktree, head, "luna-delivered-")
+}
+
+// throwawayCheckout makes a detached worktree at a commit, and knows how to
+// remove it again.
+//
+// Shared by the delivery check and the merge check because they want exactly the
+// same thing: a tree at a known commit, belonging to no branch, gone afterwards
+// whatever happened. The two grew independently and were identical but for the
+// prefix, which is a duplicate of the cleanup rule — the part it is expensive to
+// get wrong twice.
+//
+// --detach is what keeps it out of trouble: the checkout belongs to no branch,
+// so it cannot be mistaken for a task's own worktree and cannot be committed to
+// by accident.
+func throwawayCheckout(ctx context.Context, repo, commit, prefix string) (*Delivered, error) {
+	dir, err := os.MkdirTemp("", prefix)
 	if err != nil {
-		return nil, fmt.Errorf("making room for the delivery checkout: %w", err)
+		return nil, fmt.Errorf("making room for a checkout of %s: %w", short(commit), err)
 	}
 	path := filepath.Join(dir, "tree")
 
-	// --detach: this checkout belongs to no branch, so it cannot be confused for
-	// the task's own worktree and cannot be committed to by accident.
-	if _, err := git(ctx, worktree, "worktree", "add", "--detach", path, head); err != nil {
+	if _, err := git(ctx, repo, "worktree", "add", "--detach", path, commit); err != nil {
 		_ = os.RemoveAll(dir)
-		return nil, fmt.Errorf("checking out the delivery at %s: %w", short(head), err)
+		return nil, fmt.Errorf("checking out %s: %w", short(commit), err)
 	}
 
 	return &Delivered{
 		Path: path,
-		Ref:  short(head),
+		Ref:  short(commit),
 		cleanup: func() {
 			// Remove the registration before the directory: a worktree deleted from
 			// disk without git being told leaves a prunable entry in the repository
@@ -90,7 +104,7 @@ func CheckoutDelivered(ctx context.Context, worktree string) (*Delivered, error)
 			// cancelled.
 			done, stop := context.WithTimeout(context.Background(), gitTimeout)
 			defer stop()
-			_, _ = git(done, worktree, "worktree", "remove", "--force", path)
+			_, _ = git(done, repo, "worktree", "remove", "--force", path)
 			_ = os.RemoveAll(dir)
 		},
 	}, nil

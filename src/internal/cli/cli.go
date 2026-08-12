@@ -89,6 +89,7 @@ func Run(env Env, args []string) error {
 		"next":    nextCommand,
 		"done":    doneCommand,
 		"status":  statusCommand,
+		"stuck":   stuckCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -150,6 +151,11 @@ luna — deterministic orchestration for AI agents
 
   luna gates [--json]
         every task waiting on a person
+
+  luna stuck [--for <duration>] [--notify] [--json]
+        what has been stopped for too long — a blocked merge, a gate
+        nobody answered. Defaults to an hour. --notify tells a person
+        instead of only whoever ran the command.
 
   luna gate show <id>
         what a suspended task is waiting for
@@ -581,7 +587,7 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 }
 
 // valuelessFlags are the switches: present or absent, never `--flag value`.
-var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true, "json": true}
+var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true, "json": true, "notify": true}
 
 // parseFlags reads --name=value and --name value pairs.
 func parseFlags(args []string) (map[string]string, error) {

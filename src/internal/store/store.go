@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, no CGO — see ADR-0025
 
@@ -84,7 +86,23 @@ type Waiting struct {
 // Store is the append-only log plus the content store, in one SQLite file.
 // Keeping them together is what makes writing an event and its snapshot atomic
 // (ADR-0025).
-type Store struct{ db *sql.DB }
+type Store struct {
+	db *sql.DB
+
+	// Now is the clock the log is stamped with. It is a field so a test can
+	// place events in time without sleeping, and it is on the store rather than
+	// anywhere nearer the engine because this is the only layer allowed to read
+	// a clock at all (ADR-0024).
+	Now func() time.Time
+}
+
+// now is the store's clock, defaulting to the real one.
+func (s *Store) now() time.Time {
+	if s.Now == nil {
+		return time.Now()
+	}
+	return s.Now()
+}
 
 const schema = `
 CREATE TABLE IF NOT EXISTS events (
@@ -93,6 +111,15 @@ CREATE TABLE IF NOT EXISTS events (
     action   TEXT    NOT NULL,
     payload  TEXT    NOT NULL DEFAULT '',
     blob     TEXT    NOT NULL DEFAULT '',
+    -- When the row was written, in unix seconds. It is metadata about the log
+    -- and never part of the state: Replay does not read it, and the reducer
+    -- could not use it without ceasing to be pure (ADR-0024).
+    --
+    -- It exists for the watchdog, which asks a question no replay can answer —
+    -- "how long has this been blocked" — because a rebuilt state carries no
+    -- clock. DEFAULT 0 so a log written before the column existed still reads,
+    -- reporting an age of zero rather than a false one (ADR-0053).
+    at       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (task_id, seq)
 );
 
@@ -141,7 +168,34 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("creating the schema in %s: %w", path, err)
 	}
 
+	if err := addMissingColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("bringing %s up to date: %w", path, err)
+	}
+
 	return &Store{db: db}, nil
+}
+
+// addMissingColumns adds columns that `CREATE TABLE IF NOT EXISTS` cannot, since
+// it does nothing at all once the table is there.
+//
+// The append-only rule is about *rows*: history is never rewritten, and adding a
+// column rewrites nothing — every existing event keeps exactly what it recorded
+// and gains a default for what it did not (INV-core-2).
+//
+// A duplicate-column error is the ordinary case rather than a failure: it means
+// the store is already current, which is true on every run but the first after
+// an upgrade. SQLite has no `ADD COLUMN IF NOT EXISTS`, so the error is the
+// check.
+func addMissingColumns(db *sql.DB) error {
+	for _, statement := range []string{
+		`ALTER TABLE events ADD COLUMN at INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("%s: %w", statement, err)
+		}
+	}
+	return nil
 }
 
 // Close releases the database handle.
@@ -264,9 +318,12 @@ func (s *Store) appendTx(taskID string, e Event, content []byte, after int) (str
 	}
 	next := last + 1
 
+	// The clock is read here and nowhere the reducer can reach. Writing the time
+	// is an observation about the log; reading it back into a transition would
+	// make a replay depend on when it ran (ADR-0024, ADR-0053).
 	if _, err := tx.Exec(
-		`INSERT INTO events (task_id, seq, action, payload, blob) VALUES (?, ?, ?, ?, ?)`,
-		taskID, next, e.Action, e.Payload, hash,
+		`INSERT INTO events (task_id, seq, action, payload, blob, at) VALUES (?, ?, ?, ?, ?, ?)`,
+		taskID, next, e.Action, e.Payload, hash, s.now().Unix(),
 	); err != nil {
 		return "", fmt.Errorf("appending to %s: %w", taskID, err)
 	}

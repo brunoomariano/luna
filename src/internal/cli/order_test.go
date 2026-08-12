@@ -128,16 +128,12 @@ func TestAStageThatDeliveredLessThanItOwedDoesNotClose(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
 
-	order := mustOrderFrom(t, h, "LUNA-1")
-	if len(order.Produces) < 2 {
-		t.Skipf("the first stage owes %d artifact(s); this test needs a stage that owes more than one",
-			len(order.Produces))
-	}
 	enterStage(t, h, "LUNA-1")
 
-	// Everything but the last one.
-	short := artifactNames(order.Produces)[:len(order.Produces)-1]
-	out := h.mustRun(t, "done", "LUNA-1", "--delivered", strings.Join(short, ","))
+	// An artifact the stage does not owe, and nothing it does. Reporting the
+	// wrong thing is the same shortfall as reporting too little, and it is the
+	// mistake a caller driving by hand actually makes.
+	out := h.mustRun(t, "done", "LUNA-1", "--delivered", "something-else")
 
 	if !strings.Contains(out, "did not close") {
 		t.Fatalf("a short delivery closed the stage: %s", out)
@@ -189,6 +185,39 @@ func TestDoneNeedsToBeToldWhatWasDelivered(t *testing.T) {
 	err := h.run(t, "done", "LUNA-1")
 	if err == nil {
 		t.Fatal("a stage closed without saying what it produced")
+	}
+}
+
+// TestDeliveredNamesAreTrimmedAndBlanksIgnored. `--delivered "repos, code"` is
+// what a person types, and a leading space must not become part of an artifact
+// name that then fails to match the contract.
+func TestDeliveredNamesAreTrimmedAndBlanksIgnored(t *testing.T) {
+	got, err := deliveredArtifacts(" repos , , code ")
+	if err != nil {
+		t.Fatalf("deliveredArtifacts: %v", err)
+	}
+	if len(got) != 2 || got[0] != "repos" || got[1] != "code" {
+		t.Errorf("got %v, want [repos code] with the blank dropped", got)
+	}
+}
+
+// TestAnAbandonedTaskHasNoOrderToGive closes the loop on the terminal statuses:
+// the commands must refuse rather than issue an order for a task that is over.
+func TestAnAbandonedTaskHasNoOrderToGive(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature")
+	h.mustRun(t, "task", "abandon", "LUNA-1", "changed our minds")
+
+	out := h.mustRun(t, "next", "LUNA-1")
+	if !strings.Contains(out, "kind=done") {
+		t.Errorf("an abandoned task got something other than a done order:\n%s", out)
+	}
+	if !strings.Contains(out, "called off") {
+		t.Errorf("the order does not distinguish abandoned from finished:\n%s", out)
+	}
+
+	if err := h.run(t, "done", "LUNA-1", "--delivered", "repos"); err == nil {
+		t.Error("a stage was reported done on an abandoned task")
 	}
 }
 
