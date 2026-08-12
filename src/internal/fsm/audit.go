@@ -91,3 +91,35 @@ func AuditRoles(flow []Stage) []RoleGap {
 
 	return gaps
 }
+
+// NameGap is a stage whose id leaves no room for a task id inside an agent name.
+type NameGap struct {
+	Stage StageID
+
+	// Budget is how many characters a task id could have if this stage were the
+	// longest. Zero or less means the stage name alone does not fit.
+	Budget int
+}
+
+// AuditFlowNames reports stages whose ids squeeze the task id past its limit.
+//
+// herdr caps an agent name at 32 characters (ADR-0036) and Luna builds that name
+// as `luna-<id>-<stage>`, so a long stage name and a long task id cannot both fit.
+// MaxTaskIDLen is derived from the longest stage in the *shipped* flow, and a
+// custom flow (ADR-0017) can break that arithmetic.
+//
+// It is a static check for the same reason AuditContract is one: the alternative
+// is discovering it when two stages of one task produce the same truncated agent
+// name and prompt each other's pane.
+func AuditFlowNames(flow []Stage) []NameGap {
+	var gaps []NameGap
+
+	for _, stage := range flow {
+		// "luna-" + id + "-" + stage, within 32.
+		budget := agentNameLimit - len("luna-") - len("-") - len(stage.ID)
+		if budget < MaxTaskIDLen {
+			gaps = append(gaps, NameGap{Stage: stage.ID, Budget: budget})
+		}
+	}
+	return gaps
+}

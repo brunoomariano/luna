@@ -544,6 +544,28 @@ func TestTheAgentNameFitsHerdrsRules(t *testing.T) {
 	if agentName("LUNA-1", "build") == agentName("LUNA-1", "code-review") {
 		t.Error("two stages must not share an agent name")
 	}
+
+	// The case the short ids above cannot reach. The name is built as
+	// `luna-<id>-<stage>` with the stage last, so an id long enough to push the
+	// stage past herdr's 32-character limit used to truncate it away — and two
+	// stages of one task then produced the same name, with reuse() handing back
+	// the previous stage's pane.
+	//
+	// fsm.MaxTaskIDLen exists to make that unreachable, so an id at the limit has
+	// to leave every stage distinguishable.
+	atLimit := strings.Repeat("x", fsm.MaxTaskIDLen)
+	seen := map[string]fsm.StageID{}
+	for _, stage := range fsm.DefaultFlow() {
+		name := agentName(atLimit, stage.ID)
+		if len(name) > 32 {
+			t.Errorf("%q with stage %q is %d characters, which herdr refuses", atLimit, stage.ID, len(name))
+		}
+		if other, clash := seen[name]; clash {
+			t.Errorf("stages %q and %q both produce %q — the longest id must still "+
+				"leave every stage distinct", other, stage.ID, name)
+		}
+		seen[name] = stage.ID
+	}
 }
 
 // TestAMechanicalStageStartsNoAgent is the point of ADR-0040.

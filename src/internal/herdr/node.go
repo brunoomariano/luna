@@ -323,12 +323,22 @@ func agentName(taskID string, stage fsm.StageID) string {
 		default:
 			b.WriteRune('-')
 		}
-		if b.Len() >= 32 {
+		// The cap is herdr's, and it should never be reached: task ids are
+		// validated against it (fsm.MaxTaskIDLen) and a flow with stage names long
+		// enough to squeeze them is reported by fsm.AuditFlowNames. This stays as
+		// the floor, because sending a name herdr refuses would fail the stage —
+		// but truncating is why two stages of one task once produced the same name,
+		// and reuse() then prompted the wrong pane.
+		if b.Len() >= agentNameLimit {
 			break
 		}
 	}
 	return b.String()
 }
+
+// agentNameLimit is what herdr accepts for an agent name, verified against a
+// running server: `[a-z][a-z0-9_-]{0,31}` (ADR-0036).
+const agentNameLimit = 32
 
 // branchFor is the branch a task's worktree lives on. One per task, named after
 // it, so the checkout is findable without consulting Luna.

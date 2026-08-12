@@ -14,6 +14,13 @@ commit, block or explicit abandonment.
 **Where it appears.** It is the root of everything: each task has a lead, a worktree and an
 instance of the FSM.
 
+**Its identifier** comes from outside — Luna generates none, so a tracker's own id can be
+used unchanged ([INV-core-9](../invariants/core.md)). It is validated once, on the way in,
+because it is more than a key: it becomes the worktree's directory name
+(`wt-<repo>-<id>`) and part of the agent's name in herdr, which accepts
+`[a-z][a-z0-9_-]{0,31}`. Hence letters, digits, `-` and `_` only, and short enough that
+the longest stage name still fits beside it.
+
 ---
 
 ## Stage (*stage*)

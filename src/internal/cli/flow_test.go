@@ -146,3 +146,28 @@ func TestFlowRefusesAnUnknownSubcommand(t *testing.T) {
 		t.Error("flow check takes no arguments")
 	}
 }
+
+// TestTaskNewRefusesAnIdThatBreaksDownstream guards the only door an id comes
+// through.
+//
+// Everything after this treats the id as safe: it becomes `wt-<repo>-<id>` on
+// disk and part of an agent name in herdr, and neither checked. ADR-0037 named
+// the path risk and left the guard for later; this is later.
+func TestTaskNewRefusesAnIdThatBreaksDownstream(t *testing.T) {
+	for _, id := range []string{"../../etc", "a/b", "LUNA 1", strings.Repeat("x", 40)} {
+		h := newHarness(t)
+		if err := h.run(t, "task", "new", id); err == nil {
+			t.Errorf("%q should not open a log", id)
+		}
+	}
+}
+
+// TestTaskNewStillTakesOrdinaryIds keeps the rule from breaking the normal case.
+func TestTaskNewStillTakesOrdinaryIds(t *testing.T) {
+	for _, id := range []string{"LUNA-1", "PROJ-4823", "fix_login"} {
+		h := newHarness(t)
+		if err := h.run(t, "task", "new", id); err != nil {
+			t.Errorf("%q is an ordinary id: %v", id, err)
+		}
+	}
+}

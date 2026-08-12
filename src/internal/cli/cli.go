@@ -206,6 +206,14 @@ func taskNew(env Env, args []string) error {
 
 	id := args[0]
 
+	// Validated here, at the only place an id enters the system. Everything
+	// downstream treats it as safe: it becomes a directory name and part of an
+	// agent name, and neither checked (ADR-0037 flagged the first and left the
+	// guard unbuilt).
+	if err := fsm.ValidateTaskID(id); err != nil {
+		return fmt.Errorf("%w: %w", ErrUsage, err)
+	}
+
 	kind, profile, err := parseTaskOptions(env.profiles(), args[1:])
 	if err != nil {
 		return err
