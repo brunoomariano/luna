@@ -197,6 +197,16 @@ transition, so it needs its own ADR rather than being fixed in passing. Until th
 delivers the half that is safe — the payload is carried when the artifact exists — and the
 timing stays as it is.
 
+## Settled since
+
+- **The flow's identity is now in the log**
+  ([ADR-0046](../ADRs/0046-the-log-records-which-flow-it-was-written-under.md)), which also
+  brought `luna task abandon` and `luna flow check`. That closes the question this RFC
+  raised about a task with no way out.
+- **The engine is now proven not to depend on the shipped flow** — the reducer's suite runs
+  against `DefaultFlow()` and against a custom flow with different stages, artifacts and a
+  condition. ADR-0017 promised that and nothing verified it.
+
 ## Open questions
 
 - [ ] **How does a project declare a verifier?** `Stage.Verifiers` holds Go functions and
