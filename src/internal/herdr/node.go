@@ -393,16 +393,25 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 		// agrees — measured: `verify` owed `dod_checked`, committed a file called
 		// `verification`, and closed green.
 		//
-		// Only when this stage committed, and that guard is the whole subtlety. A
-		// stage's worktree is branched from the previous stage's commit, so HEAD
-		// already carries somebody else's message — and reading it is worse than
-		// reading nothing: `setup` is mechanical, runs no agent, and reported
-		// `repos` because that is what `discovery` had declared one commit earlier.
+		// Only a stage that runs an agent can declare anything, and that condition
+		// is the whole subtlety. A worktree's HEAD is the previous stage's commit,
+		// which already carries somebody else's declaration, so a mechanical stage
+		// reads a message no one wrote for it. Both mechanical stages were measured
+		// doing exactly that: `setup` reported `repos` from `discovery`, and
+		// `commit` reported `review_report` from `code-review`.
+		//
+		// "Did this stage commit?" was the first attempt and is not enough: by
+		// `commit` the base is two stages back, so HEAD differs from it and the
+		// inherited message passes anyway.
 		//
 		// An agent that declared nothing falls back to the assumption, because
 		// every agent that ran before this existed wrote no such line and a stage
 		// must not start failing over the shape of a commit message.
-		if result.Commit != state.Base {
+		// Both conditions, because they catch different halves. The stage must run
+		// an agent, and that agent must have committed something of its own — an
+		// agent that worked and committed nothing leaves HEAD on the base, and the
+		// base's message is the previous stage's declaration.
+		if !stage.Mechanical() && result.Commit != state.Base {
 			if declared := fsm.ReadDelivered(message); len(declared) > 0 {
 				result.Delivered = declared
 			}

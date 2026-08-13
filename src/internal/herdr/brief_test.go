@@ -326,3 +326,41 @@ func TestAStageThatCommittedNothingDoesNotInheritADeclaration(t *testing.T) {
 		}
 	}
 }
+
+// TestAMechanicalStageAfterAnAgentStageDeclaresNothing.
+//
+// The `Commit != Base` guard is not enough on its own. `commit` runs after
+// `code-review`, whose commit becomes its worktree's HEAD — and by then the base
+// is the *verify* commit, two behind. So HEAD differs from base, the guard
+// passes, and the stage reads `Delivered: review_report`.
+//
+// Measured on a real chore run: `commit` blocked owing `commit_sha` while
+// reporting what `code-review` had delivered.
+//
+// The rule that holds is simpler: a stage with no role runs no agent, so no
+// declaration can be its own.
+func TestAMechanicalStageAfterAnAgentStageDeclaresNothing(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: fake,
+		Prove:  fake.proving(),
+		Roles:  fixedRole("claude"),
+		Delivered: func(context.Context, string) (string, string) {
+			// code-review's commit, inherited as this worktree's HEAD.
+			return "review1", "chore: review\n\nDelivered: review_report\n"
+		},
+	}
+
+	state := fsm.NewTaskState("LUNA-1", "")
+	state.Base = "verify1" // two stages back: HEAD differs from base
+
+	stage := fsm.Stage{ID: "commit", Produces: []fsm.Artifact{"commit_sha"}}
+	result, err := node.Run(context.Background(), state, stage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Delivered) != 1 || result.Delivered[0] != "commit_sha" {
+		t.Errorf("delivered = %v, want [commit_sha] — a mechanical stage has no agent to declare", result.Delivered)
+	}
+}
