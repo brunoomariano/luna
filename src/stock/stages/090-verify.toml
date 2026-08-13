@@ -1,0 +1,19 @@
+# The pipeline is a command and the checklist is a judgement, so this stage has
+# both — and a role, because the artifact that needs one decides (ADR-0040).
+
+id                 = "verify"
+role               = "verifier"
+requires           = ["code", "scenarios"]
+produces           = ["ci_green"]
+produces_for_human = ["dod_checked"]
+
+[verify.ci_green]
+# The one artifact in the flow that earns full: `make ci` is the whole gate, and
+# INV-core-4 wants it run rather than claimed.
+run   = "make ci"
+scope = "full"
+
+[verify.dod_checked]
+# A checklist a person reads. Recording it as a passing check would be the lie
+# ADR-0032 names.
+kind = "existence"

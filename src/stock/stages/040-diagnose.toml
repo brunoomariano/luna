@@ -1,0 +1,11 @@
+# Bug-only: there is no root cause to find when nothing broke (ADR-0014).
+
+id                 = "diagnose"
+role               = "investigator"
+when               = "is-bug"
+requires           = ["briefing"]
+produces           = ["root_cause"]
+produces_for_human = ["min_case"]
+
+[verify.root_cause]
+kind = "existence"

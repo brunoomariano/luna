@@ -1,5 +1,12 @@
 package fsm
 
+import (
+	"fmt"
+	"sync"
+
+	"github.com/brunoomariano/luna/src/stock"
+)
+
 // DefaultFlow is the flow Luna ships with — the 14 stages of
 // docs/architecture/stages.md.
 //
@@ -8,159 +15,31 @@ package fsm
 // what it requires and what it produces.
 //
 // Order is significant: AuditContract checks precedence, not existence.
+//
+// It reads the stock embedded in the binary rather than returning Go literals
+// (RFC-0003). The files are the source, so the surface a project edits and the
+// flow Luna runs are the same thing rather than two descriptions of it — which
+// is what makes ADR-0017 true rather than aspirational.
+//
+// A stock that does not parse is a panic, and deliberately: it is embedded at
+// build time, so a broken one is a broken binary rather than a bad input. Every
+// test in the suite calls this, which is what makes the parser proven by the
+// whole suite rather than by its own tests alone.
 func DefaultFlow() []Stage {
-	return []Stage{
-		{
-			ID:       "discovery",
-			Role:     "scout",
-			Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm the repositories"},
-			Requires: []Artifact{TaskID},
-			Produces: []Artifact{"repos"},
-		},
-		{
-			ID:       "setup",
-			Requires: []Artifact{"repos"},
-			Produces: []Artifact{"worktree"},
-		},
-		{
-			ID:       "intake",
-			Role:     "analyst",
-			Requires: []Artifact{TaskID, "worktree"},
-			Produces: []Artifact{"briefing", "kind"},
-		},
-		{
-			ID:               "diagnose",
-			Role:             "investigator",
-			Requires:         []Artifact{"briefing"},
-			Produces:         []Artifact{"root_cause"},
-			ProducesForHuman: []Artifact{"min_case"},
-			When:             IsBug,
-		},
-		{
-			ID:       "scenarios",
-			Role:     "gherkin",
-			Gate:     &GateSpec{Kind: GateConfirm, Reason: "approve the plan"},
-			Requires: []Artifact{"briefing", "kind"},
-			Produces: []Artifact{"scenarios", "approach"},
-		},
-		{
-			ID:   "spec",
-			Role: "specifier",
-			Gate: &GateSpec{
-				Kind: GateReviewArtifact, Artifact: "contract", Reason: "review the contract",
-			},
-			Requires: []Artifact{"approach"},
-			Produces: []Artifact{"contract"},
-			When:     IsFeatureOrBug,
-		},
-		{
-			ID:   "build",
-			Role: "implementer",
-			// ADR-0022 calls for `contract` here, required only when `spec` entered
-			// the flow. It stays out until the conditional-requires mechanism is
-			// chosen — declaring it without that mechanism would stall every
-			// `chore` or `docs` task, since `spec` is skipped in those.
-			// See the note in docs/architecture/stages.md.
-			Requires: []Artifact{"scenarios", "approach", "worktree"},
-			Produces: []Artifact{"code", "tests_green"},
-			Verifiers: map[Artifact]Verifier{
-				// Targeted rather than full: build runs the tests it touched, and
-				// claiming the whole suite here would be the laundering ADR-0028
-				// rejects. `verify` is the stage that earns ScopeFull.
-				"tests_green": Command{Run: "make test", Scope: ScopeTargeted},
-				// `code` has no command that proves it — the compiler is part of
-				// `make test`, and "the diff is non-empty" proves nothing about it.
-				// It closes on existence, and that is now said rather than defaulted.
-				"code": Existence{},
-			},
-		},
-		{
-			ID:       "refactor",
-			Role:     "cleaner",
-			Requires: []Artifact{"code", "tests_green"},
-			Produces: []Artifact{"code"},
-		},
-		{
-			ID: "verify",
-			// The pipeline is a command and the checklist is a judgement, so this
-			// stage has both — and a role, because the artifact that needs one
-			// decides (ADR-0040).
-			Role:             "verifier",
-			Requires:         []Artifact{"code", "scenarios"},
-			Produces:         []Artifact{"ci_green"},
-			ProducesForHuman: []Artifact{"dod_checked"},
-			Verifiers: map[Artifact]Verifier{
-				// The one artifact in the flow that earns ScopeFull: `make ci` is
-				// the whole gate, and INV-core-4 wants it run rather than claimed.
-				"ci_green": Command{Run: "make ci", Scope: ScopeFull},
-				// A checklist a person reads. Recording it as a passing check would
-				// be the lie ADR-0032 names.
-				"dod_checked": Existence{},
-			},
-		},
-		{
-			ID: "qa",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "qa",
-			Requires:         []Artifact{"ci_green", "briefing"},
-			ProducesForHuman: []Artifact{"qa_report"},
-			When:             NotChore,
-		},
-		{
-			ID: "code-review",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "reviewer",
-			Requires:         []Artifact{"code", "ci_green"},
-			ProducesForHuman: []Artifact{"review_report"},
-			When:             NotDocs,
-		},
-		{
-			ID: "harden",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "hardener",
-			Requires:         []Artifact{"tests_green", "code"},
-			ProducesForHuman: []Artifact{"mutation_report"},
-			When:             IsFeatureOrBug,
-		},
-		{
-			ID: "architecture",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "architect",
-			Requires:         []Artifact{"code"},
-			ProducesForHuman: []Artifact{"arch_report"},
-			// Unlike the others, this condition is not about the nature of the
-			// task: whether the change touched the structure is only knowable
-			// after looking at what build produced.
-			When: TouchedStructure,
-		},
-		{
-			ID:       "commit",
-			Gate:     &GateSpec{Kind: GateConfirmWrite, Reason: "confirm the write"},
-			Requires: []Artifact{"ci_green", "code"},
-			Produces: []Artifact{"commit_sha"},
-			Verifiers: map[Artifact]Verifier{
-				// INV-core-4 names this one literally: the commit resolves to
-				// exactly one object and that object is a commit. `^{commit}`
-				// makes git fail rather than answer for a tag or a tree, and
-				// --verify makes an ambiguous name an error instead of a guess.
-				"commit_sha": Command{Run: "git rev-parse --verify HEAD^{commit}", Scope: ScopeFull},
-			},
-		},
+	shipped, err := shippedFlow()
+	if err != nil {
+		panic(fmt.Sprintf("the embedded stock does not parse, which is a broken build: %v", err))
 	}
+	// A copy per call: the flow is a slice, and a caller that appended to it
+	// would edit the shipped one for everybody else.
+	return append([]Stage(nil), shipped...)
 }
+
+// shippedFlow parses the embedded stock once.
+//
+// Cached because DefaultFlow is called on every command and inside loops that
+// replay a task, and parsing fourteen files each time would make the flow's cost
+// grow with the log's length.
+var shippedFlow = sync.OnceValues(func() ([]Stage, error) {
+	return LoadFlow(stock.Files, stock.StagesDir)
+})

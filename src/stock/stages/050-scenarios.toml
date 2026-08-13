@@ -1,0 +1,14 @@
+id       = "scenarios"
+role     = "gherkin"
+requires = ["briefing", "kind"]
+produces = ["scenarios", "approach"]
+
+[verify.scenarios]
+kind = "existence"
+
+[verify.approach]
+kind = "existence"
+
+[gate]
+kind   = "confirm"
+reason = "approve the plan"

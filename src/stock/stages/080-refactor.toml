@@ -1,0 +1,7 @@
+id       = "refactor"
+role     = "cleaner"
+requires = ["code", "tests_green"]
+produces = ["code"]
+
+[verify.code]
+kind = "existence"

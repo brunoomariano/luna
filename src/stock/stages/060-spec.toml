@@ -1,0 +1,16 @@
+# A contract is worth writing when there is new behaviour or a defect; a chore or
+# a docs change carries its own definition (ADR-0014).
+
+id       = "spec"
+role     = "specifier"
+when     = "is-feature-or-bug"
+requires = ["approach"]
+produces = ["contract"]
+
+[verify.contract]
+kind = "existence"
+
+[gate]
+kind     = "review-artifact"
+artifact = "contract"
+reason   = "review the contract"

@@ -1,0 +1,13 @@
+# Unlike the others, this condition is not about the nature of the task: whether
+# the change touched the structure is only knowable after looking at what build
+# produced.
+
+id                 = "architecture"
+role               = "architect"
+when               = "touched-structure"
+requires           = ["code"]
+produces_for_human = ["arch_report"]
+
+[review]
+sends_back_to = "build"
+invalidates   = ["ci_green", "tests_green"]

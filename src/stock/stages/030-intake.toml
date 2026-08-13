@@ -1,0 +1,10 @@
+id       = "intake"
+role     = "analyst"
+requires = ["task_id", "worktree"]
+produces = ["briefing", "kind"]
+
+[verify.briefing]
+kind = "existence"
+
+[verify.kind]
+kind = "existence"

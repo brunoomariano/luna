@@ -1,0 +1,9 @@
+id                 = "harden"
+role               = "hardener"
+when               = "is-feature-or-bug"
+requires           = ["tests_green", "code"]
+produces_for_human = ["mutation_report"]
+
+[review]
+sends_back_to = "build"
+invalidates   = ["ci_green", "tests_green"]

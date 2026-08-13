@@ -1,0 +1,11 @@
+# Skipped on docs: there is no code to review in a change with none (ADR-0014).
+
+id                 = "code-review"
+role               = "reviewer"
+when               = "not-docs"
+requires           = ["code", "ci_green"]
+produces_for_human = ["review_report"]
+
+[review]
+sends_back_to = "build"
+invalidates   = ["ci_green", "tests_green"]
