@@ -59,7 +59,7 @@ func TestTheRegistryRoundTripsAgainstTheRealBinary(t *testing.T) {
 	b := realBeads(t)
 	ctx := context.Background()
 
-	id, err := b.Create(ctx, "add authentication")
+	id, err := b.Create(ctx, Work{Title: "add authentication"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -83,6 +83,44 @@ func TestTheRegistryRoundTripsAgainstTheRealBinary(t *testing.T) {
 	}
 }
 
+// TestTheStatementOfWorkSurvivesTheRealBinary is the claim a fake cannot settle:
+// that these three flags exist, that bd stores them, and that it hands them back
+// under the names the adapter reads.
+//
+// `acceptance_criteria` is the one worth naming — the flag is `--acceptance` and
+// the field is not, which is precisely the sort of mismatch a fake agreeing with
+// my assumption would hide (ADR-0036).
+func TestTheStatementOfWorkSurvivesTheRealBinary(t *testing.T) {
+	b := realBeads(t)
+	ctx := context.Background()
+
+	work := Work{
+		Title:       "add a --json flag",
+		Description: "the counts should be consumable by other programs",
+		Design:      "a flag, not a subcommand",
+		Acceptance:  "valid JSON out; the default output unchanged",
+	}
+	id, err := b.Create(ctx, work)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	task, err := b.Task(ctx, id)
+	if err != nil {
+		t.Fatalf("Task: %v", err)
+	}
+
+	for _, field := range []struct{ name, got, want string }{
+		{"description", task.Description, work.Description},
+		{"design", task.Design, work.Design},
+		{"acceptance_criteria", task.Acceptance, work.Acceptance},
+	} {
+		if field.got != field.want {
+			t.Errorf("%s = %q, want %q", field.name, field.got, field.want)
+		}
+	}
+}
+
 // TestTheGuardActuallyGuards is the one that would be worthless against a fake.
 // The claim is that bd refuses a write whose precondition no longer holds, and
 // only bd can settle it.
@@ -90,7 +128,7 @@ func TestTheGuardActuallyGuards(t *testing.T) {
 	b := realBeads(t)
 	ctx := context.Background()
 
-	id, err := b.Create(ctx, "a task two leads both decide about")
+	id, err := b.Create(ctx, Work{Title: "a task two leads both decide about"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -122,7 +160,7 @@ func TestProvenanceIsAppendOnlyAndIdempotent(t *testing.T) {
 	b := realBeads(t)
 	ctx := context.Background()
 
-	id, err := b.Create(ctx, "a task that delivers twice")
+	id, err := b.Create(ctx, Work{Title: "a task that delivers twice"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -162,7 +200,7 @@ func TestAShortShaIsRefused(t *testing.T) {
 	b := realBeads(t)
 	ctx := context.Background()
 
-	id, err := b.Create(ctx, "a task with a short sha")
+	id, err := b.Create(ctx, Work{Title: "a task with a short sha"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -186,11 +224,11 @@ func TestBlockedTasksAreFoundByQueryingTheRealRegistry(t *testing.T) {
 	b := realBeads(t)
 	ctx := context.Background()
 
-	stuck, err := b.Create(ctx, "a task that will block")
+	stuck, err := b.Create(ctx, Work{Title: "a task that will block"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := b.Create(ctx, "a task that will not"); err != nil {
+	if _, err := b.Create(ctx, Work{Title: "a task that will not"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 

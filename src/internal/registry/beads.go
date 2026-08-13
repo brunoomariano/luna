@@ -64,11 +64,45 @@ const (
 	StatusClosed     Status = "closed"
 )
 
+// Work is what a task is about, as a person stated it.
+//
+// The three fields are beads' own — measured against bd 1.2.1, `create` takes
+// `-d`, `--design` and `--acceptance`, and `show --json` returns them as
+// `description`, `design` and `acceptance_criteria`. Luna does not invent a
+// parallel place for the same information: the registry is where a task lives
+// (ADR-0054), so this is where the statement of work lives too.
+//
+// Only Title is required. A task may enter with a one-line title and acquire the
+// rest later, in beads, by hand — which is the point of the registry being
+// somewhere other than inside Luna.
+type Work struct {
+	Title string
+
+	// Description is what to build. Its absence is what left the agents inferring
+	// the goal from the task id.
+	Description string
+
+	// Design is the technical route, when one was already decided.
+	Design string
+
+	// Acceptance is how the work will be judged. It is what a `spec` or a
+	// `scenarios` stage has to write against, and without it those stages stop to
+	// ask — measured, six times out of six.
+	Acceptance string
+}
+
 // Task is what the registry holds about one task.
 type Task struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Status Status `json:"status"`
+
+	// What the task is about. Read back so a task created directly in beads —
+	// with no `luna task new` involved — reaches the agents with its statement of
+	// work intact.
+	Description string `json:"description,omitempty"`
+	Design      string `json:"design,omitempty"`
+	Acceptance  string `json:"acceptance_criteria,omitempty"`
 
 	// Labels carry the stage. beads has no concept of a stage and should not
 	// grow one — the flow is Luna's (INV-core-1) — so the current stage rides as
@@ -119,8 +153,25 @@ func New(dir string) *Beads {
 //
 // The id comes back from beads rather than being chosen by Luna, which is the
 // point of a central registry: two worktrees cannot invent the same one.
-func (b *Beads) Create(ctx context.Context, title string) (string, error) {
-	out, _, err := b.run(ctx, "create", title, "--json")
+//
+// An empty field is omitted rather than sent empty. bd tells an absent field
+// apart from a blank one, and `-d ""` would erase a description somebody wrote by
+// hand — the case where a person drafts the task in beads and Luna picks it up.
+func (b *Beads) Create(ctx context.Context, work Work) (string, error) {
+	// A fixed order, not a map: the same task must produce the same command line
+	// every run, or two identical creations look different in a log.
+	args := []string{"create", work.Title, "--json"}
+	for _, field := range []struct{ flag, value string }{
+		{"-d", work.Description},
+		{"--design", work.Design},
+		{"--acceptance", work.Acceptance},
+	} {
+		if field.value != "" {
+			args = append(args, field.flag, field.value)
+		}
+	}
+
+	out, _, err := b.run(ctx, args...)
 	if err != nil {
 		return "", err
 	}

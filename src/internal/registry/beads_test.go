@@ -55,12 +55,92 @@ func TestCreatingATaskTakesTheIdTheRegistryAssigns(t *testing.T) {
 		"create": `{"id":"luna-zig","title":"add auth","status":"open"}`,
 	})
 
-	id, err := b.Create(context.Background(), "add auth")
+	id, err := b.Create(context.Background(), Work{Title: "add auth"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if id != "luna-zig" {
 		t.Errorf("id = %q, want the one beads assigned", id)
+	}
+}
+
+// TestTheStatementOfWorkReachesTheRegistry covers what a task is *about*.
+//
+// Until this, `Create` sent a title and nothing else, so a task was a name and a
+// kind — the agents were left inferring the goal from the id string. Measured
+// against bd 1.2.1: `create` takes -d/--design/--acceptance and `show --json`
+// returns all three under those names.
+func TestTheStatementOfWorkReachesTheRegistry(t *testing.T) {
+	b, fake := fakeRegistry(map[string]string{
+		"create": `{"id":"luna-zig","title":"add auth","status":"open"}`,
+	})
+
+	work := Work{
+		Title:       "add auth",
+		Description: "sessions expire after 30 days",
+		Design:      "a middleware, not a decorator",
+		Acceptance:  "an expired session is refused",
+	}
+	if _, err := b.Create(context.Background(), work); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	for flag, want := range map[string]string{
+		"-d":           work.Description,
+		"--design":     work.Design,
+		"--acceptance": work.Acceptance,
+	} {
+		if !fake.sawFlag("create", flag, want) {
+			t.Errorf("%s never reached bd; calls were %v", flag, fake.calls)
+		}
+	}
+}
+
+// TestAnEmptyFieldIsNotSent. bd distinguishes an absent field from an empty one,
+// and sending `-d ""` would overwrite a description a person wrote by hand — the
+// case where Luna adopts a task created directly in beads.
+func TestAnEmptyFieldIsNotSent(t *testing.T) {
+	b, fake := fakeRegistry(map[string]string{
+		"create": `{"id":"luna-zig","title":"add auth","status":"open"}`,
+	})
+
+	if _, err := b.Create(context.Background(), Work{Title: "add auth"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	for _, call := range fake.calls {
+		for _, arg := range call {
+			if arg == "-d" || arg == "--design" || arg == "--acceptance" {
+				t.Errorf("an empty field was sent anyway: %v", call)
+			}
+		}
+	}
+}
+
+// TestATaskCarriesWhatItIsAbout is the other direction: the adapter read id,
+// title, status and labels and dropped the three fields that say what to build,
+// so a task created in beads by hand arrived at the agents empty.
+func TestATaskCarriesWhatItIsAbout(t *testing.T) {
+	b, _ := fakeRegistry(map[string]string{
+		"show": `[{"id":"luna-zig","title":"add auth","status":"open",
+		           "description":"sessions expire after 30 days",
+		           "design":"a middleware, not a decorator",
+		           "acceptance_criteria":"an expired session is refused"}]`,
+	})
+
+	task, err := b.Task(context.Background(), "luna-zig")
+	if err != nil {
+		t.Fatalf("Task: %v", err)
+	}
+
+	for field, got := range map[string]string{
+		"description":         task.Description,
+		"design":              task.Design,
+		"acceptance_criteria": task.Acceptance,
+	} {
+		if got == "" {
+			t.Errorf("%s came back empty; the adapter dropped it", field)
+		}
 	}
 }
 
@@ -70,7 +150,7 @@ func TestCreatingATaskTakesTheIdTheRegistryAssigns(t *testing.T) {
 func TestATaskWithNoIdIsRefused(t *testing.T) {
 	b, _ := fakeRegistry(map[string]string{"create": `{"title":"add auth"}`})
 
-	if _, err := b.Create(context.Background(), "add auth"); err == nil {
+	if _, err := b.Create(context.Background(), Work{Title: "add auth"}); err == nil {
 		t.Fatal("a response with no id was accepted")
 	}
 }
@@ -300,7 +380,7 @@ func TestOutputThatIsNotJSONIsReported(t *testing.T) {
 		call func(*Beads) error
 	}{
 		{"create", "create", func(b *Beads) error {
-			_, err := b.Create(context.Background(), "a task")
+			_, err := b.Create(context.Background(), Work{Title: "a task"})
 			return err
 		}},
 		{"show", "show", func(b *Beads) error {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/registry"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -101,6 +102,142 @@ func TestTaskNewDefaultsToFeatureAndInteractive(t *testing.T) {
 	// The cautious default: an unstated profile supervises rather than runs free.
 	if state.Profile != fsm.ProfileInteractive {
 		t.Errorf("want interactive by default, got %q", state.Profile)
+	}
+}
+
+// TestTaskNewRecordsWhatTheTaskIsAbout covers the gap the first full run found:
+// a task was an id, a kind and a profile, and nothing said what to build. The
+// agents inferred the goal from the id string, and `spec` stopped to ask — six
+// times out of six.
+//
+// The statement of work goes to the registry, not into a field of Luna's own:
+// beads already has `description`, `design` and `acceptance_criteria`, and the
+// registry is where a task lives (ADR-0054).
+func TestTaskNewRecordsWhatTheTaskIsAbout(t *testing.T) {
+	h := newHarness(t)
+	fake := &fakeRegistry{created: "LUNA-1"}
+	h.env.Registry = fake
+
+	h.mustRun(t, "task", "new", "LUNA-1",
+		"--about", "the counts should be consumable by other programs",
+		"--acceptance", "valid JSON out; the default output unchanged")
+
+	if fake.work.Description != "the counts should be consumable by other programs" {
+		t.Errorf("the description never reached the registry, got %q", fake.work.Description)
+	}
+	if fake.work.Acceptance != "valid JSON out; the default output unchanged" {
+		t.Errorf("the acceptance never reached the registry, got %q", fake.work.Acceptance)
+	}
+}
+
+// TestTaskNewAdoptsATaskAlreadyInTheRegistry is the other direction, and the one
+// that costs no tokens: a person writes the issue in beads, with as much care as
+// they like, and Luna picks it up by id rather than being told it all again.
+func TestTaskNewAdoptsATaskAlreadyInTheRegistry(t *testing.T) {
+	h := newHarness(t)
+	h.env.Registry = &fakeRegistry{
+		task: registry.Task{
+			ID:          "LUNA-1",
+			Title:       "add a --json flag",
+			Description: "written by hand, in beads",
+			Acceptance:  "valid JSON out",
+		},
+	}
+
+	out := h.mustRun(t, "task", "new", "LUNA-1", "--adopt")
+
+	if !strings.Contains(out, "add a --json flag") {
+		t.Errorf("adopting should show what it picked up, got %q", out)
+	}
+	if _, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow()); err != nil {
+		t.Fatalf("an adopted task has no log: %v", err)
+	}
+}
+
+// TestTheWholeStatementReachesTheRegistry covers the fields the first test does
+// not: a route decided up front, and a title that differs from the id.
+func TestTheWholeStatementReachesTheRegistry(t *testing.T) {
+	h := newHarness(t)
+	fake := &fakeRegistry{created: "LUNA-1"}
+	h.env.Registry = fake
+
+	h.mustRun(t, "task", "new", "LUNA-1",
+		"--about", "what", "--design", "a flag, not a subcommand", "--title", "add --json")
+
+	if fake.work.Design != "a flag, not a subcommand" {
+		t.Errorf("design = %q", fake.work.Design)
+	}
+	if fake.work.Title != "add --json" {
+		t.Errorf("title = %q", fake.work.Title)
+	}
+}
+
+// TestATaskWithNoStatementNeedsNoRegistry. Stating nothing is the old behaviour,
+// and it must not start requiring beads.
+func TestATaskWithNoStatementNeedsNoRegistry(t *testing.T) {
+	h := newHarness(t)
+	h.env.Registry = nil
+
+	if err := h.run(t, "task", "new", "LUNA-1"); err != nil {
+		t.Fatalf("a plain task now needs a registry: %v", err)
+	}
+}
+
+// TestStatingWorkWithNoRegistrySaysSo. Accepting the words and dropping them
+// would be worse than refusing: the person would believe the agents were told.
+func TestStatingWorkWithNoRegistrySaysSo(t *testing.T) {
+	h := newHarness(t)
+	h.env.Registry = nil
+
+	err := h.run(t, "task", "new", "LUNA-1", "--about", "something")
+
+	if err == nil || !strings.Contains(err.Error(), "registry") {
+		t.Fatalf("want an error naming the registry, got %v", err)
+	}
+}
+
+// TestAdoptingAndStatingAtOnceIsRefused. The two are opposite directions, and
+// silently preferring one would leave the other's words nowhere.
+func TestAdoptingAndStatingAtOnceIsRefused(t *testing.T) {
+	h := newHarness(t)
+	h.env.Registry = &fakeRegistry{}
+
+	if err := h.run(t, "task", "new", "LUNA-1", "--adopt", "--about", "something"); err == nil {
+		t.Fatal("--adopt with a statement of work was accepted")
+	}
+}
+
+// TestARegistryThatRefusesToRecordFails. The task is not created behind a
+// registry that said no: the person would think the agents had been told.
+func TestARegistryThatRefusesToRecordFails(t *testing.T) {
+	h := newHarness(t)
+	h.env.Registry = &fakeRegistry{err: errors.New("bd: database is locked")}
+
+	if err := h.run(t, "task", "new", "LUNA-1", "--about", "something"); err == nil {
+		t.Fatal("a registry that refused the write was treated as success")
+	}
+}
+
+// TestAdoptingATaskThatIsNotThereFails. Adopting is reading, so an id nobody
+// wrote is a mistake worth naming rather than an empty task to fill in later.
+func TestAdoptingATaskThatIsNotThereFails(t *testing.T) {
+	h := newHarness(t)
+	h.env.Registry = &fakeRegistry{taskErr: registry.ErrNoSuchTask}
+
+	if err := h.run(t, "task", "new", "LUNA-1", "--adopt"); err == nil {
+		t.Fatal("adopting a task that does not exist was accepted")
+	}
+}
+
+// TestAdoptingNeedsARegistry. Without one there is nothing to adopt from, and
+// the message should say that rather than creating an empty task.
+func TestAdoptingNeedsARegistry(t *testing.T) {
+	h := newHarness(t)
+
+	err := h.run(t, "task", "new", "LUNA-1", "--adopt")
+
+	if err == nil || !strings.Contains(err.Error(), "registry") {
+		t.Fatalf("want an error naming the registry, got %v", err)
 	}
 }
 

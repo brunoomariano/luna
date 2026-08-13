@@ -84,6 +84,13 @@ type Env struct {
 type Registry interface {
 	// Blocked lists tasks the registry says are stopped, across every checkout.
 	Blocked(ctx context.Context) ([]registry.Task, error)
+
+	// Create opens a task with what a person said it is about.
+	Create(ctx context.Context, work registry.Work) (string, error)
+
+	// Task reads one back, which is how Luna adopts an issue somebody wrote in
+	// beads directly — the path that costs no tokens.
+	Task(ctx context.Context, id string) (registry.Task, error)
 }
 
 // Run dispatches a command line. args excludes the program name.
@@ -282,7 +289,7 @@ func taskNew(env Env, args []string) error {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 
-	kind, profile, err := parseTaskOptions(env.profiles(), args[1:])
+	opts, err := parseTaskOptions(env.profiles(), args[1:])
 	if err != nil {
 		return err
 	}
@@ -297,15 +304,65 @@ func taskNew(env Env, args []string) error {
 		return fmt.Errorf("task %q already exists, with %d events", id, len(events))
 	}
 
-	// The flow the task is born under is recorded with it, so a later replay can
-	// tell it is being read against a different one (ADR-0046).
-	flow := fsm.Fingerprint(fsm.DefaultFlow())
-	if err := env.Store.AppendAction(id, fsm.TaskCreated{Kind: kind, Profile: profile, Flow: flow}); err != nil {
+	stated, err := statementOfWork(env, id, opts)
+	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s flow=%s)\n", id, kind, profile, flow)
+	// The flow the task is born under is recorded with it, so a later replay can
+	// tell it is being read against a different one (ADR-0046).
+	flow := fsm.Fingerprint(fsm.DefaultFlow())
+	if err := env.Store.AppendAction(id, fsm.TaskCreated{Kind: opts.kind, Profile: opts.profile, Flow: flow}); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s flow=%s)\n", id, opts.kind, opts.profile, flow)
+	if stated != "" {
+		fmt.Fprintf(env.Out, "  %s\n", stated)
+	}
 	return nil
+}
+
+// statementOfWork puts what the task is about where a task lives, and returns a
+// line describing what happened for the person who typed the command.
+//
+// Two directions, because a statement of work is written either by someone at a
+// terminal or by someone taking their time in the tracker:
+//
+//   - `--about`/`--design`/`--acceptance` write it into the registry now;
+//   - `--adopt` reads one somebody already wrote there, which costs no tokens and
+//     no retyping.
+//
+// Neither is required. A project with no registry still creates tasks, and every
+// stage still runs — the agents are simply left with less to go on, which is the
+// state everything was in before this existed.
+func statementOfWork(env Env, id string, opts taskOptions) (string, error) {
+	if opts.adopt {
+		if env.Registry == nil {
+			return "", fmt.Errorf("%w: --adopt reads the task from the registry, and this project has none", ErrUsage)
+		}
+		task, err := env.Registry.Task(context.Background(), id)
+		if err != nil {
+			return "", fmt.Errorf("adopting %s: %w", id, err)
+		}
+		return "adopted: " + task.Title, nil
+	}
+
+	if nothingStated(opts.work) {
+		return "", nil
+	}
+	if env.Registry == nil {
+		return "", fmt.Errorf("%w: what a task is about is recorded in the registry, and this project has none", ErrUsage)
+	}
+
+	work := opts.work
+	if work.Title == "" {
+		work.Title = id
+	}
+	if _, err := env.Registry.Create(context.Background(), work); err != nil {
+		return "", fmt.Errorf("recording what %s is about: %w", id, err)
+	}
+	return "about: " + work.Description, nil
 }
 
 // parseTaskOptions reads --kind and --profile, defaulting to the cautious pair:
@@ -315,32 +372,99 @@ func taskNew(env Env, args []string) error {
 // engine, because a project defines its own profiles (ADR-0026). The rejection is
 // still worth doing here: someone who meant `nightly` hears about the typo,
 // instead of getting a supervised run with nothing saying why.
-func parseTaskOptions(cfg Config, args []string) (fsm.TaskKind, fsm.Profile, error) {
-	kind := fsm.KindFeature
-	profile := fsm.ProfileInteractive
+// taskOptions is everything `task new` was told: how to run the task, and what
+// the task is about.
+type taskOptions struct {
+	kind    fsm.TaskKind
+	profile fsm.Profile
+
+	// work is the statement of work, when it was given on the command line.
+	work registry.Work
+
+	// adopt takes it from the registry instead, for a task written there by hand.
+	adopt bool
+}
+
+// nothingStated reports whether nothing was said about the work itself. A title
+// alone does not count: the id already names the task, and a task named twice
+// says no more than a task named once.
+func nothingStated(w registry.Work) bool {
+	return w.Description == "" && w.Design == "" && w.Acceptance == ""
+}
+
+// howToRun reads the flags that decide how the task is conducted, as opposed to
+// what it is about. An unknown flag lands here because this is the last of the
+// three, and it is the one that can say what the valid names are.
+func howToRun(opts *taskOptions, cfg Config, name, value string) error {
+	switch name {
+	case "kind":
+		kind, err := parseKind(value)
+		if err != nil {
+			return err
+		}
+		opts.kind = kind
+	case "profile":
+		if _, ok := cfg.Profile(fsm.Profile(value)); !ok {
+			return fmt.Errorf("%w: unknown profile %q (%s)",
+				ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
+		}
+		opts.profile = fsm.Profile(value)
+	default:
+		return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+	}
+	return nil
+}
+
+// statedBy fills in the flag if it is one of the statement's, and reports whether
+// it was. Separate from the switch above so that adding a field to the statement
+// of work does not make the option parser harder to read.
+//
+// `--about` rather than `--description`: it is what a person answers when asked
+// what the task is, and the registry's own field name is beads' business rather
+// than the command line's.
+func statedBy(work *registry.Work, name, value string) bool {
+	switch name {
+	case "about":
+		work.Description = value
+	case "design":
+		work.Design = value
+	case "acceptance":
+		work.Acceptance = value
+	case "title":
+		work.Title = value
+	default:
+		return false
+	}
+	return true
+}
+
+func parseTaskOptions(cfg Config, args []string) (taskOptions, error) {
+	opts := taskOptions{kind: fsm.KindFeature, profile: fsm.ProfileInteractive}
 
 	flags, err := parseFlags(args)
 	if err != nil {
-		return "", "", err
+		return taskOptions{}, err
 	}
 
 	for name, value := range flags {
-		switch name {
-		case "kind":
-			if kind, err = parseKind(value); err != nil {
-				return "", "", err
-			}
-		case "profile":
-			if _, ok := cfg.Profile(fsm.Profile(value)); !ok {
-				return "", "", fmt.Errorf("%w: unknown profile %q (%s)",
-					ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
-			}
-			profile = fsm.Profile(value)
-		default:
-			return "", "", fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		if name == "adopt" {
+			opts.adopt = true
+			continue
+		}
+		if statedBy(&opts.work, name, value) {
+			continue
+		}
+		if err := howToRun(&opts, cfg, name, value); err != nil {
+			return taskOptions{}, err
 		}
 	}
-	return kind, profile, nil
+
+	if opts.adopt && !nothingStated(opts.work) {
+		return taskOptions{}, fmt.Errorf(
+			"%w: --adopt reads the statement of work from the registry, so giving one here would contradict it", ErrUsage,
+		)
+	}
+	return opts, nil
 }
 
 // profiles is the configuration a command should resolve names against, falling
@@ -626,7 +750,10 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 }
 
 // valuelessFlags are the switches: present or absent, never `--flag value`.
-var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true, "json": true, "notify": true, "force": true}
+var valuelessFlags = map[string]bool{
+	"stdin": true, "dry-run": true, "json": true, "notify": true, "force": true,
+	"adopt": true,
+}
 
 // parseFlags reads --name=value and --name value pairs.
 func parseFlags(args []string) (map[string]string, error) {

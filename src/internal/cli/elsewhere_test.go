@@ -14,13 +14,36 @@ import (
 
 // fakeRegistry stands in for beads. Named rather than an inline closure because
 // several tests need the same shape, and one of them needs it to fail.
+//
+// A pointer receiver because creating records what it was asked: the claim that
+// the statement of work reaches the registry is about what was *sent*, not about
+// what comes back.
 type fakeRegistry struct {
 	tasks []registry.Task
 	err   error
+
+	// created is the id this registry hands back, and work is what it was asked
+	// to create — recorded for the tests that assert on the statement of work.
+	created string
+	work    registry.Work
+
+	// task is what Task returns when a test adopts one, and taskErr is how it
+	// fails to.
+	task    registry.Task
+	taskErr error
 }
 
-func (f fakeRegistry) Blocked(context.Context) ([]registry.Task, error) {
+func (f *fakeRegistry) Blocked(context.Context) ([]registry.Task, error) {
 	return f.tasks, f.err
+}
+
+func (f *fakeRegistry) Create(_ context.Context, work registry.Work) (string, error) {
+	f.work = work
+	return f.created, f.err
+}
+
+func (f *fakeRegistry) Task(context.Context, string) (registry.Task, error) {
+	return f.task, f.taskErr
 }
 
 // TestStuckSeesWhatIsBlockedInAnotherCheckout is the registry earning its place.
@@ -30,7 +53,7 @@ func (f fakeRegistry) Blocked(context.Context) ([]registry.Task, error) {
 // central (ADR-0054, INV-core-12).
 func TestStuckSeesWhatIsBlockedInAnotherCheckout(t *testing.T) {
 	h := newHarness(t)
-	h.env.Registry = fakeRegistry{tasks: []registry.Task{
+	h.env.Registry = &fakeRegistry{tasks: []registry.Task{
 		{ID: "OTHER-1", Status: registry.StatusBlocked, Labels: []string{"luna:stage:verify"}},
 	}}
 
@@ -51,7 +74,7 @@ func TestATaskTheLogKnowsIsNotReportedTwice(t *testing.T) {
 	h := newHarness(t)
 	blockAndAge(t, h, "LUNA-1", "merge conflict on runner.go", 3*time.Hour)
 
-	h.env.Registry = fakeRegistry{tasks: []registry.Task{
+	h.env.Registry = &fakeRegistry{tasks: []registry.Task{
 		{ID: "LUNA-1", Status: registry.StatusBlocked},
 	}}
 
@@ -73,7 +96,7 @@ func TestATaskTheLogKnowsIsNotReportedTwice(t *testing.T) {
 func TestARegistryThatIsDownDoesNotStopTheWatchdog(t *testing.T) {
 	h := newHarness(t)
 	blockAndAge(t, h, "LUNA-1", "merge conflict on runner.go", 3*time.Hour)
-	h.env.Registry = fakeRegistry{err: errors.New("bd: database is locked")}
+	h.env.Registry = &fakeRegistry{err: errors.New("bd: database is locked")}
 
 	out := h.mustRun(t, "stuck")
 
