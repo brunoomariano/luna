@@ -28,6 +28,18 @@ type Harness struct {
 	// names, which is exactly right for a reviewer and cannot express "no Edit,
 	// but Bash is fine".
 	Precise bool
+
+	// Unattended is what this harness needs to act without asking a person first.
+	//
+	// It is the counterpart of Deny, and the two are not the same knob: Deny takes
+	// a capability away, Unattended lets the ones that remain be used. A harness
+	// that defaults to confirming each tool call blocks on its first command no
+	// matter what the role denies — which is the whole flow stopping on a dialog
+	// nobody is watching (INV-core-1: the flow does not wait on a human it was not
+	// told to wait for).
+	//
+	// Nil means the harness already runs unattended and needs no flag.
+	Unattended []string
 }
 
 // harnesses is the closed table of what Luna knows how to gate.
@@ -41,6 +53,13 @@ var harnesses = []Harness{
 	{
 		Kind:    "claude",
 		Precise: true,
+		// `acceptEdits`, not `bypassPermissions`: measured against a live claude
+		// 2.x, it already runs bash, writes files and commits — which is every
+		// mechanism a stage needs — so the wider mode buys nothing and gives up the
+		// harness's own refusals. The stage's real limit is what the role denies
+		// above, and a permission mode is not where containment belongs anyway
+		// (INV-core-7).
+		Unattended: []string{"--permission-mode", "acceptEdits"},
 		Deny: func(denied []fsm.Capability) ([]string, error) {
 			// Space-separated, capitalised: `--disallowed-tools Edit Write`.
 			args := make([]string, 0, len(denied)+1)
@@ -123,29 +142,45 @@ func SupportedHarnesses() []string {
 	return kinds
 }
 
-// gateArgs is what to pass the harness so the role starts without what it must
-// not have.
+// gateArgs is what to pass the harness so the role starts able to work and
+// without what it must not have.
 //
-// A role that denies nothing needs no arguments and no harness support — most
-// roles are ungated, and requiring a table entry for them would restrict the
-// whole flow to four agents for no reason.
+// Both halves come from the same table and neither is optional on its own. The
+// unattended flags go first and apply to every role Luna knows the harness for,
+// gated or not: a stage whose agent stops at a confirmation dialog never runs,
+// and that is not a milder failure than an ungated review — it is the flow
+// halting on something no one is watching.
+//
+// An agent Luna does not know still runs, with no arguments at all. Most roles
+// are ungated, and demanding a table entry for them would restrict the whole flow
+// to four agents for no reason; an unknown harness that happens to need a
+// permission flag fails visibly, on its first stage, rather than silently.
 //
 // A role that does deny something and names an agent Luna cannot gate stops the
 // stage. The message names the harness and the alternatives, because this refusal
 // will read as a bug the first time someone meets it (ADR-0041).
 func gateArgs(role fsm.Role) ([]string, error) {
-	if !role.Gated() {
+	harness, ok := HarnessFor(role.Agent)
+	if !ok {
+		if role.Gated() {
+			return nil, fmt.Errorf(
+				"role denies %s but Luna cannot gate %q — supported: %s",
+				list(role.ToolsDeny), role.Agent, strings.Join(SupportedHarnesses(), ", "),
+			)
+		}
 		return nil, nil
 	}
 
-	harness, ok := HarnessFor(role.Agent)
-	if !ok {
-		return nil, fmt.Errorf(
-			"role denies %s but Luna cannot gate %q — supported: %s",
-			list(role.ToolsDeny), role.Agent, strings.Join(SupportedHarnesses(), ", "),
-		)
+	args := append([]string{}, harness.Unattended...)
+	if !role.Gated() {
+		return args, nil
 	}
-	return harness.Deny(role.ToolsDeny)
+
+	denied, err := harness.Deny(role.ToolsDeny)
+	if err != nil {
+		return nil, err
+	}
+	return append(args, denied...), nil
 }
 
 // sorted returns the capabilities in a stable order, so the same role produces

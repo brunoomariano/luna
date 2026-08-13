@@ -133,6 +133,35 @@ func TestAnUngatedRoleNeedsNoHarnessSupport(t *testing.T) {
 	}
 }
 
+// TestAnAgentStartsUnattended covers the other half of gating: a harness that
+// asks a person before each tool call cannot run a stage at all.
+//
+// Measured against a live claude 2.x: started bare, the scout's very first
+// command opens `Do you want to proceed?` and the agent settles at `blocked`.
+// Luna reads that as "the agent is asking for input" and blocks the task — on
+// every stage, of every task, because the prompt is the harness's default and not
+// something the brief can talk it out of. Denial alone was never enough: a role
+// that denies nothing still has to be allowed to act.
+func TestAnAgentStartsUnattended(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: herdr,
+		Prove:  herdr.proving(),
+		Roles: func(fsm.RoleName) (fsm.Role, bool) {
+			return fsm.Role{Agent: "claude"}, true
+		},
+	}
+
+	stage := fsm.Stage{ID: "discovery", Role: "scout", Produces: []fsm.Artifact{"repos"}}
+	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stage); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(strings.Join(herdr.startArgs, " "), "--permission-mode") {
+		t.Errorf("an unattended agent must not stop to ask; got %v", herdr.startArgs)
+	}
+}
+
 // TestTheDenialReachesTheAgent is the end of the chain: a gated role starts with
 // the tool absent rather than discouraged (ADR-0018).
 func TestTheDenialReachesTheAgent(t *testing.T) {
