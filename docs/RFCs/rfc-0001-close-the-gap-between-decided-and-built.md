@@ -1,6 +1,6 @@
 # RFC-0001: Close the gap between what was decided and what was built
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Last reviewed:** 2026-08-13
 **Source issue:** —
 **PRD:** —
@@ -177,7 +177,12 @@ loop ceilings never fire.
       wired and is not going to be in this shape: ADR-0051 removed the interface because a
       replayed state carries no clock, and ADR-0053 brought detection back as a query over
       the log's timestamps (`luna stuck`) rather than as something the lead holds.
-- [ ] Phase 4 — B7 (`ReviewFinding` still has no emitter)
+- [x] Phase 4 — B7 (`ReviewFinding` has an emitter: Luna reads the review report, and a
+      `[BLOCKING]` finding sends the work back — ADR-0059). Wiring it exposed a defect the
+      missing emitter had been hiding: with nothing able to return work, the loop ceilings
+      counted rounds that never happened, and the first real loop **did not terminate**
+      under `nightly`. A spent ceiling now stops the task whichever way the gate was
+      answered.
 
 Phase 4 is deliberately left open. Wiring `Judge` and emitting `ReviewFinding` are the two
 items that change what the engine *decides* rather than what it *checks*, and both deserve
@@ -213,6 +218,11 @@ timing stays as it is.
   condition. ADR-0017 promised that and nothing verified it.
 
 ## Open questions
+
+> Two of these outlive the RFC. Both are about a **surface a project uses**, not a hole
+> between a decision and its code — which is what this RFC was for, and what is now closed.
+> They are left here rather than dropped because the reasoning is worth keeping, and they
+> belong in whatever document takes on configurable flows.
 
 - [ ] **How does a project declare a verifier?** `Stage.Verifiers` holds Go functions and
       the config parser knows only `[profile.*]` and `[role.*]`, so ADR-0032 has a mechanism

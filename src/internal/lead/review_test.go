@@ -1,0 +1,216 @@
+package lead
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/brunoomariano/luna/src/internal/fsm"
+)
+
+// reviewFlow is a build stage and a review stage that sends work back to it.
+// Small on purpose: what is under test is the emitter, not the shipped flow.
+func reviewFlow() []fsm.Stage {
+	return []fsm.Stage{
+		{
+			ID:       "build",
+			Role:     "implementer",
+			Requires: []fsm.Artifact{fsm.TaskID},
+			Produces: []fsm.Artifact{"code", "ci_green"},
+		},
+		{
+			ID:   "code-review",
+			Role: "reviewer",
+			Review: &fsm.ReviewSpec{
+				SendsBackTo: "build",
+				Invalidates: []fsm.Artifact{"ci_green"},
+			},
+			Requires:         []fsm.Artifact{"code", "ci_green"},
+			ProducesForHuman: []fsm.Artifact{"review_report"},
+		},
+	}
+}
+
+// reportingNode delivers each stage's contract, and hands the review stage's
+// report back as the evidence's detail — which is where delivered content
+// travels (the gate payload reads it from the same place).
+type reportingNode struct{ report string }
+
+func (n reportingNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (Result, error) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, artifact := range owed {
+		e := fsm.Exists(0)
+		if artifact == "review_report" {
+			e.Detail = n.report
+		}
+		evidence[artifact] = e
+	}
+	return Result{Delivered: owed, Evidence: evidence}, nil
+}
+
+// runReview drives a task through build and review with the given report, and
+// returns where it ended up.
+func runReview(t *testing.T, report string) fsm.TaskState {
+	t.Helper()
+
+	s := newStore(t)
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(reviewFlow()),
+	}); err != nil {
+		t.Fatalf("opening the task: %v", err)
+	}
+
+	conductor := &Lead{Store: s, Node: reportingNode{report: report}, Flow: reviewFlow()}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("running: %v", err)
+	}
+	return state
+}
+
+// TestABlockingFindingSendsTheWorkBack is B7 working, and the reason the loop
+// ceilings existed with nothing able to reach them.
+//
+// Before this, `ReviewFinding` was handled by the reducer, serialised by the
+// codec, and produced by nothing — so a `[BLOCKING]` finding had no effect at
+// all (ADR-0041).
+func TestABlockingFindingSendsTheWorkBack(t *testing.T) {
+	state := runReview(t, "- [BLOCKING] B1: the failure path has no test")
+
+	if state.Stage != "build" {
+		t.Errorf("stage = %q, want build — a blocking finding returns the work", state.Stage)
+	}
+	if state.Loop.Rounds == 0 {
+		t.Error("the loop counter did not move, so the ceilings can never fire")
+	}
+	// The green attested to code that is going to change (ADR-0020).
+	if state.Context.Artifacts["ci_green"] {
+		t.Error("ci_green survived a finding that sent the work back")
+	}
+}
+
+// TestTheLogSaysWhatSentItBack. "Something blocked" sends a person looking;
+// "B1: the failure path has no test" tells them where.
+func TestTheLogSaysWhatSentItBack(t *testing.T) {
+	s := newStore(t)
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(reviewFlow()),
+	}); err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+
+	conductor := &Lead{
+		Store: s,
+		Node:  reportingNode{report: "- [BLOCKING] B1: the failure path has no test"},
+		Flow:  reviewFlow(),
+	}
+	if _, err := conductor.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("running: %v", err)
+	}
+
+	events, err := s.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+
+	var found bool
+	for _, e := range events {
+		if e.Action != "ReviewFinding" {
+			continue
+		}
+		found = true
+		if !strings.Contains(e.Payload, "B1") {
+			t.Errorf("the recorded finding does not name it: %s", e.Payload)
+		}
+	}
+	if !found {
+		t.Error("no ReviewFinding was recorded")
+	}
+}
+
+// TestAReportWithNothingBlockingLetsTheTaskFinish is the other direction, and it
+// is what stops the emitter from turning every review into a loop.
+func TestAReportWithNothingBlockingLetsTheTaskFinish(t *testing.T) {
+	state := runReview(t, "- [SHOULD-FIX] S1: extract this\n- [NIT] N1: spelling")
+
+	if state.Status != fsm.StatusDone {
+		t.Errorf("status = %q, want done — nothing blocking was reported", state.Status)
+	}
+}
+
+// TestAReviewThatFoundNothingIsNotALoop. A reviewer that read the diff and had
+// no concerns writes prose, and prose is a passing review.
+func TestAReviewThatFoundNothingIsNotALoop(t *testing.T) {
+	state := runReview(t, "I read the diff and the tests. No concerns.")
+
+	if state.Status != fsm.StatusDone {
+		t.Errorf("status = %q, want done", state.Status)
+	}
+	if state.Loop.Rounds != 0 {
+		t.Errorf("rounds = %d, want 0 — nothing sent the work back", state.Loop.Rounds)
+	}
+}
+
+// TestOnlyAReviewStageCanSendWorkBack is INV-core-7 at the emitter rather than
+// at the reducer. A build stage that produced something looking like a report
+// must not be read as one — an implementer returning its own work is reviewing
+// itself.
+func TestOnlyAReviewStageCanSendWorkBack(t *testing.T) {
+	// A flow whose only stage produces a report and reviews nothing.
+	flow := []fsm.Stage{{
+		ID:               "build",
+		Role:             "implementer",
+		Requires:         []fsm.Artifact{fsm.TaskID},
+		Produces:         []fsm.Artifact{"code"},
+		ProducesForHuman: []fsm.Artifact{"review_report"},
+	}}
+
+	s := newStore(t)
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(flow),
+	}); err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+
+	conductor := &Lead{
+		Store: s,
+		Node:  reportingNode{report: "- [BLOCKING] B1: I do not like my own work"},
+		Flow:  flow,
+	}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("running: %v", err)
+	}
+
+	if state.Status != fsm.StatusDone {
+		t.Errorf("status = %q — a stage that reviews nothing sent work back", state.Status)
+	}
+	if state.Loop.Rounds != 0 {
+		t.Errorf("rounds = %d, want 0", state.Loop.Rounds)
+	}
+}
+
+// TestTheLoopCeilingStopsAReviewThatNeverPasses. With the emitter wired, the
+// ceilings of ADR-0023 finally have something that can reach them — so the
+// review-forever case has to end somewhere.
+func TestTheLoopCeilingStopsAReviewThatNeverPasses(t *testing.T) {
+	// Every round blocks, so nothing converges.
+	state := runReview(t, "- [BLOCKING] B1: still not right")
+
+	if state.Loop.Rounds == 0 {
+		t.Fatal("the loop never ran")
+	}
+	if state.Status == fsm.StatusRunning {
+		t.Errorf("a review that never passes left the task running: %+v", state.Loop)
+	}
+}

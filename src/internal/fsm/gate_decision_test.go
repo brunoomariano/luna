@@ -73,9 +73,16 @@ func TestAnEventWithNoDecisionFallsBackToTheShippedPolicy(t *testing.T) {
 	}
 }
 
-// TestTheLoopCeilingGateHonoursItsRecordedDecision covers the second gate the
-// profile decides, which is not reached through an Advance.
-func TestTheLoopCeilingGateHonoursItsRecordedDecision(t *testing.T) {
+// TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered covers the second gate
+// the profile decides, which is not reached through an Advance.
+//
+// This asserted the opposite until 2026-08-13: a recorded `passed` let the
+// ceiling through and the loop carried on. Wiring the ReviewFinding emitter made
+// that reachable for the first time, and it ran forever — 8 rounds against a
+// ceiling of 4, with the counters climbing and nothing firing. INV-core-8 names
+// that case in as many words, so the ceiling now stops the task whichever way
+// the gate was answered; only *how* it stops depends on the profile (ADR-0059).
+func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 	// A loop already at its ceiling, on a profile that stops at everything.
 	spent := TaskState{
 		Status:   StatusRunning,
@@ -86,12 +93,17 @@ func TestTheLoopCeilingGateHonoursItsRecordedDecision(t *testing.T) {
 		Evidence: map[Artifact]Evidence{},
 	}
 
+	// Nobody is waiting: it blocks, which is the ending that notifies.
 	passed, err := Reduce(spent, ReviewFinding{Aligned: true, GateDecision: GateDecisionPassed})
 	if err != nil {
 		t.Fatalf("reviewing: %v", err)
 	}
-	if passed.Status != StatusRunning {
-		t.Errorf("the recorded decision let the ceiling through, got %q", passed.Status)
+	if passed.Status != StatusBlocked {
+		t.Errorf("a ceiling nobody answers must not resolve, got %q", passed.Status)
+	}
+	if passed.Blocked == "" {
+		t.Error("the block does not say why — a task that halts without a reason is " +
+			"the silent failure INV-core-8 forbids")
 	}
 
 	// The same state with no decision recorded falls back, and interactive waits.
@@ -101,6 +113,32 @@ func TestTheLoopCeilingGateHonoursItsRecordedDecision(t *testing.T) {
 	}
 	if fellBack.Status != StatusAwaitingGate {
 		t.Errorf("with no decision recorded the shipped policy waits, got %q", fellBack.Status)
+	}
+}
+
+// TestAnUnattendedRunStopsAtTheCeiling is the same rule through the profile that
+// makes it matter. `nightly` stops at nothing, and "nothing" cannot include the
+// ceiling that exists to stop a loop burning tokens.
+func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
+	spent := TaskState{
+		Status:   StatusRunning,
+		Stage:    "qa",
+		Profile:  ProfileNightly,
+		Loop:     LoopCounters{Rounds: 9},
+		Context:  NewTaskContext(KindFeature),
+		Evidence: map[Artifact]Evidence{},
+	}
+
+	after, err := Reduce(spent, ReviewFinding{Aligned: true})
+	if err != nil {
+		t.Fatalf("reviewing: %v", err)
+	}
+	if after.Status != StatusBlocked {
+		t.Errorf("status = %q — an unattended run that stops converging has to stop", after.Status)
+	}
+	if after.Gate != nil {
+		t.Error("a blocked task is not waiting at a gate; carrying one would make " +
+			"`luna gates` list something nobody can answer")
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/store"
@@ -130,10 +131,7 @@ type Lead struct {
 // An error means the lead itself could not continue — the store would not answer,
 // or the log will not replay.
 func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
-	flow := l.Flow
-	if len(flow) == 0 {
-		flow = fsm.DefaultFlow()
-	}
+	flow := l.flow()
 
 	for {
 		state, err := l.Store.Replay(taskID, flow)
@@ -196,11 +194,79 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	// A stage that delivered less than it promised will not close, and the lead
 	// does not argue with that — it records the attempt and lets the next pass see
 	// a blocked task.
-	return l.record(taskID, fsm.Complete{
+	if err := l.record(taskID, fsm.Complete{
 		Delivered: result.Delivered,
 		Evidence:  result.Evidence,
 		Flow:      flow,
+	}); err != nil {
+		return err
+	}
+
+	return l.readReview(taskID, stage, result)
+}
+
+// readReview turns a review stage's report into a transition, when it carries
+// one.
+//
+// This is what ADR-0041 specified and nothing implemented: the reviewer produces
+// a report like any other artifact, and **Luna reads it**. A `[BLOCKING]`
+// finding sends the work back; anything else lets the flow carry on.
+//
+// The agent never emits the action, and that is the point. Handing the reviewer
+// a `luna review-finding --aligned` would be the direct route and would put a
+// transition in a model's hands — with nothing able to stop a false one, and
+// nothing able to detect it. So the model reports and the code decides, which is
+// INV-core-1 applied to the one place where letting the model decide would look
+// most reasonable: it has just finished forming an opinion, and acting on one is
+// the obvious next step.
+//
+// A stage that is not a review reads nothing. A review whose report has no
+// recognisable finding reads nothing either, which is the honest outcome — the
+// report is in the context, and a person can see what was written.
+func (l *Lead) readReview(taskID string, stage fsm.Stage, result Result) error {
+	artifact, ok := fsm.ReviewedArtifact(stage)
+	if !ok {
+		return nil
+	}
+
+	// The delivered content travels in the evidence's detail, which is where the
+	// gate payload reads it from too (ADR-0024: the node ran the tool, and what it
+	// saw arrives in the action).
+	findings := fsm.ReadReport(result.Evidence[artifact].Detail)
+	if !fsm.Blocks(findings) {
+		return nil
+	}
+
+	return l.record(taskID, fsm.ReviewFinding{
+		Aligned: true,
+		Summary: summarise(findings),
+		Flow:    l.flow(),
 	})
+}
+
+// summarise names the blocking findings, so the log says what sent the work back
+// rather than that something did.
+func summarise(findings []fsm.Finding) string {
+	var blocking []string
+	for _, f := range findings {
+		if f.Severity != fsm.SeverityBlocking {
+			continue
+		}
+		if f.ID != "" {
+			blocking = append(blocking, f.ID+": "+f.Text)
+			continue
+		}
+		blocking = append(blocking, f.Text)
+	}
+	return strings.Join(blocking, "; ")
+}
+
+// flow is what this lead runs, defaulting to the shipped one.
+func (l *Lead) flow() []fsm.Stage {
+	if len(l.Flow) == 0 {
+		return fsm.DefaultFlow()
+	}
+	return l.Flow
 }
 
 // decideGate asks the policy about a gate and turns the answer into the value the
@@ -261,10 +327,7 @@ func (l *Lead) handleFailure(ctx context.Context, taskID string, state fsm.TaskS
 // log, because a log that will not replay is worse than a task that refused to
 // move.
 func (l *Lead) record(taskID string, action fsm.Action) error {
-	flow := l.Flow
-	if len(flow) == 0 {
-		flow = fsm.DefaultFlow()
-	}
+	flow := l.flow()
 
 	state, err := l.Store.Replay(taskID, flow)
 	if err != nil {

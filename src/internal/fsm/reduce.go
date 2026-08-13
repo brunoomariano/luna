@@ -469,9 +469,30 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	// A spent ceiling opens a gate rather than blocking. Not converging is a
 	// decision to make with the history in view, not an anomaly of the node
 	// (ADR-0023).
-	if reason := ceilingHit(state.Loop, limits); reason != "" && gateWaits(a.GateDecision, state.Profile, GateLoopCeiling) {
-		state.Status = StatusAwaitingGate
-		state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
+	if reason := ceilingHit(state.Loop, limits); reason != "" {
+		if gateWaits(a.GateDecision, state.Profile, GateLoopCeiling) {
+			state.Status = StatusAwaitingGate
+			state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
+			return state, nil
+		}
+
+		// The profile said nobody is waiting — and a ceiling that nobody answers
+		// must not simply resolve. That is the infinite loop INV-core-8 names in
+		// as many words: *"no infinite retry, which is the loop that does not
+		// converge and burns tokens"*.
+		//
+		// So an unattended run blocks instead, which is the ending that notifies.
+		// ADR-0023 preferred a gate to a block because a loop that stopped
+		// converging leaves a decision worth taking with the history in view —
+		// that reasoning holds wherever there is somebody to take it, and where
+		// there is not, the choice is between blocking and looping forever
+		// (ADR-0059).
+		//
+		// This was unreachable until a review could send work back: the ceilings
+		// counted rounds that never happened, so the hole was real and invisible.
+		state.Status = StatusBlocked
+		state.Blocked = reason
+		state.Gate = nil
 	}
 
 	return state, nil
