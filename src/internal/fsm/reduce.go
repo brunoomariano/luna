@@ -126,6 +126,20 @@ type ReviewFinding struct {
 	// behind it is not (ADR-0026). It is consulted only when a ceiling is actually
 	// reached, so an ordinary round leaves it empty.
 	GateDecision GateWaited `json:"gate_decision,omitempty"`
+
+	// Progress is what the round produced, as an opaque signal to compare against
+	// the last one. Two consecutive rounds with the same value made no functional
+	// change, which is what `Loop.NoProgress` counts (PRD node-0002).
+	//
+	// It arrives in the action rather than being computed here, like every other
+	// observation about the world: the reducer decides what it means, it does not
+	// go looking (ADR-0024, RNF1).
+	//
+	// Empty means the round did not say — the first round, a node that could not
+	// compute it, a log written before the field existed. All three are treated
+	// as "no comparison available" rather than as "no progress", because a
+	// detector that fires on missing data is one people turn off.
+	Progress string `json:"progress,omitempty"`
 }
 
 // Block stops the task and notifies, without pretending an attempt was made.
@@ -448,6 +462,9 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	}
 	state.Loop.Visited = append(state.Loop.Visited, state.Stage)
 
+	// The third ceiling, finally fed (PRD node-0002).
+	state.Loop = countProgress(state.Loop, a.Progress)
+
 	// Going back invalidates what the work had proven: the green attested to code
 	// that no longer exists (ADR-0020). Which artifacts those are is the stage's
 	// to declare — a flow whose green is called something else keeps the behaviour.
@@ -556,6 +573,31 @@ func unblock(state TaskState) (TaskState, error) {
 	state.Blocked = ""
 	state.Status = StatusRunning
 	return state, nil
+}
+
+// countProgress folds this round's signal into the no-progress counter.
+//
+// A round whose signal equals the last one produced the same thing twice: the
+// reviewer is sending back work that is not changing, which is the loop that
+// burns tokens without converging and which nothing detected until ADR-0061.
+//
+// A round that says nothing leaves the streak alone — it neither extends nor
+// clears it. Silence is "no comparison available", and both alternatives are
+// wrong in a way that matters: counting it would fire the ceiling on a node that
+// could not observe, and clearing it would throw away a real streak because one
+// round in the middle could not. The last signal is kept for the same reason —
+// the next round should compare against the last thing actually seen.
+func countProgress(loop LoopCounters, signal string) LoopCounters {
+	switch signal {
+	case "":
+		return loop
+	case loop.LastProgress:
+		loop.NoProgress++
+	default:
+		loop.NoProgress = 0
+	}
+	loop.LastProgress = signal
+	return loop
 }
 
 // ceilingHit names the ceiling that was reached, or returns empty.

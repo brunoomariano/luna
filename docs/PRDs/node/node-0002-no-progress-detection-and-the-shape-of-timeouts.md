@@ -1,13 +1,21 @@
 # PRD node-0002: No-progress detection, and the shape of timeouts
 
-**Status:** NOT IMPLEMENTED
+**Status:** IMPLEMENTED
 **Last reviewed:** 2026-08-12
 **Source issue:** —
 **RFC:** —
 
-> Recorded because both are wanted and neither can be built yet. The first needs
-> loops that actually run; the second needs a problem the current shape has not
-> caused. Nothing here is decided.
+> **The first half is built.** Its blocker was named here — *"nothing emits a
+> `ReviewFinding` today, so there are no rounds to count"* — and that emitter
+> landed with [ADR-0059](../../ADRs/0059-luna-reads-the-review-and-a-spent-ceiling-stops-the-task.md).
+> `Loop.NoProgress` is fed and its ceiling fires
+> ([ADR-0061](../../ADRs/0061-the-commit-is-the-progress-signal.md)).
+>
+> **The second half is not, and deliberately.** Luna still has one timer, and the
+> PRD's own argument is that a second question appears in production rather than
+> at the desk. Nothing has asked for it yet. The trap it records — an event
+> timeout rearmed by a keepalive holding a stalled agent alive forever — is worth
+> keeping written down for whoever adds the second one.
 
 ## Overview
 
@@ -123,11 +131,14 @@ that does not collapse different questions into one number.
 
 ## Open questions
 
-- [ ] **What is hashed?** hermes hashes tool results. Luna's equivalent could be the
-      delivered artifacts, the diff of the worktree, or the evidence. The artifacts are the
-      closest to "did the work change" and the furthest from what the node can see cheaply.
-- [ ] **How is meaningless variation excluded?** A hash over a diff that includes a timestamp
-      never matches itself, and a detector that never fires is the same as no detector.
+- [x] **What is hashed?** Nothing is. The signal is the **commit the round delivered**,
+      which is exact where a hash would be an approximation — and it only became available
+      because the handoff moved to git first (ADR-0055). Two rounds delivering the same sha
+      delivered the same work.
+- [x] **How is meaningless variation excluded?** It does not arise. The question assumed a
+      hash over content, where a timestamp makes a diff never match itself; a commit either
+      is the previous one or is not. This is the clearest case in the whole rewrite of an
+      earlier decision dissolving a later problem rather than constraining it.
 - [ ] **Does the same signal serve the watchdog?** No-progress within a loop and a stalled
       agent mid-stage are different questions with possibly the same answer, and merging them
       early is how one timer becomes three later.

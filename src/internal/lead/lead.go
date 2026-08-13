@@ -202,7 +202,14 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		return err
 	}
 
-	return l.readReview(taskID, stage, result)
+	// Read back rather than reusing the state from before the Complete: the base
+	// only moves on the path where the stage actually closed, and that is exactly
+	// the signal the round is judged by.
+	after, err := l.Store.Replay(taskID, flow)
+	if err != nil {
+		return err
+	}
+	return l.readReview(taskID, stage, after, result)
 }
 
 // readReview turns a review stage's report into a transition, when it carries
@@ -223,7 +230,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 // A stage that is not a review reads nothing. A review whose report has no
 // recognisable finding reads nothing either, which is the honest outcome — the
 // report is in the context, and a person can see what was written.
-func (l *Lead) readReview(taskID string, stage fsm.Stage, result Result) error {
+func (l *Lead) readReview(taskID string, stage fsm.Stage, state fsm.TaskState, result Result) error {
 	artifact, ok := fsm.ReviewedArtifact(stage)
 	if !ok {
 		return nil
@@ -238,10 +245,38 @@ func (l *Lead) readReview(taskID string, stage fsm.Stage, result Result) error {
 	}
 
 	return l.record(taskID, fsm.ReviewFinding{
-		Aligned: true,
-		Summary: summarise(findings),
-		Flow:    l.flow(),
+		Aligned:  true,
+		Summary:  summarise(findings),
+		Progress: progressOf(state, result),
+		Flow:     l.flow(),
 	})
+}
+
+// progressOf is what this round produced, for the next one to compare against
+// (PRD node-0002).
+//
+// It is the delivered commit. That is the closest thing Luna has to "did the
+// work change", and it is exact rather than approximate: the handoff *is* the
+// commit (INV-core-6), so two rounds delivering the same sha delivered the same
+// work — no hashing, no diff, no guessing which parts of a diff are meaningful.
+//
+// The PRD's open question asked what to hash, listing artifacts, the worktree
+// diff and the evidence, and worried about meaningless variation — a timestamp
+// in a diff that never matches itself. The commit sidesteps that entirely, and
+// only because the handoff moved to git first (ADR-0055): hashing a worktree
+// would have had exactly the problem the question describes.
+//
+// A round that delivered no commit says nothing rather than guessing, which the
+// reducer reads as "no comparison available".
+func progressOf(state fsm.TaskState, result Result) string {
+	if state.Base != "" {
+		return state.Base
+	}
+	// Nothing was committed. The evidence is what the tools reported, and an
+	// empty signal is the honest answer — a detector that invents one fires on
+	// its own invention.
+	_ = result
+	return ""
 }
 
 // summarise names the blocking findings, so the log says what sent the work back

@@ -214,3 +214,68 @@ func TestTheLoopCeilingStopsAReviewThatNeverPasses(t *testing.T) {
 		t.Errorf("a review that never passes left the task running: %+v", state.Loop)
 	}
 }
+
+// TestARoundThatDeliveredNothingNewIsCountedAsSuch is PRD node-0002 reaching the
+// lead: the signal a round is judged by is the commit it delivered.
+//
+// The PRD's open question asked what to hash — artifacts, the worktree diff, the
+// evidence — and worried about meaningless variation, a timestamp in a diff that
+// never matches itself. The commit sidesteps that: the handoff *is* the commit
+// (INV-core-6), so two rounds delivering the same sha delivered the same work.
+func TestARoundThatDeliveredNothingNewIsCountedAsSuch(t *testing.T) {
+	s := newStore(t)
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(reviewFlow()),
+	}); err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+
+	conductor := &Lead{
+		Store: s,
+		Node:  reportingNode{report: "- [BLOCKING] B1: still not right"},
+		Flow:  reviewFlow(),
+	}
+	if _, err := conductor.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("running: %v", err)
+	}
+
+	state, err := s.Replay("LUNA-1", reviewFlow())
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+
+	// The node delivers no commit, so every round's signal is empty — which the
+	// reducer reads as "no comparison available" rather than as no progress. What
+	// this asserts is that the loop still ended, through the round ceiling, and
+	// that the detector did not fire on silence.
+	if state.Loop.NoProgress != 0 {
+		t.Errorf("NoProgress = %d — rounds that observed nothing were counted as "+
+			"having made no progress", state.Loop.NoProgress)
+	}
+	if state.Status == fsm.StatusRunning {
+		t.Error("the loop never ended")
+	}
+}
+
+// TestAFindingWithNoIdStillNamesItself. The id is the handle for the
+// conversation afterwards (ADR-0041) and a reviewer that omitted it has still
+// found the defect — so the summary carries the text rather than nothing.
+func TestAFindingWithNoIdStillNamesItself(t *testing.T) {
+	got := summarise([]fsm.Finding{
+		{Severity: fsm.SeverityBlocking, Text: "the failure path has no test"},
+		{Severity: fsm.SeverityBlocking, ID: "B2", Text: "and this one leaks"},
+		{Severity: fsm.SeverityNit, Text: "spelling"},
+	})
+
+	if !strings.Contains(got, "the failure path has no test") {
+		t.Errorf("a finding with no id lost its text: %q", got)
+	}
+	if !strings.Contains(got, "B2: and this one leaks") {
+		t.Errorf("a finding with an id lost its handle: %q", got)
+	}
+	if strings.Contains(got, "spelling") {
+		t.Errorf("a non-blocking finding reached the summary of what blocked: %q", got)
+	}
+}

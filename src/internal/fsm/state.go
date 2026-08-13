@@ -184,6 +184,14 @@ type LoopCounters struct {
 	// Visited is the stage history of the current loop, which is what makes
 	// oscillation detectable at all.
 	Visited []StageID
+
+	// LastProgress is what the previous round produced, kept so the next one has
+	// something to compare against (PRD node-0002).
+	//
+	// It is the signal itself rather than a count, because the audit's question
+	// is "what was compared" — a person told two rounds made no progress wants to
+	// see what the machine looked at before believing it (RF3).
+	LastProgress string
 }
 
 // LoopLimits are the ceilings themselves, configurable per loop.
