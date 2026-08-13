@@ -284,11 +284,17 @@ func (s TaskState) NeedsHuman() bool {
 	return s.Status == StatusAwaitingGate || s.Status == StatusBlocked
 }
 
-// ShippedProfiles are the three that come installed. A project's configuration
-// starts from these and may add to them or replace them (ADR-0017).
+// ShippedProfiles are the three names ShippedPolicy has an answer for.
 //
-// The engine exposes the list but does not validate against it: a name it has
+// It is no longer where the defaults come from — those are files now
+// (ADR-0060) — and it is not a list the engine validates against: a name it has
 // never heard of is a profile someone defined, not an error (ADR-0026).
+//
+// What it still is: the domain of the replay fallback. `ShippedPolicy` answers
+// for exactly these three and treats everything else as the most cautious
+// reading, so this is the list that has to match `src/stock/profiles/`. A test
+// walks it to compare the two, and without the list that comparison would have
+// to hardcode the names it is checking.
 func ShippedProfiles() []Profile {
 	return []Profile{ProfileInteractive, ProfileTurbo, ProfileNightly}
 }
