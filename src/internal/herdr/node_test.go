@@ -11,6 +11,28 @@ import (
 	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
+// TestAMechanicalStageDoesNotCollideWithARoleBranch covers a rule git enforces
+// and nothing here was checking: a ref cannot be both a file and a directory.
+//
+// `luna/<task>` for a roleless stage was a strict prefix of `luna/<task>/<role>`
+// for every other one, so the first mechanical stage after any agent stage died
+// with `cannot lock ref ... 'luna/<task>/scout' exists`. Measured on the real
+// flow: `discovery` closed, then `setup` could not open a worktree at all — which
+// is every feature task, since `setup` is stage 2.
+func TestAMechanicalStageDoesNotCollideWithARoleBranch(t *testing.T) {
+	mechanical := WorktreeSpec{TaskID: "LUNA-1"}.Branch()
+	withRole := WorktreeSpec{TaskID: "LUNA-1", Role: "scout"}.Branch()
+
+	if mechanical == withRole {
+		t.Fatalf("two stages must not share a branch, both got %q", mechanical)
+	}
+	// The prefix has to be followed by "/" to matter: git only refuses when one
+	// ref is a parent *directory* of another.
+	if strings.HasPrefix(withRole, mechanical+"/") {
+		t.Errorf("git refuses %q while %q exists: one ref cannot be a directory of the other", mechanical, withRole)
+	}
+}
+
 // fakeHerdr stands in for a running herdr. Named rather than inline because the
 // house rule is that an external boundary gets a named fake — and because every
 // test here is about what Luna does with what herdr said, so the answers have to

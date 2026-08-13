@@ -150,14 +150,19 @@ func TestANodeWithNoReporterStillRuns(t *testing.T) {
 
 // TestAMechanicalStageWorksInTheTasksOwnWorktree. `setup` and `commit` name no
 // role, so there is nobody to keep them apart from.
+//
+// This asserted `luna/LUNA-1/reviewer` until the real flow ran: the shape looked
+// right and git refuses it, because the roleless branch of the same task then has
+// to be a directory. The role is still in the name — it is joined with "-", and
+// TestAMechanicalStageDoesNotCollideWithARoleBranch is what holds that.
 func TestAMechanicalStageWorksInTheTasksOwnWorktree(t *testing.T) {
 	spec := WorktreeSpec{TaskID: "LUNA-1"}
 
 	if got := spec.Branch(); got != "luna/LUNA-1" {
 		t.Errorf("branch = %q, want the task's own", got)
 	}
-	if got := (WorktreeSpec{TaskID: "LUNA-1", Role: "reviewer"}).Branch(); got != "luna/LUNA-1/reviewer" {
-		t.Errorf("branch = %q, want it namespaced by role", got)
+	if got := (WorktreeSpec{TaskID: "LUNA-1", Role: "reviewer"}).Branch(); got != "luna/LUNA-1-reviewer" {
+		t.Errorf("branch = %q, want it named by role", got)
 	}
 }
 

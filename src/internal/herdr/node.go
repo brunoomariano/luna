@@ -128,11 +128,19 @@ type WorktreeSpec struct {
 //
 // Named after the task and the role so a checkout is findable without consulting
 // Luna, and so two roles on one task cannot land on the same branch.
+//
+// The role is joined with "-" rather than "/", which is not cosmetic: git refs
+// are a directory tree, so `luna/<task>/<role>` makes `luna/<task>` a directory
+// and the roleless form of the same task can no longer exist. A mechanical stage
+// following any agent stage — `setup`, which is stage 2 of every task — died on
+// `cannot lock ref`. One "/" keeps Luna's branches in their own namespace; a
+// second one would put every task's stages in a namespace of their own, which is
+// what collides.
 func (w WorktreeSpec) Branch() string {
 	if w.Role == "" {
 		return "luna/" + w.TaskID
 	}
-	return "luna/" + w.TaskID + "/" + string(w.Role)
+	return "luna/" + w.TaskID + "-" + string(w.Role)
 }
 
 // Node runs a stage inside herdr. It satisfies lead.Node (ADR-0030).
