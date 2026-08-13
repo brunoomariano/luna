@@ -143,3 +143,43 @@ func TestATaskWithNoStatementStillGetsABrief(t *testing.T) {
 		t.Errorf("the brief lost the task it is about:\n%s", got)
 	}
 }
+
+// TestTheCommitTheStageMadeIsReported is the other end of the handoff. The
+// reducer has always advanced the base from what Complete carried; nothing ever
+// filled it in from a real run, so every stage branched from where the task
+// started.
+func TestTheCommitTheStageMadeIsReported(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner:    fake,
+		Prove:     fake.proving(),
+		Roles:     fixedRole("claude"),
+		Delivered: func(context.Context, string) string { return "c0ffee1" },
+	}
+
+	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Commit != "c0ffee1" {
+		t.Errorf("commit = %q, want the one the stage left in its worktree", result.Commit)
+	}
+}
+
+// TestAStageThatCommittedNothingReportsNothing. An empty commit is a state, not a
+// failure: the base simply does not move, and the next stage starts where this
+// one did.
+func TestAStageThatCommittedNothingReportsNothing(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{Runner: fake, Prove: fake.proving(), Roles: fixedRole("claude")}
+
+	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Commit != "" {
+		t.Errorf("commit = %q, want empty when nothing read it", result.Commit)
+	}
+}

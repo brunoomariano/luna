@@ -658,3 +658,47 @@ func (j *countingJudge) OnFailure(context.Context, fsm.TaskState, string) Decisi
 	j.asked++
 	return DecideRetry
 }
+
+// committingNode is a node whose stages actually commit, which is what every
+// real one does: the handoff is the commit (ADR-0055, INV-core-6).
+type committingNode struct{ commits []string }
+
+func (n *committingNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (Result, error) {
+	sha := fmt.Sprintf("c0ffee%d", len(n.commits))
+	n.commits = append(n.commits, sha)
+
+	delivered := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, a := range delivered {
+		evidence[a] = fsm.Evidence{Scope: fsm.ScopeFull, Verdict: fsm.VerdictPassed}
+	}
+	return Result{Delivered: delivered, Evidence: evidence, Commit: sha}, nil
+}
+
+// TestTheBaseFollowsWhatTheStageCommitted is the handoff working end to end.
+//
+// The reducer has always advanced the base from `Complete.Commit`, and `luna
+// done --commit` filled it in — but the node never reported one, so every stage
+// driven by `luna run` branched from wherever the task started. Measured on a
+// real 14-stage run: nine stages closed and seven of their commits had the
+// pre-task commit as their parent, so the reviewer reviewed a tree with none of
+// the implementer's work in it.
+func TestTheBaseFollowsWhatTheStageCommitted(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindChore)
+
+	node := &committingNode{}
+	conductor := &Lead{Store: s, Node: node, Judge: &alwaysRetries{}}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(node.commits) < 2 {
+		t.Fatalf("want several stages to have run, got %d", len(node.commits))
+	}
+	if want := node.commits[len(node.commits)-1]; state.Base != want {
+		t.Errorf("base = %q, want %q — the stage's commit never became the handoff", state.Base, want)
+	}
+}

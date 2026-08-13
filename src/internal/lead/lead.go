@@ -63,6 +63,15 @@ type Node interface {
 type Result struct {
 	Delivered []fsm.Artifact
 	Evidence  map[fsm.Artifact]fsm.Evidence
+
+	// Commit is what the stage delivered, and it is the handoff: the next stage
+	// branches from it (ADR-0055, INV-core-6).
+	//
+	// Empty means the stage committed nothing, and then the base does not move —
+	// which is right for a mechanical stage, and is a stage that produced nothing
+	// durable for any other. It is not an error here: the contract check decides
+	// whether the stage closes, and this only decides where the next one starts.
+	Commit string
 }
 
 // Decision is what the model chose to do about a failure.
@@ -197,6 +206,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	if err := l.record(taskID, fsm.Complete{
 		Delivered: result.Delivered,
 		Evidence:  result.Evidence,
+		Commit:    result.Commit,
 		Flow:      flow,
 	}); err != nil {
 		return err

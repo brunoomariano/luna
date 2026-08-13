@@ -156,6 +156,16 @@ type Node struct {
 	// built here so the wording is configuration, not code.
 	Prompt func(state fsm.TaskState, stage fsm.Stage) string
 
+	// Delivered reads the commit a stage left in its worktree, which becomes the
+	// next stage's base. Injected rather than called directly so this package
+	// keeps no git dependency, the same way Prove keeps out the shell.
+	//
+	// Nil means no commit is ever reported, and the base never moves — which is
+	// what happened before this existed: nine stages closed on a real run and
+	// seven of them branched from the pre-task commit, so the reviewer reviewed a
+	// tree with none of the implementer's work in it.
+	Delivered func(ctx context.Context, worktree string) string
+
 	// Contained reports whether something is confining this process, which decides
 	// how much the agent is trusted with (INV-core-7). Injected so a test does not
 	// need a sandbox to exercise either answer.
@@ -365,6 +375,13 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 	result := lead.Result{
 		Delivered: owed,
 		Evidence:  make(map[fsm.Artifact]fsm.Evidence, len(owed)),
+	}
+
+	// Read before the worktree is closed, because that is the only moment it can
+	// be read: the tree is removed as soon as the stage ends, and what survives is
+	// the commit it is being asked for.
+	if n.Delivered != nil {
+		result.Commit = n.Delivered(ctx, ws.Path)
 	}
 
 	prover := n.prover(ws)

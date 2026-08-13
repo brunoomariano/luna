@@ -157,6 +157,8 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// agent is trusted with (INV-core-7). Luna does not contain anything
 		// itself; it asks whether something else is.
 		Contained: node.Contained,
+		// What the stage committed, which is what the next one branches from.
+		Delivered: node.Head,
 	}
 	return conductor, func() { _ = client.Close() }, nil
 }

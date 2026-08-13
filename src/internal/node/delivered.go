@@ -133,3 +133,25 @@ func short(sha string) string {
 	}
 	return sha
 }
+
+// Head is the commit a worktree is currently on, or empty if it has none.
+//
+// It is how a stage's delivery becomes the next stage's base: the handoff is the
+// commit (ADR-0055, INV-core-6), so what the agent left at HEAD is what the next
+// role branches from.
+//
+// A worktree with no commit is not an error, for the same reason it is not one in
+// CheckoutDelivered: it is the first stage of the first task, before anything was
+// delivered. Empty means the base does not move, and the next stage branches from
+// wherever the task already was.
+//
+// `--verify HEAD^{commit}` rather than `rev-parse HEAD`: the same check the commit
+// stage's own verifier uses (INV-core-4), so a tag or a tree cannot be reported as
+// a delivery.
+func Head(ctx context.Context, worktree string) string {
+	head, err := git(ctx, worktree, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return ""
+	}
+	return head
+}
