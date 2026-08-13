@@ -156,6 +156,24 @@ type Node struct {
 	// built here so the wording is configuration, not code.
 	Prompt func(state fsm.TaskState, stage fsm.Stage) string
 
+	// Contained reports whether something is confining this process, which decides
+	// how much the agent is trusted with (INV-core-7). Injected so a test does not
+	// need a sandbox to exercise either answer.
+	//
+	// Nil means uncontained, which is the safe direction: it withholds the flag
+	// that removes the harness's own checks rather than granting it by default.
+	Contained func() bool
+
+	// Statement reads what the task is about from wherever it lives — the
+	// registry, in practice. Injected for the same reason as Prove: the node runs
+	// things and does not know what a beads is.
+	//
+	// Nil, or an error, means the agent works from the contract alone. That is
+	// strictly what it had before this existed, so failing to reach the registry
+	// degrades the brief rather than the stage (INV-core-8's principle: a check
+	// that cannot look should not block the work).
+	Statement func(ctx context.Context, taskID string) (fsm.Statement, error)
+
 	// Prove runs the contract's checks. It takes the worktree path, because that
 	// is where the commands run, and the node is what knows it (ADR-0035).
 	Prove func(ws Workspace) Prover
@@ -291,12 +309,17 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 		return lead.Result{}, err
 	}
 
+	// Read fresh rather than replayed: a person edits the statement in the
+	// registry while the task runs, and the stage about to start should see what
+	// they wrote (ADR-0026's line between history and configuration).
+	state.Statement = n.statement(ctx, state.ID)
+
 	name := agentName(state.ID, stage.ID)
 
 	// A gated role starts without what it must not have — the tool is absent
 	// rather than discouraged (ADR-0018). A harness Luna cannot gate stops the
 	// stage instead of running an ungated review (ADR-0041).
-	args, err := gateArgs(role)
+	args, err := gateArgs(role, n.contained())
 	if err != nil {
 		return lead.Result{}, fmt.Errorf("stage %q: %w", stage.ID, err)
 	}
@@ -372,6 +395,31 @@ func (existenceOnly) Prove(_ context.Context, v fsm.Verifier, seq int) (fsm.Evid
 	return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
 }
 
+// contained reports whether something is confining this process, defaulting to
+// no. The default is the conservative one on purpose: an unset field must not be
+// what hands an agent every permission.
+func (n *Node) contained() bool {
+	return n.Contained != nil && n.Contained()
+}
+
+// statement reads what the task is about, and reports nothing rather than
+// failing when it cannot.
+//
+// A registry that is down is a worse brief, not a stopped stage: everything the
+// contract requires is still in the state, and that is what every stage ran on
+// before a statement existed at all.
+func (n *Node) statement(ctx context.Context, taskID string) fsm.Statement {
+	if n.Statement == nil {
+		return fsm.Statement{}
+	}
+	stated, err := n.Statement(ctx, taskID)
+	if err != nil {
+		n.warn("could not read what %s is about, briefing without it: %v", taskID, err)
+		return fsm.Statement{}
+	}
+	return stated
+}
+
 func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	if n.Prompt != nil {
 		return n.Prompt(state, stage)
@@ -399,6 +447,27 @@ func brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	fmt.Fprintf(&b, "Task %s (%s), stage %s.\n", state.ID, state.Context.Kind, stage.ID)
 	fmt.Fprintf(&b, "Worktree: the directory you are in.\n")
 
+	// The base is where the previous stage's work actually is. Without it an agent
+	// told to read `approach` has a noun and no location, and goes looking around
+	// the filesystem for it — which is how a stage ends up stopped on its own
+	// harness's permission prompt rather than working.
+	if state.Base != "" {
+		fmt.Fprintf(&b, "Base commit: %s — everything produced so far is in it.\n", state.Base)
+	}
+
+	if state.Statement.Stated() {
+		fmt.Fprintf(&b, "\nWhat the task is about:\n")
+		for _, part := range []struct{ label, text string }{
+			{"", state.Statement.Description},
+			{"Design: ", state.Statement.Design},
+			{"Done when: ", state.Statement.Acceptance},
+		} {
+			if part.text != "" {
+				fmt.Fprintf(&b, "  %s%s\n", part.label, part.text)
+			}
+		}
+	}
+
 	if len(stage.Requires) > 0 {
 		fmt.Fprintf(&b, "\nAlready produced, and yours to read:\n")
 		for _, artifact := range stage.Requires {
@@ -413,6 +482,13 @@ func brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 			fmt.Fprintf(&b, "  - %s%s\n", artifact, howProven(stage, artifact))
 		}
 	}
+
+	// The handoff, said out loud. ADR-0055 makes the commit the handoff and
+	// ADR-0058 makes it the snapshot, and neither was ever told to the agent: the
+	// first full run closed six stages across five branches and left the
+	// repository byte-identical to where it started.
+	fmt.Fprintf(&b, "\nHand the work over by committing it to this worktree's branch. "+
+		"Work that is not committed is not delivered — the next stage reads your commit, not this directory.\n")
 
 	return b.String()
 }

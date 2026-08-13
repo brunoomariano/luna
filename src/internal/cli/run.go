@@ -149,8 +149,39 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// Luna is the only thing that merges, and the ownership is claimed here
 		// rather than defaulted — the same shape as the log's (ADR-0053).
 		Merge: node.Merger{Repo: opts.Repo, As: node.LunaOwnsTheMerge}.Merge,
+		// What the task is about, read from the registry at the moment the stage
+		// starts. Nil when the project has none, which briefs from the contract
+		// alone — what every stage did before this existed.
+		Statement: statementFrom(env.Registry),
+		// Whether a sandbox is holding the boundary, which decides how much the
+		// agent is trusted with (INV-core-7). Luna does not contain anything
+		// itself; it asks whether something else is.
+		Contained: node.Contained,
 	}
 	return conductor, func() { _ = client.Close() }, nil
+}
+
+// statementFrom adapts the registry to what the node asks for, and returns nil
+// when there is no registry to ask.
+//
+// Nil rather than a function answering empty, because the node's own nil check is
+// what keeps "this project has no registry" from being reported as a failure to
+// read one every single stage.
+func statementFrom(reg Registry) func(context.Context, string) (fsm.Statement, error) {
+	if reg == nil {
+		return nil
+	}
+	return func(ctx context.Context, taskID string) (fsm.Statement, error) {
+		task, err := reg.Task(ctx, taskID)
+		if err != nil {
+			return fsm.Statement{}, err
+		}
+		return fsm.Statement{
+			Description: task.Description,
+			Design:      task.Design,
+			Acceptance:  task.Acceptance,
+		}, nil
+	}
 }
 
 // rolesFor resolves roles from the config, optionally forcing one agent.

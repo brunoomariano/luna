@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"net"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/registry"
 )
 
 // ── parseRunOptions ──────────────────────────────────────────────────────────
@@ -744,5 +746,46 @@ func TestUnblockRefusesWhenTheStoreCannotAnswer(t *testing.T) {
 
 	if err := h.run(t, "unblock", "LUNA-1"); err == nil {
 		t.Fatal("unblocking against an unreadable store must fail")
+	}
+}
+
+// TestTheStatementAdapterCarriesEveryField. The three fields have different names
+// on each side — `acceptance_criteria` in beads, `Acceptance` in the engine — and
+// a mapping that drops one would show up as an agent quietly missing its
+// acceptance criteria rather than as a failure.
+func TestTheStatementAdapterCarriesEveryField(t *testing.T) {
+	reg := &fakeRegistry{task: registry.Task{
+		Description: "consumable by other programs",
+		Design:      "a flag, not a subcommand",
+		Acceptance:  "valid JSON out",
+	}}
+
+	stated, err := statementFrom(reg)(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("statementFrom: %v", err)
+	}
+
+	if stated.Description != reg.task.Description ||
+		stated.Design != reg.task.Design ||
+		stated.Acceptance != reg.task.Acceptance {
+		t.Errorf("a field was lost crossing the boundary: %+v", stated)
+	}
+}
+
+// TestWithNoRegistryThereIsNoLookup. Nil rather than a function answering empty,
+// so a project without beads is not reported as failing to read one every stage.
+func TestWithNoRegistryThereIsNoLookup(t *testing.T) {
+	if statementFrom(nil) != nil {
+		t.Error("a project with no registry got a lookup anyway")
+	}
+}
+
+// TestAFailingLookupIsReported. The node degrades on an error; it can only do
+// that if the adapter passes one up rather than swallowing it.
+func TestAFailingLookupIsReported(t *testing.T) {
+	reg := &fakeRegistry{taskErr: errors.New("bd: database is locked")}
+
+	if _, err := statementFrom(reg)(context.Background(), "LUNA-1"); err == nil {
+		t.Fatal("the registry's failure was swallowed")
 	}
 }

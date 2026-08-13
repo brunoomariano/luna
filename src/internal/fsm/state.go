@@ -214,6 +214,31 @@ type Retry struct {
 	Max      int
 }
 
+// Statement is what a person said the task is about, in their words.
+//
+// It exists because a task used to be an id, a kind and a profile, and nothing
+// more: agents inferred the goal from the id string, and the stage that has to
+// write a contract stopped to ask a person instead — every time.
+//
+// The three fields are the registry's own, kept apart rather than flattened into
+// one blob so a stage can be told what it needs: `scenarios` and `spec` live on
+// Acceptance, while `build` mostly needs Description.
+type Statement struct {
+	// Description is what to build.
+	Description string
+
+	// Design is the technical route, when one was decided before the work began.
+	Design string
+
+	// Acceptance is how the result will be judged.
+	Acceptance string
+}
+
+// Stated reports whether anybody said anything about this task.
+func (s Statement) Stated() bool {
+	return s.Description != "" || s.Design != "" || s.Acceptance != ""
+}
+
 // TaskState is everything the engine knows about one task. It is rebuilt by
 // replaying the append-only log, so it holds no pointer to anything live
 // (INV-core-2).
@@ -243,6 +268,15 @@ type TaskState struct {
 	// Empty on a task that has not closed a stage yet, which means the next
 	// worktree branches from whatever the repository already is.
 	Base string
+
+	// Statement is what a person said the task is about. It is **not recorded**,
+	// for the same reason `Advance.Flow` is not: it lives in the registry, a
+	// person edits it there, and a copy frozen into the log would go quietly stale
+	// while still looking authoritative (ADR-0026, ADR-0054).
+	//
+	// Empty is normal — a project with no registry states nothing, and every stage
+	// still runs.
+	Statement Statement
 
 	Gate  *PendingGate
 	Loop  LoopCounters
