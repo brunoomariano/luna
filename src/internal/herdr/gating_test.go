@@ -102,7 +102,7 @@ func TestCodexCannotDenyOneCapabilityAlone(t *testing.T) {
 // Guessing that an agent supports denial and being wrong fails open: a reviewer
 // that can edit, with nothing in the log saying the denial did not take.
 func TestAnUnlistedHarnessIsRefused(t *testing.T) {
-	_, err := gateArgs(fsm.Role{Agent: "cursor", ToolsDeny: noWriting})
+	_, err := gateArgs(fsm.Role{Agent: "cursor", ToolsDeny: noWriting}, false)
 
 	if err == nil {
 		t.Fatal("an agent Luna cannot gate must stop the stage")
@@ -124,7 +124,7 @@ func TestAnUnlistedHarnessIsRefused(t *testing.T) {
 // Most roles deny nothing. Requiring a table entry for them would restrict the
 // whole flow to four agents for no reason.
 func TestAnUngatedRoleNeedsNoHarnessSupport(t *testing.T) {
-	args, err := gateArgs(fsm.Role{Agent: "some-agent-nobody-listed"})
+	args, err := gateArgs(fsm.Role{Agent: "some-agent-nobody-listed"}, false)
 	if err != nil {
 		t.Errorf("a role that denies nothing needs nothing: %v", err)
 	}
@@ -159,6 +159,73 @@ func TestAnAgentStartsUnattended(t *testing.T) {
 
 	if !strings.Contains(strings.Join(herdr.startArgs, " "), "--permission-mode") {
 		t.Errorf("an unattended agent must not stop to ask; got %v", herdr.startArgs)
+	}
+}
+
+// TestAContainedAgentGetsTheFlagThatActuallyWorks. `acceptEdits` auto-approves
+// edits and not arbitrary Bash, so an agent running `make test` or `bd show`
+// still stops at a confirmation — measured, on the real flow: `acceptEdits`
+// settled at `blocked`, `bypassPermissions` at `done` with a real commit.
+//
+// The wider flag is only defensible with something else doing the containing,
+// which is why it is asked for rather than assumed.
+func TestAContainedAgentGetsTheFlagThatActuallyWorks(t *testing.T) {
+	args := unattendedFor(harnesses[0], true)
+
+	if !strings.Contains(strings.Join(args, " "), "bypassPermissions") {
+		t.Errorf("a contained agent still has to ask before each command: %v", args)
+	}
+}
+
+// TestAnUncontainedAgentDoesNotGetIt is the other half, and the one that matters:
+// on a plain host the sandbox is absent, so the flag that removes every check
+// must be withheld — Luna delegates containment rather than pretending to it
+// (INV-core-7).
+func TestAnUncontainedAgentDoesNotGetIt(t *testing.T) {
+	args := unattendedFor(harnesses[0], false)
+
+	if strings.Contains(strings.Join(args, " "), "bypassPermissions") {
+		t.Errorf("an uncontained agent was handed the flag that skips every check: %v", args)
+	}
+	// It still gets the narrower one: an agent that cannot edit is no more use
+	// than one that cannot run, and this is what ran before containment existed.
+	if !strings.Contains(strings.Join(args, " "), "acceptEdits") {
+		t.Errorf("an uncontained agent was left asking about every edit too: %v", args)
+	}
+}
+
+// TestContainmentReachesTheAgentThatStarts is the wiring rather than the table:
+// a Node told it is contained has to actually pass the wider flag on.
+func TestContainmentReachesTheAgentThatStarts(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner:    herdr,
+		Prove:     herdr.proving(),
+		Roles:     fixedRole("claude"),
+		Contained: func() bool { return true },
+	}
+
+	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(strings.Join(herdr.startArgs, " "), "bypassPermissions") {
+		t.Errorf("the node knew it was contained and started the agent anyway asking: %v", herdr.startArgs)
+	}
+}
+
+// TestANodeWithNoContainmentCheckAssumesNone. An unset field must not be what
+// hands an agent every permission — the default has to fail closed.
+func TestANodeWithNoContainmentCheckAssumesNone(t *testing.T) {
+	herdr := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{Runner: herdr, Prove: herdr.proving(), Roles: fixedRole("claude")}
+
+	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(strings.Join(herdr.startArgs, " "), "bypassPermissions") {
+		t.Errorf("an unset containment check granted every permission: %v", herdr.startArgs)
 	}
 }
 

@@ -40,6 +40,38 @@ type Harness struct {
 	//
 	// Nil means the harness already runs unattended and needs no flag.
 	Unattended []string
+
+	// Contained is what this harness needs when something else is doing the
+	// containing — a sandbox, in practice.
+	//
+	// It exists because Unattended is not enough for claude: `acceptEdits`
+	// auto-approves edits and not arbitrary Bash, so a stage running `make test`
+	// or reading the registry still stops at a confirmation. Measured on the real
+	// flow, same command: `acceptEdits` settled at `blocked`, `bypassPermissions`
+	// at `done` having run the command, written the file and committed it.
+	//
+	// It is a separate field rather than a wider default because the flag removes
+	// every check the harness has, and that is only defensible when a sandbox is
+	// holding the boundary instead. ai-jail's own configuration states the rule —
+	// "flags perigosas DENTRO do jail, restrições do SO FORA" — and INV-core-7
+	// says it from Luna's side: confining a process is a sandbox's job.
+	//
+	// Nil means the harness has nothing extra to offer a contained run, and
+	// Unattended is used either way.
+	Contained []string
+}
+
+// unattendedFor is what to pass this harness so it does not stop to ask.
+//
+// The narrower flag always applies; the wider one only when something is
+// containing the process. Withholding it on a bare host is the point: the failure
+// there is a stage that stops and says so, which is recoverable, against an agent
+// with no checks at all on a machine with the person's real files.
+func unattendedFor(harness Harness, contained bool) []string {
+	if contained && len(harness.Contained) > 0 {
+		return harness.Contained
+	}
+	return harness.Unattended
 }
 
 // harnesses is the closed table of what Luna knows how to gate.
@@ -53,13 +85,16 @@ var harnesses = []Harness{
 	{
 		Kind:    "claude",
 		Precise: true,
-		// `acceptEdits`, not `bypassPermissions`: measured against a live claude
-		// 2.x, it already runs bash, writes files and commits — which is every
-		// mechanism a stage needs — so the wider mode buys nothing and gives up the
-		// harness's own refusals. The stage's real limit is what the role denies
-		// above, and a permission mode is not where containment belongs anyway
-		// (INV-core-7).
+		// `acceptEdits` is the floor, not the whole answer: it auto-approves edits
+		// and not arbitrary Bash, so on a bare host an agent still stops the first
+		// time it runs `make test`. That is the honest trade off a machine with no
+		// sandbox — a stage that stops and says so, rather than an agent with no
+		// checks near the person's real files. `Contained` below is what a sandbox
+		// buys.
 		Unattended: []string{"--permission-mode", "acceptEdits"},
+		// Inside a sandbox the checks are redundant with the containment, and
+		// without this the agent stops on its first `make test`.
+		Contained: []string{"--permission-mode", "bypassPermissions"},
 		Deny: func(denied []fsm.Capability) ([]string, error) {
 			// Space-separated, capitalised: `--disallowed-tools Edit Write`.
 			args := make([]string, 0, len(denied)+1)
@@ -159,7 +194,7 @@ func SupportedHarnesses() []string {
 // A role that does deny something and names an agent Luna cannot gate stops the
 // stage. The message names the harness and the alternatives, because this refusal
 // will read as a bug the first time someone meets it (ADR-0041).
-func gateArgs(role fsm.Role) ([]string, error) {
+func gateArgs(role fsm.Role, contained bool) ([]string, error) {
 	harness, ok := HarnessFor(role.Agent)
 	if !ok {
 		if role.Gated() {
@@ -171,7 +206,7 @@ func gateArgs(role fsm.Role) ([]string, error) {
 		return nil, nil
 	}
 
-	args := append([]string{}, harness.Unattended...)
+	args := append([]string{}, unattendedFor(harness, contained)...)
 	if !role.Gated() {
 		return args, nil
 	}
