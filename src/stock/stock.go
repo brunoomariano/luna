@@ -14,8 +14,12 @@ import "embed"
 // The stage loader takes an fs.FS rather than a path precisely so that this and
 // a project's directory on disk are the same thing to it.
 //
-//go:embed stages/*.toml
+//go:embed stages/*.toml roles/*.toml profiles/*.toml
 var Files embed.FS
 
-// StagesDir is where the stage files live inside Files.
-const StagesDir = "stages"
+// Where each kind of stock lives inside Files.
+const (
+	StagesDir   = "stages"
+	RolesDir    = "roles"
+	ProfilesDir = "profiles"
+)

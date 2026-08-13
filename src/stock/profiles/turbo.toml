@@ -1,0 +1,9 @@
+# Only the write waits. Everything before it is reversible, and that one is not.
+#
+# A loop ceiling under turbo resolves by carrying on, which is the point of the
+# profile — but "carrying on" now means the task stops with a block rather than
+# looping forever, because a ceiling nobody answers must not simply resolve
+# (ADR-0059).
+
+waits       = ["confirm-write"]
+turn_budget = "2h"

@@ -85,17 +85,16 @@ var knownGateKinds = map[fsm.GateKind]bool{
 // ShippedProfiles is the policy each built-in profile carries, expressed the same
 // way a configured one is. They are defaults, not special cases (ADR-0026).
 func ShippedProfiles() map[fsm.Profile]Policy {
-	profiles := map[fsm.Profile]Policy{}
-	for _, name := range fsm.ShippedProfiles() {
-		gates := map[fsm.GateKind]bool{}
-		for gate := range knownGateKinds {
-			if fsm.ShippedPolicy(name, gate) {
-				gates[gate] = true
-			}
-		}
-		profiles[name] = Policy{Gates: gates, Budgets: fsm.DefaultBudgets()}
+	profiles, err := shippedProfiles()
+	if err != nil {
+		panic(fmt.Sprintf("the embedded profiles do not parse, which is a broken build: %v", err))
 	}
-	return profiles
+
+	out := make(map[fsm.Profile]Policy, len(profiles))
+	for name, policy := range profiles {
+		out[name] = policy
+	}
+	return out
 }
 
 // Profile resolves a name to the policy that decides its gates.
@@ -428,36 +427,30 @@ func parseSection(header, where string) (sectionRef, error) {
 // ShippedRoles is what each role in the default flow resolves to before a project
 // says otherwise.
 //
+// It reads `src/stock/roles/*.toml`, embedded in the binary (RFC-0003). The
+// definitions used to be a Go map, which meant a project could override a role
+// and could not see what it was overriding.
+//
 // Every role names the same agent kind today, which is honest: the independence
 // that matters is the one INV-core-7 asks for — the reviewer not HAVING Edit —
 // and that needs tool denial rather than a different vendor. Naming different
-// agents here is available to a project and is not pretended to be a substitute.
+// agents there is available to a project and is not pretended to be a substitute.
+//
+// A stock that does not parse panics, for the same reason the flow does: it is
+// embedded at build time, so a broken one is a broken binary.
 func ShippedRoles() map[fsm.RoleName]fsm.Role {
-	const agent = "claude"
-
-	// Whoever writes does not review, and the reviewer cannot write: both
-	// capabilities go, because a role that could still create a file has not been
-	// stopped from changing the work it is judging.
-	noWriting := []fsm.Capability{fsm.CapEdit, fsm.CapWrite}
-
-	return map[fsm.RoleName]fsm.Role{
-		"scout":        {Agent: agent, Brief: "You find which repositories the task touches. You do not change them."},
-		"analyst":      {Agent: agent, Brief: "You turn a request into a briefing the next stage can act on."},
-		"investigator": {Agent: agent, Brief: "You find the root cause and the smallest case that shows it."},
-		"gherkin":      {Agent: agent, Brief: "You write the scenarios and the approach. You do not implement them."},
-		"specifier":    {Agent: agent, Brief: "You write the contract: what is required and what is produced."},
-		"implementer":  {Agent: agent, Brief: "You make the scenarios pass. You do not review your own work."},
-		"cleaner":      {Agent: agent, Brief: "You improve the code without changing what it does."},
-		"verifier":     {Agent: agent, Brief: "You check the delivery against the scenarios it promised."},
-		// The four review roles start without the tools they must not use. The
-		// brief says the same thing, and the brief is not what enforces it — a
-		// restriction that lives only in the prompt is the violation INV-core-7
-		// names (ADR-0041).
-		"qa":        {Agent: agent, Brief: "You look for what the tests do not cover. You report; you do not fix.", ToolsDeny: noWriting},
-		"reviewer":  {Agent: agent, Brief: "You review. You report findings; you do not edit.", ToolsDeny: noWriting},
-		"hardener":  {Agent: agent, Brief: "You look for what breaks under load, attack, or absence.", ToolsDeny: noWriting},
-		"architect": {Agent: agent, Brief: "You judge whether the shape still holds. You report; you do not edit.", ToolsDeny: noWriting},
+	roles, err := shippedRoles()
+	if err != nil {
+		panic(fmt.Sprintf("the embedded roles do not parse, which is a broken build: %v", err))
 	}
+
+	// A copy per call: the map is handed to callers that merge a project's
+	// overrides into it, and they must not edit the shipped one for everybody.
+	out := make(map[fsm.RoleName]fsm.Role, len(roles))
+	for name, role := range roles {
+		out[name] = role
+	}
+	return out
 }
 
 // withShippedRoles fills in the roles a project did not name.

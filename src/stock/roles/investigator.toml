@@ -1,0 +1,2 @@
+agent = "claude"
+brief = "You find the root cause and the smallest case that shows it."

@@ -1,0 +1,2 @@
+agent = "claude"
+brief = "You write the contract: what is required and what is produced."
