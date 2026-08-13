@@ -254,3 +254,75 @@ func TestTheBriefAsksForTheDeclaration(t *testing.T) {
 		t.Errorf("the brief does not ask for the declaration it reads:\n%s", got)
 	}
 }
+
+// TestAMechanicalStageDeclaresNothingAndStillCloses.
+//
+// A mechanical stage runs no agent, so nobody writes a declaration — but its
+// worktree is branched from the previous stage's commit, whose message carries
+// one. Reading that is worse than reading nothing: `setup` reported `repos`,
+// which is what `discovery` delivered, and blocked owing `worktree`.
+//
+// The rule is that a declaration only counts when this stage's own agent wrote
+// it, which is exactly the stages that run one.
+func TestAMechanicalStageDeclaresNothingAndStillCloses(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: fake,
+		Prove:  fake.proving(),
+		Roles:  fixedRole("claude"),
+		Delivered: func(context.Context, string) (string, string) {
+			// The previous stage's commit, inherited with the branch.
+			return "c0ffee1", "chore: the stage before this one\n\nDelivered: repos\n"
+		},
+	}
+
+	// The task is already at that commit: the worktree was branched from it, and
+	// the mechanical stage adds nothing of its own.
+	state := fsm.NewTaskState("LUNA-1", "")
+	state.Base = "c0ffee1"
+
+	// No role: `setup` and `commit` are mechanical (ADR-0040).
+	stage := fsm.Stage{ID: "setup", Produces: []fsm.Artifact{"worktree"}}
+	result, err := node.Run(context.Background(), state, stage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Delivered) != 1 || result.Delivered[0] != "worktree" {
+		t.Errorf("delivered = %v, want [worktree] — a mechanical stage owes what the contract says", result.Delivered)
+	}
+}
+
+// TestAStageThatCommittedNothingDoesNotInheritADeclaration is the same guard on
+// the path that matters more.
+//
+// An agent that works and commits nothing leaves HEAD where its worktree was
+// branched from — pointing at the previous stage's commit, and that message
+// declares the previous stage's artifacts. Accepting it would let a stage close
+// on somebody else's delivery.
+func TestAStageThatCommittedNothingDoesNotInheritADeclaration(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: fake,
+		Prove:  fake.proving(),
+		Roles:  fixedRole("claude"),
+		Delivered: func(context.Context, string) (string, string) {
+			return "base1", "chore: the stage before\n\nDelivered: repos\n"
+		},
+	}
+
+	state := fsm.NewTaskState("LUNA-1", "")
+	state.Base = "base1" // the agent added nothing, so HEAD is still the base
+	stage := stageWithTests()
+
+	result, err := node.Run(context.Background(), state, stage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, got := range result.Delivered {
+		if got == "repos" {
+			t.Errorf("delivered = %v, inherited from the previous stage's commit", result.Delivered)
+		}
+	}
+}

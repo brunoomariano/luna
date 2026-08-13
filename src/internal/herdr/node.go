@@ -393,11 +393,19 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 		// agrees — measured: `verify` owed `dod_checked`, committed a file called
 		// `verification`, and closed green.
 		//
+		// Only when this stage committed, and that guard is the whole subtlety. A
+		// stage's worktree is branched from the previous stage's commit, so HEAD
+		// already carries somebody else's message — and reading it is worse than
+		// reading nothing: `setup` is mechanical, runs no agent, and reported
+		// `repos` because that is what `discovery` had declared one commit earlier.
+		//
 		// An agent that declared nothing falls back to the assumption, because
 		// every agent that ran before this existed wrote no such line and a stage
 		// must not start failing over the shape of a commit message.
-		if declared := fsm.ReadDelivered(message); len(declared) > 0 {
-			result.Delivered = declared
+		if result.Commit != state.Base {
+			if declared := fsm.ReadDelivered(message); len(declared) > 0 {
+				result.Delivered = declared
+			}
 		}
 	}
 
