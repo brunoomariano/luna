@@ -1,6 +1,6 @@
 # RFC-0002: The lead is an agent, and the commit is the handoff
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Last reviewed:** 2026-08-13
 **Source issue:** —
 **PRD:** —
