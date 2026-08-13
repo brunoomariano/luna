@@ -1,7 +1,7 @@
 # RFC-0001: Close the gap between what was decided and what was built
 
 **Status:** IN PROGRESS
-**Last reviewed:** 2026-08-11
+**Last reviewed:** 2026-08-13
 **Source issue:** —
 **PRD:** —
 
@@ -172,7 +172,12 @@ loop ceilings never fire.
 - [x] Phase 3 — B3 (`opencode` refuses instead of returning no arguments); B4 (`opencode
       run`, plus an empty answer from any harness now being an error at the interpreting
       boundary); B5 (payload carried when the artifact exists)
-- [ ] Phase 4 — B6, B7
+- [x] Phase 4 — B6 (`Judge` wired: `luna run` builds the lead with `lead.BudgetJudge{}`,
+      so the retry budget of ADR-0011 is actually spent). The `Watchdog` half was **not**
+      wired and is not going to be in this shape: ADR-0051 removed the interface because a
+      replayed state carries no clock, and ADR-0053 brought detection back as a query over
+      the log's timestamps (`luna stuck`) rather than as something the lead holds.
+- [ ] Phase 4 — B7 (`ReviewFinding` still has no emitter)
 
 Phase 4 is deliberately left open. Wiring `Judge` and emitting `ReviewFinding` are the two
 items that change what the engine *decides* rather than what it *checks*, and both deserve
@@ -221,8 +226,10 @@ timing stays as it is.
       turned gates and review behaviour into fields. `Verifier` is now the only field of
       `Stage` still holding something a config file cannot express, which narrows the
       question rather than answering it.
-- [ ] **Does `AuditContract` run in production?** It is implemented and tested and no CLI
-      path invokes it, so a flow broken on paper is only caught by tests.
+- [x] **Does `AuditContract` run in production?** It does now. `luna flow check` runs all
+      three audits — contract, roles and stage-name budget — and reports the gaps before it
+      reports what is in flight (ADR-0058). Until then a project could not audit its own
+      flow: Luna's flow was checked by Luna's test suite, and anyone else's by nothing.
 - [ ] **What replaces the second INV-core-7 acceptance criterion?** It asked for detecting
       `tools_allow` contradicting `not_owns`; neither field exists, so the criterion was
       inexpressible. The rewrite under
