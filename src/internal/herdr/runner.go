@@ -23,7 +23,8 @@ type socketRunner struct {
 	client *Client
 
 	// Repo is the checkout worktrees are cut from. herdr refuses to make one
-	// outside a git work tree, so this has to be a real repository.
+	// outside a git work tree, so this has to be a real repository — and an
+	// absolute path, which NewRunner is what guarantees.
 	Repo string
 
 	// Settle bounds how long a prompt waits for the agent to stop working. It is
@@ -32,7 +33,16 @@ type socketRunner struct {
 }
 
 // NewRunner builds a Runner backed by a herdr socket.
+//
+// The repository is absolutised here rather than at each call: herdr answers
+// `worktree path must be absolute` to a relative `cwd`, and `luna run` defaults
+// it to ".", which is the natural thing for a CLI run from inside the checkout.
+// Failing to resolve it leaves the caller's value alone — herdr's refusal names
+// the problem better than a path this could invent (ADR-0036).
 func NewRunner(client *Client, repo string, settle time.Duration) Runner {
+	if absolute, err := filepath.Abs(repo); err == nil {
+		repo = absolute
+	}
 	return &socketRunner{client: client, Repo: repo, Settle: settle}
 }
 

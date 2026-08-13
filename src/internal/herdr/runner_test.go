@@ -182,6 +182,40 @@ func TestOpenWorktreeSendsTheRepository(t *testing.T) {
 	}
 }
 
+// TestOpenWorktreeSendsAnAbsoluteRepository covers what herdr means by "worktree
+// path must be absolute": the `cwd`, not the `path`.
+//
+// `luna run` defaults the repository to ".", which is what a CLI run from inside
+// the checkout naturally holds. Every other test here passes "/repo" — already
+// absolute — so the whole suite was green while the real command could not open a
+// single worktree. Measured against a live server (ADR-0036): an absolute `path`
+// with a relative `cwd` is refused, and absolutising `cwd` is what fixes it.
+func TestOpenWorktreeSendsAnAbsoluteRepository(t *testing.T) {
+	server, path := newFakeServer(t)
+	server.reply("worktree.create", worktreeReply)
+
+	runner := NewRunner(dialFake(t, path), ".", time.Minute)
+	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	sent := server.sent("worktree.create")
+	if len(sent) != 1 {
+		t.Fatalf("want one create, got %d", len(sent))
+	}
+
+	var params struct {
+		CWD string `json:"cwd"`
+	}
+	raw, _ := json.Marshal(sent[0].Params)
+	if err := json.Unmarshal(raw, &params); err != nil {
+		t.Fatalf("reading the params back: %v", err)
+	}
+	if !filepath.IsAbs(params.CWD) {
+		t.Errorf("herdr refuses a relative cwd; got %q", params.CWD)
+	}
+}
+
 // TestAnExistingWorktreeIsReopened covers running a task twice.
 //
 // The second `luna run` finds the worktree its first run made. Treating that as a
