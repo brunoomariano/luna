@@ -199,8 +199,25 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 	if ws.ID != "w1" {
 		t.Errorf("want the reopened workspace, got %q", ws.ID)
 	}
-	if len(server.sent("worktree.open")) != 1 {
-		t.Error("it must fall back to opening the existing one")
+	opened := server.sent("worktree.open")
+	if len(opened) != 1 {
+		t.Fatal("it must fall back to opening the existing one")
+	}
+
+	// `open` takes **exactly one** of path or branch, where `create` takes both.
+	// Passing create's parameters straight through is refused with
+	// `invalid_request`, and a live herdr is the only thing that said so — this
+	// test passed for weeks without looking at what it sent (ADR-0036).
+	params, err := json.Marshal(opened[0].Params)
+	if err != nil {
+		t.Fatalf("re-encoding the params: %v", err)
+	}
+	if strings.Contains(string(params), `"branch"`) {
+		t.Errorf("worktree.open was sent a branch alongside a path, which herdr "+
+			"refuses: %s", params)
+	}
+	if !strings.Contains(string(params), `"path"`) {
+		t.Errorf("worktree.open was sent neither path nor branch: %s", params)
 	}
 }
 

@@ -183,7 +183,7 @@ func TestClosingSendsTheWorkspaceAndForcesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-encoding the params: %v", err)
 	}
-	for _, want := range []string{`"workspace":"w1"`, `"force":true`} {
+	for _, want := range []string{`"workspace_id":"w1"`, `"force":true`} {
 		if !strings.Contains(string(params), want) {
 			t.Errorf("want %s in the params, got %s", want, params)
 		}

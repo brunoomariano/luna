@@ -90,7 +90,19 @@ func (r *socketRunner) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspac
 	var created worktreeCreated
 	err = r.client.Call("worktree.create", params, &created)
 	if err != nil && reusable(err) {
-		err = r.client.Call("worktree.open", params, &created)
+		// `worktree.open` takes **exactly one** of path or branch, where `create`
+		// takes both — sending create's parameters straight through is refused
+		// with `invalid_request`. Found by running it against a live server:
+		// resuming a task is the second run, so every test that opened a worktree
+		// once was happy (ADR-0036).
+		//
+		// The path identifies it, because that is what create was told to make.
+		err = r.client.Call("worktree.open", map[string]any{
+			"cwd":   r.Repo,
+			"path":  path,
+			"label": label,
+			"focus": false,
+		}, &created)
 	}
 	if err != nil {
 		return Workspace{}, fmt.Errorf("opening the worktree for %s: %w", label, err)
@@ -125,7 +137,11 @@ func (r *socketRunner) CloseWorktree(_ context.Context, ws Workspace) error {
 		return nil
 	}
 
-	params := map[string]any{"workspace": ws.ID, "force": true}
+	// `workspace_id`, not `workspace`. The CLI's flag is `--workspace` and the
+	// socket API's field is not, which is the exact class of mismatch ADR-0036
+	// exists for — and this one was found by running it against a live server,
+	// where every test against a fake had been happy.
+	params := map[string]any{"workspace_id": ws.ID, "force": true}
 	if err := r.client.Call("worktree.remove", params, nil); err != nil {
 		return fmt.Errorf("removing the worktree at %s: %w", ws.Path, err)
 	}
