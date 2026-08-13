@@ -12,6 +12,7 @@ import (
 	"os"
 
 	"github.com/brunoomariano/luna/src/internal/cli"
+	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/interpret"
 	"github.com/brunoomariano/luna/src/internal/node"
@@ -86,8 +87,22 @@ func run(args []string) error {
 		fmt.Fprintf(os.Stderr, "note: this is a worktree; the log and registry are %s\n", root)
 	}
 
+	// A project's own stages replace the shipped ones, if it has any (RFC-0003).
+	// Decided here because this is where the repository is known: the engine may
+	// not read a filesystem (ADR-0024), and the flow has to be settled before any
+	// command reads it.
+	stockDir := cli.StockDir(path)
+	if files, ok := cli.ProjectStock(stockDir); ok {
+		flow, err := fsm.LoadFlow(files, "stages")
+		if err != nil {
+			return fmt.Errorf("%s: %w", stockDir, err)
+		}
+		fsm.UseFlow(flow)
+	}
+
 	return cli.Run(cli.Env{
 		Store:  s,
+		Stock:  stockDir,
 		Config: cfg,
 		Out:    os.Stdout,
 		Err:    os.Stderr,

@@ -71,7 +71,8 @@ func flowCheck(env Env, args []string) error {
 	}
 
 	flow := fsm.DefaultFlow()
-	fmt.Fprintf(env.Out, "flow %s (%d stages)\n", fsm.Fingerprint(flow), len(flow))
+	fmt.Fprintf(env.Out, "flow %s (%d stages) %s\n",
+		fsm.Fingerprint(flow), len(flow), stockNote(env.Stock))
 
 	// Whether the flow holds together on paper, before whether anything is in
 	// flight. The two questions are different and this command was only asking

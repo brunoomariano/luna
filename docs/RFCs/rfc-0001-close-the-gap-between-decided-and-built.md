@@ -224,18 +224,18 @@ timing stays as it is.
 > They are left here rather than dropped because the reasoning is worth keeping, and they
 > belong in whatever document takes on configurable flows.
 
-- [ ] **How does a project declare a verifier?** `Stage.Verifiers` holds Go functions and
-      the config parser knows only `[profile.*]` and `[role.*]`, so ADR-0032 has a mechanism
-      in the engine and no surface through which anyone can use it. `src/stock/` is the
-      intended home for shipped defaults and is currently empty — loading stages from TOML
-      is larger than this RFC and likely deserves its own.
+- [x] **How does a project declare a verifier?** In a file:
+      `[verify.<artifact>]` with `run` + `scope`, or `kind = "existence"` for the floor
+      ([RFC-0003](rfc-0003-the-flow-lives-in-stock-not-in-go.md),
+      [ADR-0060](../ADRs/0060-the-flow-is-data-and-the-stock-is-where-it-lives.md)). The
+      whole flow moved to `src/stock/`, so the answer turned out to be larger than this
+      question: `Verifier` was the last field of `Stage` a file could not express, and once
+      it could, keeping the other thirteen in Go had no argument left.
 
-      Since this was written, the rest of a stage became plain data:
-      [ADR-0048](../ADRs/0048-a-field-read-by-the-reducer-is-history.md) gave conditions
-      names and [ADR-0049](../ADRs/0049-a-stage-declares-its-gate-and-what-a-review-costs.md)
-      turned gates and review behaviour into fields. `Verifier` is now the only field of
-      `Stage` still holding something a config file cannot express, which narrows the
-      question rather than answering it.
+      What the original note got right is that it needed its own RFC. What it did not
+      anticipate is that an artifact with **no** declared verifier would become a load
+      error — the floor is still available and is now a choice someone wrote down, which is
+      what ADR-0032 asked for and a silent default could never be.
 - [x] **Does `AuditContract` run in production?** It does now. `luna flow check` runs all
       three audits — contract, roles and stage-name budget — and reports the gaps before it
       reports what is in flight (ADR-0058). Until then a project could not audit its own

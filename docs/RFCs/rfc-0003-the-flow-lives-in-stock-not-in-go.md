@@ -1,6 +1,6 @@
 # RFC-0003: The flow lives in stock, not in Go
 
-**Status:** DRAFT
+**Status:** DONE
 **Last reviewed:** 2026-08-13
 **Source issue:** —
 **PRD:** —
@@ -200,13 +200,19 @@ that never runs it never notices the change.
 
 ## Rollout plan (phased)
 
-1. **Phase 1 — the loader, proven against the current flow.** Parse `src/stock/stages/*.toml`
-   into `[]Stage`, embed it, and make `DefaultFlow()` read it. The flow it produces must be
-   byte-identical in fingerprint to today's. Nothing else changes.
-2. **Phase 2 — roles and profiles follow.** `ShippedRoles()` and the profile defaults come
-   from the stock. The existing override sections keep working.
-3. **Phase 3 — `luna init` and the flow-change UX.** The project's copy, and
-   `luna flow check` reporting the stock's fingerprint against the tasks'.
+1. **Phase 1 — the loader, proven against the current flow.** ✅ The fingerprint is
+   `c0c9ff4d121b43fc` before and after, and the Go literals are kept as the fixture that
+   proves it. `flow.go` went from 166 lines to 45.
+2. **Phase 2 — roles and profiles follow.** ✅ Both come from the stock; `fsm.ShippedPolicy`
+   deliberately did not move, because it is the reducer's replay fallback rather than a
+   default (ADR-0026).
+3. **Phase 3 — `luna init` and the flow-change UX.** ✅ 29 files written, refusing to
+   overwrite without `--force`; `luna flow check` says which stock the flow came from and
+   names the tasks a change stopped from replaying.
+
+All three landed with [ADR-0060](../ADRs/0060-the-flow-is-data-and-the-stock-is-where-it-lives.md),
+and were exercised against a live herdr with a two-stage flow of a project's own — which is
+where the last of it was confirmed rather than assumed.
 
 - Feature flag? no. Phase 1 is invisible by construction — the fingerprint proves it.
 - Rollback: phases 1 and 2 revert to Go literals; phase 3 is additive.

@@ -209,3 +209,39 @@ func TestTheStockHasEveryStage(t *testing.T) {
 		}
 	}
 }
+
+// TestAProjectsFlowReplacesTheShippedOne is what makes ADR-0017 real: the stock
+// a project edited is what Luna runs, not the one it was built with.
+//
+// UseFlow is a package-level value set once at startup, which is a trade worth
+// testing rather than trusting — the alternative was threading the flow through
+// fifteen call sites that would all pass the same thing.
+func TestAProjectsFlowReplacesTheShippedOne(t *testing.T) {
+	shipped := Fingerprint(DefaultFlow())
+	t.Cleanup(func() { UseFlow(nil) })
+
+	own := []Stage{{
+		ID:        "only",
+		Role:      "implementer",
+		Requires:  []Artifact{TaskID},
+		Produces:  []Artifact{"code"},
+		Verifiers: map[Artifact]Verifier{"code": Existence{}},
+	}}
+	UseFlow(own)
+
+	got := DefaultFlow()
+	if len(got) != 1 || got[0].ID != "only" {
+		t.Fatalf("the project's flow did not take: %d stages", len(got))
+	}
+	if Fingerprint(got) == shipped {
+		t.Error("a different flow produced the shipped fingerprint, so a task " +
+			"written under one would replay under the other")
+	}
+
+	// And putting it back restores the shipped one, so a process that never sets
+	// a flow is unaffected.
+	UseFlow(nil)
+	if Fingerprint(DefaultFlow()) != shipped {
+		t.Error("clearing the project's flow did not restore the shipped one")
+	}
+}

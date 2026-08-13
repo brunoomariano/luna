@@ -63,6 +63,11 @@ type Env struct {
 	// the same flow without one.
 	Lead func(ctx context.Context, prompt string) (string, error)
 
+	// Stock is the project's copy of the stages, roles and profiles — `.luna/stock`
+	// (RFC-0003). Empty, or a directory that has none, means the embedded copy is
+	// what runs, which is what a project that never ran `luna init` gets.
+	Stock string
+
 	// Registry is the central record of what exists across checkouts (ADR-0054).
 	// Nil means a project that has not adopted it, and every cross-checkout
 	// question answers "nothing" rather than failing — the local log still knows
@@ -114,6 +119,7 @@ func Run(env Env, args []string) error {
 		"status":  statusCommand,
 		"stuck":   stuckCommand,
 		"lead":    leadCommand,
+		"init":    initCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -164,6 +170,10 @@ luna — deterministic orchestration for AI agents
 
   luna unblock <id>
         clear a block once whatever caused it is dealt with
+
+  luna init [--force]
+        copy the stages, roles and profiles into .luna/stock so this
+        project can edit them. Until then the shipped ones run.
 
   luna flow check
         what flow this build carries, and whether anything is open.
@@ -616,7 +626,7 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 }
 
 // valuelessFlags are the switches: present or absent, never `--flag value`.
-var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true, "json": true, "notify": true}
+var valuelessFlags = map[string]bool{"stdin": true, "dry-run": true, "json": true, "notify": true, "force": true}
 
 // parseFlags reads --name=value and --name value pairs.
 func parseFlags(args []string) (map[string]string, error) {
