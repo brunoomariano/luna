@@ -1,13 +1,14 @@
 # RFC-0002: The lead is an agent, and the commit is the handoff
 
-**Status:** DRAFT
-**Last reviewed:** 2026-08-12
+**Status:** IN PROGRESS
+**Last reviewed:** 2026-08-13
 **Source issue:** —
 **PRD:** —
 
-> **Nothing is built from this yet.** The merge question that was blocking §3 has been
-> answered — see "How swarm-forge solved this" below — and the answer changed one part of the
-> design.
+> **All four phases are built.** Each landed with its own ADR, and each is listed against its
+> phase in the rollout plan below. What remains is not construction but retirement: the old
+> store is superseded and still present, and the ADRs it carried have to be marked as such.
+> That is the doc cleanup this RFC's own §"Impact and migration" describes.
 
 ## Motivation
 
@@ -311,19 +312,27 @@ block still notifies, and the notifier already delegates to herdr.
 
 ## Rollout plan (phased)
 
-1. **Phase 1a — the order.** `luna next` and `luna done` as the interface between the FSM
-   and the lead, in text and JSON, still over the current store and still driven by the Go
-   loop. Additive and reversible.
-2. **Phase 1b — the deterministic merge.** One owner, dry run in a throwaway worktree
-   separate from the real merge, `merge_ready` / `merge_blocked` as the verdict. Testable
-   today against a single worktree, before the topology changes.
-3. **Phase 1c — the watchdog over a blocked merge.** Its first real subject: a fact with a
-   timestamp, sitting in the registry. This is what keeps a conflict from waiting for hours
-   with nobody knowing.
-4. **Phase 2 — beads.** The registry moves and the store retires. The irreversible step.
-5. **Phase 3 — per-task-and-role worktrees.** The topology changes; the merge built in 1b
-   now has several branches to integrate rather than one.
-6. **Phase 4 — the lead as an agent.** Its brief, the knob, the conversation.
+1. **Phase 1a — the order.** ✅ [ADR-0052](../ADRs/0052-the-fsm-emits-an-order-and-the-panorama-is-a-separate-question.md).
+   `luna next`, `luna done` and `luna status`, in text and JSON. The order carries no view of
+   the flow; the panorama is a separate command, so seeing it is an explicit act rather than
+   something that arrives attached to an instruction.
+2. **Phase 1b — the deterministic merge.** ✅ [ADR-0053](../ADRs/0053-the-merge-is-code-and-the-watchdog-reads-a-clock-the-reducer-never-sees.md).
+   One owner, checked at the boundary; dry run in a throwaway worktree separate from the real
+   merge; zero automatic resolution, with a test that asserts on the strategy so a later
+   `-X theirs` fails even when the conflict it silences never reaches the other tests.
+3. **Phase 1c — the watchdog over a blocked merge.** ✅ same ADR. The clock lives in the
+   store, never in the state — `Replay` cannot read it, so a replayed task is still
+   independent of when it ran.
+4. **Phase 2 — beads.** ✅ [ADR-0054](../ADRs/0054-the-registry-is-beads-and-the-flow-is-not.md).
+   The adapter is built and tested against the real binary, with the guard, the append-only
+   provenance and the blocked query all measured rather than assumed. The store is superseded
+   but still in place; retiring it is the remaining work.
+5. **Phase 3 — per-task-and-role worktrees.** ✅ [ADR-0055](../ADRs/0055-one-worktree-per-task-and-role-branched-from-the-last-delivery.md).
+   Ephemeral, branched from the base, removed when the stage ends — including on the failure
+   path, which is the one that runs when nobody is watching.
+6. **Phase 4 — the lead as an agent.** ✅ [ADR-0056](../ADRs/0056-the-lead-is-an-agent-and-obedience-is-structural.md).
+   The brief, the autonomy knob, and the property the whole phase turns on: the lead's answer
+   is printed and never parsed, so nothing it says can move the flow.
 
 The merge sits in phase 1 rather than beside the topology change, and the reason is the
 watchdog. A blocked merge is the only thing the watchdog can genuinely observe, and leaving
@@ -354,14 +363,19 @@ first.
       implement it. A blocked merge is the first thing it can genuinely observe — a fact with
       a timestamp, sitting in the registry — so the watchdog comes back with something real
       to watch rather than as an interface waiting for a purpose.
-- [ ] **Does the lead see the whole flow, or only its next order?** Only the next order keeps
-      it obedient; seeing the flow makes it a better conversational partner. These pull
-      against each other.
+- [x] **Does the lead see the whole flow, or only its next order?** Only the order — and the
+      panorama moved to `luna status`, asked for on purpose (ADR-0052). The two pulled against
+      each other because they were assumed to arrive together; separating them dissolved the
+      tension. The lead can still show a person the whole flow, but doing so is a deliberate
+      act rather than context that shows up beside an instruction.
 - [ ] **What replaces replay for debugging?** "Why is this task here" was answerable by
       replaying the log. `git log` plus beads' history is less precise, and it is worth
       knowing how much less before phase 2.
-- [ ] **Where does the autonomy knob live?** [PRD gate-0001](../PRDs/gate/gate-0001-an-autonomy-knob-over-the-flow.md)
-      records the question and this RFC makes it load-bearing rather than optional.
+- [x] **Where does the autonomy knob live?** On the lead, as `--autonomy ask | retry |
+      decide` (ADR-0056). It bounds what the lead may do about a *failure* and nothing else —
+      the carve-out ADR-0002 already allowed — and every setting carries the same line saying
+      it never extends to choosing a stage. It defaults to `retry` and refuses an unknown
+      value rather than falling back to one.
 - [ ] **Does the conversation agent and the lead being separate still make sense?** They were
       separate because the lead was code. Now both are agents.
 

@@ -56,6 +56,11 @@ type Env struct {
 	// Injected because Luna hosts no model, and nil means the command says so
 	// rather than pretending to work (ADR-0043).
 	Interpret Interpreter
+
+	// Lead is the model that conducts a task for `luna lead`. Injected for the
+	// same reason as Interpret, and nil for the same reason: `luna run` drives
+	// the same flow without one.
+	Lead func(ctx context.Context, prompt string) (string, error)
 }
 
 // Run dispatches a command line. args excludes the program name.
@@ -90,6 +95,7 @@ func Run(env Env, args []string) error {
 		"done":    doneCommand,
 		"status":  statusCommand,
 		"stuck":   stuckCommand,
+		"lead":    leadCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -128,6 +134,11 @@ luna — deterministic orchestration for AI agents
   luna run <id> [--agent <kind>] [--dry-run]
         drive the task until it needs a person or finishes.
         --dry-run exercises the flow with no herdr and no agent.
+
+  luna lead <id> [--autonomy ask|retry|decide]
+        hand the task to the lead agent: Luna gives it one order at a
+        time and it carries them out. It never chooses a stage — the
+        autonomy knob bounds only what it may do about a failure.
 
   luna task abandon <id> <reason>
         end a task that will not be finished. The log keeps everything —
