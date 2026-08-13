@@ -154,7 +154,7 @@ func TestTheCommitTheStageMadeIsReported(t *testing.T) {
 		Runner:    fake,
 		Prove:     fake.proving(),
 		Roles:     fixedRole("claude"),
-		Delivered: func(context.Context, string) string { return "c0ffee1" },
+		Delivered: func(context.Context, string) (string, string) { return "c0ffee1", "" },
 	}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
@@ -181,5 +181,76 @@ func TestAStageThatCommittedNothingReportsNothing(t *testing.T) {
 
 	if result.Commit != "" {
 		t.Errorf("commit = %q, want empty when nothing read it", result.Commit)
+	}
+}
+
+// TestTheAgentsDeclarationBeatsTheAssumption is the fix for a stage closing
+// green while owing an artifact.
+//
+// Measured on a full run: `verify` declared `dod_checked`, committed a file
+// called `verification`, and closed — because the node reported `Delivered:
+// owed`, so the contract's exit check compared the stage's promises against a
+// copy of themselves and always agreed.
+func TestTheAgentsDeclarationBeatsTheAssumption(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	node := &Node{
+		Runner: fake,
+		Prove:  fake.proving(),
+		Roles:  fixedRole("claude"),
+		Delivered: func(context.Context, string) (string, string) {
+			return "c0ffee1", "chore: did something else\n\nDelivered: something_else\n"
+		},
+	}
+
+	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, got := range result.Delivered {
+		if got != "something_else" {
+			t.Errorf("delivered = %v, want only what the agent declared", result.Delivered)
+			break
+		}
+	}
+	if len(result.Delivered) != 1 {
+		t.Errorf("delivered = %v, want exactly what the agent declared", result.Delivered)
+	}
+}
+
+// TestAnAgentThatDeclaredNothingFallsBack. Every agent that ran before this
+// existed wrote no such line, and a stage must not start failing over the shape
+// of a commit message.
+func TestAnAgentThatDeclaredNothingFallsBack(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle}
+	stage := stageWithTests()
+	node := &Node{
+		Runner: fake,
+		Prove:  fake.proving(),
+		Roles:  fixedRole("claude"),
+		Delivered: func(context.Context, string) (string, string) {
+			return "c0ffee1", "chore: a message with no declaration"
+		},
+	}
+
+	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Delivered) != len(stage.Produces)+len(stage.ProducesForHuman) {
+		t.Errorf("delivered = %v, want the fallback to what the stage owed", result.Delivered)
+	}
+}
+
+// TestTheBriefAsksForTheDeclaration. The check only works if the agent is told
+// to write the line, by name.
+func TestTheBriefAsksForTheDeclaration(t *testing.T) {
+	stage := fsm.Stage{ID: "verify", Produces: []fsm.Artifact{"ci_green"}, ProducesForHuman: []fsm.Artifact{"dod_checked"}}
+
+	got := brief(fsm.NewTaskState("LUNA-1", ""), stage, fsm.Role{})
+
+	if !strings.Contains(got, "Delivered: ci_green, dod_checked") {
+		t.Errorf("the brief does not ask for the declaration it reads:\n%s", got)
 	}
 }

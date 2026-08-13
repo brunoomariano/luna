@@ -205,3 +205,42 @@ func write(t *testing.T, dir, name, body string) {
 		t.Fatalf("writing %s: %v", name, err)
 	}
 }
+
+// TestHandoverReadsTheCommitAndItsMessage covers the pair the node needs from a
+// finished stage: the sha the next one branches from, and the message the agent
+// declared its delivery in.
+//
+// Both from the same commit deliberately — reading them separately would let a
+// commit land between the two calls and pair a sha with the wrong declaration.
+func TestHandoverReadsTheCommitAndItsMessage(t *testing.T) {
+	dir := repo(t)
+	write(t, dir, "artifact.txt", "the work")
+	run(t, dir, "git", "add", ".")
+	run(t, dir, "git", "commit", "-m", "chore: the stage\n\nDelivered: repos")
+
+	commit, message := Handover(context.Background(), dir)
+
+	if commit == "" {
+		t.Error("no commit came back from a repository that has one")
+	}
+	if !strings.Contains(message, "Delivered: repos") {
+		t.Errorf("the declaration did not survive: %q", message)
+	}
+	// Head is the same call, narrowed.
+	if got := Head(context.Background(), dir); got != commit {
+		t.Errorf("Head = %q, Handover = %q — they must agree", got, commit)
+	}
+}
+
+// TestHandoverOnARepositoryWithNoCommit. The first stage of the first task has
+// nothing behind it, and that is a state rather than a failure.
+func TestHandoverOnARepositoryWithNoCommit(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "git", "init", "--initial-branch=main")
+
+	commit, message := Handover(context.Background(), dir)
+
+	if commit != "" || message != "" {
+		t.Errorf("got %q/%q, want nothing from a repository with no commit", commit, message)
+	}
+}

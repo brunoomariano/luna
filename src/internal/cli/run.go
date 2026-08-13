@@ -158,7 +158,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// itself; it asks whether something else is.
 		Contained: node.Contained,
 		// What the stage committed, which is what the next one branches from.
-		Delivered: node.Head,
+		Delivered: node.Handover,
 	}
 	return conductor, func() { _ = client.Close() }, nil
 }

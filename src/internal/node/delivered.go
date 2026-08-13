@@ -149,9 +149,34 @@ func short(sha string) string {
 // stage's own verifier uses (INV-core-4), so a tag or a tree cannot be reported as
 // a delivery.
 func Head(ctx context.Context, worktree string) string {
+	head, _ := Handover(ctx, worktree)
+	return head
+}
+
+// Handover is the commit a stage delivered and the message it left with it.
+//
+// Both come from the same commit deliberately: the sha is what the next stage
+// branches from, and the message is where the agent says which artifacts it
+// produced. Reading them separately would let a commit land between the two
+// calls and pair a sha with the wrong declaration.
+//
+// The message is the channel because committing is already mandatory — the brief
+// says so — and it needs no new protocol between Luna and the harness. What it
+// is not is proof: the agent is reporting, and the contract check decides
+// (INV-core-1).
+//
+// Empty for both when there is no commit, which is the first stage of the first
+// task and not an error.
+func Handover(ctx context.Context, worktree string) (commit, message string) {
 	head, err := git(ctx, worktree, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return head
+	// %B is the raw subject and body, which is what the declaration sits in.
+	// A message that cannot be read still leaves a usable commit.
+	body, err := git(ctx, worktree, "log", "-1", "--format=%B", head)
+	if err != nil {
+		return head, ""
+	}
+	return head, body
 }

@@ -156,15 +156,19 @@ type Node struct {
 	// built here so the wording is configuration, not code.
 	Prompt func(state fsm.TaskState, stage fsm.Stage) string
 
-	// Delivered reads the commit a stage left in its worktree, which becomes the
-	// next stage's base. Injected rather than called directly so this package
-	// keeps no git dependency, the same way Prove keeps out the shell.
+	// Delivered reads the commit a stage left in its worktree and the message it
+	// left with it. Injected rather than called directly so this package keeps no
+	// git dependency, the same way Prove keeps out the shell.
+	//
+	// The commit becomes the next stage's base. The message is where the agent
+	// declares which artifacts it produced, which is the only thing that stops the
+	// exit check comparing the stage's promises against a copy of themselves.
 	//
 	// Nil means no commit is ever reported, and the base never moves — which is
 	// what happened before this existed: nine stages closed on a real run and
 	// seven of them branched from the pre-task commit, so the reviewer reviewed a
 	// tree with none of the implementer's work in it.
-	Delivered func(ctx context.Context, worktree string) string
+	Delivered func(ctx context.Context, worktree string) (commit, message string)
 
 	// Contained reports whether something is confining this process, which decides
 	// how much the agent is trusted with (INV-core-7). Injected so a test does not
@@ -381,7 +385,20 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 	// be read: the tree is removed as soon as the stage ends, and what survives is
 	// the commit it is being asked for.
 	if n.Delivered != nil {
-		result.Commit = n.Delivered(ctx, ws.Path)
+		var message string
+		result.Commit, message = n.Delivered(ctx, ws.Path)
+
+		// What the agent says it produced, rather than what the stage was supposed
+		// to. Without this the exit check compares `owed` against `owed` and always
+		// agrees — measured: `verify` owed `dod_checked`, committed a file called
+		// `verification`, and closed green.
+		//
+		// An agent that declared nothing falls back to the assumption, because
+		// every agent that ran before this existed wrote no such line and a stage
+		// must not start failing over the shape of a commit message.
+		if declared := fsm.ReadDelivered(message); len(declared) > 0 {
+			result.Delivered = declared
+		}
 	}
 
 	prover := n.prover(ws)
@@ -492,21 +509,7 @@ func brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 		}
 	}
 
-	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
-	if len(owed) > 0 {
-		fmt.Fprintf(&b, "\nThis stage does not close until it delivers:\n")
-		for _, artifact := range owed {
-			fmt.Fprintf(&b, "  - %s%s\n", artifact, howProven(stage, artifact))
-		}
-	}
-
-	// The handoff, said out loud. ADR-0055 makes the commit the handoff and
-	// ADR-0058 makes it the snapshot, and neither was ever told to the agent: the
-	// first full run closed six stages across five branches and left the
-	// repository byte-identical to where it started.
-	fmt.Fprintf(&b, "\nHand the work over by committing it to this worktree's branch. "+
-		"Work that is not committed is not delivered — the next stage reads your commit, not this directory.\n")
-
+	writeHandover(&b, stage)
 	return b.String()
 }
 
@@ -585,3 +588,42 @@ func agentName(taskID string, stage fsm.StageID) string {
 // agentNameLimit is what herdr accepts for an agent name, verified against a
 // running server: `[a-z][a-z0-9_-]{0,31}` (ADR-0036).
 const agentNameLimit = 32
+
+// join lists artifacts the way the brief asks the agent to write them back.
+func join(artifacts []fsm.Artifact) string {
+	names := make([]string, 0, len(artifacts))
+	for _, a := range artifacts {
+		names = append(names, string(a))
+	}
+	return strings.Join(names, ", ")
+}
+
+// writeHandover states what the stage owes and how to hand it over.
+//
+// Split from brief because the two answer different questions — what the stage
+// is, and what leaving it looks like — and because together they were the most
+// complex function in the package without deciding anything.
+func writeHandover(b *strings.Builder, stage fsm.Stage) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	if len(owed) > 0 {
+		fmt.Fprintf(b, "\nThis stage does not close until it delivers:\n")
+		for _, artifact := range owed {
+			fmt.Fprintf(b, "  - %s%s\n", artifact, howProven(stage, artifact))
+		}
+	}
+
+	// The handoff, said out loud. ADR-0055 makes the commit the handoff and
+	// ADR-0058 makes it the snapshot, and neither was ever told to the agent: the
+	// first full run closed six stages across five branches and left the
+	// repository byte-identical to where it started.
+	fmt.Fprintf(b, "\nHand the work over by committing it to this worktree's branch. "+
+		"Work that is not committed is not delivered — the next stage reads your commit, not this directory.\n")
+
+	// Asked for by name, because the exit check reads it. An agent that produced
+	// the right thing under a different name closed the stage green until this
+	// line existed.
+	if len(owed) > 0 {
+		fmt.Fprintf(b, "End the commit message with a line naming what you delivered, using the names above:\n")
+		fmt.Fprintf(b, "  Delivered: %s\n", join(owed))
+	}
+}
