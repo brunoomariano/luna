@@ -1,10 +1,13 @@
 # PRD node-0002: No-progress detection, and the shape of timeouts
 
-**Status:** IMPLEMENTED
+**Status:** NOT IMPLEMENTED
 **Last reviewed:** 2026-08-12
 **Source issue:** —
 **RFC:** —
 
+> **Half built, so the status stays NOT IMPLEMENTED** — the enum has no partial
+> value, and claiming the whole thing would be the doc overstating the code.
+>
 > **The first half is built.** Its blocker was named here — *"nothing emits a
 > `ReviewFinding` today, so there are no rounds to count"* — and that emitter
 > landed with [ADR-0059](../../ADRs/0059-luna-reads-the-review-and-a-spent-ceiling-stops-the-task.md).
