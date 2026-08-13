@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,7 +56,7 @@ func TestExitCodeSeparatesUsageFromFailure(t *testing.T) {
 func TestStorePathPrefersTheEnvironment(t *testing.T) {
 	t.Setenv("LUNA_STORE", "/tmp/somewhere/luna.db")
 
-	path, err := storePath()
+	path, err := storePath(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,14 +65,15 @@ func TestStorePathPrefersTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestStorePathDefaultsUnderTheWorkingDirectory covers the fallback.
+// TestStorePathDefaultsToTheRepositoryRoot covers the fallback.
 //
-// Per-directory rather than per-user: tasks belong to a project, and two projects
-// sharing one log would list each other's gates.
-func TestStorePathDefaultsUnderTheWorkingDirectory(t *testing.T) {
+// Per-repository rather than per-directory: a stage runs in an ephemeral
+// worktree, so resolving from the cwd would put the log somewhere that is about
+// to be deleted (ADR-0057).
+func TestStorePathDefaultsToTheRepositoryRoot(t *testing.T) {
 	t.Setenv("LUNA_STORE", "")
 
-	path, err := storePath()
+	path, err := storePath(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,4 +137,78 @@ func TestRunReportsAnUnopenableStore(t *testing.T) {
 	if err := run([]string{"gates"}); err == nil {
 		t.Error("a store that cannot be opened must be reported")
 	}
+}
+
+// TestRunFromAWorktreeUsesTheMainRepositorysLog is the defect ADR-0057 fixes,
+// exercised end to end through `run` rather than through the resolver alone.
+//
+// Before it, running from a worktree created a second `.luna/luna.db` inside a
+// checkout that is deleted when the stage ends — so the task went with it.
+func TestRunFromAWorktreeUsesTheMainRepositorysLog(t *testing.T) {
+	base := t.TempDir()
+	main := filepath.Join(base, "app")
+	worktree := filepath.Join(base, "wt-app-LUNA-1-reviewer")
+
+	for _, args := range [][]string{
+		{"init", "-q", "app"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = base
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git is not usable here: %v: %s", err, out)
+		}
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "test@example.invalid"},
+		{"config", "user.name", "Test"},
+		{"commit", "-q", "--allow-empty", "-m", "init"},
+		{"worktree", "add", "-q", "--detach", worktree, "HEAD"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = main
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+
+	// LUNA_STORE would win, and this is testing what happens without it.
+	t.Setenv("LUNA_STORE", "")
+
+	inDir(t, main, func() {
+		if err := run([]string{"task", "new", "LUNA-1", "--kind", "feature"}); err != nil {
+			t.Fatalf("creating the task from the main checkout: %v", err)
+		}
+	})
+
+	inDir(t, worktree, func() {
+		if err := run([]string{"task", "show", "LUNA-1"}); err != nil {
+			t.Errorf("the task created in the main checkout is invisible from the "+
+				"worktree — the log followed the working directory: %v", err)
+		}
+	})
+
+	if _, err := os.Stat(filepath.Join(worktree, ".luna", "luna.db")); err == nil {
+		t.Error("a second log was created inside the worktree, which is deleted " +
+			"when the stage ends")
+	}
+}
+
+// inDir runs fn with the working directory changed, and puts it back.
+func inDir(t *testing.T, dir string, fn func()) {
+	t.Helper()
+
+	was, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("reading the working directory: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("entering %s: %v", dir, err)
+	}
+	defer func() {
+		if err := os.Chdir(was); err != nil {
+			t.Fatalf("returning to %s: %v", was, err)
+		}
+	}()
+
+	fn()
 }

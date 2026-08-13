@@ -263,7 +263,7 @@ func TestADurationIsRoundedForReading(t *testing.T) {
 func TestAStoreReopensWithoutLosingItsColumns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 
-	first, err := Open(path)
+	first, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestAStoreReopensWithoutLosingItsColumns(t *testing.T) {
 
 	// Reopening runs the migration a second time. It has to be a no-op rather
 	// than an error: this is every run after the first.
-	second, err := Open(path)
+	second, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("reopening a store that is already current: %v", err)
 	}

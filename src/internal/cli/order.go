@@ -87,12 +87,12 @@ func doneCommand(env Env, args []string) error {
 	// (ADR-0045).
 	evidence := map[fsm.Artifact]fsm.Evidence{}
 	for _, artifact := range delivered {
-		evidence[artifact] = fsm.Evidence{
-			Verdict:    fsm.VerdictPassed,
-			Scope:      fsm.ScopeExistence,
-			Detail:     "reported by hand through `luna done`",
-			RecordedAt: state.Seq,
-		}
+		// fsm.Exists rather than a literal: the floor is defined in one place, so
+		// a change to what "nothing was checked" records cannot apply here and
+		// not to the engine.
+		e := fsm.Exists(state.Seq)
+		e.Detail = "reported by hand through `luna done`"
+		evidence[artifact] = e
 	}
 
 	action := fsm.Complete{

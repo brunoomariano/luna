@@ -25,7 +25,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
-	s, err := store.Open(filepath.Join(t.TempDir(), "luna.db"))
+	s, err := store.OpenAs(filepath.Join(t.TempDir(), "luna.db"), store.LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening the store: %v", err)
 	}

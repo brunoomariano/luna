@@ -18,7 +18,7 @@ func openTemp(t *testing.T) *Store {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "luna.db")
-	s, err := Open(path)
+	s, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening the store: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 
 	// First process: drive a task partway through the flow.
-	first, err := Open(path)
+	first, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	}
 
 	// Second process: nothing in memory, only the file on disk.
-	second, err := Open(path)
+	second, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -269,107 +269,6 @@ func TestAnUnknownActionInTheLogIsReported(t *testing.T) {
 
 // ── block M: the content store ───────────────────────────────────────────────
 
-// TestABlobComesBackByItsHash covers scenario M1.
-//
-// Content addressing: the key is what the content hashes to, so asking for a hash
-// either gives you exactly that content or nothing at all.
-func TestABlobComesBackByItsHash(t *testing.T) {
-	s := openTemp(t)
-
-	content := []byte("the contract a human approved")
-	hash, err := s.PutBlob(content)
-	if err != nil {
-		t.Fatalf("storing: %v", err)
-	}
-
-	got, err := s.Blob(hash)
-	if err != nil {
-		t.Fatalf("reading back: %v", err)
-	}
-	if string(got) != string(content) {
-		t.Errorf("want %q, got %q", content, got)
-	}
-}
-
-// TestTheSameContentStoresOnce covers scenario M2.
-//
-// Two handoffs pointing at identical content share one row. Without this, a task
-// looping through build a dozen times would store a dozen copies of the same
-// unchanged file.
-func TestTheSameContentStoresOnce(t *testing.T) {
-	s := openTemp(t)
-
-	first, err := s.PutBlob([]byte("identical"))
-	if err != nil {
-		t.Fatalf("first put: %v", err)
-	}
-	second, err := s.PutBlob([]byte("identical"))
-	if err != nil {
-		t.Fatalf("second put: %v", err)
-	}
-
-	if first != second {
-		t.Errorf("the same content must hash the same: %q vs %q", first, second)
-	}
-
-	count, err := s.BlobCount()
-	if err != nil {
-		t.Fatalf("counting: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("identical content is stored once, got %d rows", count)
-	}
-}
-
-// TestAMissingBlobIsReported covers scenario M3.
-//
-// Asking for content that was never stored is an error rather than empty bytes:
-// a handoff pointing at a hash the store does not have is a broken chain, and
-// silently returning nothing would let the next stage start on emptiness.
-func TestAMissingBlobIsReported(t *testing.T) {
-	s := openTemp(t)
-
-	_, err := s.Blob("0000000000000000000000000000000000000000000000000000000000000000")
-
-	if !errors.Is(err, ErrNoSuchBlob) {
-		t.Errorf("want ErrNoSuchBlob, got %v", err)
-	}
-}
-
-// TestEventAndBlobLandTogether covers scenario M4 — the atomicity ADR-0025 buys.
-//
-// The snapshot and the event that points at it are written in one transaction. A
-// process dying between the two would otherwise leave either an orphan blob or a
-// handoff referring to content that was never stored.
-func TestEventAndBlobLandTogether(t *testing.T) {
-	s := openTemp(t)
-
-	content := []byte("the snapshot at handoff time")
-	hash, err := s.AppendWithBlob("LUNA-1", Event{Action: "Complete"}, content)
-	if err != nil {
-		t.Fatalf("appending with blob: %v", err)
-	}
-
-	events, err := s.Events("LUNA-1")
-	if err != nil {
-		t.Fatalf("reading events: %v", err)
-	}
-	if len(events) != 1 {
-		t.Fatalf("want the event, got %d", len(events))
-	}
-	if events[0].Blob != hash {
-		t.Errorf("the event points at the blob: want %q, got %q", hash, events[0].Blob)
-	}
-
-	blob, err := s.Blob(hash)
-	if err != nil {
-		t.Fatalf("the blob must be there too: %v", err)
-	}
-	if string(blob) != string(content) {
-		t.Errorf("want %q, got %q", content, blob)
-	}
-}
-
 // ── block N: finding what needs a human ──────────────────────────────────────
 
 // TestSuspendedTasksAreListable covers scenario N1 — INV-core-12.
@@ -456,7 +355,7 @@ func TestTaskIDsAreListable(t *testing.T) {
 func TestOpeningCreatesTheSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "luna.db")
 
-	s, err := Open(path)
+	s, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening a fresh path: %v", err)
 	}
@@ -471,7 +370,7 @@ func TestOpeningCreatesTheSchema(t *testing.T) {
 func TestReopeningKeepsWhatWasThere(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 
-	first, err := Open(path)
+	first, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -482,7 +381,7 @@ func TestReopeningKeepsWhatWasThere(t *testing.T) {
 		t.Fatalf("closing: %v", err)
 	}
 
-	second, err := Open(path)
+	second, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -774,13 +673,13 @@ func TestTheReducersSequenceIsTheLogPosition(t *testing.T) {
 // rather than ordering within one log.
 func TestConcurrentAppendsAllLand(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
-	first, err := Open(path)
+	first, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
 	t.Cleanup(func() { _ = first.Close() })
 
-	second, err := Open(path)
+	second, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening a second handle: %v", err)
 	}

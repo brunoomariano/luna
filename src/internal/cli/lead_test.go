@@ -256,3 +256,19 @@ func TestTheLeadIsGivenOneOrderAtATime(t *testing.T) {
 		}
 	}
 }
+
+// TestLeadRefusesACommandLineItCannotParse. A flag nobody recognises is a
+// caller who meant something, and guessing which setting they wanted is how an
+// unattended run happens by accident.
+func TestLeadRefusesACommandLineItCannotParse(t *testing.T) {
+	h, _ := leadHarness(t)
+
+	for _, args := range [][]string{
+		{"lead", "LUNA-1", "--nonsense", "x"},
+		{"lead", "LUNA-1", "--autonomy"},
+	} {
+		if err := h.run(t, args...); err == nil {
+			t.Errorf("%v was accepted", args)
+		}
+	}
+}

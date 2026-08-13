@@ -31,6 +31,12 @@ func leadCommand(env Env, args []string) error {
 		return err
 	}
 
+	for name := range flags {
+		if name != "autonomy" {
+			return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		}
+	}
+
 	autonomy, err := lead.ParseAutonomy(flags["autonomy"])
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/registry"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -61,6 +62,23 @@ type Env struct {
 	// same reason as Interpret, and nil for the same reason: `luna run` drives
 	// the same flow without one.
 	Lead func(ctx context.Context, prompt string) (string, error)
+
+	// Registry is the central record of what exists across checkouts (ADR-0054).
+	// Nil means a project that has not adopted it, and every cross-checkout
+	// question answers "nothing" rather than failing — the local log still knows
+	// everything about this repository.
+	Registry Registry
+}
+
+// Registry is the part of the central record the CLI needs.
+//
+// An interface rather than *registry.Beads so the commands can be tested without
+// the binary, and so a project could put something else behind it. It is
+// deliberately small: what the CLI asks the registry is what the log cannot
+// answer on its own.
+type Registry interface {
+	// Blocked lists tasks the registry says are stopped, across every checkout.
+	Blocked(ctx context.Context) ([]registry.Task, error)
 }
 
 // Run dispatches a command line. args excludes the program name.

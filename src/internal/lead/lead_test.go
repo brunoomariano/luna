@@ -93,7 +93,7 @@ func (stallingNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, erro
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
 
-	s, err := store.Open(filepath.Join(t.TempDir(), "luna.db"))
+	s, err := store.OpenAs(filepath.Join(t.TempDir(), "luna.db"), store.LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening the store: %v", err)
 	}

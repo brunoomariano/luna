@@ -8,9 +8,7 @@
 package store
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -62,13 +60,18 @@ const firstSeq = 1
 // zero, because zero is a real position: the state of a task whose log is empty.
 const unconditional = -1
 
-// Event is one recorded transition. Seq orders it within its task; Blob points at
-// the snapshot taken at that moment, when there is one.
+// Event is one recorded transition. Seq orders it within its task.
 type Event struct {
 	Seq     int
 	Action  string
 	Payload string
-	Blob    string
+
+	// Blob pointed at a handoff snapshot, and nothing writes one now that the
+	// handoff is the commit (ADR-0058). It is still read, because a log written
+	// before that carries values here and the log is the audit trail — dropping
+	// the field would make those events decode into something they were not
+	// (INV-core-2).
+	Blob string
 }
 
 // Waiting is a task suspended at a gate, as `luna gates` would list it
@@ -83,9 +86,12 @@ type Waiting struct {
 	Profile fsm.Profile
 }
 
-// Store is the append-only log plus the content store, in one SQLite file.
-// Keeping them together is what makes writing an event and its snapshot atomic
-// (ADR-0025).
+// Store is the append-only log, in one SQLite file in the main repository.
+//
+// It held a content store too, so an event and the snapshot it pointed at landed
+// in one transaction (ADR-0025). The handoff is the commit now, and git stores
+// content better than a table of blobs — so the snapshots went and the log
+// stayed (ADR-0058).
 type Store struct {
 	db *sql.DB
 
@@ -94,6 +100,23 @@ type Store struct {
 	// anywhere nearer the engine because this is the only layer allowed to read
 	// a clock at all (ADR-0024).
 	Now func() time.Time
+
+	// As is who this store writes on behalf of. It has to be LunaOwnsTheLog, and
+	// the field exists precisely so that it cannot default to it — a zero value
+	// meaning "Luna" would make the ownership rule true by accident, and a rule
+	// that holds by accident is one a refactor removes without a test noticing
+	// (ADR-0057).
+	//
+	// Reading does not require it. Anyone may replay a task; only Luna appends.
+	As Owner
+}
+
+// mayWrite reports whether this store is allowed to append.
+func (s *Store) mayWrite() error {
+	if s.As != LunaOwnsTheLog {
+		return ErrNotTheOwner
+	}
+	return nil
 }
 
 // now is the store's clock, defaulting to the real one.
@@ -129,9 +152,36 @@ CREATE TABLE IF NOT EXISTS blobs (
 );
 `
 
-// Open returns the store at path, creating the file and schema if they are not
-// there yet. A path that does not exist is someone's first run, not an error.
+// Open returns a store that may read but not write.
+//
+// Reading is the safe half and needs no ceremony: replaying a task, listing what
+// is blocked, checking a flow. Appending is what has an owner, and OpenAs is how
+// it is claimed (ADR-0057).
+//
+// Nothing in Luna's own binary calls this today, and that is honest rather than
+// an oversight: `luna` is the owner, so it opens for writing and the read
+// commands simply do not write. It exists because the read-only store is the
+// shape anything *else* should get — a dashboard, an agent that wants to look at
+// its own task, a script — and because the ownership rule is only demonstrable
+// if there is a store that lacks it. Its callers are the tests that prove the
+// rule holds.
 func Open(path string) (*Store, error) {
+	return openOwned(path, "")
+}
+
+// OpenAs returns a store that writes on behalf of owner.
+//
+// Only LunaOwnsTheLog may append, and the value has to be passed rather than
+// defaulted. That is the whole mechanism: a caller who wants to write says so at
+// the point of opening, in code, where it is visible in review — the same shape
+// as `Merger.As` for the shared git (ADR-0053).
+func OpenAs(path string, owner Owner) (*Store, error) {
+	return openOwned(path, owner)
+}
+
+// openOwned is what both constructors call. Separate from them so the owner is
+// always an explicit argument on the way in, even for the read-only door.
+func openOwned(path string, owner Owner) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("creating %s: %w", dir, err)
@@ -173,7 +223,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("bringing %s up to date: %w", path, err)
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, As: owner}, nil
 }
 
 // addMissingColumns adds columns that `CREATE TABLE IF NOT EXISTS` cannot, since
@@ -223,15 +273,7 @@ func (s *Store) beginImmediate() (*sql.Tx, error) {
 // There is no counterpart that replaces or removes one: the history is the audit
 // trail, and a store that could rewrite it would not be one (INV-core-2).
 func (s *Store) Append(taskID string, e Event) error {
-	_, err := s.appendTx(taskID, e, nil, unconditional)
-	return err
-}
-
-// AppendWithBlob records an event and the snapshot it points at, in a single
-// transaction. Either both land or neither does — a process dying between the two
-// would otherwise leave an orphan blob or a dangling reference (ADR-0025).
-func (s *Store) AppendWithBlob(taskID string, e Event, content []byte) (string, error) {
-	return s.appendTx(taskID, e, content, unconditional)
+	return s.appendTx(taskID, e, unconditional)
 }
 
 // AppendAction records a reducer action, which is the form the log actually takes
@@ -262,15 +304,21 @@ func (s *Store) AppendActionAt(taskID string, after int, action fsm.Action) erro
 	if err != nil {
 		return err
 	}
-	_, err = s.appendTx(taskID, Event{Action: name, Payload: payload}, nil, after)
-	return err
+	return s.appendTx(taskID, Event{Action: name, Payload: payload}, after)
 }
 
-// appendTx writes one event, and optionally the blob it points at, atomically.
+// appendTx writes one event.
 //
 // A non-negative `after` makes the append conditional on the log still ending
 // there. Callers that have not read the log pass unconditional.
-func (s *Store) appendTx(taskID string, e Event, content []byte, after int) (string, error) {
+func (s *Store) appendTx(taskID string, e Event, after int) error {
+	// The one choke point every append goes through, which is why the ownership
+	// check lives here rather than on each of the four public entry points: a
+	// fifth one added later inherits the rule instead of having to remember it.
+	if err := s.mayWrite(); err != nil {
+		return err
+	}
+
 	// BEGIN IMMEDIATE rather than a plain Begin, which is the difference between
 	// waiting and failing.
 	//
@@ -284,28 +332,18 @@ func (s *Store) appendTx(taskID string, e Event, content []byte, after int) (str
 	// IMMEDIATE takes the write lock up front, where the busy handler does apply.
 	tx, err := s.beginImmediate()
 	if err != nil {
-		return "", fmt.Errorf("starting a transaction: %w", err)
+		return fmt.Errorf("starting a transaction: %w", err)
 	}
 	// Rolling back a committed transaction is a no-op returning an error, so the
 	// result is deliberately dropped: this defer only matters on the paths that
 	// return early.
 	defer func() { _ = tx.Rollback() }()
 
-	hash := e.Blob
-	if content != nil {
-		hash = hashOf(content)
-		// OR IGNORE rather than INSERT: identical content shares one row, so a
-		// task looping through build does not store the same file a dozen times.
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO blobs (sha256, content) VALUES (?, ?)`, hash, content); err != nil {
-			return "", fmt.Errorf("storing the blob: %w", err)
-		}
-	}
-
 	var last int
 	// COALESCE because MAX over no rows is NULL: a task's first event is seq 1.
 	row := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id = ?`, taskID)
 	if err := row.Scan(&last); err != nil {
-		return "", fmt.Errorf("finding the next sequence for %s: %w", taskID, err)
+		return fmt.Errorf("finding the next sequence for %s: %w", taskID, err)
 	}
 
 	// The write lock is held from BEGIN IMMEDIATE, so what this read sees is what
@@ -313,7 +351,7 @@ func (s *Store) appendTx(taskID string, e Event, content []byte, after int) (str
 	// caller decided from the log as it stood at `after`, and if it no longer ends
 	// there, something else decided in between.
 	if after >= 0 && last != after {
-		return "", fmt.Errorf("%w: %s was at %d when the decision was made and is now at %d",
+		return fmt.Errorf("%w: %s was at %d when the decision was made and is now at %d",
 			ErrConcurrentWrite, taskID, after, last)
 	}
 	next := last + 1
@@ -323,15 +361,15 @@ func (s *Store) appendTx(taskID string, e Event, content []byte, after int) (str
 	// make a replay depend on when it ran (ADR-0024, ADR-0053).
 	if _, err := tx.Exec(
 		`INSERT INTO events (task_id, seq, action, payload, blob, at) VALUES (?, ?, ?, ?, ?, ?)`,
-		taskID, next, e.Action, e.Payload, hash, s.now().Unix(),
+		taskID, next, e.Action, e.Payload, e.Blob, s.now().Unix(),
 	); err != nil {
-		return "", fmt.Errorf("appending to %s: %w", taskID, err)
+		return fmt.Errorf("appending to %s: %w", taskID, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return "", fmt.Errorf("committing: %w", err)
+		return fmt.Errorf("committing: %w", err)
 	}
-	return hash, nil
+	return nil
 }
 
 // Events returns a task's log in order. A task nobody has written to has no
@@ -458,39 +496,15 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 	return waiting, nil
 }
 
-// PutBlob stores content and returns its hash. Storing the same content twice
-// returns the same hash and keeps one row.
-func (s *Store) PutBlob(content []byte) (string, error) {
-	hash := hashOf(content)
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO blobs (sha256, content) VALUES (?, ?)`, hash, content); err != nil {
-		return "", fmt.Errorf("storing a blob: %w", err)
-	}
-	return hash, nil
-}
-
-// Blob returns the content behind a hash.
-func (s *Store) Blob(hash string) ([]byte, error) {
-	var content []byte
-	err := s.db.QueryRow(`SELECT content FROM blobs WHERE sha256 = ?`, hash).Scan(&content)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s", ErrNoSuchBlob, hash)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("reading blob %s: %w", hash, err)
-	}
-	return content, nil
-}
-
-// BlobCount reports how many distinct blobs are stored.
-func (s *Store) BlobCount() (int, error) {
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM blobs`).Scan(&n); err != nil {
-		return 0, fmt.Errorf("counting blobs: %w", err)
-	}
-	return n, nil
-}
-
-func hashOf(content []byte) string {
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
-}
+// The content store is gone, and the `blobs` table is not.
+//
+// ADR-0025 put a content-addressed store beside the log so a handoff could carry
+// a snapshot of what the previous stage produced. RFC-0002 replaced that: the
+// handoff is the commit, and git already stores content far better than a table
+// of blobs does (ADR-0058). `PutBlob`, `Blob`, `BlobCount` and `AppendWithBlob`
+// went with it — they had no caller outside their own tests.
+//
+// The table and the `events.blob` column stay. Dropping them would rewrite logs
+// written before this, and the log is the audit trail (INV-core-2). An empty
+// table costs nothing; a migration that discards history costs the thing the
+// store exists for.

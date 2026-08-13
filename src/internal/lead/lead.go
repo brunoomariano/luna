@@ -1,10 +1,17 @@
-// Package lead conducts a task through the flow.
+// Package lead conducts a task through the flow, in either of two shapes.
 //
-// It is the loop the design calls hybrid (ADR-0002): code decides the next stage,
-// calls the node, checks the delivery and records the transition — deterministic,
-// zero tokens. When something goes off the rails, a model decides what to do with
-// it, and that judgement arrives through the Judge interface rather than being
-// wired in here.
+// Lead is the loop the design calls hybrid (ADR-0002): code decides the next
+// stage, calls the node, checks the delivery and records the transition —
+// deterministic, zero tokens. When something goes off the rails, a model decides
+// what to do with it, and that judgement arrives through the Judge interface
+// rather than being wired in here. It is what `luna run` uses, and it needs no
+// model at all.
+//
+// Agent is the same task conducted by a model, so a person can talk to the thing
+// running it (ADR-0056). What does not change is who decides the stage: the
+// agent is handed one closed order at a time and its answer is never parsed, so
+// there is no path from anything it says to a transition. It is what `luna lead`
+// uses.
 //
 // The lead owns no state. Everything it knows it read from the store, and
 // everything it decides it writes back before acting on it — so a process killed

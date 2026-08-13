@@ -5,15 +5,17 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/brunoomariano/luna/src/internal/cli"
 	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/interpret"
+	"github.com/brunoomariano/luna/src/internal/node"
+	"github.com/brunoomariano/luna/src/internal/registry"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -39,7 +41,9 @@ func exitCode(err error, stderr io.Writer) int {
 }
 
 func run(args []string) error {
-	path, err := storePath()
+	ctx := context.Background()
+
+	path, err := storePath(ctx)
 	if err != nil {
 		return err
 	}
@@ -51,11 +55,36 @@ func run(args []string) error {
 		return err
 	}
 
-	s, err := store.Open(path)
+	s, err := store.OpenAs(path, store.LunaOwnsTheLog)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = s.Close() }()
+
+	// The registry answers the one question the log cannot: what is happening in
+	// another checkout (ADR-0054). It is resolved from the working directory
+	// rather than from the log's path, because LUNA_STORE may point anywhere and
+	// `bd` discovers its own database from the repository it is run in.
+	//
+	// Always constructed, never probed: a missing `bd` is reported by the command
+	// that needed it rather than by every command that did not.
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("finding the working directory: %w", err)
+	}
+	root, err := node.Root(ctx, cwd)
+	if err != nil {
+		return err
+	}
+
+	// Running from inside a worktree works — the log resolves to the main
+	// repository either way, which is the point of resolving it there. Saying so
+	// matters anyway: a stage's worktree is deleted when the stage ends, and
+	// someone who believes they are working in an isolated checkout should know
+	// the state they are changing is shared (ADR-0057).
+	if node.InsideAWorktree(ctx, cwd) {
+		fmt.Fprintf(os.Stderr, "note: this is a worktree; the log and registry are %s\n", root)
+	}
 
 	return cli.Run(cli.Env{
 		Store:  s,
@@ -70,14 +99,23 @@ func run(args []string) error {
 		// A block is only a block once someone knows. herdr already owns a
 		// notification layer and is already what a person is looking at, so this
 		// delegates rather than growing a transport of its own (INV-core-8).
-		Notify: herdr.NewNotifier().Blocked,
+		Notify:   herdr.NewNotifier().Blocked,
+		Registry: registry.New(root),
 	}, args)
 }
 
-// storePath is where the log lives: LUNA_STORE if set, else .luna/luna.db under
-// the working directory. Per-directory rather than per-user because tasks belong
-// to a project, and two projects sharing one log would list each other's gates.
-func storePath() (string, error) {
+// storePath is where the log lives: LUNA_STORE if set, else `.luna/luna.db` in
+// the **main** repository containing the working directory.
+//
+// The main repository and not the working directory, which is the correction
+// (ADR-0057). A stage runs in an ephemeral worktree that is deleted when the
+// stage ends (ADR-0055), so resolving from the cwd put a second log inside
+// something built to be thrown away — and the task it recorded went with it.
+// That was measured, not theorised: running from a worktree produced two
+// `.luna/luna.db` files with the task visible in only one.
+//
+// LUNA_STORE still wins, because a person who names a path means it.
+func storePath(ctx context.Context) (string, error) {
 	if fromEnv := os.Getenv("LUNA_STORE"); fromEnv != "" {
 		return fromEnv, nil
 	}
@@ -86,5 +124,5 @@ func storePath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("finding the working directory: %w", err)
 	}
-	return filepath.Join(cwd, ".luna", "luna.db"), nil
+	return node.DefaultPath(ctx, cwd)
 }

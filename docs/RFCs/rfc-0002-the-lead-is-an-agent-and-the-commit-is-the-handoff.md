@@ -5,10 +5,20 @@
 **Source issue:** —
 **PRD:** —
 
-> **All four phases are built.** Each landed with its own ADR, and each is listed against its
-> phase in the rollout plan below. What remains is not construction but retirement: the old
-> store is superseded and still present, and the ADRs it carried have to be marked as such.
-> That is the doc cleanup this RFC's own §"Impact and migration" describes.
+> **All four phases are built**, and one of this RFC's own predictions turned out to be
+> wrong. It said the store would retire; it has not, and it should not.
+>
+> The reason is in [ADR-0057](../ADRs/0057-the-log-lives-in-the-main-repository-and-luna-is-its-only-writer.md).
+> beads holds a task's *registry* — status, stage, the commits it delivered — and it holds
+> those well. It does not hold `Context` (the artifacts and facts that decide which
+> conditional stages enter, and which a review **removes** when it sends work back) or
+> `Evidence` (a verdict with a scope, positioned in the log so staleness is a comparison
+> rather than a clock). Those are not data that failed to migrate — they exist *because*
+> there is a sequence of transitions to replay, and a tracker holds state instead.
+>
+> So the honest reading of phase 2: **the registry moved, the history stayed.** What did
+> retire is the content store — the handoff is the commit, and git stores content better
+> than a table of blobs ([ADR-0058](../ADRs/0058-what-had-no-caller-is-either-wired-or-gone.md)).
 
 ## Motivation
 
@@ -237,6 +247,13 @@ Neither replays. That is the trade this makes, and §"Drawbacks" is honest about
   reproducibility that came free with a pure reducer over an event log becomes something git
   provides less precisely.
 
+  **This did not happen, and the reasoning above is where it went wrong.** It assumed the
+  registry and the history were the same thing moving to the same place. They are not: the
+  registry moved and the log stayed, so replay is intact and `Context` and `Evidence` still
+  have somewhere to live. What the paragraph got right is the cost of the alternative — had
+  the log gone to beads, all of this would have followed. See
+  [ADR-0057](../ADRs/0057-the-log-lives-in-the-main-repository-and-luna-is-its-only-writer.md).
+
 - **The merge is new surface, and it is the hard part.** Conflicts between roles are real,
   and a deterministic merge that hits one has to do something legible rather than something
   clever.
@@ -323,10 +340,11 @@ block still notifies, and the notifier already delegates to herdr.
 3. **Phase 1c — the watchdog over a blocked merge.** ✅ same ADR. The clock lives in the
    store, never in the state — `Replay` cannot read it, so a replayed task is still
    independent of when it ran.
-4. **Phase 2 — beads.** ✅ [ADR-0054](../ADRs/0054-the-registry-is-beads-and-the-flow-is-not.md).
-   The adapter is built and tested against the real binary, with the guard, the append-only
-   provenance and the blocked query all measured rather than assumed. The store is superseded
-   but still in place; retiring it is the remaining work.
+4. **Phase 2 — beads.** ✅ [ADR-0054](../ADRs/0054-the-registry-is-beads-and-the-flow-is-not.md),
+   narrowed by [ADR-0057](../ADRs/0057-the-log-lives-in-the-main-repository-and-luna-is-its-only-writer.md).
+   The adapter is built, wired into `luna stuck`, and tested against the real binary — the
+   guard, the append-only provenance and the blocked query all measured rather than assumed.
+   The registry moved; the log stayed, and the paragraph above says why.
 5. **Phase 3 — per-task-and-role worktrees.** ✅ [ADR-0055](../ADRs/0055-one-worktree-per-task-and-role-branched-from-the-last-delivery.md).
    Ephemeral, branched from the base, removed when the stage ends — including on the failure
    path, which is the one that runs when nobody is watching.
@@ -368,9 +386,11 @@ first.
       each other because they were assumed to arrive together; separating them dissolved the
       tension. The lead can still show a person the whole flow, but doing so is a deliberate
       act rather than context that shows up beside an instruction.
-- [ ] **What replaces replay for debugging?** "Why is this task here" was answerable by
-      replaying the log. `git log` plus beads' history is less precise, and it is worth
-      knowing how much less before phase 2.
+- [x] **What replaces replay for debugging?** Nothing — replay is still there, and the
+      question dissolved with the assumption behind it. Keeping the log was not caution: it
+      is where `Context` and `Evidence` live, and neither has a home in a tracker
+      (ADR-0057). "Why is this task here" is still answered by replaying the log; what beads
+      adds is "where else is something stuck", which the log never could.
 - [x] **Where does the autonomy knob live?** On the lead, as `--autonomy ask | retry |
       decide` (ADR-0056). It bounds what the lead may do about a *failure* and nothing else —
       the carve-out ADR-0002 already allowed — and every setting carries the same line saying

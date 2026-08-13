@@ -45,6 +45,21 @@ func stuckCommand(env Env, args []string) error {
 		return err
 	}
 
+	// The registry is asked too, and what it adds is the thing the log cannot
+	// answer: a task blocked in *another* checkout. The log is one repository's;
+	// the registry is central, which is the reason it exists (ADR-0054).
+	//
+	// It is additive rather than authoritative — the local log stays the source
+	// of truth for anything it knows about, and a registry that is missing or
+	// unreachable degrades the listing rather than failing it. A watchdog that
+	// stops watching because a tracker is down is a watchdog that stops watching
+	// exactly when something is wrong.
+	if elsewhere, err := env.blockedElsewhere(stuck); err != nil {
+		fmt.Fprintf(env.Err, "could not ask the registry: %v\n", err)
+	} else {
+		stuck = append(stuck, elsewhere...)
+	}
+
 	if _, ok := flags["json"]; ok {
 		return writeJSON(env.Out, stuckReport(stuck))
 	}
@@ -84,6 +99,49 @@ func announce(env Env, stuck []store.Stuck) error {
 		}
 	}
 	return nil
+}
+
+// blockedElsewhere asks the registry for tasks this repository's log knows
+// nothing about.
+//
+// The dedup is by task id and it keeps the *local* entry, because the log has an
+// age and a recorded reason while the registry has a status and a label. Where
+// both know a task, the log knows more.
+//
+// A nil registry is not an error: Luna works in a project that has not adopted
+// beads, and every cross-checkout query simply returns nothing there.
+func (e Env) blockedElsewhere(known []store.Stuck) ([]store.Stuck, error) {
+	if e.Registry == nil {
+		return nil, nil
+	}
+
+	tasks, err := e.Registry.Blocked(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	local := make(map[string]bool, len(known))
+	for _, s := range known {
+		local[s.TaskID] = true
+	}
+
+	var elsewhere []store.Stuck
+	for _, task := range tasks {
+		if local[task.ID] {
+			continue
+		}
+		// No age: the registry records when a task was last touched, not how long
+		// it has been stopped, and inventing a duration from `updated_at` would
+		// report a number that means something else. The reason says where to
+		// look instead.
+		elsewhere = append(elsewhere, store.Stuck{
+			TaskID: task.ID,
+			Stage:  fsm.StageID(task.Stage()),
+			Status: fsm.StatusBlocked,
+			Reason: "blocked in another checkout (from the registry)",
+		})
+	}
+	return elsewhere, nil
 }
 
 // StuckReport is the structured shape of `luna stuck`.

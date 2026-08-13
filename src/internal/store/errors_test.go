@@ -41,7 +41,7 @@ func TestOpeningAnUnwritablePathIsReported(t *testing.T) {
 // stands in for the real cases — a deleted file, a full disk, a locked database.
 func TestOperationsOnAClosedStoreAreReported(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
-	s, err := Open(path)
+	s, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -55,11 +55,6 @@ func TestOperationsOnAClosedStoreAreReported(t *testing.T) {
 	t.Run("Append", func(t *testing.T) {
 		if err := s.Append("LUNA-1", Event{Action: "Advance"}); err == nil {
 			t.Error("appending to a closed store must fail")
-		}
-	})
-	t.Run("AppendWithBlob", func(t *testing.T) {
-		if _, err := s.AppendWithBlob("LUNA-1", Event{Action: "Complete"}, []byte("x")); err == nil {
-			t.Error("appending with a blob to a closed store must fail")
 		}
 	})
 	t.Run("Events", func(t *testing.T) {
@@ -80,21 +75,6 @@ func TestOperationsOnAClosedStoreAreReported(t *testing.T) {
 	t.Run("AwaitingGate", func(t *testing.T) {
 		if _, err := s.AwaitingGate(fsm.DefaultFlow()); err == nil {
 			t.Error("listing gates on a closed store must fail")
-		}
-	})
-	t.Run("PutBlob", func(t *testing.T) {
-		if _, err := s.PutBlob([]byte("x")); err == nil {
-			t.Error("storing a blob on a closed store must fail")
-		}
-	})
-	t.Run("Blob", func(t *testing.T) {
-		if _, err := s.Blob("whatever"); err == nil {
-			t.Error("reading a blob from a closed store must fail")
-		}
-	})
-	t.Run("BlobCount", func(t *testing.T) {
-		if _, err := s.BlobCount(); err == nil {
-			t.Error("counting blobs on a closed store must fail")
 		}
 	})
 }
@@ -137,71 +117,6 @@ func TestAwaitingGateSurfacesAReplayFailure(t *testing.T) {
 
 	if _, err := s.AwaitingGate(fsm.DefaultFlow()); err == nil {
 		t.Error("a task that cannot be replayed must not vanish from the listing")
-	}
-}
-
-// TestABlobSurvivesTheEventThatCarriedIt covers the dedup branch of appendTx.
-//
-// Two events carrying identical content share one blob row, and both keep working
-// — deduplication must not make the second reference dangle.
-func TestABlobSurvivesTheEventThatCarriedIt(t *testing.T) {
-	s := openTemp(t)
-
-	content := []byte("the same snapshot twice")
-	first, err := s.AppendWithBlob("LUNA-1", Event{Action: "Complete"}, content)
-	if err != nil {
-		t.Fatalf("first append: %v", err)
-	}
-	second, err := s.AppendWithBlob("LUNA-2", Event{Action: "Complete"}, content)
-	if err != nil {
-		t.Fatalf("second append: %v", err)
-	}
-
-	if first != second {
-		t.Errorf("identical content hashes the same: %q vs %q", first, second)
-	}
-
-	count, err := s.BlobCount()
-	if err != nil {
-		t.Fatalf("counting: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("want one shared row, got %d", count)
-	}
-
-	for _, id := range []string{"LUNA-1", "LUNA-2"} {
-		events, err := s.Events(id)
-		if err != nil {
-			t.Fatalf("reading %s: %v", id, err)
-		}
-		if events[0].Blob != first {
-			t.Errorf("%s should point at the shared blob, got %q", id, events[0].Blob)
-		}
-	}
-}
-
-// TestAppendingAnEventThatCarriesAnExistingHash covers the blob-by-reference path.
-//
-// An event can point at content already in the store without resending it, which
-// is what a handoff referring to an unchanged snapshot does.
-func TestAppendingAnEventThatCarriesAnExistingHash(t *testing.T) {
-	s := openTemp(t)
-
-	hash, err := s.PutBlob([]byte("stored earlier"))
-	if err != nil {
-		t.Fatalf("storing: %v", err)
-	}
-
-	if err := s.Append("LUNA-1", Event{Action: "Complete", Blob: hash}); err != nil {
-		t.Fatalf("appending: %v", err)
-	}
-
-	events, err := s.Events("LUNA-1")
-	if err != nil {
-		t.Fatalf("reading: %v", err)
-	}
-	if events[0].Blob != hash {
-		t.Errorf("the event keeps the hash it was given, got %q", events[0].Blob)
 	}
 }
 
