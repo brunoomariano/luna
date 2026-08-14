@@ -3,10 +3,16 @@
 **Status:** NOT IMPLEMENTED
 **Last reviewed:** 2026-08-13
 **Source issue:** —
-**RFC:** —
+**RFC:** [rfc-0005](../../RFCs/rfc-0005-the-lead-answers-a-gate-by-running-its-criteria.md)
 
-> Recorded so it is not lost, not to be built yet. Nothing here is decided: the open
-> questions at the end are the point, and answering them is the work.
+> The measurements below settled the route: not "the lead judges" but "the lead runs the
+> criteria". That is designed in
+> [RFC-0005](../../RFCs/rfc-0005-the-lead-answers-a-gate-by-running-its-criteria.md), which
+> is also narrower than this PRD — it covers criteria that are commands and hands the rest
+> to a person.
+>
+> `confirm-write`, the hardest case here, is gone with the merge
+> ([ADR-0062](../../ADRs/0062-luna-does-not-integrate-a-task-ends-on-its-own-branch.md)).
 
 ## Overview
 
