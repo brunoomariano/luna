@@ -20,32 +20,19 @@ const (
 	// AutonomyAsk stops at every failure. The lead reports and waits.
 	AutonomyAsk Autonomy = "ask"
 
-	// AutonomyRetry lets the lead spend the retry budget the task already has,
-	// and stops when it is gone. This is the default, and it is deliberately the
-	// narrowest thing that is still useful: retrying is the one recovery whose
-	// bound is already in the state.
-	AutonomyRetry Autonomy = "retry"
-
 	// AutonomyDecide lets the lead choose what to do about a failure, within the
 	// carve-out ADR-0002 already allows. It never widens to choosing a stage.
 	AutonomyDecide Autonomy = "decide"
 )
 
-// ParseAutonomy reads a configured value, refusing what it does not know.
+// The set lost a third value and a parser when the knob absorbed this setting.
 //
-// A closed set because the failure is asymmetric: a typo that fell back to the
-// permissive value would turn a supervised run into an unattended one, and
-// nothing would say so.
-func ParseAutonomy(name string) (Autonomy, error) {
-	switch Autonomy(name) {
-	case AutonomyAsk, AutonomyRetry, AutonomyDecide:
-		return Autonomy(name), nil
-	case "":
-		return AutonomyRetry, nil
-	default:
-		return "", fmt.Errorf("unknown autonomy %q (ask, retry, decide)", name)
-	}
-}
+// `retry` was the old default, and retrying once is now what *every* setting
+// does before anything else — so a name for "retries and then stops" described
+// the floor rather than a choice. ParseAutonomy went with it: nothing outside
+// this package may name an autonomy any more, because naming one was the second
+// control RFC-0006 exists to remove (ADR-0058 — what has no caller is either
+// wired or gone).
 
 // Agent is the lead as a model rather than a loop.
 //
@@ -65,8 +52,19 @@ type Agent struct {
 	// hosts no model of its own (ADR-0043).
 	Ask func(ctx context.Context, prompt string) (string, error)
 
-	// Autonomy bounds what it may do about a failure.
-	Autonomy Autonomy
+	// Knob is the one control a person sets. What the lead may do about a failure
+	// is derived from it, never configured beside it — two settings both called
+	// autonomy is a worse product than one (RFC-0006).
+	Knob fsm.Knob
+}
+
+// Autonomy is what this agent's knob means for a failure.
+//
+// Derived at the moment it is needed rather than stored, so there is no second
+// field that could disagree with the knob. The knob changes in flight; a copy
+// taken at construction would go stale the moment it did.
+func (a *Agent) Autonomy() Autonomy {
+	return Autonomy(a.Knob.Autonomy())
 }
 
 // Brief is what the lead is told about being the lead.
@@ -108,26 +106,33 @@ When a person asks you something, answer them. That is why you are a model
 and not a loop.
 `)
 
-	b.WriteString("\nWhen a stage fails:\n\n")
-	switch autonomy {
-	case AutonomyAsk:
-		b.WriteString(`  Stop and tell the person what failed and what you would suggest.
-  Do not retry. Do not work around it. Wait.
+	// Retrying once is what every setting does first, so it is stated once, above
+	// the branch, rather than being a thing the strictest setting forbids. It is
+	// the recovery whose bound is already in the state and it needs no judgement
+	// to be safe — and a person woken for a failure a second attempt would have
+	// cleared is attention spent for nothing (RFC-0006).
+	b.WriteString(`
+When a stage fails:
+
+  Retry it once. That is not a decision — it is what every setting does,
+  because a failure that clears on a second attempt was never worth
+  anyone's attention.
+
+When the retry is spent:
+
 `)
-	case AutonomyDecide:
-		b.WriteString(`  Decide what to do about it — retry it, or stop and escalate. That
-  judgement is yours, and it is the only judgement that is. It is about
-  the failure, never about which stage comes next.
+	if autonomy == AutonomyDecide {
+		b.WriteString(`  Decide what to do about it — retry within the budget the task carries,
+  or stop and escalate. That judgement is yours, and it is the only
+  judgement about the flow that is. It is about the failure, never about
+  which stage comes next.
 
   Tell the person what you decided and why.
 `)
-	default:
-		b.WriteString(`  Retry it, up to the budget the task carries. When the budget is
-  spent, stop and tell the person.
-
-  You do not work around a failure. Changing the approach because
-  something did not work is a decision about the task, and that is not
-  yours to make.
+	} else {
+		b.WriteString(`  Stop and tell the person what failed and what you would suggest.
+  Do not work around it. Changing the approach because something did not
+  work is a decision about the task, and that is not yours to make.
 `)
 	}
 
@@ -150,12 +155,10 @@ func (a *Agent) Conduct(ctx context.Context, order fsm.Order) (string, error) {
 		return "", fmt.Errorf("no lead configured: Luna hosts no model of its own (ADR-0043)")
 	}
 
-	autonomy := a.Autonomy
-	if autonomy == "" {
-		autonomy = AutonomyRetry
-	}
-
-	said, err := a.Ask(ctx, Brief(autonomy)+"\n\nYour order:\n\n"+order.Text())
+	// No default to apply: the knob's zero value is KnobAsk, the most supervised
+	// setting, and Autonomy derives from it. The old empty-means-retry fallback
+	// was a second place deciding the same thing.
+	said, err := a.Ask(ctx, Brief(a.Autonomy())+"\n\nYour order:\n\n"+order.Text())
 	if err != nil {
 		return "", fmt.Errorf("the lead did not answer: %w", err)
 	}

@@ -37,7 +37,12 @@ func leadCommand(env Env, args []string) error {
 		}
 	}
 
-	autonomy, err := lead.ParseAutonomy(flags["autonomy"])
+	// The knob is the only control, and its state is what decides behaviour on a
+	// failure (RFC-0006). The three names this flag used to take are gone rather
+	// than aliased: a flag meaning "knob 5" would hide the gate consequences of
+	// the value it set, authorising the lead to judge gates up to criticality 5
+	// without the word "gate" appearing anywhere.
+	knob, err := fsm.ParseKnob(flags["autonomy"])
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
 	}
@@ -48,7 +53,7 @@ func leadCommand(env Env, args []string) error {
 			"flow without a model")
 	}
 
-	return conductTask(env, id, &lead.Agent{Ask: env.Lead, Autonomy: autonomy})
+	return conductTask(env, id, &lead.Agent{Ask: env.Lead, Knob: knob})
 }
 
 // conductTask is the loop: ask Luna for the order, give it to the lead, check

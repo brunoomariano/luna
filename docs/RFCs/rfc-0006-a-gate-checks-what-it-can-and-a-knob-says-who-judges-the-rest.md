@@ -1,6 +1,6 @@
 # RFC-0006: A gate checks what it can, and a knob says who judges the rest
 
-**Status:** DRAFT
+**Status:** IN PROGRESS
 **Last reviewed:** 2026-08-14
 **Source issue:** —
 **PRD:** [gate-0001](../PRDs/gate/gate-0001-an-autonomy-knob-over-the-flow.md)
@@ -326,6 +326,13 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
 - **Rollback surface:** set the knob to `0`.
 
 ## Rollout plan (phased)
+
+> **Built, 2026-08-14:** phases 1-4. What remains is the seam between them — the node
+> layer reading `luna_gates` and running the checks at the moment a gate opens, so
+> `GateChecksOutcome` arrives with something in it. Until that lands, `ResolveGate` is
+> reached with no checks declared and the judgement half is what the knob governs. The
+> lead does not yet *carry out* a judgement either: `judged` is recorded and the prompt
+> from the open question above is not written.
 
 1. **Phase 1 — the record.** `checked` and `judged` in `GateWaited`, and the scope for a
    judged gate. Nothing produces them. This is the part that touches replay and it lands

@@ -173,7 +173,28 @@ type Abandon struct {
 	Reason string `json:"reason"`
 }
 
+// SetKnob changes how autonomous a task is, mid-run.
+//
+// It is an action rather than configuration re-read at each Advance, and the
+// difference is the audit. A run where the lead judged three gates has to be
+// reviewable afterwards, and a setting that changed with no record turns "why
+// was nobody asked here?" into a question the log cannot answer. The change is
+// itself a decision, so it is history (ADR-0048).
+//
+// Changing it does not disturb a gate that is already open: that gate was
+// answered — or is waiting to be — under whatever held when it opened, and taking
+// a decision away from someone already looking at it would be worse than asking
+// them once more (RFC-0006).
+type SetKnob struct {
+	Knob Knob `json:"knob"`
+
+	// Why the person moved it. Not required, and worth having: the log already
+	// says what changed, and this is the only place it can say what for.
+	Reason string `json:"reason,omitempty"`
+}
+
 func (TaskCreated) isAction()   {}
+func (SetKnob) isAction()       {}
 func (Advance) isAction()       {}
 func (Complete) isAction()      {}
 func (Fail) isAction()          {}
@@ -216,12 +237,28 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 		return answerGate(state, action)
 	case ReviewFinding:
 		return reviewFinding(state, a)
+	default:
+		return reduceRunControl(state, action)
+	}
+}
+
+// reduceRunControl handles the actions that say something about the run rather
+// than about a stage: it stopped, it resumed, it ended, it changed how
+// autonomous it is.
+//
+// Split from Reduce because the dispatch had grown past the complexity gate, and
+// this is the seam that means something: everything above moves work through the
+// flow, everything here is a person changing the terms the flow runs under.
+func reduceRunControl(state TaskState, action Action) (TaskState, error) {
+	switch a := action.(type) {
 	case Block:
 		return block(state, a)
 	case Unblock:
 		return unblock(state)
 	case Abandon:
 		return abandon(state, a)
+	case SetKnob:
+		return setKnob(state, a)
 	default:
 		return state, fmt.Errorf("%w: unknown action %T", ErrIllegalTransition, action)
 	}
@@ -542,6 +579,24 @@ func block(state TaskState, a Block) (TaskState, error) {
 // Ending an already-ended task is refused rather than ignored: it would put a
 // second ending in the log, and a history that shows a task finishing twice is
 // worse than an error the caller has to read.
+// setKnob moves the autonomy setting, leaving any open gate exactly as it is.
+//
+// The pending gate is deliberately untouched. A gate that opened needing a person
+// keeps needing one: it was already put in front of somebody, and having a
+// setting move it out from under them is worse than the cost of being asked once
+// more. Only gates that open after this see the new value (RFC-0006).
+func setKnob(state TaskState, a SetKnob) (TaskState, error) {
+	if state.IsTerminal() {
+		return state, fmt.Errorf("%w: the task already ended as %q", ErrIllegalTransition, state.Status)
+	}
+	if a.Knob < KnobAsk || a.Knob > KnobAll {
+		return state, fmt.Errorf("%w: autonomy has to be 0-10, got %d", ErrIllegalTransition, a.Knob)
+	}
+
+	state.Knob = a.Knob
+	return state, nil
+}
+
 func abandon(state TaskState, a Abandon) (TaskState, error) {
 	if state.IsTerminal() {
 		return state, fmt.Errorf("%w: the task already ended as %q", ErrIllegalTransition, state.Status)

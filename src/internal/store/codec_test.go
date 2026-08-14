@@ -142,6 +142,25 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name:   "SetKnob",
+			action: fsm.SetKnob{Knob: 7, Reason: "trusting the checks here"},
+			verify: func(t *testing.T, got fsm.Action) {
+				a, ok := got.(fsm.SetKnob)
+				if !ok {
+					t.Fatalf("want SetKnob, got %T", got)
+				}
+				// The value is the whole point: a knob that decoded back as zero
+				// would replay an autonomous run as a supervised one, and the log
+				// would look right while saying the opposite of what happened.
+				if a.Knob != 7 {
+					t.Errorf("the knob must survive, got %d", a.Knob)
+				}
+				if a.Reason != "trusting the checks here" {
+					t.Errorf("why a person moved it must survive, got %q", a.Reason)
+				}
+			},
+		},
+		{
 			name:   "Unblock",
 			action: fsm.Unblock{},
 			verify: func(t *testing.T, got fsm.Action) {

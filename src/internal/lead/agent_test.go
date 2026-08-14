@@ -23,7 +23,7 @@ func (d *disobedientLead) ask(_ context.Context, prompt string) (string, error) 
 }
 
 func TestTheLeadIsToldItDoesNotChooseTheStage(t *testing.T) {
-	brief := Brief(AutonomyRetry)
+	brief := Brief(AutonomyAsk)
 
 	for _, want := range []string{
 		"You do not decide what happens next",
@@ -41,7 +41,7 @@ func TestTheLeadIsToldItDoesNotChooseTheStage(t *testing.T) {
 // prohibition invites a model to weigh whether this is one of the times; a
 // description of the arrangement leaves nothing to weigh.
 func TestTheBriefDescribesTheMechanismRatherThanForbidding(t *testing.T) {
-	brief := Brief(AutonomyRetry)
+	brief := Brief(AutonomyAsk)
 
 	if !strings.Contains(brief, "the only stage that exists for you") {
 		t.Error("the brief no longer explains why there is nothing to choose between")
@@ -53,21 +53,28 @@ func TestTheBriefDescribesTheMechanismRatherThanForbidding(t *testing.T) {
 // (PRD gate-0001).
 func TestTheAutonomyKnobChangesWhatTheLeadMayDoAboutAFailure(t *testing.T) {
 	ask := Brief(AutonomyAsk)
-	retry := Brief(AutonomyRetry)
 	decide := Brief(AutonomyDecide)
 
-	if !strings.Contains(ask, "Do not retry") {
-		t.Error("the strictest setting does not forbid retrying")
+	// Retrying once is not what the setting decides — every setting does it, so
+	// it is stated once above the branch rather than forbidden at one end.
+	for name, brief := range map[string]string{"ask": ask, "decide": decide} {
+		if !strings.Contains(brief, "Retry it once") {
+			t.Errorf("the %s setting does not retry once before anything else", name)
+		}
 	}
-	if !strings.Contains(retry, "up to the budget") {
-		t.Error("the default does not bound the retrying by the budget the task carries")
+
+	if !strings.Contains(ask, "Stop and tell the person") {
+		t.Error("the supervised setting does not stop once the retry is spent")
 	}
-	if !strings.Contains(decide, "never about which stage comes next") {
+	if strings.Contains(ask, "That judgement is yours") {
+		t.Error("the supervised setting hands the lead a judgement it must not have")
+	}
+	if !strings.Contains(decide, "It is about the failure, never about") {
 		t.Error("the widest setting does not say where its judgement stops")
 	}
 
 	// Whatever the setting, the flow is not up for discussion.
-	for name, brief := range map[string]string{"ask": ask, "retry": retry, "decide": decide} {
+	for name, brief := range map[string]string{"ask": ask, "decide": decide} {
 		if !strings.Contains(brief, "You do not decide what happens next") {
 			t.Errorf("the %s setting dropped the line the whole design rests on", name)
 		}
@@ -178,10 +185,10 @@ func TestAModelThatWillNotAnswerIsAnError(t *testing.T) {
 	}
 }
 
-// TestAnUnconfiguredAutonomyIsTheNarrowUsefulOne. Defaulting to the widest
-// setting would make an unset knob mean "do whatever you think", which is the
-// one default nobody would choose deliberately.
-func TestAnUnconfiguredAutonomyIsTheNarrowUsefulOne(t *testing.T) {
+// TestAnUnconfiguredKnobIsTheMostSupervised. Defaulting to the widest setting
+// would make an unset knob mean "do whatever you think", which is the one
+// default nobody would choose deliberately.
+func TestAnUnconfiguredKnobIsTheMostSupervised(t *testing.T) {
 	lead := &disobedientLead{says: "done"}
 	agent := &Agent{Ask: lead.ask}
 
@@ -189,27 +196,26 @@ func TestAnUnconfiguredAutonomyIsTheNarrowUsefulOne(t *testing.T) {
 		t.Fatalf("Conduct: %v", err)
 	}
 
-	if !strings.Contains(lead.saw[0], "up to the budget") {
-		t.Error("an agent with no autonomy configured did not get the retry brief")
+	if agent.Autonomy() != AutonomyAsk {
+		t.Errorf("an unset knob derived %q, want ask", agent.Autonomy())
+	}
+	if !strings.Contains(lead.saw[0], "Stop and tell the person") {
+		t.Error("an agent with no knob configured did not get the supervised brief")
 	}
 }
 
-func TestAnUnknownAutonomyIsRefused(t *testing.T) {
-	if _, err := ParseAutonomy("whatever"); err == nil {
-		t.Fatal("an unknown autonomy was accepted — a typo must not widen what the lead may do")
+// TestAutonomyIsDerivedAndNotSettable is the fold, asserted from this side.
+//
+// There is no ParseAutonomy any more and no field to set: the knob is the only
+// control, and what the lead may do about a failure follows from its state.
+func TestAutonomyIsDerivedAndNotSettable(t *testing.T) {
+	supervised := &Agent{Ask: (&disobedientLead{}).ask, Knob: fsm.KnobAsk}
+	if got := supervised.Autonomy(); got != AutonomyAsk {
+		t.Errorf("knob 0 derived %q, want ask", got)
 	}
 
-	got, err := ParseAutonomy("")
-	if err != nil {
-		t.Fatalf("an unset autonomy: %v", err)
-	}
-	if got != AutonomyRetry {
-		t.Errorf("unset resolved to %q, want retry", got)
-	}
-
-	for _, name := range []string{"ask", "retry", "decide"} {
-		if _, err := ParseAutonomy(name); err != nil {
-			t.Errorf("%s was refused: %v", name, err)
-		}
+	autonomous := &Agent{Ask: (&disobedientLead{}).ask, Knob: fsm.KnobAll}
+	if got := autonomous.Autonomy(); got != AutonomyDecide {
+		t.Errorf("knob 10 derived %q, want decide", got)
 	}
 }

@@ -325,10 +325,39 @@ func (l *Lead) decideGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWa
 	if gate == nil || l.Gates == nil {
 		return fsm.GateDecisionAbsent
 	}
-	if l.Gates.Waits(state.Profile, gate.Kind) {
+	if !l.Gates.Waits(state.Profile, gate.Kind) {
+		return fsm.GateDecisionPassed
+	}
+
+	// The profile said this gate waits. That is where the question used to end;
+	// now it is where the two halves get their turn — a gate that waits may still
+	// be answered by its declared checks or by the lead, and only then does it
+	// reach a person (RFC-0006).
+	return l.answerWaitingGate(state, gate)
+}
+
+// answerWaitingGate is who answers a gate the profile stopped for.
+//
+// The mechanical half is not run here and the value says so: reading the
+// registry and running commands is work for the node layer, and the reducer's
+// purity depends on that verdict arriving inside the action (ADR-0024). Until
+// that is wired, checks are always "nothing declared" and the judgement half is
+// what the knob governs.
+func (l *Lead) answerWaitingGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
+	spec := fsm.GateSpecIn(l.flow(), gate.Stage)
+
+	switch fsm.ResolveGate(spec, fsm.GateChecksOutcome{}, state.Knob) {
+	case fsm.AnswerChecks:
+		return fsm.GateDecisionChecked
+	case fsm.AnswerLead:
+		return fsm.GateDecisionJudged
+	case fsm.AnswerRejected, fsm.AnswerPerson:
+		return fsm.GateDecisionWaited
+	default:
+		// A resolution this build does not recognise falls to a person, which is
+		// the direction every uncertain path in this design takes.
 		return fsm.GateDecisionWaited
 	}
-	return fsm.GateDecisionPassed
 }
 
 // stall records a task that stopped making progress.

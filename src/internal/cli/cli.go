@@ -113,20 +113,21 @@ func Run(env Env, args []string) error {
 	// commands for you, so its entry refers back to this function — a package-level
 	// table would be an initialisation cycle.
 	commands := map[string]func(Env, []string) error{
-		"task":    runTask,
-		"run":     runTaskCommand,
-		"unblock": unblockCommand,
-		"chat":    chatCommand,
-		"plugin":  pluginCommand,
-		"gates":   runGates,
-		"gate":    runGate,
-		"flow":    runFlow,
-		"next":    nextCommand,
-		"done":    doneCommand,
-		"status":  statusCommand,
-		"stuck":   stuckCommand,
-		"lead":    leadCommand,
-		"init":    initCommand,
+		"task":     runTask,
+		"run":      runTaskCommand,
+		"unblock":  unblockCommand,
+		"chat":     chatCommand,
+		"plugin":   pluginCommand,
+		"gates":    runGates,
+		"gate":     runGate,
+		"flow":     runFlow,
+		"next":     nextCommand,
+		"done":     doneCommand,
+		"status":   statusCommand,
+		"stuck":    stuckCommand,
+		"lead":     leadCommand,
+		"autonomy": autonomyCommand,
+		"init":     initCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -166,10 +167,16 @@ luna — deterministic orchestration for AI agents
         drive the task until it needs a person or finishes.
         --dry-run exercises the flow with no herdr and no agent.
 
-  luna lead <id> [--autonomy ask|retry|decide]
+  luna lead <id> [--autonomy 0-10]
         hand the task to the lead agent: Luna gives it one order at a
         time and it carries them out. It never chooses a stage — the
-        autonomy knob bounds only what it may do about a failure.
+        autonomy knob bounds which gates it may answer and what it may
+        do about a failure. 0 judges nothing, and is the default.
+
+  luna autonomy <id> [<0-10> [reason]]
+        show the knob, or move it mid-run. Moving it writes an event, so
+        the log says when it changed and why. A gate already open still
+        goes to a person; only later gates see the new value.
 
   luna task abandon <id> <reason>
         end a task that will not be finished. The log keeps everything —

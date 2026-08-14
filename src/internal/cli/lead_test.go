@@ -127,20 +127,36 @@ func TestTheLoopStopsWhenSomethingNeedsAPerson(t *testing.T) {
 func TestTheAutonomyKnobReachesTheLead(t *testing.T) {
 	h, lead := leadHarness(t)
 
-	if err := h.run(t, "lead", "LUNA-1", "--autonomy", "ask"); err != nil {
+	if err := h.run(t, "lead", "LUNA-1", "--autonomy", "10"); err != nil {
 		t.Fatalf("lead: %v", err)
 	}
 
-	if !strings.Contains(lead.saw[0], "Do not retry") {
-		t.Errorf("--autonomy ask did not reach the brief:\n%s", lead.saw[0])
+	if !strings.Contains(lead.saw[0], "That judgement is yours") {
+		t.Errorf("--autonomy 10 did not reach the brief:\n%s", lead.saw[0])
 	}
 }
 
-func TestAnUnknownAutonomyIsRefusedAtTheCommandLine(t *testing.T) {
-	h, _ := leadHarness(t)
+// TestTheKnobIsANumberAndTheOldNamesAreGone is the fold, from the surface a
+// person types at.
+//
+// The three names are refused rather than aliased onto knob values: a flag
+// meaning "knob 5" would authorise the lead to judge gates up to criticality 5
+// without the word "gate" appearing anywhere (RFC-0006).
+func TestTheKnobIsANumberAndTheOldNamesAreGone(t *testing.T) {
+	for _, value := range []string{"ask", "retry", "decide", "whatever", "11", "-1"} {
+		h, _ := leadHarness(t)
+		if err := h.run(t, "lead", "LUNA-1", "--autonomy", value); err == nil {
+			t.Errorf("--autonomy %s was accepted", value)
+		}
+	}
 
-	if err := h.run(t, "lead", "LUNA-1", "--autonomy", "whatever"); err == nil {
-		t.Fatal("an unknown autonomy was accepted")
+	// And an absent flag is the most supervised setting, never the widest.
+	h, lead := leadHarness(t)
+	if err := h.run(t, "lead", "LUNA-1"); err != nil {
+		t.Fatalf("lead with no knob: %v", err)
+	}
+	if strings.Contains(lead.saw[0], "That judgement is yours") {
+		t.Error("an unset knob briefed the lead as though it could decide")
 	}
 }
 

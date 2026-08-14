@@ -293,6 +293,14 @@ type TaskState struct {
 	// task run overnight must not replay as though it had been supervised.
 	Profile Profile
 
+	// Knob is how far the lead may judge on its own, as it stands now. It moves
+	// only through SetKnob, so replaying the log reproduces every value it held
+	// and when — which is the whole reason the change is an action rather than
+	// configuration re-read at each step (RFC-0006).
+	//
+	// The zero value is KnobAsk, so a task that never set one judges nothing.
+	Knob Knob
+
 	// Flow identifies the flow this task was born under, from its opening event
 	// (ADR-0046). It is here for the same reason as Profile: a replay has to know
 	// which contract the history was written against, and asking the caller for

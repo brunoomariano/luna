@@ -180,3 +180,98 @@ func decisionOf(t *testing.T, payload string) fsm.GateWaited {
 	}
 	return body.GateDecision
 }
+
+// flowWithCriticality is the shipped flow with one gate declared, so a test can
+// say which knob reaches it without depending on the stock's own values.
+func flowWithCriticality(t *testing.T, stage fsm.StageID, level int, judge ...string) []fsm.Stage {
+	t.Helper()
+
+	flow := fsm.DefaultFlow()
+	for i := range flow {
+		if flow[i].ID != stage {
+			continue
+		}
+		if flow[i].Gate == nil {
+			t.Fatalf("%s opens no gate to declare criticality on", stage)
+		}
+		declared := *flow[i].Gate
+		declared.Criticality = level
+		declared.Judge = judge
+		flow[i].Gate = &declared
+		return flow
+	}
+	t.Fatalf("no stage %q in the flow", stage)
+	return nil
+}
+
+// TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate is what the whole feature
+// comes to: the same flow, the same policy, two knob settings, two different
+// facts in the log.
+func TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate(t *testing.T) {
+	flow := flowWithCriticality(t, "scenarios", 5, "the plan covers the acceptance criteria")
+
+	cases := map[string]struct {
+		knob fsm.Knob
+		want fsm.GateWaited
+	}{
+		"below the gate's criticality, a person answers": {knob: 4, want: fsm.GateDecisionWaited},
+		"at it, the lead judges":                         {knob: 5, want: fsm.GateDecisionJudged},
+		"above it, the lead judges":                      {knob: 10, want: fsm.GateDecisionJudged},
+		"the default judges nothing":                     {knob: fsm.KnobAsk, want: fsm.GateDecisionWaited},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newStore(t)
+			nightly(t, s, "LUNA-1", fsm.KindFeature)
+			if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: c.knob}); err != nil {
+				t.Fatalf("setting the knob: %v", err)
+			}
+
+			l := &Lead{
+				Store: s, Node: &deliveringNode{}, Flow: flow,
+				Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+			}
+			if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			if got := firstGateDecision(t, s, "LUNA-1"); got != c.want {
+				t.Errorf("knob %d recorded %q, want %q", c.knob, got, c.want)
+			}
+		})
+	}
+}
+
+// firstGateDecision reads the decision the earliest gate recorded.
+//
+// The first, not the last: the run walks past several gates, and reading the
+// final one answers a question about whichever gate happened to come last. That
+// was the first version of this helper and it made a passing implementation look
+// broken — the log said `judged` for the gate under test and `passed` for a later
+// one the profile let through.
+func firstGateDecision(t *testing.T, s *store.Store, id string) fsm.GateWaited {
+	t.Helper()
+
+	events, err := s.Events(id)
+	if err != nil {
+		t.Fatalf("reading the log: %v", err)
+	}
+
+	for _, e := range events {
+		if e.Action != "Advance" {
+			continue
+		}
+		var advance struct {
+			GateDecision fsm.GateWaited `json:"gate_decision"`
+		}
+		if err := json.Unmarshal([]byte(e.Payload), &advance); err != nil {
+			t.Fatalf("decoding an advance: %v", err)
+		}
+		if advance.GateDecision != fsm.GateDecisionAbsent {
+			return advance.GateDecision
+		}
+	}
+	t.Fatal("no advance recorded a gate decision")
+	return fsm.GateDecisionAbsent
+}

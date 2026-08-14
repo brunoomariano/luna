@@ -22,6 +22,7 @@ const (
 	actionBlock         = "Block"
 	actionUnblock       = "Unblock"
 	actionAbandon       = "Abandon"
+	actionSetKnob       = "SetKnob"
 )
 
 // valueless are the actions that carry nothing but their name, so decoding them
@@ -66,8 +67,23 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionReviewFinding, a)
 	case fsm.Block:
 		return withPayload(actionBlock, a)
+	default:
+		return encodeRunControl(action)
+	}
+}
+
+// encodeRunControl encodes the actions a person takes about the run itself,
+// rather than about a stage.
+//
+// Split from the switch above for the complexity gate, along the same seam the
+// reducer's own dispatch splits on: everything there moves work through the flow,
+// everything here changes the terms it runs under.
+func encodeRunControl(action fsm.Action) (name, payload string, err error) {
+	switch a := action.(type) {
 	case fsm.Abandon:
 		return withPayload(actionAbandon, a)
+	case fsm.SetKnob:
+		return withPayload(actionSetKnob, a)
 	default:
 		return "", "", fmt.Errorf("%w: cannot record %T", ErrUnknownAction, action)
 	}
@@ -120,6 +136,7 @@ var fromPayload = map[string]func(string) (fsm.Action, error){
 	actionGateAdjust:  decodeJSON[fsm.GateAdjust],
 	actionGateReject:  decodeJSON[fsm.GateReject],
 	actionAbandon:     decodeJSON[fsm.Abandon],
+	actionSetKnob:     decodeJSON[fsm.SetKnob],
 	actionBlock:       decodeJSON[fsm.Block],
 }
 
