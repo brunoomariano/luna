@@ -102,16 +102,21 @@ func TestRunRejectsAnUnknownFlag(t *testing.T) {
 
 // ── luna run, dry ────────────────────────────────────────────────────────────
 
-// TestADryRunDrivesANightlyTaskToTheEnd is the engine end to end with no herdr.
+// TestADryRunDrivesAnAutonomousTaskToTheEnd is the engine end to end with no
+// herdr.
 //
-// A nightly task stops at no gate, so one command takes it from an empty log to
-// done — and on the way it exercises everything that is not the integration: the
-// flow's ordering, every stage's contract check, the append-only log and the replay
-// that rebuilds the state from it. It is what tells a broken flow apart from a
-// broken herdr, which is the reason --dry-run exists at all.
-func TestADryRunDrivesANightlyTaskToTheEnd(t *testing.T) {
+// One command takes a task from an empty log to done, exercising everything that
+// is not the integration: the flow's ordering, every stage's contract check, the
+// append-only log and the replay that rebuilds the state from it. It is what
+// tells a broken flow apart from a broken herdr, which is why --dry-run exists.
+//
+// The knob is what makes it unattended now rather than a profile: gates wait
+// because the shipped stages declare criteria (ADR-0063), and 10 is what lets
+// the lead answer them instead of a person.
+func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
@@ -125,6 +130,13 @@ func TestADryRunDrivesANightlyTaskToTheEnd(t *testing.T) {
 	if !strings.Contains(shown, "done") {
 		t.Errorf("want task show to report it done, got %q", shown)
 	}
+
+	// And it got there by the lead answering, not by nobody being asked: a run
+	// that finished without consulting anything would mean the gates stopped
+	// waiting, which is the regression this whole change could cause.
+	if h.judged == 0 {
+		t.Error("the task finished without the lead answering a single gate")
+	}
 }
 
 // TestTheDryNodeProvesNothingAndSaysSo is the honesty of a rehearsal.
@@ -137,7 +149,9 @@ func TestADryRunDrivesANightlyTaskToTheEnd(t *testing.T) {
 // trail (INV-core-2).
 func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1")
+	// Unattended is the knob now, not a profile (ADR-0063).
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
 	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
@@ -163,7 +177,9 @@ func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 // nobody would learn why until they read the contract.
 func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1")
+	// Unattended is the knob now, not a profile (ADR-0063).
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
 	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
@@ -377,6 +393,8 @@ func TestAnUnblockedTaskRunsAgain(t *testing.T) {
 	h := newHarness(t)
 	blockedStore(t, h, "LUNA-1")
 	h.mustRun(t, "unblock", "LUNA-1")
+	// Unattended is the knob now, not a profile (ADR-0063).
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
@@ -393,7 +411,9 @@ func TestAnUnblockedTaskRunsAgain(t *testing.T) {
 // it is blocked and needs to hear what it is instead.
 func TestUnblockRefusesATaskThatIsNotBlocked(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1")
+	// Unattended is the knob now, not a profile (ADR-0063).
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run") // runs to done
 
 	err := h.run(t, "unblock", "LUNA-1")
@@ -521,11 +541,19 @@ func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
 	if conductor.Store != h.env.Store {
 		t.Error("the conductor must write to the store the command was given")
 	}
-	if conductor.Gates == nil {
-		t.Error("the conductor must carry the gate policy the config decided")
+	// The judgement half has to be carried, or a knob raised past a gate's
+	// criticality reaches a lead that is not there and the gate quietly goes to a
+	// person instead — a feature off on every machine, saying nothing about it
+	// (ADR-0063, RFC-0006).
+	if conductor.Ask == nil {
+		t.Error("the conductor has no model to judge a gate the knob reached")
 	}
-	if conductor.Gates == nil {
-		t.Error("without a gate policy every profile falls back to the cautious one")
+
+	// The mechanical half follows the registry: this harness has none, and nil is
+	// the honest answer then rather than a function that reports every gate as
+	// undeclared. TestTheSeamRunsWhatTheTaskDeclared covers it where there is one.
+	if conductor.CheckGate != nil {
+		t.Error("a run with no registry was given a mechanical half anyway")
 	}
 }
 
@@ -655,7 +683,9 @@ func fakeHerdrSocket(t *testing.T) string {
 // with a reason — rather than the command erroring and leaving nothing behind.
 func TestALostHerdrBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1")
+	// Unattended is the knob now, not a profile (ADR-0063).
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	// A socket that answers the dial and then refuses everything, which is what a
 	// herdr exiting between the connection and the first stage looks like.

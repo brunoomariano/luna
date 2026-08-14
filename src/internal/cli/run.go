@@ -118,7 +118,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 	// the first failure and ADR-0011's budget is never spent (ADR-0051). This one
 	// carries no model — it reads the budget the task already has.
 	conductor := &lead.Lead{
-		Store: env.Store, Gates: cfg, Judge: lead.BudgetJudge{},
+		Store: env.Store, Judge: lead.BudgetJudge{},
 		// The mechanical half of a gate: what the task declared, run over what it
 		// delivered (RFC-0006).
 		CheckGate: checkGateWith(env.Registry, opts.Repo),

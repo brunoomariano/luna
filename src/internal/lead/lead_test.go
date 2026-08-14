@@ -118,13 +118,32 @@ func nightly(t *testing.T, s *store.Store, id string, kind fsm.TaskKind) {
 // Given a node that always delivers and a profile that stops at nothing, the lead
 // walks the whole flow and the task finishes — with no model consulted anywhere,
 // because nothing went wrong (ADR-0002).
+// approvingLead answers every gate the knob reaches with an approval.
+//
+// It exists because a gate waits when the stage declared criteria (ADR-0063), so
+// a test that wants a task to run to the end has to say who answers them. Naming
+// it here keeps that intent visible instead of repeating a closure whose meaning
+// is easy to miss.
+func approvingLead() func(context.Context, string) (string, error) {
+	return func(context.Context, string) (string, error) {
+		return "APPROVE\n\nevery criterion is met", nil
+	}
+}
+
 func TestTheLeadDrivesATaskToTheEnd(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
+	// Unattended is the knob's job now rather than a profile's (ADR-0063), and it
+	// is task state, so it is set the way every decision is: through the log.
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
 
 	node := &deliveringNode{}
 	judge := &alwaysRetries{}
-	l := &Lead{Store: s, Node: node, Judge: judge}
+	// Knob 10 with a lead that approves: unattended is the knob's job now
+	// rather than a profile's (ADR-0063).
+	l := &Lead{Store: s, Node: node, Judge: judge, Ask: approvingLead()}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
 	if err != nil {
@@ -249,7 +268,9 @@ func TestRetryIsBoundedEvenWhenTheJudgeKeepsSayingRetry(t *testing.T) {
 
 	node := &failingNode{reason: "still broken"}
 	judge := &alwaysRetries{}
-	l := &Lead{Store: s, Node: node, Judge: judge}
+	// Knob 10 with a lead that approves: unattended is the knob's job now
+	// rather than a profile's (ADR-0063).
+	l := &Lead{Store: s, Node: node, Judge: judge, Ask: approvingLead()}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
 	if err != nil {
@@ -458,7 +479,13 @@ func TestANodeThatAnswersIsNotStalled(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
-	l := &Lead{Store: s, Node: &deliveringNode{}, Judge: &alwaysBlocks{}}
+	// The knob is what carries it past the gates; this test is about the node
+	// answering, not about who answers a gate (ADR-0063).
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	l := &Lead{Store: s, Node: &deliveringNode{}, Judge: &alwaysBlocks{}, Ask: approvingLead()}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
 	if err != nil {

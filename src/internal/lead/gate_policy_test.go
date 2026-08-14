@@ -9,176 +9,112 @@ import (
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
-// waitsFor is a policy that stops at the gate kinds it was given and nothing
-// else. Named rather than inline so the tests read as what the profile does.
-type waitsFor struct {
-	kinds map[fsm.GateKind]bool
-	asked int
-}
-
-func (p *waitsFor) Waits(_ fsm.Profile, gate fsm.GateKind) bool {
-	p.asked++
-	return p.kinds[gate]
-}
-
-// TestAConfiguredPolicyDecidesTheGate covers the lead consulting configuration.
+// TestAGateWaitsBecauseTheStageDeclaredSomething is the rule that replaced the
+// profiles (ADR-0063).
 //
-// The profile in the log says nightly, which stops at nothing. The configured
-// policy says this gate waits. The policy is what decided, because the profile
-// name is only a name — what it means lives in configuration (ADR-0026).
-func TestAConfiguredPolicyDecidesTheGate(t *testing.T) {
-	s := newStore(t)
-	nightly(t, s, "LUNA-1", fsm.KindFeature)
-
-	policy := &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}}
-	l := &Lead{Store: s, Node: &deliveringNode{}, Gates: policy}
-
-	state, err := l.Run(context.Background(), "LUNA-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// Two runs of the same flow, differing only in whether the stage declared
+// judgement criteria. One waits; the other never had a question to put in front
+// of anybody, so it carries on.
+func TestAGateWaitsBecauseTheStageDeclaredSomething(t *testing.T) {
+	bare := fsm.DefaultFlow()
+	for i := range bare {
+		if bare[i].Gate != nil {
+			stripped := *bare[i].Gate
+			stripped.Judge = nil
+			bare[i].Gate = &stripped
+		}
 	}
 
-	if state.Status != fsm.StatusAwaitingGate {
-		t.Fatalf("the configured policy waits at this gate, got %q", state.Status)
+	cases := map[string]struct {
+		flow []fsm.Stage
+		want fsm.GateWaited
+	}{
+		"criteria declared, so it waits": {
+			flow: flowWithCriticality(t, "scenarios", 5, "the plan names what it will change"),
+			want: fsm.GateDecisionWaited,
+		},
+		"nothing declared, so it does not": {
+			flow: bare,
+			want: fsm.GateDecisionPassed,
+		},
 	}
-	if state.Stage != "scenarios" {
-		t.Errorf("want it stopped at the first gate, got %q", state.Stage)
-	}
-	if policy.asked == 0 {
-		t.Error("the policy was never consulted")
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newStore(t)
+			nightly(t, s, "LUNA-1", fsm.KindFeature)
+
+			l := &Lead{Store: s, Node: &deliveringNode{}, Flow: c.flow}
+			if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			if got := firstGateDecision(t, s, "LUNA-1"); got != c.want {
+				t.Errorf("recorded %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 
-// TestTheDecisionReachesTheLog is what makes the replay independent of the
-// policy.
+// TestTheDecisionReachesTheLog is what makes replay independent of whatever the
+// flow says today.
 //
-// Recording it is the mechanism: without this the next replay would ask the
-// policy again, and an edited profile would rewrite what already happened.
+// Recording it is the mechanism: without this the next replay would work the
+// decision out again, and an edited stage file would rewrite what already
+// happened (ADR-0026).
 func TestTheDecisionReachesTheLog(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindFeature)
 
 	l := &Lead{
-		Store: s,
-		Node:  &deliveringNode{},
-		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		Store: s, Node: &deliveringNode{},
+		Flow: flowWithCriticality(t, "scenarios", 5, "a criterion"),
 	}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("Run: %v", err)
 	}
 
-	// The run stops at the first confirm, so exactly one decision says "waited";
-	// the advances before it opened no gate and recorded nothing.
-	got := decisionsIn(t, s, "LUNA-1")
-	waited := 0
-	for _, d := range got {
-		if d == fsm.GateDecisionWaited {
-			waited++
-		}
-	}
-	if waited != 1 {
-		t.Errorf("want one recorded wait, got %v", got)
+	if got := firstGateDecision(t, s, "LUNA-1"); got == fsm.GateDecisionAbsent {
+		t.Error("the gate decision was not recorded, so replay would recompute it")
 	}
 }
 
 // TestAGatelessStageRecordsNoDecision covers the quiet case.
 //
-// Most stages open no gate. Recording "passed" for them would claim a gate was
-// reached that never was, and the log is the audit trail (INV-core-2).
+// A stage that opens no gate has nothing to decide, and writing "passed" would
+// claim a gate was reached that never was.
 func TestAGatelessStageRecordsNoDecision(t *testing.T) {
+	gateless := fsm.DefaultFlow()
+	for i := range gateless {
+		gateless[i].Gate = nil
+	}
+
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindFeature)
 
-	// A policy that waits for nothing, so the task runs the whole flow.
-	l := &Lead{Store: s, Node: &deliveringNode{}, Gates: &waitsFor{kinds: map[fsm.GateKind]bool{}}}
+	l := &Lead{Store: s, Node: &deliveringNode{}, Flow: gateless}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("Run: %v", err)
 	}
 
-	decisions := decisionsIn(t, s, "LUNA-1")
-
-	var gated, silent int
-	for _, d := range decisions {
-		if d == fsm.GateDecisionAbsent {
-			silent++
-			continue
-		}
-		gated++
-		if d != fsm.GateDecisionPassed {
-			t.Errorf("a policy that waits for nothing records passes, got %q", d)
-		}
-	}
-
-	if gated == 0 {
-		t.Error("the flow has gates; some advance should have recorded a decision")
-	}
-	if silent == 0 {
-		t.Error("the flow has gateless stages; those record nothing")
-	}
-}
-
-// TestWithoutAPolicyNothingIsRecorded covers the lead with no configuration.
-//
-// It falls back to the shipped policy at replay, which is the same behaviour as a
-// log written before decisions existed — and the honest one, since nothing else
-// decided.
-func TestWithoutAPolicyNothingIsRecorded(t *testing.T) {
-	s := newStore(t)
-	nightly(t, s, "LUNA-1", fsm.KindFeature)
-
-	l := &Lead{Store: s, Node: &deliveringNode{}}
-	state, err := l.Run(context.Background(), "LUNA-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	for _, d := range decisionsIn(t, s, "LUNA-1") {
-		if d != fsm.GateDecisionAbsent {
-			t.Errorf("no policy means no decision recorded, got %q", d)
-		}
-	}
-
-	// And the shipped nightly policy still carried it through.
-	if state.Status != fsm.StatusDone {
-		t.Errorf("want the task finished under the shipped nightly policy, got %q", state.Status)
-	}
-}
-
-// decisionsIn reads the gate decision off every Advance in a task's log.
-func decisionsIn(t *testing.T, s *store.Store, taskID string) []fsm.GateWaited {
-	t.Helper()
-
-	events, err := s.Events(taskID)
+	events, err := s.Events("LUNA-1")
 	if err != nil {
 		t.Fatalf("reading the log: %v", err)
 	}
-
-	var decisions []fsm.GateWaited
 	for _, e := range events {
 		if e.Action != "Advance" {
 			continue
 		}
-		decisions = append(decisions, decisionOf(t, e.Payload))
+		var advance struct {
+			GateDecision fsm.GateWaited `json:"gate_decision"`
+		}
+		if err := json.Unmarshal([]byte(e.Payload), &advance); err != nil {
+			t.Fatalf("decoding an advance: %v", err)
+		}
+		if advance.GateDecision != fsm.GateDecisionAbsent {
+			t.Errorf("a flow with no gates recorded %q", advance.GateDecision)
+		}
 	}
-	return decisions
-}
-
-// decisionOf reads the recorded decision out of an Advance payload, which is the
-// shape the log actually stores rather than what the codec hands back.
-func decisionOf(t *testing.T, payload string) fsm.GateWaited {
-	t.Helper()
-
-	if payload == "" || payload == "{}" {
-		return fsm.GateDecisionAbsent
-	}
-
-	var body struct {
-		GateDecision fsm.GateWaited `json:"gate_decision"`
-	}
-	if err := json.Unmarshal([]byte(payload), &body); err != nil {
-		t.Fatalf("decoding %q: %v", payload, err)
-	}
-	return body.GateDecision
 }
 
 // flowWithCriticality is the shipped flow with one gate declared, so a test can
@@ -230,7 +166,6 @@ func TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate(t *testing.T) {
 
 			l := &Lead{
 				Store: s, Node: &deliveringNode{}, Flow: flow,
-				Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
 				// A lead that approves. The knob decides whether it is *asked*;
 				// what it answers is a separate question, covered below.
 				Ask: func(context.Context, string) (string, error) {
@@ -326,8 +261,7 @@ func TestWhatTheLeadAnswersDecidesTheGate(t *testing.T) {
 
 			l := &Lead{
 				Store: s, Node: &deliveringNode{}, Flow: flow,
-				Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
-				Ask:   func(context.Context, string) (string, error) { return c.said, nil },
+				Ask: func(context.Context, string) (string, error) { return c.said, nil },
 			}
 			if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
 				t.Fatalf("Run: %v", err)
@@ -353,8 +287,7 @@ func TestWithNoModelTheKnobCannotApproveAnything(t *testing.T) {
 
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow:  flowWithCriticality(t, "scenarios", 1, "a criterion"),
-		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		Flow: flowWithCriticality(t, "scenarios", 1, "a criterion"),
 		// No Ask: this is `luna run`.
 	}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
@@ -372,10 +305,21 @@ func TestDeclaredChecksAnswerTheGateWithoutAModel(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindFeature)
 
+	// A flow whose gate declares no criteria, so the checks are the only thing
+	// answering it. With criteria beside them the knob would decide who weighs
+	// those, which is a different test (TestChecksAndCriteriaCoexist).
+	flow := fsm.DefaultFlow()
+	for i := range flow {
+		if flow[i].Gate != nil {
+			stripped := *flow[i].Gate
+			stripped.Judge = nil
+			flow[i].Gate = &stripped
+		}
+	}
+
 	var askedAbout fsm.GateKind
 	l := &Lead{
-		Store: s, Node: &deliveringNode{},
-		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		Store: s, Node: &deliveringNode{}, Flow: flow,
 		CheckGate: func(_ context.Context, _ string, gate fsm.GateKind) fsm.GateChecksOutcome {
 			askedAbout = gate
 			return fsm.GateChecksOutcome{Passed: true}
@@ -406,8 +350,7 @@ func TestAFailingCheckDoesNotReachTheLead(t *testing.T) {
 	asked := false
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow:  flowWithCriticality(t, "scenarios", 1, "a criterion"),
-		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		Flow: flowWithCriticality(t, "scenarios", 1, "a criterion"),
 		CheckGate: func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 			return fsm.GateChecksOutcome{Rejected: true}
 		},

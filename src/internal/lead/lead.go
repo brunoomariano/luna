@@ -98,17 +98,12 @@ type Judge interface {
 	OnFailure(ctx context.Context, state fsm.TaskState, reason string) Decision
 }
 
-// GatePolicy decides whether a gate stops the task.
+// What became of GatePolicy: it is gone with the profiles (ADR-0063).
 //
-// It is an interface rather than a map because the answer comes from
-// configuration, and the reducer may not read configuration (ADR-0024). The lead
-// asks it once, and what it answered goes into the log — so replaying the task
-// never asks again, and editing a profile cannot rewrite what already happened
-// (ADR-0026).
-type GatePolicy interface {
-	// Waits reports whether a gate of this kind stops a task on this profile.
-	Waits(profile fsm.Profile, gate fsm.GateKind) bool
-}
+// Whether a gate waits is no longer a policy's answer at all — it waits when the
+// stage declared something to answer it with. The decision still reaches the log
+// the same way, so replay is unchanged: what a past advance recorded is what it
+// replays as (ADR-0026).
 
 // Lead conducts one task. One per task, never shared: the parallelism is between
 // tasks, not inside them (ADR-0003).
@@ -123,11 +118,6 @@ type Lead struct {
 	Store *store.Store
 	Node  Node
 	Judge Judge
-
-	// Gates is optional. Without one the lead records no gate decision, and the
-	// replay falls back to the shipped policy — the same behaviour as a log
-	// written before decisions were recorded.
-	Gates GatePolicy
 
 	// Flow defaults to the shipped one when empty.
 	Flow []fsm.Stage
@@ -241,7 +231,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	if err != nil {
 		return err
 	}
-	return l.readReview(taskID, stage, after, result)
+	return l.readReview(ctx, taskID, stage, after, result)
 }
 
 // readReview turns a review stage's report into a transition, when it carries
@@ -262,7 +252,9 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 // A stage that is not a review reads nothing. A review whose report has no
 // recognisable finding reads nothing either, which is the honest outcome — the
 // report is in the context, and a person can see what was written.
-func (l *Lead) readReview(taskID string, stage fsm.Stage, state fsm.TaskState, result Result) error {
+func (l *Lead) readReview(
+	ctx context.Context, taskID string, stage fsm.Stage, state fsm.TaskState, result Result,
+) error {
 	artifact, ok := fsm.ReviewedArtifact(stage)
 	if !ok {
 		return nil
@@ -281,7 +273,41 @@ func (l *Lead) readReview(taskID string, stage fsm.Stage, state fsm.TaskState, r
 		Summary:  summarise(findings),
 		Progress: progressOf(state, result),
 		Flow:     l.flow(),
+		// What a spent ceiling means is the lead's to decide, from the history
+		// (ADR-0063). It is consulted only when a ceiling is actually reached; an
+		// ordinary round leaves this absent and nothing is asked.
+		GateDecision: l.decideCeiling(ctx, state),
 	})
+}
+
+// decideCeiling is what the lead does about a loop that stopped converging:
+// block the task, or put it in front of a person.
+//
+// Not a fixed rule, because the two endings are right in different situations and
+// only the history separates them — a loop that produced nothing for three rounds
+// is a block, while one converging slowly is a question worth asking. That is the
+// ADR-0002 carve-out exactly as written: the lead decides what to do about a
+// failure, never which stage comes next.
+//
+// With no model, it blocks. An unattended run that cannot ask must not carry on
+// looping (ADR-0059), and the absent decision is what produces that.
+func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateWaited {
+	if l.Ask == nil {
+		return fsm.GateDecisionAbsent
+	}
+
+	said, err := l.Ask(ctx, CeilingBrief(state.Loop))
+	if err != nil {
+		// The model could not be reached. Blocking is the conservative reading:
+		// it stops and notifies rather than spending another round on a loop
+		// nobody assessed.
+		return fsm.GateDecisionAbsent
+	}
+
+	if ReadCeiling(said) == CeilingAsk {
+		return fsm.GateDecisionWaited
+	}
+	return fsm.GateDecisionAbsent
 }
 
 // progressOf is what this round produced, for the next one to compare against
@@ -336,38 +362,25 @@ func (l *Lead) flow() []fsm.Stage {
 	return l.Flow
 }
 
-// decideGate asks the policy about a gate and turns the answer into the value the
-// log will carry.
+// decideGate works out who answers a gate, and turns that into the value the log
+// will carry.
 //
-// A stage that opens no gate records no decision: there was nothing to decide, and
-// writing "passed" would claim a gate was reached that never was. With no policy
-// configured it also records nothing, which leaves replay on the shipped defaults
-// — the honest reading, since nothing else decided.
+// A stage that opens no gate records no decision: there was nothing to decide,
+// and writing "passed" would claim a gate was reached that never was.
+//
+// Whether it waits at all is no longer a profile's to say (ADR-0063). A gate
+// waits because the stage declared something to answer it with — judgement
+// criteria in the flow, or checks in the task's registry entry. One with neither
+// was never going to put a question in front of anybody, so stopping at it would
+// be stopping to ask nothing.
 func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
-	if gate == nil || l.Gates == nil {
+	if gate == nil {
 		return fsm.GateDecisionAbsent
 	}
-	if !l.Gates.Waits(state.Profile, gate.Kind) {
-		return fsm.GateDecisionPassed
-	}
 
-	// The profile said this gate waits. That is where the question used to end;
-	// now it is where the two halves get their turn — a gate that waits may still
-	// be answered by its declared checks or by the lead, and only then does it
-	// reach a person (RFC-0006).
-	return l.answerWaitingGate(ctx, state, gate)
-}
-
-// answerWaitingGate is who answers a gate the profile stopped for.
-//
-// The mechanical half runs through CheckGate rather than here: reading the
-// registry and running commands is work for the node layer, and the verdict
-// arrives as an observation the way every other one does (ADR-0024). What this
-// function owns is the decision made from it, which is why the rule itself lives
-// in fsm.ResolveGate and is testable without a registry or a shell.
-func (l *Lead) answerWaitingGate(
-	ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate,
-) fsm.GateWaited {
+	// The two halves are declared in different places, so both are consulted
+	// before concluding that nothing was: criteria live in the stage file and
+	// checks live per task in the registry (RFC-0006).
 	spec := fsm.GateSpecIn(l.flow(), gate.Stage)
 
 	checks := fsm.GateChecksOutcome{}
@@ -375,6 +388,38 @@ func (l *Lead) answerWaitingGate(
 		checks = l.CheckGate(ctx, state.ID, gate.Kind)
 	}
 
+	if !declared(spec, checks) {
+		return fsm.GateDecisionPassed
+	}
+	return l.answerDeclaredGate(ctx, state, spec, gate, checks)
+}
+
+// declared reports whether anything was declared to answer this gate with.
+//
+// An unrunnable check counts as declared, and the distinction matters: it means
+// somebody wrote commands that could not be run, which is a question for a person
+// rather than a reason to carry on as though the gate were empty.
+func declared(spec *fsm.GateSpec, checks fsm.GateChecksOutcome) bool {
+	if checks.Passed || checks.Rejected || checks.Unrunnable {
+		return true
+	}
+	return spec != nil && len(spec.Judge) > 0
+}
+
+// answerDeclaredGate is who answers a gate that had something declared for it.
+//
+// The checks arrive already run: the caller needed them to know whether anything
+// was declared at all, and running them twice would double the cost of every
+// gate — `make ci` is not a question to ask twice.
+//
+// Reading the registry and running commands is the node layer's work, and the
+// verdict arrives as an observation the way every other one does (ADR-0024).
+// What this owns is the decision made from it, which is why the rule itself
+// lives in fsm.ResolveGate and is testable without a registry or a shell.
+func (l *Lead) answerDeclaredGate(
+	ctx context.Context, state fsm.TaskState,
+	spec *fsm.GateSpec, gate *fsm.PendingGate, checks fsm.GateChecksOutcome,
+) fsm.GateWaited {
 	switch fsm.ResolveGate(spec, checks, state.Knob) {
 	case fsm.AnswerChecks:
 		return fsm.GateDecisionChecked

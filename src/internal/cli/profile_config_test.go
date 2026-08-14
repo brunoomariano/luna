@@ -8,7 +8,6 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/herdr"
-	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
 // TestAProjectCanDefineItsOwnProfile covers what ADR-0017 promised and ADR-0026
@@ -226,31 +225,6 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
-// TestConfigSatisfiesTheLeadsPolicy guards the seam the whole design rests on.
-//
-// The lead asks a GatePolicy; the config is what answers. If the two ever drift
-// apart, the decision would stop reaching the log and every replay would fall
-// back to recomputing — silently, and looking correct.
-func TestConfigSatisfiesTheLeadsPolicy(t *testing.T) {
-	var policy lead.GatePolicy = load(t, `
-[profile.paranoid]
-waits = ["confirm"]
-`)
-
-	if !policy.Waits("paranoid", fsm.GateConfirm) {
-		t.Error("the configured profile waits at a confirm")
-	}
-	if policy.Waits("paranoid", fsm.GateConfirmWrite) {
-		t.Error("it was not configured to wait at the write")
-	}
-}
-
-// TestADeletedProfileFallsBackToTheCautiousAnswer covers a task still running
-// under a profile someone removed.
-//
-// The two failure modes are not symmetric: waiting too often stops a task that
-// would have carried on, while waiting too little lets an unsupervised run write
-// something nobody approved.
 func TestADeletedProfileFallsBackToTheCautiousAnswer(t *testing.T) {
 	cfg := load(t, "[profile.paranoid]\nwaits = [\"confirm\"]\n")
 

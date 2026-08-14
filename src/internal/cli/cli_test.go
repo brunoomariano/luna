@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,9 @@ import (
 // print. Asserting on output rather than on internals is deliberate: the printed
 // line is the contract a person actually depends on.
 type harness struct {
+	// judged counts how many times the lead was asked to answer a gate.
+	judged int
+
 	env    Env
 	out    *bytes.Buffer
 	errOut *bytes.Buffer
@@ -45,6 +49,16 @@ func newHarness(t *testing.T) *harness {
 				return current, nil // left unchanged
 			}
 			return h.edited, nil
+		},
+		// A lead that approves whatever it is asked. It exists because gates now
+		// wait when a stage declared criteria (ADR-0063), so an unattended run
+		// needs somebody to answer them — and a harness with none would test the
+		// no-model path in every test rather than the one that is about it.
+		//
+		// Tests that are about a run with no model clear this field.
+		Lead: func(context.Context, string) (string, error) {
+			h.judged++
+			return "APPROVE\n\nevery criterion is met", nil
 		},
 	}
 	return h

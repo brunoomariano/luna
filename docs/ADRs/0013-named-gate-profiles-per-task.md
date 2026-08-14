@@ -1,6 +1,6 @@
 # ADR-0013: Named gate profiles, chosen per task
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0063](0063-a-gate-waits-because-a-stage-declared-something-to-answer-it-with.md)
 **Date:** 2026-08-06
 
 ## Context

@@ -14,3 +14,11 @@ kind = "existence"
 kind     = "review-artifact"
 artifact = "contract"
 reason   = "review the contract"
+# Higher than the plan's: a contract is what every later stage is held to, and a
+# wrong one is discovered at `verify` rather than here (ADR-0063).
+criticality = 9
+judge = [
+  "The contract states what is required and what is forbidden, with no suggestions",
+  "Every acceptance criterion in the task appears as an obligation",
+  "No artifact is named that the contract does not define",
+]

@@ -530,17 +530,22 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 			return state, nil
 		}
 
-		// The profile said nobody is waiting — and a ceiling that nobody answers
-		// must not simply resolve. That is the infinite loop INV-core-8 names in
-		// as many words: *"no infinite retry, which is the loop that does not
-		// converge and burns tokens"*.
+		// Nobody is waiting — and a ceiling that nobody answers must not simply
+		// resolve. That is the infinite loop INV-core-8 names in as many words:
+		// *"no infinite retry, which is the loop that does not converge and burns
+		// tokens"*.
 		//
-		// So an unattended run blocks instead, which is the ending that notifies.
-		// ADR-0023 preferred a gate to a block because a loop that stopped
-		// converging leaves a decision worth taking with the history in view —
-		// that reasoning holds wherever there is somebody to take it, and where
-		// there is not, the choice is between blocking and looping forever
-		// (ADR-0059).
+		// So the run blocks instead, which is the ending that notifies. ADR-0023
+		// preferred a gate to a block because a loop that stopped converging
+		// leaves a decision worth taking with the history in view — that
+		// reasoning holds wherever there is somebody to take it, and where there
+		// is not, the choice is between blocking and looping forever (ADR-0059).
+		//
+		// Which of the two this is, is the lead's call now rather than a
+		// profile's: it reads the history and decides whether a spent ceiling is
+		// a block or a question, and the answer arrives here in the action
+		// (ADR-0063). With no lead, the decision is absent and this is what
+		// absent means.
 		//
 		// This was unreachable until a review could send work back: the ceilings
 		// counted rounds that never happened, so the hole was real and invisible.

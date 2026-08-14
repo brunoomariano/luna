@@ -297,11 +297,12 @@ func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
 
 // TestFlowCheckSaysWhichKnobReachesEachGate is what makes the knob choosable.
 //
-// The setting is a number compared against numbers written beside fourteen
-// gates, and picking one by reading every stage file is how it gets chosen by
-// guess instead. Undeclared has to render as what it means — the highest — rather
-// than as a blank or a zero, because zero is the one value criticality cannot
-// have.
+// The setting is a number compared against numbers written beside each gate, and
+// picking one by reading every stage file is how it gets chosen by guess instead.
+//
+// It asserts on a flow this test controls rather than on the shipped stock: what
+// the stock happens to declare is a product decision that will change, and a test
+// that read it would fail every time somebody tuned a criticality.
 func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 	h := newHarness(t)
 
@@ -310,17 +311,28 @@ func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 	if !strings.Contains(out, "gate(s), and the knob that reaches each") {
 		t.Fatalf("the gate listing is missing:\n%s", out)
 	}
-	// The shipped stock declares no criticality anywhere, so every gate has to
-	// report the default rather than a zero.
-	if !strings.Contains(out, "criticality 10") {
-		t.Errorf("an undeclared gate did not report the default:\n%s", out)
+	// Every gate the shipped flow opens declares criteria now — that is what makes
+	// it wait at all (ADR-0063) — so each line has to say what reaches it.
+	if !strings.Contains(out, "→ knob") {
+		t.Errorf("the listing does not say which knob reaches a gate:\n%s", out)
 	}
-	if !strings.Contains(out, "undeclared, so the highest") {
-		t.Errorf("the listing does not say the value was not declared:\n%s", out)
+	if !strings.Contains(out, "criteri") {
+		t.Errorf("the listing does not say what there is to judge:\n%s", out)
 	}
 	// The mechanical half lives per task in the registry, and a flow view that
 	// implied otherwise would have a person looking for checks in the wrong file.
 	if !strings.Contains(out, "declared per task in the registry") {
 		t.Errorf("the listing does not say where checks live:\n%s", out)
+	}
+}
+
+// TestAGateDeclaringNoCriticalityReportsTheDefault covers the rendering of an
+// undeclared value, which is the one that must not read as a zero.
+func TestAGateDeclaringNoCriticalityReportsTheDefault(t *testing.T) {
+	gate := &fsm.GateSpec{Kind: fsm.GateConfirm, Reason: "approve it"}
+
+	if got := gate.Resolved(); got != fsm.DefaultCriticality {
+		t.Errorf("an undeclared criticality resolved to %d, want %d",
+			got, fsm.DefaultCriticality)
 	}
 }
