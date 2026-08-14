@@ -371,3 +371,37 @@ func TestACancelledContextIsNotAVerdict(t *testing.T) {
 		t.Errorf("nothing was observed, so the evidence is zero, got %+v", got)
 	}
 }
+
+// TestProveSurvivesAWorktreeThatWentAway is a regression test from the swarm
+// bench, where it cost a task that had already delivered.
+//
+// A stage stalled, the worktree was removed with it — correctly, since a stage
+// that ended has no tree (ADR-0055) — and every retry then failed on
+// `chdir ...: no such file or directory` rather than on the work. The delivery
+// was fine: `make ci` was green on the agent's own commit.
+//
+// The verification has to answer about the delivered commit, and a commit
+// outlives the tree that produced it. Reporting a missing directory as a failed
+// check would tell the audit the tests ran and lost.
+func TestProveSurvivesAWorktreeThatWentAway(t *testing.T) {
+	dir := repo(t)
+
+	// The tree is gone, the way it is gone after a stage ends.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("removing the worktree: %v", err)
+	}
+
+	_, err := Shell{Dir: dir}.Prove(
+		context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 1,
+	)
+
+	if err == nil {
+		t.Fatal("a check against a directory that does not exist reported a verdict")
+	}
+	// It must not read as a failing check: nobody ran anything, so there is
+	// nothing to conclude about the work (INV-core-4).
+	if !strings.Contains(err.Error(), "no such file") &&
+		!strings.Contains(err.Error(), "checking out") {
+		t.Errorf("the error does not say the tree was missing: %v", err)
+	}
+}
