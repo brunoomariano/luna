@@ -1,6 +1,7 @@
 package interpret
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,7 +79,7 @@ func TestProseIsNotACommand(t *testing.T) {
 // An agent Luna guesses at fails in a way nobody sees until a person is already
 // talking to it, so the refusal names what would work instead.
 func TestAnUnsupportedInterpreterIsRefused(t *testing.T) {
-	_, err := Harness{Agent: "gemini"}.ask("anything")
+	_, err := Harness{Agent: "gemini"}.Ask(context.Background(), "anything")
 
 	if err == nil {
 		t.Fatal("an agent Luna cannot interpret with must be refused")
@@ -139,7 +140,7 @@ func TestTheTurnIsBounded(t *testing.T) {
 
 	// `false` exits non-zero immediately, which proves the error path reports the
 	// harness rather than hanging.
-	_, err := Harness{Agent: "claude", Deadline: time.Millisecond}.ask("x")
+	_, err := Harness{Agent: "claude", Deadline: time.Millisecond}.Ask(context.Background(), "x")
 	if err == nil {
 		t.Error("a deadline that cannot be met must be reported")
 	}

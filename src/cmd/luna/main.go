@@ -100,7 +100,23 @@ func run(args []string) error {
 		fsm.UseFlow(flow)
 	}
 
-	return cli.Run(cli.Env{
+	return cli.Run(environment(s, stockDir, cfg, root), args)
+}
+
+// environment assembles what every command is given.
+//
+// Extracted from run so a test can assert on it. That is not a style preference:
+// `Lead` was declared, read in two places and set by nothing but tests, so
+// `luna lead` reported "no lead is configured" on every real machine and a knob
+// raised past a gate's criticality quietly sent it to a person. Both failed
+// safe, neither said why, and no test could see it while this was a literal
+// inside a function that also opens a database.
+func environment(s *store.Store, stockDir string, cfg cli.Config, root string) cli.Env {
+	// One harness, asked two ways: for an intent when a person types, and
+	// directly when the lead conducts or judges (ADR-0043, ADR-0044).
+	harness := interpret.Harness{Agent: cfg.Interpreter}
+
+	return cli.Env{
 		Store:  s,
 		Stock:  stockDir,
 		Config: cfg,
@@ -110,13 +126,18 @@ func run(args []string) error {
 		Edit:   cli.Editor(cfg),
 		// Luna hosts no model: the interpreter is one of the official harnesses
 		// run non-interactively (ADR-0044).
-		Interpret: interpret.Harness{Agent: cfg.Interpreter},
+		Interpret: harness,
+		// The same harness, asked directly rather than for an intent. It is what
+		// `luna lead` conducts with and what judges a gate the knob reached
+		// (ADR-0043, RFC-0006).
+		Lead: harness.Ask,
+
 		// A block is only a block once someone knows. herdr already owns a
 		// notification layer and is already what a person is looking at, so this
 		// delegates rather than growing a transport of its own (INV-core-8).
 		Notify:   herdr.NewNotifier().Blocked,
 		Registry: registry.New(root),
-	}, args)
+	}
 }
 
 // storePath is where the log lives: LUNA_STORE if set, else `.luna/luna.db` in

@@ -212,3 +212,35 @@ func inDir(t *testing.T, dir string, fn func()) {
 
 	fn()
 }
+
+// TestEveryInjectedDependencyIsWired is the test that was missing.
+//
+// `Env` is a struct of injected functions, and a field left nil fails *safe*
+// rather than loudly: `luna lead` reported "no lead is configured" on every real
+// machine, and a knob raised past a gate's criticality quietly sent it to a
+// person. Both are the correct behaviour for a missing model — which is exactly
+// why nothing noticed for two commits.
+//
+// So this asserts on the assembled environment rather than on any one command:
+// a dependency added to Env and forgotten here is one the binary does not have.
+func TestEveryInjectedDependencyIsWired(t *testing.T) {
+	env := environment(nil, "/tmp/stock", cli.Config{}, "/tmp/root")
+
+	missing := map[string]bool{
+		"Out":       env.Out == nil,
+		"Err":       env.Err == nil,
+		"In":        env.In == nil,
+		"Edit":      env.Edit == nil,
+		"Interpret": env.Interpret == nil,
+		"Lead":      env.Lead == nil,
+		"Notify":    env.Notify == nil,
+		"Registry":  env.Registry == nil,
+	}
+
+	for field, absent := range missing {
+		if absent {
+			t.Errorf("Env.%s is nil in the real binary — the feature that reads it "+
+				"is off on every machine, and it fails safe so nothing says so", field)
+		}
+	}
+}

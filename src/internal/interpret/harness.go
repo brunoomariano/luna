@@ -62,7 +62,7 @@ const DefaultInterpreter = "claude"
 
 // Interpret turns what a person said into the command Luna should run.
 func (h Harness) Interpret(said, state string) (cli.Intent, error) {
-	answer, err := h.ask(interpretPrompt(said, state))
+	answer, err := h.askWith(context.Background(), interpretPrompt(said, state))
 	if err != nil {
 		return cli.Intent{}, err
 	}
@@ -82,7 +82,7 @@ func (h Harness) Interpret(said, state string) (cli.Intent, error) {
 
 // Phrase turns a command's output into an answer for the person.
 func (h Harness) Phrase(said string, command []string, output string) (string, error) {
-	answer, err := h.ask(phrasePrompt(said, command, output))
+	answer, err := h.askWith(context.Background(), phrasePrompt(said, command, output))
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +95,6 @@ func (h Harness) Phrase(said string, command []string, output string) (string, e
 	return strings.TrimSpace(answer), nil
 }
 
-// ask runs the harness once and returns what it said.
 // agent is which harness this one asks, resolving the house default.
 func (h Harness) agent() string {
 	if h.Agent == "" {
@@ -104,7 +103,19 @@ func (h Harness) agent() string {
 	return h.Agent
 }
 
-func (h Harness) ask(prompt string) (string, error) {
+// Ask puts one question to the harness and returns what it said.
+//
+// It is what the lead judges a gate with (RFC-0006), and it is the same boundary
+// the interpreter uses: Luna hosts no model of its own, so both go out to an
+// official harness run non-interactively (ADR-0043, ADR-0044).
+//
+// The caller's context bounds it as well as the harness's own deadline, because
+// a person who cancels a run should not wait out a model's timeout.
+func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
+	return h.askWith(ctx, prompt)
+}
+
+func (h Harness) askWith(parent context.Context, prompt string) (string, error) {
 	agent := h.agent()
 
 	args, ok := nonInteractive[agent]
@@ -118,12 +129,19 @@ func (h Harness) ask(prompt string) (string, error) {
 		timeout = Timeout
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, agent, append(args, prompt)...) //nolint:gosec // the agent comes from a closed table
 	out, err := cmd.Output()
 
+	// The two cancellations are kept apart, because now that a caller's context
+	// bounds this as well as the deadline, "someone stopped the run" and "the
+	// model ran out of time" are different facts — and reporting one as the other
+	// sends whoever reads it looking for a slow harness that was never slow.
+	if parent.Err() != nil {
+		return "", fmt.Errorf("%s was stopped before it answered: %w", agent, parent.Err())
+	}
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("%s did not answer within %s", agent, timeout)
 	}
