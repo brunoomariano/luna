@@ -153,6 +153,36 @@ It is a **task setting** because it is a property of the run, and per-gate confi
 would be a second place where "which gates matter" is decided, competing with the profile's
 `waits`. What differs between gates is not the setting but their declared criticality.
 
+#### It is the *only* knob: `lead.Autonomy` derives from it
+
+An autonomy knob already exists — `lead.Autonomy` with `ask`, `retry` and `decide`,
+reachable as `luna lead --autonomy`. It bounds what the lead may do about a **failure**,
+which is a different question from who answers a **gate**, and its own doc comment names
+this PRD.
+
+Two controls both called autonomy, one an enum and one a scale, is a worse product than one
+control — a person tuning how supervised their run is should turn **one thing**. So
+`lead.Autonomy` stops being set directly and becomes **derived from the knob**:
+
+| knob | on a failure | at a gate with judgement criteria |
+|---|---|---|
+| `0` | retry once, then **ask** | always a person |
+| `1–4` | retry once, then **ask** | the lead judges `criticality ≤ knob` |
+| `5–10` | retry once, then **decide** | the lead judges `criticality ≤ knob` |
+
+**Retry once comes first at every setting**, including `0`. It is the recovery whose bound
+is already in the state, it needs no judgement to be safe, and spending a person's attention
+on a failure that a second attempt would have cleared is the cheapest thing this design can
+stop doing. What the knob changes is what happens when the retry is also spent: below the
+midpoint the lead reports and waits; above it, the lead chooses within the carve-out
+[ADR-0002](../ADRs/0002-hybrid-lead.md) already allows — and never widens to choosing a
+stage.
+
+`AutonomyAsk`, `AutonomyRetry` and `AutonomyDecide` survive as the internal type; what goes
+away is a person setting them independently of the gate scale. `ParseAutonomy`'s asymmetry
+argument carries over unchanged and gets stronger: an unset knob is `0`, the most supervised
+value, so a typo cannot quietly turn a watched run into an unwatched one.
+
 It **changes in flight**, and the existing design already supports that:
 `Advance.GateDecision` is recorded per advance and the policy that produced it is not,
 precisely so a policy can change without rewriting how past events replay
@@ -260,6 +290,12 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
   were.
 - **Observability:** `luna status` and the log must say who answered each gate, and a run
   where the lead judged three gates has to be reviewable afterwards.
+- **`luna lead --autonomy` changes meaning, and this is the one break.** Everything else
+  here is additive; folding `lead.Autonomy` into the knob is not. The flag takes `ask`,
+  `retry` and `decide` today and would take a number, so the compatible move is to keep
+  accepting the three names as aliases (`ask`→`0`, `retry`→`0`, `decide`→`5`) and say so
+  when one is used. `retry` and `ask` collapsing to the same value is not a mistake: retry
+  once then ask is what `0` now does, so the old `retry` *is* the new floor.
 - **Rollback surface:** set the knob to `0`.
 
 ## Rollout plan (phased)
@@ -272,18 +308,45 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
 3. **Phase 3 — the declarations.** `criticality` and `judge` parse in `[gate]`, appear in
    `luna flow check`, and nothing consults them yet.
 4. **Phase 4 — the knob.** The task setting, the comparison against criticality, and the
-   lead judging against declared criteria. Changing it in flight, and `luna status` showing
-   what answered each gate.
+   lead judging against declared criteria. `lead.Autonomy` becomes derived rather than set,
+   and `luna lead --autonomy` gives way to the knob. Changing it in flight through a command
+   that writes an event, and `luna status` showing what answered each gate.
 
 - Feature flag? No — knob `0` is the flag, and it is the default.
 - Rollback strategy: set it back to `0`.
 
+**Phase 2 is the one worth landing first if only one lands.** It is RFC-0005 entire,
+already measured, and involves no model: checks declared per gate, run in the delivered
+checkout, exit code answers. A project that declares checks for one gate gets that gate
+answered without a person and nothing else changes.
+
 ## Open questions
 
-- [ ] **What does the lead see when it judges?** The criteria and the artifact, certainly.
-      The measurement suggests it should also be made to answer criterion by criterion and
-      quote its evidence — that alone turned 3/3 wrong into 3/3 right on the stated-defect
-      case. Whether that shape is mandated by the design or left to the prompt is open.
+> **All answered, 2026-08-14 — the design is settled and nothing is built.** The status
+> stays `DRAFT` because that is what this suite calls a document whose code does not exist
+> yet; it is not a document still deciding. The rollout above is what remains.
+
+- [x] ~~**What does the lead see when it judges?**~~ **The declared criteria, the delivered
+      checkout, and a standing instruction not to trust prose.** The judging prompt is the
+      design's, not the caller's: the measurement showed the same model, same artifact and
+      same criteria going from 3/3 wrong to 3/3 right on the instruction alone, so leaving
+      the shape to whoever writes the prompt would leave the result to chance.
+
+      The instruction carries three rules, each earned by a measured failure:
+
+      1. **Do not trust the artifact's own verdict.** A criterion the artifact contradicts
+         is violated no matter what its verdict line says — this is what turned the
+         rubber-stamp into a rejection.
+      2. **Answer criterion by criterion and quote the line that settles each**, marking it
+         met, violated or unsupported.
+      3. **Verify rather than believe.** The checkout is there to be run against; a
+         criterion whose evidence is a claim rather than a check is `unsupported`, not
+         `met`. This is the one aimed at the failure the checklist did *not* catch — an
+         irrelevant passing check cited as proof.
+
+      Rule 3 is why the checkout matters to the judgement half and not only to the
+      mechanical one: "verify, do not believe" is an empty instruction given to a lead with
+      nothing to verify against.
 - [x] ~~**Can the lead defer?**~~ **Yes, and it always falls to a person.** "I cannot decide
       from this" is a correct answer, not a failure, and the measurement showed the model
       reaching for it unprompted with sound reasoning — *"the artifact is a self-reported
@@ -294,20 +357,79 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
       honestly will sometimes conclude it cannot. A run that stops for a question at the
       most autonomous setting is the design working, not a bug — and it is the same
       direction as `RF4`, failing towards the human.
-- [ ] **Where do the checks run?** The delivered checkout is the honest answer (INV-core-4)
-      and `node.CheckoutDelivered` already builds one for verifiers. Worth confirming a gate
-      can reach one at the moment it opens.
-- [ ] **How is the knob changed in flight?** A `luna` command writing an event keeps it in
-      the log where a person can see when it changed; configuration re-read at each
-      `Advance` is simpler and leaves no trace of the change itself.
-- [ ] **What happens to a gate already open when the knob changes?** Leaving it for the
-      person is the conservative reading and probably right — but it means raising the knob
-      still gets you asked once more.
-- [ ] **What does a gate with no declared criticality mean?** `0` is not available — that
-      value belongs to the knob and would make the gate absorbed by every setting. So the
-      choice is between defaulting to `10` (no knob but the highest reaches it, safest) and
-      refusing to load a gate that declares none (loudest). Safest and loudest are both
-      directions this project takes elsewhere, and they disagree here.
+- [x] ~~**Where do the checks run?**~~ **In a throwaway checkout of the delivered commit,
+      cut from the main repository — and both halves use the same one.** Confirmed in code
+      rather than assumed.
+
+      The concern this answers is real and worth stating, because the obvious reading of it
+      is wrong: *"a stage finished in its own worktree and the lead is somewhere else, so it
+      cannot look at where the work happened — and nothing unvalidated may be merged."*
+
+      **The stage's worktree is already gone, and that is deliberate.** It lives exactly as
+      long as the stage and is removed when it ends; what survives is the commit, which is
+      the handoff ([ADR-0055](../ADRs/0055-one-worktree-per-task-and-role-branched-from-the-last-delivery.md)).
+      A reviewer's worktree that outlived its stage would make INV-core-7 a promise rather
+      than a structure.
+
+      So nothing needs to reach into another worktree, because the thing being validated is
+      not a directory — it is a commit, and a commit is reachable from the main repository
+      whatever tree produced it:
+
+      ```
+      main repository (.git — persistent, shared object database)
+         ├── implementer's worktree   removed with its stage
+         ├── reviewer's worktree      removed with its stage
+         └── luna-gate-XXXX/tree      cut now, at the delivered commit,
+                                      --detach, removed afterwards
+      ```
+
+      `node.CheckoutDelivered` already does exactly this for verifiers, and
+      `node.Merger` does it again under `luna-merge-check-` before a merge — so "validate
+      the commit, not the tree somebody worked in" is the established pattern here, and the
+      gate is a third caller of it rather than a new mechanism. It costs a checkout, not a
+      copy of the history.
+
+      **Both halves get it.** The mechanical checks run with it as their working directory,
+      which is INV-core-4 unchanged. The judgement half gets the same path, because the
+      instruction above tells the lead to verify rather than believe and that requires
+      something to verify against.
+
+      **What this means for containment.** A gate is not a stage: it opens between stages,
+      in Luna's own process, and Luna is what holds the repository path. If a judging lead
+      is jailed, the checkout must be created outside and handed to it **as its `cwd`** —
+      the ai-jail rule that only the working directory persists. The inverse fails silently:
+      an agent creating the checkout from inside a jail would build it on tmpfs, work, lose
+      everything on exit, and leave a prunable registration behind in the persistent `.git`.
+- [x] ~~**How is the knob changed in flight?**~~ **A `luna` command that writes an event.**
+      Re-reading configuration at each `Advance` was the simpler option and was rejected for
+      what it costs: a run where three gates were answered by the lead has to be reviewable
+      afterwards, and a setting that changed with no record turns "why was nobody asked
+      here?" into a question the log cannot answer. The change is itself a decision, so it
+      is history — the same reasoning as
+      [ADR-0048](../ADRs/0048-a-field-read-by-the-reducer-is-history.md).
+
+      **A herdr plugin pane is the surface, not a second source of truth.** It shows the
+      current value and can change it, and the change it makes is the same command writing
+      the same event — the pattern
+      [ADR-0044](../ADRs/0044-the-proxy-is-a-plugin-pane-and-the-interpreter-is-a-harness.md)
+      already set for the conversation: the pane is a proxy, never a path around the log.
+- [x] ~~**What happens to a gate already open when the knob changes?**~~ **Nothing. An open
+      gate keeps the answer it opened with.** If it opened needing a person, a knob raised
+      afterwards does not take it away from them; only subsequent gates see the new value.
+
+      The cost is real and accepted: raising the knob mid-run still gets you asked once
+      more. The alternative is worse — a gate that is waiting for a person, and stops
+      waiting because a setting moved, is a decision retroactively taken away from whoever
+      was already looking at it.
+- [x] ~~**What does a gate with no declared criticality mean?**~~ **It defaults to `10`.**
+      The highest knob reaches it and nothing else does, so a gate that says nothing about
+      how much it matters is treated as mattering most.
+
+      Refusing to load it was the loud alternative and is wrong here specifically because
+      this design is additive: every gate in the shipped stock declares no criticality
+      today, and a loader that refused them would make an opt-in feature break every
+      existing flow on arrival. Defaulting to the safest value keeps "declare nothing,
+      change nothing" true, which is the property the whole design rests on.
 
 ## References
 

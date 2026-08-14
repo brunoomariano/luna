@@ -240,19 +240,21 @@ disqualify two shapes, not enough to qualify a third.
 
 ## Open questions
 
-Two are informed by the measurements above. None is decided.
+The measurements above settled the route; [RFC-0006](../../RFCs/rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md)
+then answered every question these raised, on 2026-08-14. What follows records which
+question each answer belongs to — the answers themselves live in the RFC and are not
+repeated here.
 
-- [ ] **Is this a knob or a profile field?** Partly answered by what got built: the knob
-      exists (`lead.Autonomy`), separate from the profile, and covers failures. The
-      remaining question is narrower — whether gates become a fourth autonomy level or a
-      third value in a profile's `waits`, which today is a list of kinds and so can only say
-      yes or no.
-- [ ] **Where is the line against INV-core-1?** Still the question that decides whether this
-      is built, and the measurement above makes it sharper rather than easier. A lead that
-      approved a criterion-violating delivery three times out of three, twice while naming
-      the violation, is not exercising the ADR-0002 carve-out — it is rubber-stamping. Any
-      proposal now has to say what makes its version different, and be measured the same
-      way.
+- [x] ~~**Is this a knob or a profile field?**~~ **A knob, and the only one.** Gates get a
+      third outcome rather than a third value in `waits`, and `lead.Autonomy` stops being
+      set independently: it derives from the same 0–10 scale, so a person tunes one control
+      instead of two.
+- [x] ~~**Where is the line against INV-core-1?**~~ **Three differences from the shape that
+      rubber-stamped**, and the RFC is measured against exactly this bar: the criteria are
+      declared in advance by a person, the mechanical half runs first and can only reject,
+      and nothing is judged by a model until someone raises a knob past a number they wrote
+      themselves. The invariant's letter holds — answering a gate never chooses a stage —
+      and the RFC lists the reopening as a drawback rather than a footnote.
 - [x] ~~**Would a different shape work?**~~ **Answered: yes, and it is a different
       feature.** A criterion-by-criterion checklist with quoted evidence turned 3/3 wrong
       into 3/3 right. What remains open is what follows from it: if the lead checks declared
@@ -264,28 +266,34 @@ Two are informed by the measurements above. None is decided.
       artifact that proves a criterion with an irrelevant passing check was approved 3/3,
       with the criterion marked "met". The checklist verifies that a quote exists, not that
       it is about the criterion.
-- [ ] **Should the lead run the check instead of reading about it?** This is where the
-      three measurements point, and it is a different and smaller feature: it only applies
-      to criteria that are commands, and for those Luna already has the machinery
-      (`fsm.Command`, `node.Shell`). The open part is what happens to the criteria that are
-      not commands — which may be the honest answer to "which gates are never automatable".
-- [ ] **Which gates are never automatable?** `confirm-write` is the obvious candidate: a
-      commit is the one irreversible act in the flow. If some gates are exempt at every
-      setting, that exemption belongs in the gate's definition, not in the knob.
-- [ ] **How is a lead-answered gate recorded?** It cannot look like a human approval —
-      that would be the falsification ADR-0043 refuses for the conversation layer, arriving
-      by another door. Options: a fourth `GateWaited` value, a separate field naming the
-      answerer, or evidence with a scope that is neither `human` nor a command's verdict.
-- [ ] **Does the lead need the artifact, or the reasoning?** A review-artifact gate carries
-      content to read. Answering it well may need more context than the gate holds, and
-      fetching more is a step towards the lead having opinions about the work rather than
-      about the flow.
-- [ ] **What happens to a wrong automatic answer?** A human approval is final by
-      construction. If the lead can be wrong, is there a way to notice and reverse — and
-      does that need a new action, given the log cannot be rewritten
-      ([INV-core-2](../../invariants/core.md))?
-- [ ] **Does the knob change mid-run?** Raising autonomy halfway means gates before and
-      after were decided under different rules, which the log must be able to explain.
+- [x] ~~**Should the lead run the check instead of reading about it?**~~ **Yes, and it is
+      the first half rather than the whole feature.** Checks are declared per gate in the
+      registry and answered by exit code, with no model involved. The criteria that are not
+      commands became the second half — judged against declarations, bounded by the knob —
+      rather than the boundary of what is automatable.
+- [x] ~~**Which gates are never automatable?**~~ **The question dissolved.**
+      `confirm-write` was the candidate and it no longer exists: Luna does not integrate, so
+      a task ends on its own branch and the one irreversible act left the flow
+      ([ADR-0062](../../ADRs/0062-luna-does-not-integrate-a-task-ends-on-its-own-branch.md)).
+      What replaces a blanket exemption is declared criticality: a gate that should never be
+      automatic is written `10`, and only a person who set the knob to `10` reaches it.
+- [x] ~~**How is a lead-answered gate recorded?**~~ **A fourth and fifth `GateWaited`
+      value** — `checked` for the mechanical half, `judged` for the lead's — and `judged`
+      never writes `ScopeHuman`. Recording it as human would make the audit say a person
+      looked when none did, which is the ADR-0043 falsification arriving by another door.
+- [x] ~~**Does the lead need the artifact, or the reasoning?**~~ **Neither, on its own: it
+      needs the criteria and a checkout.** It is given the declared criteria, the delivered
+      commit checked out, and a standing instruction to verify rather than believe the
+      artifact's prose. That is narrower than "more context", not wider — it is what stops
+      the lead from having opinions about the work instead of checking it.
+- [x] ~~**What happens to a wrong automatic answer?**~~ **It is discoverable, not
+      reversible**, and the RFC lists this as a drawback. A human approval is final by
+      construction and a lead's is too once recorded; `judged` in the log is what makes it
+      reviewable afterwards. INV-core-2 stands — nothing here rewrites the log.
+- [x] ~~**Does the knob change mid-run?**~~ **Yes, through a command that writes an event,
+      and an already-open gate keeps the answer it opened with.** The change is itself a
+      decision, so it is history rather than configuration; a herdr plugin pane shows and
+      sets it, as a proxy over the same command rather than a path around the log.
 
 ## References
 
