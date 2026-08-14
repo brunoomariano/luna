@@ -3,15 +3,17 @@
 **Status:** NOT IMPLEMENTED
 **Last reviewed:** 2026-08-13
 **Source issue:** —
-**RFC:** [rfc-0005](../../RFCs/rfc-0005-the-lead-answers-a-gate-by-running-its-criteria.md)
+**RFC:** [rfc-0005](../../RFCs/rfc-0005-a-gate-is-answered-by-running-its-criteria.md)
 
-> The measurements below settled the route: not "the lead judges" but "the lead runs the
-> criteria". That is designed in
-> [RFC-0005](../../RFCs/rfc-0005-the-lead-answers-a-gate-by-running-its-criteria.md), which
-> is also narrower than this PRD — it covers criteria that are commands and hands the rest
-> to a person.
+> The measurements below settled the route, and then dissolved most of the feature. Not
+> "the lead judges" but "the criteria are run" — and since every outcome is an exit code,
+> **no model participates at all**. What this PRD called an autonomy knob turns out to be a
+> verifier at the gate, designed in
+> [RFC-0005](../../RFCs/rfc-0005-a-gate-is-answered-by-running-its-criteria.md).
 >
-> `confirm-write`, the hardest case here, is gone with the merge
+> Two consequences worth carrying back here. INV-core-1 is no longer the question this
+> hinges on: a command's exit code answering a gate involves no model to constrain. And
+> `confirm-write`, the hardest case in this document, is gone with the merge
 > ([ADR-0062](../../ADRs/0062-luna-does-not-integrate-a-task-ends-on-its-own-branch.md)).
 
 ## Overview

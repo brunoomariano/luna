@@ -1,4 +1,4 @@
-# RFC-0005: The lead answers a gate by running its criteria
+# RFC-0005: A gate is answered by running its criteria
 
 **Status:** DRAFT
 **Last reviewed:** 2026-08-14
@@ -68,12 +68,46 @@ One of four is mechanically checkable. So the lead runs `make ci`, and the perso
 about the other three **with that result already in hand** — which is strictly better than
 today, where they are asked with nothing.
 
+### What this actually is
+
+Every branch above is decided by an exit code. Nothing weighs, compares or forms an opinion,
+and the three outcomes are the only three there are. **So this is code, not a model** —
+and naming it "the lead answers the gate" would credit a component that does not
+participate.
+
+That reframing is worth more than it sounds, because it changes what the feature *is*:
+
+- **It is a verifier at the gate**, the same shape `fsm.Command` and `node.Shell` already
+  have for artifacts. The engine gains a gate that can carry checks, not a lead that gains
+  judgement.
+- **INV-core-1 stops being the question.** A model answering gates needed the invariant read
+  carefully; a command's exit code answering a gate does not involve a model at all. What
+  remains is the ordinary rule that verification runs outside the reducer and the verdict
+  arrives in the action ([ADR-0024](../ADRs/0024-the-reducer-is-pure-verification-runs-outside.md)).
+- **The knob is smaller than "autonomy".** It no longer bounds how much a model may decide;
+  it says whether a gate with runnable criteria may be answered by running them. `ask` and
+  `decide` are the whole range, and `lead.Autonomy` — which bounds what the lead does about
+  a **failure** — stays a separate and unrelated knob.
+- **The evidence scope changes meaning, for the better.** A lead-answered gate needed a new
+  scope because "a model approved" is not "a person looked". A criterion-answered gate is a
+  command's verdict, which is `ScopeFull` or `ScopeTargeted` — scopes that already exist and
+  already mean exactly this.
+
+What does **not** change is the third branch, which is still the common case and still hands
+a person the work with the mechanical part already done.
+
+The one thing genuinely left to a model is nothing here: deciding *which* criteria are
+commands is a contract question (see the open questions), not an inference.
+
 ### Detail (reference-level)
 
-- **The knob moves to the task.** `lead.Autonomy` exists (`ask`/`retry`/`decide`) and bounds
-  what the lead does about a **failure**. Gates need the same knob at the gate decision,
-  which happens in `Advance` — so the level has to be available *before* the gate fires, and
-  has to be changeable mid-run.
+- **The knob is a task setting, and it is not `lead.Autonomy`.** That one bounds what the
+  lead does about a **failure** and stays as it is. This one says whether a gate whose
+  criteria are runnable may be answered by running them — two positions, not three, because
+  there is no middle where something judges.
+
+  It has to be available *before* the gate fires, which is at `Advance`, and changeable
+  mid-run.
 
   This is already how the design works: `Advance.GateDecision` is recorded per advance and
   the policy that produced it is not, precisely so a policy can change without rewriting how
@@ -82,14 +116,19 @@ today, where they are asked with nothing.
   answered under whatever held at that moment, and the log says which.
 
 - **`GateWaited` grows a third value.** Today: `waited` (a person answered) and `passed`
-  (nobody was asked). A lead-answered gate is neither, and recording it as `waited` would
-  make the audit say a person looked when none did.
+  (nobody was asked). A gate answered by running its criteria is neither, and recording it
+  as `waited` would make the audit say a person looked when none did. This is the one
+  addition that survives the reframing above, because the *record* still has three cases
+  even though the mechanism is code.
 
-- **The evidence gets its own scope.** `GateApprove` writes `ScopeHuman`, documented as
-  *"a person's judgement, from a gate"*. A lead's answer is a different claim and needs a
-  distinct scope. Note this does **not** stop a task finishing: no stage in the flow requires
-  `human` — the declared scopes are `full` ×2, `targeted` ×1 and `existence` everywhere else
-  — so the new scope satisfies every contract exactly as `human` does.
+- **The evidence needs no new scope.** This was going to be the second addition, and the
+  reframing removes it: a criterion that ran is a command's verdict, which is `ScopeFull` or
+  `ScopeTargeted` — scopes that already exist and already mean exactly this. Only
+  `GateApprove`'s current `ScopeHuman` has to stop being written when nobody human answered.
+
+  Worth stating either way: this does not stop a task finishing. No stage requires `human`
+  — the declared scopes across the flow are `full` ×2, `targeted` ×1 and `existence`
+  everywhere else.
 
 - **The criteria come from the registry.** `fsm.Statement.Acceptance` is already on the state
   and already in the brief. Deciding which lines are commands is the one genuinely new piece
@@ -162,10 +201,23 @@ today, where they are asked with nothing.
 
 ## Open questions
 
-- [ ] **What marks a criterion as a command?** A backtick, a leading `$`, a declared field
-      in beads, or a heuristic? The measured criteria used backticks (`` `make ci` ``) but
-      that is one sample, and a heuristic that guesses wrong in the permissive direction
-      runs something nobody asked for.
+- [ ] **What marks a criterion as a command?** This is now the only hard question, and the
+      second measurement made it harder. The two real tasks wrote the same criterion two
+      different ways:
+
+      ```
+      task 1:   4. 'make ci' is green.      single quotes
+      task 2:   3. make ci green.           nothing at all
+      ```
+
+      No marker matches both. A heuristic would have to infer that "make ci green" is a
+      command, and inferring is exactly what must not happen: guessing permissively runs
+      something nobody asked for.
+
+      Which points at declaring it rather than detecting it — a beads field, or a convention
+      the brief teaches and `luna task new` enforces. That turns a parsing problem into a
+      contract, and contracts are what this project reaches for elsewhere. It also means a
+      criterion is checkable **because someone said so**, not because a regex agreed.
 - [ ] **Where does the criterion run?** The delivered checkout is the honest answer
       (INV-core-4), and it is what `node.CheckoutDelivered` already builds for verifiers.
       Worth confirming that a gate can reach one at the moment it opens.
@@ -173,10 +225,10 @@ today, where they are asked with nothing.
       the checkout would not build. That is the same distinction `Shell.Prove` already draws
       between a failing check and a check that could not run, and it must fall through to a
       person rather than count as a rejection.
-- [ ] **Does the lead need a model at all for this?** Phases 1–3 as described are code:
-      split, run, compare. If nothing here requires judgement, "the lead answers" may be the
-      wrong name for it — and the autonomy knob may be bounding something that is not a
-      model decision.
+- [x] ~~**Does the lead need a model at all for this?**~~ **No.** Split, run, compare — all
+      three outcomes are determined by exit codes, and none of them is a judgement. This is
+      code, and calling it "the lead answering" would name it after a component that does
+      not participate. See *What this actually is* below.
 - [ ] **How is the level changed in flight?** A command, a file the lead re-reads, a signal?
       And what does it mean for a gate that is already open when it changes?
 
