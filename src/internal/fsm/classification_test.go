@@ -119,6 +119,22 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		"a verifier's command, since evidence records what actually ran": func(s *Stage) {
 			s.Verifiers = map[Artifact]Verifier{"a": Command{Run: "go test ./...", Scope: ScopeTargeted}}
 		},
+		// The intuition runs the other way on these two, which is why they are
+		// asserted rather than assumed. They decide who is asked at a gate opening
+		// now; a gate answered last week replays from its recorded GateDecision and
+		// not from the policy that produced it (ADR-0026). Including them would
+		// strand every open task the moment a project declared criticality, for a
+		// change that cannot alter how one past event reads.
+		"a gate's criticality, which decides who is asked and not what happened": func(s *Stage) {
+			s.Gate = &GateSpec{Kind: GateConfirm, Reason: "confirm something", Criticality: 3}
+		},
+		"a gate's judgement criteria, for the same reason": func(s *Stage) {
+			s.Gate = &GateSpec{
+				Kind:   GateConfirm,
+				Reason: "confirm something",
+				Judge:  []string{"the contract states what is forbidden"},
+			}
+		},
 	}
 
 	for what, change := range unmoved {

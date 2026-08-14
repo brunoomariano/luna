@@ -294,3 +294,33 @@ func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
 		t.Errorf("and say so in the terminal too, got %q", h.out.String())
 	}
 }
+
+// TestFlowCheckSaysWhichKnobReachesEachGate is what makes the knob choosable.
+//
+// The setting is a number compared against numbers written beside fourteen
+// gates, and picking one by reading every stage file is how it gets chosen by
+// guess instead. Undeclared has to render as what it means — the highest — rather
+// than as a blank or a zero, because zero is the one value criticality cannot
+// have.
+func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
+	h := newHarness(t)
+
+	out := h.mustRun(t, "flow", "check")
+
+	if !strings.Contains(out, "gate(s), and the knob that reaches each") {
+		t.Fatalf("the gate listing is missing:\n%s", out)
+	}
+	// The shipped stock declares no criticality anywhere, so every gate has to
+	// report the default rather than a zero.
+	if !strings.Contains(out, "criticality 10") {
+		t.Errorf("an undeclared gate did not report the default:\n%s", out)
+	}
+	if !strings.Contains(out, "undeclared, so the highest") {
+		t.Errorf("the listing does not say the value was not declared:\n%s", out)
+	}
+	// The mechanical half lives per task in the registry, and a flow view that
+	// implied otherwise would have a person looking for checks in the wrong file.
+	if !strings.Contains(out, "declared per task in the registry") {
+		t.Errorf("the listing does not say where checks live:\n%s", out)
+	}
+}

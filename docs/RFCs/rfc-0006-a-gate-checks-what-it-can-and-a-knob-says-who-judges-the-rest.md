@@ -290,11 +290,24 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
   back to the shipped policy, and the new values never appear in them.
 - **Compatibility:** additive throughout. A stage with no `criticality` and no `judge`, a
   task with no `luna_gates`, and an unset knob together reproduce today's behaviour exactly.
-- **The flow fingerprint moves.** `criticality` and `judge` are part of the gate, and the
-  gate is fingerprinted — so adding them to the shipped stages changes the flow's identity
-  and every open task stops replaying (ADR-0046). Landing them with no values in the stock
-  avoids that; populating the stock is a deliberate flow change, as `commit` and `discovery`
-  were.
+- **The flow fingerprint does not move — measured, against this document's own
+  expectation.** This section originally said the opposite: that `criticality` and `judge`
+  are part of a fingerprinted gate, so populating the stock would strand every open task
+  (ADR-0046), and that phase 3 therefore had to land the fields empty.
+
+  Applying [ADR-0048](../ADRs/0048-a-field-read-by-the-reducer-is-history.md)'s rule
+  literally lands the other way. A field the *reducer* reads is history; a field only the
+  layer above reads is policy. These two decide **who is asked** at a gate opening now —
+  they cannot change whether a past `Advance` suspended, because what replay consults is
+  the recorded `GateDecision` and never the policy that produced it
+  ([ADR-0026](../ADRs/0026-the-log-records-the-gate-decision-not-the-policy.md)). A gate the
+  lead answered last week replays as `judged` whatever the stage file says today.
+
+  So they are excluded from the digest, deliberately and with a test asserting it from the
+  excluded side. The consequence is better than the plan: **a project can declare
+  criticality on a running flow without stranding a single task.** Verified by running
+  `luna flow check` before and after — the shipped flow fingerprints `a7da0f3c7ef41a06`
+  both times.
 - **Observability:** `luna status` and the log must say who answered each gate, and a run
   where the lead judged three gates has to be reviewable afterwards.
 - **`luna lead --autonomy` goes away, and this is the one break.** Everything else here is
@@ -320,7 +333,9 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
 2. **Phase 2 — the mechanical half.** `luna_gates` read from the registry, checks run in the
    delivered checkout, exit code answers. No model involved; this is RFC-0005 entire.
 3. **Phase 3 — the declarations.** `criticality` and `judge` parse in `[gate]`, appear in
-   `luna flow check`, and nothing consults them yet.
+   `luna flow check`, and nothing consults them yet. They stay out of the fingerprint, so
+   this lands in one piece rather than the two the migration note originally planned —
+   populating the stock is now an ordinary edit, not a flow change.
 4. **Phase 4 — the knob.** The task setting, the comparison against criticality, and the
    lead judging against declared criteria. `lead.Autonomy` becomes derived rather than set,
    and `luna lead --autonomy` is removed. Changing it in flight through a command

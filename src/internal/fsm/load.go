@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -71,12 +72,17 @@ func ParseStage(content, where string) (Stage, error) {
 		partial = map[Artifact]*verifierSpec{}
 	)
 
-	for number, raw := range strings.Split(content, "\n") {
-		line := strings.TrimSpace(stripComment(raw))
+	lines := strings.Split(content, "\n")
+	for number := 0; number < len(lines); number++ {
+		line, consumed, err := readLine(lines, number, where)
+		if err != nil {
+			return Stage{}, err
+		}
+		at := fmt.Sprintf("%s:%d", where, number+1)
+		number += consumed
 		if line == "" {
 			continue
 		}
-		at := fmt.Sprintf("%s:%d", where, number+1)
 
 		if header, ok := sectionName(line); ok {
 			section = header
@@ -226,10 +232,92 @@ func assignGate(gate *GateSpec, key, value, at string) error {
 		gate.Reason = unquote(value)
 	case "artifact":
 		gate.Artifact = Artifact(unquote(value))
+	case "criticality":
+		level, err := parseCriticality(value, at)
+		if err != nil {
+			return err
+		}
+		gate.Criticality = level
+	case "judge":
+		criteria, err := parseStrings(value, at)
+		if err != nil {
+			return err
+		}
+		gate.Judge = criteria
 	default:
 		return fmt.Errorf("%s: unknown key %q in [gate]", at, key)
 	}
 	return nil
+}
+
+// parseCriticality reads how much a gate matters, refusing anything outside 1–10.
+//
+// Zero is refused rather than accepted as "undeclared": writing it is a person
+// asking for a gate that every knob setting absorbs, including the one that is
+// supposed to judge nothing. Leaving the key out is how you say nothing, and that
+// resolves to DefaultCriticality — the opposite end.
+func parseCriticality(value, at string) (int, error) {
+	level, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("%s: criticality has to be a number 1-10, got %q", at, value)
+	}
+	if level < 1 || level > DefaultCriticality {
+		return 0, fmt.Errorf("%s: criticality has to be 1-10, got %d", at, level)
+	}
+	return level, nil
+}
+
+// parseStrings reads a list of quoted strings, for the values that are prose
+// rather than identifiers.
+//
+// Separate from parseArtifacts because a judgement criterion is a sentence: it
+// contains commas, and splitting on them the way an artifact list does would cut
+// one criterion into several.
+func parseStrings(value, at string) ([]string, error) {
+	inner, ok := strings.CutPrefix(strings.TrimSpace(value), "[")
+	if !ok {
+		return nil, fmt.Errorf("%s: expected a list like [\"a\", \"b\"], got %q", at, value)
+	}
+	inner, ok = strings.CutSuffix(strings.TrimSpace(inner), "]")
+	if !ok {
+		return nil, fmt.Errorf("%s: a list that opens with [ has to close with ]", at)
+	}
+
+	var list []string
+	for _, item := range splitQuoted(inner) {
+		if item != "" {
+			list = append(list, item)
+		}
+	}
+	return list, nil
+}
+
+// splitQuoted pulls the quoted strings out of a list body, ignoring whatever is
+// between them.
+//
+// It reads the quotes rather than splitting on commas, which is what lets a
+// criterion contain one: "no test without a docstring, and no docstring without a
+// test" is a single criterion, and a comma split would make it two.
+func splitQuoted(inner string) []string {
+	var (
+		items   []string
+		current strings.Builder
+		open    bool
+	)
+
+	for _, r := range inner {
+		switch {
+		case r == '"':
+			if open {
+				items = append(items, current.String())
+				current.Reset()
+			}
+			open = !open
+		case open:
+			current.WriteRune(r)
+		}
+	}
+	return items
 }
 
 func assignReview(review *ReviewSpec, key, value, at string) error {
@@ -271,7 +359,7 @@ func finish(stage Stage, gate GateSpec, review ReviewSpec, verify map[Artifact]V
 	if stage.ID == "" {
 		return Stage{}, fmt.Errorf("%s: the stage declares no id", where)
 	}
-	if gate != (GateSpec{}) {
+	if gate.declared() {
 		stage.Gate = &gate
 	}
 	if review.SendsBackTo != "" || len(review.Invalidates) > 0 {
@@ -338,6 +426,68 @@ func parseArtifacts(value, at string) ([]Artifact, error) {
 		list = append(list, Artifact(item))
 	}
 	return list, nil
+}
+
+// readLine returns the next logical line and how many extra physical ones it
+// swallowed.
+//
+// The two differ only for a list that spans lines, which is why this exists
+// rather than being inlined: `judge` holds sentences a person writes, and forcing
+// those onto one line would make the stage file unreadable exactly where it most
+// needs reading.
+func readLine(lines []string, number int, where string) (line string, consumed int, err error) {
+	line = strings.TrimSpace(stripComment(lines[number]))
+	if line == "" {
+		return "", 0, nil
+	}
+
+	joined, consumed, err := joinList(lines, number, where)
+	if err != nil {
+		return "", 0, err
+	}
+	if consumed > 0 {
+		return joined, consumed, nil
+	}
+	return line, 0, nil
+}
+
+// joinList gathers a list that opens on one line and closes on a later one,
+// returning the single line it becomes and how many extra lines it consumed.
+//
+// Zero consumed means this line is not an unclosed list and the caller carries
+// on unchanged — the common case, and the one that keeps every existing stage
+// file parsing exactly as before.
+//
+// An unclosed list that reaches the end of the file is an error rather than a
+// silently truncated one: a `judge` block missing its ] would otherwise load with
+// however many criteria happened to precede the mistake, which is the half-loaded
+// flow ParseStage refuses everywhere else.
+func joinList(lines []string, start int, where string) (line string, consumed int, err error) {
+	first := strings.TrimSpace(stripComment(lines[start]))
+
+	_, value, found := strings.Cut(first, "=")
+	if !found {
+		return "", 0, nil
+	}
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "[") || strings.Contains(value, "]") {
+		return "", 0, nil
+	}
+
+	var b strings.Builder
+	b.WriteString(first)
+	for i := start + 1; i < len(lines); i++ {
+		next := strings.TrimSpace(stripComment(lines[i]))
+		b.WriteString(" ")
+		b.WriteString(next)
+
+		if strings.Contains(next, "]") {
+			return b.String(), i - start, nil
+		}
+	}
+
+	return "", 0, fmt.Errorf("%s:%d: a list that opens with [ has to close with ]",
+		where, start+1)
 }
 
 // unquote strips the quotes TOML puts around a string.

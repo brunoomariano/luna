@@ -168,3 +168,39 @@ func TestAnsweredEvidenceIsACommandsScope(t *testing.T) {
 		t.Error("a gate that ran the full suite could not satisfy a full requirement")
 	}
 }
+
+// TestChecksFallBackToTheWorkingTreeBeforeTheFirstDelivery covers the state a
+// repository is in at the very start.
+//
+// Nothing is committed yet, so there is no delivery to check out — and the
+// working tree is all there is to check. This is the same fallback Prove makes,
+// and it has to be a state rather than an error: it is where every first task
+// begins.
+func TestChecksFallBackToTheWorkingTreeBeforeTheFirstDelivery(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "git", "init", "--initial-branch=main")
+	write(t, dir, "present.txt", "uncommitted, because nothing is committed yet")
+
+	verdict := Shell{Dir: dir}.CheckGate(context.Background(), []string{"test -f present.txt"})
+
+	if verdict.Unrunnable != nil {
+		t.Fatalf("a repository with no commit could not run its checks: %v", verdict.Unrunnable)
+	}
+	if !verdict.Approves() {
+		t.Error("the working-tree fallback did not answer the gate")
+	}
+}
+
+// TestAGateOverTheWorkingTreeSkipsTheCheckout is the escape hatch the verifiers already
+// have, and it has to behave the same here.
+func TestAGateOverTheWorkingTreeSkipsTheCheckout(t *testing.T) {
+	dir := repo(t)
+	write(t, dir, "uncommitted.txt", "visible only in the working tree")
+
+	verdict := Shell{Dir: dir, OverWorkingTree: true}.
+		CheckGate(context.Background(), []string{"test -f uncommitted.txt"})
+
+	if !verdict.Approves() {
+		t.Error("OverWorkingTree did not see the working tree")
+	}
+}

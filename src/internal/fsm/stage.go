@@ -140,6 +140,69 @@ type GateSpec struct {
 	// Artifact is what the human reads, for a review-artifact gate. Empty for the
 	// kinds that only ask yes or no.
 	Artifact Artifact
+
+	// Criticality is how much this gate matters, 1–10, higher being more critical.
+	// The knob absorbs every gate whose criticality is at or below it (RFC-0006).
+	//
+	// The range starts at 1 rather than 0 because a gate exists precisely because
+	// something about it matters: a criticality of zero would be a gate every knob
+	// setting absorbs, including the most conservative one. Zero here means the
+	// stage declared nothing, and DefaultCriticality is what that resolves to.
+	Criticality int
+
+	// Judge is what the lead is asked to decide, one criterion per entry.
+	//
+	// Empty means this gate has no judgement half: the declared checks are the
+	// whole answer, and where there are none either, a person is asked. That is
+	// every gate in the shipped stock today, which is what makes this additive.
+	Judge []string
+}
+
+// declared reports whether the file said anything about a gate at all.
+//
+// It replaces comparing against the zero value, which stopped compiling once
+// Judge made the struct uncomparable — and is clearer for it: what this asks is
+// whether a person wrote a [gate] block, and listing the fields says so where
+// `!= (GateSpec{})` only implied it.
+func (g GateSpec) declared() bool {
+	return g.Kind != "" ||
+		g.Reason != "" ||
+		g.Artifact != "" ||
+		g.Criticality != 0 ||
+		len(g.Judge) > 0
+}
+
+// DefaultCriticality is what a gate that declares none is treated as.
+//
+// The highest value, so only the most autonomous setting absorbs it. Refusing to
+// load such a gate was the louder alternative and is wrong for this feature
+// specifically: every shipped stage declares no criticality today, so refusing
+// would break every existing flow the moment the field arrived. Defaulting to the
+// safest value is what keeps "declare nothing, change nothing" true (RFC-0006).
+const DefaultCriticality = 10
+
+// Resolved is the criticality the stage declared, or the default when it
+// declared nothing.
+//
+// A method rather than a value filled in at load time: the zero value has to keep
+// meaning "undeclared" for a GateSpec built in a test or decoded from anywhere
+// else, and a loader that normalised it would make that indistinguishable from a
+// deliberate 10.
+func (g *GateSpec) Resolved() int {
+	if g == nil || g.Criticality == 0 {
+		return DefaultCriticality
+	}
+	return g.Criticality
+}
+
+// AbsorbedBy reports whether a knob at this setting lets the lead judge this
+// gate.
+//
+// The comparison is the whole knob: both scales are the same numbers, so a
+// project writing `criticality = 7` beside a gate knows exactly which setting
+// reaches it.
+func (g *GateSpec) AbsorbedBy(knob int) bool {
+	return knob >= g.Resolved()
 }
 
 // ReviewSpec is what a review stage does when its finding lands.

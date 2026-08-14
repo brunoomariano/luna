@@ -96,6 +96,20 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 // moment they are asked — rewording "confirm the repositories" cannot change
 // whether a past Advance suspended, and refusing a replay over it would be the
 // noise ADR-0048 keeps out.
+//
+// `criticality` and `judge` are out for the same reason, and it is worth stating
+// because the intuition runs the other way. They decide *who is asked* at a gate
+// that is opening now; they cannot change whether a past Advance suspended,
+// because what the reducer replays is the recorded GateDecision and not the
+// policy that produced it (ADR-0026). A gate answered by the lead last week
+// replays as `judged` whatever the stage file says today.
+//
+// This is the ADR-0048 rule applied literally — a field the reducer reads is
+// history, a field only the layer above reads is policy — and it lands opposite
+// to what RFC-0006 assumed. The RFC expected populating the stock to stop every
+// open task replaying, and planned around that; measured against the rule, the
+// two fields are policy, so a project can declare criticality on a running flow
+// without stranding a single task.
 func writeGate(b *strings.Builder, gate *GateSpec) {
 	if gate == nil {
 		return

@@ -65,6 +65,49 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 	}
 }
 
+// reportGates lists every gate in the flow and what it takes to answer it.
+//
+// It exists because the knob is a number, and a number is meaningless without the
+// scale it is compared against. A person deciding whether to run at 5 needs to see
+// which gates that reaches — and reading fourteen stage files to find out is how a
+// setting gets chosen by guess.
+//
+// The mechanical half is deliberately absent here: checks are declared per task in
+// the registry, not in the flow, so this command cannot know them. Saying so is
+// better than implying a gate has no checks because this view cannot see them.
+func reportGates(env Env, flow []fsm.Stage) {
+	var gated []fsm.Stage
+	for _, stage := range flow {
+		if stage.Gate != nil {
+			gated = append(gated, stage)
+		}
+	}
+
+	if len(gated) == 0 {
+		fmt.Fprintf(env.Out, "\nno stage opens a gate — nothing stops for a person\n")
+		return
+	}
+
+	fmt.Fprintf(env.Out, "\n%d gate(s), and the knob that reaches each:\n", len(gated))
+	for _, stage := range gated {
+		gate := stage.Gate
+		fmt.Fprintf(env.Out, "  %-12s %-16s criticality %2d → knob %d+",
+			stage.ID, gate.Kind, gate.Resolved(), gate.Resolved())
+
+		if gate.Criticality == 0 {
+			fmt.Fprintf(env.Out, " (undeclared, so the highest)")
+		}
+		if len(gate.Judge) == 0 {
+			fmt.Fprintf(env.Out, ", nothing to judge")
+		} else {
+			fmt.Fprintf(env.Out, ", %d criteri%s", len(gate.Judge),
+				map[bool]string{true: "on", false: "a"}[len(gate.Judge) == 1])
+		}
+		fmt.Fprintln(env.Out)
+	}
+	fmt.Fprintf(env.Out, "checks are declared per task in the registry, not here\n")
+}
+
 func flowCheck(env Env, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("%w: flow check takes no arguments", ErrUsage)
@@ -84,6 +127,7 @@ func flowCheck(env Env, args []string) error {
 	// It reports rather than refuses, like the rest of this command. Whoever
 	// typed it is the one who knows whether a gap matters.
 	reportFlowGaps(env, flow)
+	reportGates(env, flow)
 
 	ids, err := env.Store.Tasks()
 	if err != nil {
