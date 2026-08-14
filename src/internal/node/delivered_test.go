@@ -244,3 +244,44 @@ func TestHandoverOnARepositoryWithNoCommit(t *testing.T) {
 		t.Errorf("got %q/%q, want nothing from a repository with no commit", commit, message)
 	}
 }
+
+// TestTheThrowawayCheckoutDoesNotRunAProjectsHooks is a regression test from the
+// swarm bench, where it blocked two tasks that had both delivered.
+//
+// `bd init` sets core.hooksPath and installs a post-checkout that calls `bd`.
+// On a machine where `bd` is a mise shim and the process runs inside ai-jail —
+// where $HOME is tmpfs — mise cannot resolve the shim, the hook fails, and
+// `git worktree add` exits 1 having created the worktree anyway. Luna read the
+// exit code and blocked.
+//
+// The hook is also wrong to run at all: this checkout exists for one command and
+// is deleted straight after, so a project's hooks are being fired against a tree
+// that will not exist in a moment.
+func TestTheThrowawayCheckoutDoesNotRunAProjectsHooks(t *testing.T) {
+	dir := repo(t)
+
+	// A hook that fails, the way the beads one fails inside a jail.
+	hooks := filepath.Join(dir, "hooks")
+	if err := os.MkdirAll(hooks, 0o750); err != nil {
+		t.Fatalf("making the hook directory: %v", err)
+	}
+	hook := filepath.Join(hooks, "post-checkout")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'the hook broke' >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatalf("writing the hook: %v", err)
+	}
+	run(t, dir, "git", "config", "core.hooksPath", hooks)
+
+	delivered, err := CheckoutDelivered(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("a project's failing hook stopped Luna's own checkout: %v", err)
+	}
+	if delivered == nil {
+		t.Fatal("no checkout was made")
+	}
+	defer delivered.Close()
+
+	// And it is a real checkout, not an empty directory that happened not to error.
+	if _, err := os.Stat(filepath.Join(delivered.Path, "delivered.txt")); err != nil {
+		t.Errorf("the checkout does not carry what was committed: %v", err)
+	}
+}

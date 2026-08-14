@@ -104,7 +104,18 @@ func throwawayCheckout(ctx context.Context, repo, commit, prefix string) (*Deliv
 	}
 	path := filepath.Join(dir, "tree")
 
-	if _, err := git(ctx, repo, "worktree", "add", "--detach", path, commit); err != nil {
+	// With the project's hooks off. This checkout exists for Luna to run one
+	// command in and delete; a project's `post-checkout` firing on it is doing
+	// work nobody asked for, against a tree that will not exist in a moment.
+	//
+	// It is also a real failure mode rather than a tidiness argument. Measured on
+	// the swarm bench: `bd init` sets core.hooksPath and installs a post-checkout
+	// that calls `bd`, which is a mise shim; inside ai-jail $HOME is tmpfs, mise
+	// cannot resolve the shim, and `git worktree add` exits 1 having created the
+	// worktree anyway. Luna read the exit code and blocked a task that had
+	// delivered.
+	if _, err := git(ctx, repo, "-c", "core.hooksPath=/dev/null",
+		"worktree", "add", "--detach", path, commit); err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, fmt.Errorf("checking out %s: %w", short(commit), err)
 	}
