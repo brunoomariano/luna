@@ -110,19 +110,37 @@ So this is a measurement Luna takes, not an observation it subscribes to.
 
 ### Can the harnesses answer it?
 
-| harness | tokens | window | how it was read | authenticated |
+The question is **how full this session is**, not how big the window is. A window size with
+no occupancy answers nothing; occupancy alone still tells a person whether a session is
+growing.
+
+| harness | occupancy | window | how it was read | authenticated |
 |---|---|---|---|---|
 | **claude** | **yes** | **yes** — `contextWindow: 1000000` | `--print --output-format=json` | yes |
-| **codex** | yes | **no** | `exec --json --skip-git-repo-check` | yes (ChatGPT) |
-| **opencode** | yes | **no** | `export <ses_id>` → `info.tokens` | yes |
+| **codex** | **yes** | no | `exec --json --skip-git-repo-check` | yes (ChatGPT) |
+| **opencode** | **yes** | no | `export <ses_id>` → `info.tokens` | yes |
 | **pi** | **fields present, all zeros** | no | `--print --mode json` | yes (openai) |
 
-**claude** is the only complete answer: `cache_read_input_tokens` +
-`cache_creation_input_tokens` = 36,298 against `contextWindow: 1000000` → 3.6%. Both halves,
-so a percentage is computable.
+**claude** is the only complete answer, and what it reports is **occupancy of the session**
+rather than a static window size. Measured across four turns of one continued session:
 
-**codex** and **opencode** report consumption and no window. A token count without a window
-is not comparable across harnesses, which is the asymmetry the unit question predicted.
+```
+turn 1  34,146          turn 3  34,904
+turn 2  34,888          turn 4  76,027   ← after reading one large file
+```
+
+The number is `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` — what
+the model was handed this turn, which is the conversation so far. It grows as the session
+fills and jumps when a stage reads something big, which is the signal this PRD is about.
+`contextWindow: 1000000` arrives alongside it and is only the denominator: 76,027 → 7.6%.
+
+**codex** and **opencode** report occupancy too — codex `input_tokens: 22,408` with
+`cached_input_tokens: 5,504`; opencode `info.tokens` summing to 311,445 for a session. What
+they do not report is the **window**, so the number has no denominator and cannot become a
+percentage without Luna knowing the model's limit from somewhere else.
+
+That is the real split, and it is narrower than "can they answer": three of four report the
+thing this PRD wants. Only claude says what it is out of.
 
 **pi** is the trap worth recording: `message.usage = {input:0, output:0, totalTokens:0}` on
 a run that **did answer**, with `pi auth check --provider openai` reporting `ready`. The
@@ -204,9 +222,12 @@ Two are now answered above and struck through. The rest are why this is still a 
       and opencode give a number with no denominator. A feature that answers for one
       harness and says "unknown" for three may still be worth having — or may be the kind
       of half-measure that reads as broken.
-- [ ] **What is the unit?** Tokens, percentage of window, messages? A percentage is
-      comparable across harnesses and a token count is not — but a percentage needs a window
-      size the harness may not report either.
+- [ ] **What is the unit?** Sharpened by the measurement: three of four harnesses report
+      **occupancy in tokens** and only claude reports the **window**. So a percentage is
+      available for one harness and a raw count for two more. Options: report tokens and let
+      a percentage appear only where the denominator does; carry a per-model window table in
+      Luna, which is a fact that goes stale outside the project; or treat "unknown
+      denominator" as its own answer, the way an evidence scope does.
 - [ ] **What does crossing the threshold *do*?** The obvious answer is a handoff, and it is
       not obviously right. Luna's handoff carries pointers and a snapshot, never prose
       ([INV-core-6](../../invariants/core.md)), and a mid-stage handoff has no contract to
