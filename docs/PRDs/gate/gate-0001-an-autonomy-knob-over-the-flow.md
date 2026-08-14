@@ -1,20 +1,21 @@
 # PRD gate-0001: An autonomy knob over the flow
 
 **Status:** NOT IMPLEMENTED
-**Last reviewed:** 2026-08-13
+**Last reviewed:** 2026-08-14
 **Source issue:** —
-**RFC:** [rfc-0005](../../RFCs/rfc-0005-a-gate-is-answered-by-running-its-criteria.md)
+**RFC:** [rfc-0006](../../RFCs/rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md)
 
-> The measurements below settled the route, and then dissolved most of the feature. Not
-> "the lead judges" but "the criteria are run" — and since every outcome is an exit code,
-> **no model participates at all**. What this PRD called an autonomy knob turns out to be a
-> verifier at the gate, designed in
-> [RFC-0005](../../RFCs/rfc-0005-a-gate-is-answered-by-running-its-criteria.md).
+> The measurements below settled the route, which is designed in
+> [RFC-0006](../../RFCs/rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md):
+> a gate runs whatever can be run, and a knob says who judges the rest. Not "the lead reads
+> the artifact and decides", which is what these measurements killed.
 >
-> Two consequences worth carrying back here. INV-core-1 is no longer the question this
-> hinges on: a command's exit code answering a gate involves no model to constrain. And
-> `confirm-write`, the hardest case in this document, is gone with the merge
+> Two things this document assumed that turned out otherwise. `confirm-write`, the hardest
+> case here, is gone with the merge
 > ([ADR-0062](../../ADRs/0062-luna-does-not-integrate-a-task-ends-on-its-own-branch.md)).
+> And INV-core-1 **is** still the question: an intermediate design removed the model
+> entirely, but the one being built puts judgement back, bounded by declared criteria and a
+> knob that defaults to judging nothing.
 
 ## Overview
 

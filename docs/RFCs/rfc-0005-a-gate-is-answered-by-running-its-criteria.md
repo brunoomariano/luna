@@ -1,9 +1,17 @@
 # RFC-0005: A gate is answered by running its criteria
 
-**Status:** DRAFT
+**Status:** OBSOLETE
 **Last reviewed:** 2026-08-14
 **Source issue:** —
 **PRD:** [gate-0001](../PRDs/gate/gate-0001-an-autonomy-knob-over-the-flow.md)
+
+> **Superseded by
+> [RFC-0006](rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md).**
+> Everything measured here stands and is carried forward — the exit code decides, the output
+> never does, and a criterion is checkable because someone declared it. What this document
+> got wrong is its scope: handing *everything* that is not a command to a person leaves the
+> knob with almost nothing to turn. RFC-0006 keeps this half unchanged and adds judgement
+> against declared criteria, bounded by a knob.
 
 ## Motivation
 
