@@ -26,6 +26,22 @@ const (
 	// tells forever.
 	ScopeExistence Scope = "existence"
 
+	// ScopeJudged is the lead's judgement at a gate, against criteria declared in
+	// advance (RFC-0006).
+	//
+	// It sits between `existence` and `targeted`, and the placement is the whole
+	// point. It outranks `existence` because something was actually weighed
+	// against written criteria — but it must not satisfy a requirement for
+	// `targeted` or `full`, because a model reading an artifact is not a command
+	// that ran. A stage asking for a check gets a check, whatever the knob is set
+	// to.
+	//
+	// Recording it as ScopeHuman was the tempting shortcut and is the one thing
+	// this must never be: it would make the audit say a person looked when none
+	// did — the falsification ADR-0043 refuses for the conversation layer,
+	// arriving by another door.
+	ScopeJudged Scope = "judged"
+
 	// ScopeHuman is a person's judgement, from a gate. It outranks any command
 	// because someone looked, and it is kept distinct because who decided is
 	// part of the audit.
@@ -41,8 +57,10 @@ const (
 // but a stage that ran the whole suite where only delivery was asked has proven
 // more than it had to, and refusing that would be refusing good news.
 //
-// The ordering is human > full > targeted > existence. `human` outranks a command
-// because a person looked; `existence` is the floor because it verified nothing.
+// The ordering is human > full > targeted > judged > existence. `human` outranks
+// a command because a person looked; `existence` is the floor because it verified
+// nothing. `judged` sits just above the floor: a model weighed declared criteria,
+// which is more than nothing and less than a command that ran (RFC-0006).
 // An unknown scope on either side refuses: evidence this build cannot rank
 // proves nothing, and a requirement it cannot rank cannot be shown to be met.
 // That is the same refusal the store makes for an unknown action — a log written
@@ -64,10 +82,12 @@ func (s Scope) Satisfies(wanted Scope) bool {
 func scopeRank(s Scope) (int, bool) {
 	switch s {
 	case ScopeHuman:
-		return 4, true
+		return 5, true
 	case ScopeFull:
-		return 3, true
+		return 4, true
 	case ScopeTargeted:
+		return 3, true
+	case ScopeJudged:
 		return 2, true
 	case ScopeExistence:
 		return 1, true

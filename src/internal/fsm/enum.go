@@ -91,12 +91,18 @@ func KnownVerdicts() []Verdict {
 
 // KnownScopes is every evidence scope this build understands.
 func KnownScopes() []Scope {
-	return []Scope{ScopeFull, ScopeTargeted, ScopeExistence, ScopeHuman}
+	return []Scope{ScopeFull, ScopeTargeted, ScopeExistence, ScopeJudged, ScopeHuman}
 }
 
 // KnownGateDecisions is every gate decision this build understands.
 func KnownGateDecisions() []GateWaited {
-	return []GateWaited{GateDecisionAbsent, GateDecisionWaited, GateDecisionPassed}
+	return []GateWaited{
+		GateDecisionAbsent,
+		GateDecisionWaited,
+		GateDecisionPassed,
+		GateDecisionChecked,
+		GateDecisionJudged,
+	}
 }
 
 // decodeEnum unmarshals a string enum and refuses a value outside the known set.

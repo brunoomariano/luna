@@ -198,6 +198,12 @@ func TestWaitsReportsWhetherAnythingWasRecorded(t *testing.T) {
 		{GateDecisionWaited, true, true},
 		{GateDecisionPassed, false, true},
 		{GateDecisionAbsent, false, false},
+		// Both new answers are recorded decisions that did not stop the task. The
+		// value that matters here is `recorded`: a gate the checks answered must
+		// not fall back to the profile on replay, which is what a missing case
+		// would silently do.
+		{GateDecisionChecked, false, true},
+		{GateDecisionJudged, false, true},
 	}
 
 	for _, c := range cases {
@@ -206,6 +212,42 @@ func TestWaitsReportsWhetherAnythingWasRecorded(t *testing.T) {
 			t.Errorf("%q: want waited=%v recorded=%v, got %v and %v",
 				c.decision, c.waited, c.recorded, waited, recorded)
 		}
+	}
+}
+
+// TestEveryAnswererIsDistinguishable is the point of adding two values rather
+// than reusing `passed`.
+//
+// The requirement is an audit one: a run where the lead judged three gates has to
+// be reviewable afterwards, and it stops being reviewable the moment two
+// different answerers render identically. Asserting distinctness rather than
+// exact wording keeps the test about that property instead of about the prose.
+func TestEveryAnswererIsDistinguishable(t *testing.T) {
+	seen := map[string]GateWaited{}
+
+	for _, decision := range KnownGateDecisions() {
+		answerer := decision.AnsweredBy()
+		if other, clash := seen[answerer]; clash {
+			t.Errorf("%q and %q both answer %q", decision, other, answerer)
+		}
+		seen[answerer] = decision
+	}
+}
+
+// TestAJudgedGateIsNeverRecordedAsHuman is the falsification this design must
+// not commit.
+//
+// Recording the lead's judgement as ScopeHuman would make the audit say a person
+// looked when none did. The scopes are separate values and `judged` must not
+// satisfy a requirement for `human` — an inverted implementation that aliased
+// them would pass every other test in this file.
+func TestAJudgedGateIsNeverRecordedAsHuman(t *testing.T) {
+	if ScopeJudged == ScopeHuman {
+		t.Fatal("the lead's judgement and a person's are the same scope")
+	}
+
+	if ScopeJudged.Satisfies(ScopeHuman) {
+		t.Error("a lead's judgement stood in for a person's")
 	}
 }
 

@@ -247,8 +247,11 @@ repeated here.
 
 - [x] ~~**Is this a knob or a profile field?**~~ **A knob, and the only one.** Gates get a
       third outcome rather than a third value in `waits`, and `lead.Autonomy` stops being
-      set independently: it derives from the same 0–10 scale, so a person tunes one control
-      instead of two.
+      set at all: it is *derived* from the same 0–10 scale at the moment a failure happens,
+      so the knob's state is the single thing that decides both who answers a gate and what
+      the lead may do about a failure. `luna lead --autonomy` is removed rather than mapped
+      onto knob values — an alias would be a second way to set one setting, which is what
+      the fold exists to end.
 - [x] ~~**Where is the line against INV-core-1?**~~ **Three differences from the shape that
       rubber-stamped**, and the RFC is measured against exactly this bar: the criteria are
       declared in advance by a person, the mechanical half runs first and can only reject,

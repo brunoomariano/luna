@@ -30,6 +30,22 @@ func TestScopeSatisfiesIsOneDirectional(t *testing.T) {
 		// and refusing it would refuse the stronger claim.
 		{ScopeFull, ScopeExistence, true},
 		{ScopeTargeted, ScopeExistence, true},
+		// The lead's judgement is worth more than delivery alone: criteria were
+		// weighed, which is more than nothing.
+		{ScopeJudged, ScopeExistence, true},
+		{ScopeJudged, ScopeJudged, true},
+		// And it is worth less than a command that ran. This is the pair that
+		// keeps the knob from buying its way past verification: a stage asking
+		// for a check gets a check, however autonomous the run is set to be.
+		{ScopeJudged, ScopeTargeted, false},
+		{ScopeJudged, ScopeFull, false},
+		{ScopeJudged, ScopeHuman, false},
+		// A command that ran outranks a model that read.
+		{ScopeTargeted, ScopeJudged, true},
+		{ScopeFull, ScopeJudged, true},
+		{ScopeHuman, ScopeJudged, true},
+		// Delivery alone does not amount to a judgement.
+		{ScopeExistence, ScopeJudged, false},
 		// A scope this build does not understand satisfies nothing, in either
 		// direction. A log written by a newer version must not be read
 		// generously — the same refusal the store makes for an unknown action.

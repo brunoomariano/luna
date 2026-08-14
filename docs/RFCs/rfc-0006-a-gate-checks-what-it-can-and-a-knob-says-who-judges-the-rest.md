@@ -178,10 +178,17 @@ midpoint the lead reports and waits; above it, the lead chooses within the carve
 [ADR-0002](../ADRs/0002-hybrid-lead.md) already allows — and never widens to choosing a
 stage.
 
-`AutonomyAsk`, `AutonomyRetry` and `AutonomyDecide` survive as the internal type; what goes
-away is a person setting them independently of the gate scale. `ParseAutonomy`'s asymmetry
-argument carries over unchanged and gets stronger: an unset knob is `0`, the most supervised
-value, so a typo cannot quietly turn a watched run into an unwatched one.
+**The knob is the only control, and its state is what decides failure behaviour.**
+`AutonomyAsk`, `AutonomyRetry` and `AutonomyDecide` survive as an internal type — the
+vocabulary the lead's brief is written in — but they become **derived**, computed from the
+knob at the moment a failure happens. Nothing sets them: not a flag, not configuration, not
+a caller. `ParseAutonomy` loses its callers along with `--autonomy`, and what replaces it
+parses a number.
+
+The asymmetry argument that shaped `ParseAutonomy` carries over and gets stronger, because
+now it guards one value instead of two: an unset knob is `0`, the most supervised setting,
+so a typo cannot quietly turn a watched run into an unwatched one — and there is no second
+place where a different answer could be given.
 
 It **changes in flight**, and the existing design already supports that:
 `Advance.GateDecision` is recorded per advance and the policy that produced it is not,
@@ -290,12 +297,19 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
   were.
 - **Observability:** `luna status` and the log must say who answered each gate, and a run
   where the lead judged three gates has to be reviewable afterwards.
-- **`luna lead --autonomy` changes meaning, and this is the one break.** Everything else
-  here is additive; folding `lead.Autonomy` into the knob is not. The flag takes `ask`,
-  `retry` and `decide` today and would take a number, so the compatible move is to keep
-  accepting the three names as aliases (`ask`→`0`, `retry`→`0`, `decide`→`5`) and say so
-  when one is used. `retry` and `ask` collapsing to the same value is not a mistake: retry
-  once then ask is what `0` now does, so the old `retry` *is* the new floor.
+- **`luna lead --autonomy` goes away, and this is the one break.** Everything else here is
+  additive; folding `lead.Autonomy` into the knob is not.
+
+  **It is removed rather than aliased.** Keeping `ask`/`retry`/`decide` as names that map
+  onto knob values would leave two ways to set one setting, which is the thing this fold
+  exists to end — and the worse half of it, because a flag that silently means "knob 5"
+  hides the gate consequences of the value it sets. A person passing `--autonomy decide`
+  would be authorising the lead to judge gates up to criticality 5 without the word "gate"
+  appearing anywhere.
+
+  So the flag is refused with a message naming the knob, and `ParseAutonomy` stops being
+  reachable from the command line: `lead.Autonomy` becomes a value the knob computes, never
+  one a caller supplies. The failure is loud, at parse time, and says what to use instead.
 - **Rollback surface:** set the knob to `0`.
 
 ## Rollout plan (phased)
@@ -309,7 +323,7 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
    `luna flow check`, and nothing consults them yet.
 4. **Phase 4 — the knob.** The task setting, the comparison against criticality, and the
    lead judging against declared criteria. `lead.Autonomy` becomes derived rather than set,
-   and `luna lead --autonomy` gives way to the knob. Changing it in flight through a command
+   and `luna lead --autonomy` is removed. Changing it in flight through a command
    that writes an event, and `luna status` showing what answered each gate.
 
 - Feature flag? No — knob `0` is the flag, and it is the default.

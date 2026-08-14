@@ -87,18 +87,58 @@ const (
 	// GateDecisionPassed means the gate was reached and the profile let it
 	// through. It still happened — nobody was asked (ADR-0013).
 	GateDecisionPassed GateWaited = "passed"
+
+	// GateDecisionChecked means the commands declared for this gate ran over the
+	// delivered commit and all exited 0. Nobody was asked, and the reason is a
+	// verdict rather than a policy: someone declared that those commands answer
+	// this gate (RFC-0006).
+	GateDecisionChecked GateWaited = "checked"
+
+	// GateDecisionJudged means the lead judged the gate against criteria declared
+	// in advance, because the knob reached the gate's criticality (RFC-0006).
+	//
+	// It is separate from GateDecisionPassed for the reason the whole tri-state
+	// exists: "nobody was asked because the profile said so" and "nobody was asked
+	// because a model answered" are different claims about the same transition,
+	// and an audit that could not tell them apart would be the weaker for it.
+	GateDecisionJudged GateWaited = "judged"
 )
 
 // Waits reports what the recorded decision says, and whether it said anything at
 // all. A caller that gets false must fall back to a policy.
+//
+// The three "did not wait" values collapse here on purpose: for the question
+// *did the task stop*, a gate answered by a command and one answered by the lead
+// are the same event. What separates them is who answered, which the value itself
+// records and which the audit reads — not the transition.
 func (d GateWaited) Waits() (waited, recorded bool) {
 	switch d {
 	case GateDecisionWaited:
 		return true, true
-	case GateDecisionPassed:
+	case GateDecisionPassed, GateDecisionChecked, GateDecisionJudged:
 		return false, true
 	default:
 		return false, false
+	}
+}
+
+// AnsweredBy names what settled the gate, for an audit reading the log.
+//
+// It exists so that "who answered this?" has one implementation rather than a
+// switch at each reader, and so that adding a fourth answerer later has one place
+// to change.
+func (d GateWaited) AnsweredBy() string {
+	switch d {
+	case GateDecisionWaited:
+		return "a person"
+	case GateDecisionChecked:
+		return "the declared checks"
+	case GateDecisionJudged:
+		return "the lead"
+	case GateDecisionPassed:
+		return "nobody: the profile let it through"
+	default:
+		return "unrecorded"
 	}
 }
 
