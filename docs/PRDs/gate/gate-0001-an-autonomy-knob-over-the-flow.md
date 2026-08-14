@@ -1,6 +1,6 @@
 # PRD gate-0001: An autonomy knob over the flow
 
-**Status:** NOT IMPLEMENTED
+**Status:** IMPLEMENTED
 **Last reviewed:** 2026-08-14
 **Source issue:** —
 **RFC:** [rfc-0006](../../RFCs/rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md)

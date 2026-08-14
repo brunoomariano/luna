@@ -117,7 +117,17 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 	// The judge is what makes the retry budget real: without one the lead blocks on
 	// the first failure and ADR-0011's budget is never spent (ADR-0051). This one
 	// carries no model — it reads the budget the task already has.
-	conductor := &lead.Lead{Store: env.Store, Gates: cfg, Judge: lead.BudgetJudge{}}
+	conductor := &lead.Lead{
+		Store: env.Store, Gates: cfg, Judge: lead.BudgetJudge{},
+		// The mechanical half of a gate: what the task declared, run over what it
+		// delivered (RFC-0006).
+		CheckGate: checkGateWith(env.Registry, opts.Repo),
+		// The judgement half, when the knob reaches a gate and a model is wired
+		// in. Nil is the ordinary case for `luna run` — and then a gate the knob
+		// reached still goes to a person, because authority to judge is not a
+		// judgement (ADR-0043).
+		Ask: env.Lead,
+	}
 
 	if opts.Dry {
 		conductor.Node = dryNode{}
@@ -161,6 +171,47 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		Delivered: node.Handover,
 	}
 	return conductor, func() { _ = client.Close() }, nil
+}
+
+// checkGateWith runs the commands a task declared for one gate, over what it
+// delivered.
+//
+// This is the seam between the two halves of RFC-0006: the registry says which
+// commands answer a gate, the node layer runs them in a checkout of the
+// delivered commit, and the lead gets a verdict rather than a shell.
+//
+// Nil when there is no registry, which is a project that never declared any
+// checks — so every gate is decided by the judgement half alone, and that is
+// today's behaviour unchanged.
+func checkGateWith(reg Registry, repo string) func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
+	if reg == nil {
+		return nil
+	}
+
+	return func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome {
+		task, err := reg.Task(ctx, taskID)
+		if err != nil {
+			// The registry could not be read, so nothing is known about what should
+			// have run. That is not "no checks declared" — it is not knowing, and the
+			// two must not collapse: one approves a gate and the other asks a person.
+			return fsm.GateChecksOutcome{Unrunnable: true}
+		}
+
+		checks, declared, err := task.ChecksFor(string(gate))
+		if err != nil || !declared || len(checks) == 0 {
+			// A malformed declaration is unrunnable rather than absent, for the same
+			// reason: a person wrote something they meant to be run, and treating it
+			// as silence would answer the gate by asking them.
+			return fsm.GateChecksOutcome{Unrunnable: err != nil}
+		}
+
+		verdict := node.Shell{Dir: repo}.CheckGate(ctx, checks)
+		return fsm.GateChecksOutcome{
+			Passed:     verdict.Approves(),
+			Rejected:   verdict.Rejected(),
+			Unrunnable: verdict.Unrunnable != nil,
+		}
+	}
 }
 
 // statementFrom adapts the registry to what the node asks for, and returns nil

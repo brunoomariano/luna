@@ -231,6 +231,11 @@ func TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate(t *testing.T) {
 			l := &Lead{
 				Store: s, Node: &deliveringNode{}, Flow: flow,
 				Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+				// A lead that approves. The knob decides whether it is *asked*;
+				// what it answers is a separate question, covered below.
+				Ask: func(context.Context, string) (string, error) {
+					return "APPROVE\n\n1. met — the plan lists them", nil
+				},
 			}
 			if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
 				t.Fatalf("Run: %v", err)
@@ -274,4 +279,151 @@ func firstGateDecision(t *testing.T, s *store.Store, id string) fsm.GateWaited {
 	}
 	t.Fatal("no advance recorded a gate decision")
 	return fsm.GateDecisionAbsent
+}
+
+// TestWhatTheLeadAnswersDecidesTheGate is the other half of the knob.
+//
+// The knob decides whether the lead is *asked*. What it answers is a separate
+// question, and only a clear approval keeps a person out of it — a rejection and
+// a defer both land in front of somebody, because the gate is still open and
+// there is no path from here to sending work back.
+func TestWhatTheLeadAnswersDecidesTheGate(t *testing.T) {
+	flow := flowWithCriticality(t, "scenarios", 1, "the plan covers the acceptance criteria")
+
+	cases := map[string]struct {
+		said string
+		want fsm.GateWaited
+	}{
+		"a clear approval is the lead's to make": {
+			said: "APPROVE\n\n1. met — §2 lists every criterion",
+			want: fsm.GateDecisionJudged,
+		},
+		"a rejection goes in front of a person": {
+			said: "REJECT\n\n1. violated — the artifact contradicts it",
+			want: fsm.GateDecisionWaited,
+		},
+		"so does a defer, and that is the design working": {
+			said: "CANNOT-DECIDE\n\nthe artifact does not say either way",
+			want: fsm.GateDecisionWaited,
+		},
+		"and so does anything unreadable": {
+			said: "well, it depends on what you mean by covered",
+			want: fsm.GateDecisionWaited,
+		},
+		"reasoning that mentions approving is not an approval": {
+			said: "CANNOT-DECIDE\n\nI would approve if criterion 2 held, but I cannot check it",
+			want: fsm.GateDecisionWaited,
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newStore(t)
+			nightly(t, s, "LUNA-1", fsm.KindFeature)
+			if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+				t.Fatalf("setting the knob: %v", err)
+			}
+
+			l := &Lead{
+				Store: s, Node: &deliveringNode{}, Flow: flow,
+				Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+				Ask:   func(context.Context, string) (string, error) { return c.said, nil },
+			}
+			if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			if got := firstGateDecision(t, s, "LUNA-1"); got != c.want {
+				t.Errorf("the lead said %q and the log recorded %q, want %q", c.said, got, c.want)
+			}
+		})
+	}
+}
+
+// TestWithNoModelTheKnobCannotApproveAnything is the guard that matters most.
+//
+// `luna run` needs no model at all. A knob raised on a run with none must not
+// approve a gate nobody looked at — the authority to judge is not a judgement.
+func TestWithNoModelTheKnobCannotApproveAnything(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	l := &Lead{
+		Store: s, Node: &deliveringNode{},
+		Flow:  flowWithCriticality(t, "scenarios", 1, "a criterion"),
+		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		// No Ask: this is `luna run`.
+	}
+	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got := firstGateDecision(t, s, "LUNA-1"); got != fsm.GateDecisionWaited {
+		t.Errorf("a run with no model recorded %q, want a person to answer", got)
+	}
+}
+
+// TestDeclaredChecksAnswerTheGateWithoutAModel is the mechanical half, end to
+// end through the lead.
+func TestDeclaredChecksAnswerTheGateWithoutAModel(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+
+	var askedAbout fsm.GateKind
+	l := &Lead{
+		Store: s, Node: &deliveringNode{},
+		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		CheckGate: func(_ context.Context, _ string, gate fsm.GateKind) fsm.GateChecksOutcome {
+			askedAbout = gate
+			return fsm.GateChecksOutcome{Passed: true}
+		},
+	}
+	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if askedAbout == "" {
+		t.Error("the mechanical half was never consulted")
+	}
+	if got := firstGateDecision(t, s, "LUNA-1"); got != fsm.GateDecisionChecked {
+		t.Errorf("passing checks recorded %q, want checked", got)
+	}
+}
+
+// TestAFailingCheckDoesNotReachTheLead covers the order of the two halves where
+// it is observable: the model must never be the thing standing between a failing
+// command and an approval.
+func TestAFailingCheckDoesNotReachTheLead(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	asked := false
+	l := &Lead{
+		Store: s, Node: &deliveringNode{},
+		Flow:  flowWithCriticality(t, "scenarios", 1, "a criterion"),
+		Gates: &waitsFor{kinds: map[fsm.GateKind]bool{fsm.GateConfirm: true}},
+		CheckGate: func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
+			return fsm.GateChecksOutcome{Rejected: true}
+		},
+		Ask: func(context.Context, string) (string, error) {
+			asked = true
+			return "APPROVE", nil
+		},
+	}
+	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if asked {
+		t.Error("a failing check reached the lead, which could then approve over it")
+	}
+	if got := firstGateDecision(t, s, "LUNA-1"); got != fsm.GateDecisionWaited {
+		t.Errorf("a rejected gate recorded %q, want a person to answer", got)
+	}
 }

@@ -1,6 +1,6 @@
 # RFC-0006: A gate checks what it can, and a knob says who judges the rest
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Last reviewed:** 2026-08-14
 **Source issue:** —
 **PRD:** [gate-0001](../PRDs/gate/gate-0001-an-autonomy-knob-over-the-flow.md)
@@ -327,12 +327,17 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
 
 ## Rollout plan (phased)
 
-> **Built, 2026-08-14:** phases 1-4. What remains is the seam between them — the node
-> layer reading `luna_gates` and running the checks at the moment a gate opens, so
-> `GateChecksOutcome` arrives with something in it. Until that lands, `ResolveGate` is
-> reached with no checks declared and the judgement half is what the knob governs. The
-> lead does not yet *carry out* a judgement either: `judged` is recorded and the prompt
-> from the open question above is not written.
+> **Built, 2026-08-14.** All four phases and the seam between them. Measured end to end
+> against real `bd` 1.2.1 and the built binary: a task declaring
+> `{"luna_gates":{"confirm":{"checks":["test -f README.md"]}}}` records `checked` at the
+> `scenarios` gate and nobody is asked, while the same flow with a check that fails records
+> `waited` and stops. The `spec` gate, which declares nothing, records `waited` in both.
+>
+> One thing is deliberately narrower than the design above: a gate the lead **rejects** is
+> recorded as `waited` rather than sent back. The reducer answers a gate at the moment it
+> opens and there is no path from a judgement to a rejection that returns work — so the
+> gate stays open with the lead's reasoning in front of whoever answers it. Approving is
+> the only outcome the lead settles on its own, which is the conservative half.
 
 1. **Phase 1 — the record.** `checked` and `judged` in `GateWaited`, and the scope for a
    judged gate. Nothing produces them. This is the part that touches replay and it lands

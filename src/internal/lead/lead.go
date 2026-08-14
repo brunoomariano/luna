@@ -131,6 +131,28 @@ type Lead struct {
 
 	// Flow defaults to the shipped one when empty.
 	Flow []fsm.Stage
+
+	// CheckGate runs the commands a person declared as the answer to one gate,
+	// over what the task delivered, and reports what they concluded.
+	//
+	// A function rather than an interface pair because it is the seam between two
+	// things the lead deliberately does not own: which commands answer a gate
+	// lives in the registry, and running them belongs to the node layer. The lead
+	// only needs the verdict, which is the ADR-0024 shape — the observation
+	// arrives, the decision is taken here.
+	//
+	// Nil means no mechanical half at all, which is what a run with no registry
+	// configured has. Then every gate is decided by the judgement half alone,
+	// which is exactly today's behaviour.
+	CheckGate func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome
+
+	// Ask is how the lead judges a gate the knob reached. It is the same boundary
+	// Agent uses and the same one ADR-0043 draws: Luna hosts no model of its own.
+	//
+	// Nil is the ordinary case — `luna run` needs no model, and a run with none
+	// sends every judgement to a person rather than approving what nobody looked
+	// at.
+	Ask func(ctx context.Context, prompt string) (string, error)
 }
 
 // Run drives a task until it needs a person or reaches the end.
@@ -175,7 +197,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	if state.Status != fsm.StatusRunning {
 		return l.record(taskID, fsm.Advance{
 			Flow:         flow,
-			GateDecision: l.decideGate(state, fsm.GateAhead(state, flow)),
+			GateDecision: l.decideGate(ctx, state, fsm.GateAhead(state, flow)),
 		})
 	}
 
@@ -321,7 +343,7 @@ func (l *Lead) flow() []fsm.Stage {
 // writing "passed" would claim a gate was reached that never was. With no policy
 // configured it also records nothing, which leaves replay on the shipped defaults
 // — the honest reading, since nothing else decided.
-func (l *Lead) decideGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
+func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
 	if gate == nil || l.Gates == nil {
 		return fsm.GateDecisionAbsent
 	}
@@ -333,24 +355,31 @@ func (l *Lead) decideGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWa
 	// now it is where the two halves get their turn — a gate that waits may still
 	// be answered by its declared checks or by the lead, and only then does it
 	// reach a person (RFC-0006).
-	return l.answerWaitingGate(state, gate)
+	return l.answerWaitingGate(ctx, state, gate)
 }
 
 // answerWaitingGate is who answers a gate the profile stopped for.
 //
-// The mechanical half is not run here and the value says so: reading the
-// registry and running commands is work for the node layer, and the reducer's
-// purity depends on that verdict arriving inside the action (ADR-0024). Until
-// that is wired, checks are always "nothing declared" and the judgement half is
-// what the knob governs.
-func (l *Lead) answerWaitingGate(state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
+// The mechanical half runs through CheckGate rather than here: reading the
+// registry and running commands is work for the node layer, and the verdict
+// arrives as an observation the way every other one does (ADR-0024). What this
+// function owns is the decision made from it, which is why the rule itself lives
+// in fsm.ResolveGate and is testable without a registry or a shell.
+func (l *Lead) answerWaitingGate(
+	ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate,
+) fsm.GateWaited {
 	spec := fsm.GateSpecIn(l.flow(), gate.Stage)
 
-	switch fsm.ResolveGate(spec, fsm.GateChecksOutcome{}, state.Knob) {
+	checks := fsm.GateChecksOutcome{}
+	if l.CheckGate != nil {
+		checks = l.CheckGate(ctx, state.ID, gate.Kind)
+	}
+
+	switch fsm.ResolveGate(spec, checks, state.Knob) {
 	case fsm.AnswerChecks:
 		return fsm.GateDecisionChecked
 	case fsm.AnswerLead:
-		return fsm.GateDecisionJudged
+		return l.judge(ctx, spec, gate)
 	case fsm.AnswerRejected, fsm.AnswerPerson:
 		return fsm.GateDecisionWaited
 	default:
@@ -358,6 +387,37 @@ func (l *Lead) answerWaitingGate(state fsm.TaskState, gate *fsm.PendingGate) fsm
 		// the direction every uncertain path in this design takes.
 		return fsm.GateDecisionWaited
 	}
+}
+
+// judge asks the lead to answer a gate against its declared criteria.
+//
+// The knob having reached this gate is permission to judge, not a judgement:
+// recording `judged` without anyone having judged would put a fact in the log
+// that nothing produced, which is the worst of both designs — a model's authority
+// with no model involved.
+//
+// Everything that is not a clear approval falls to a person. A rejection does
+// too, deliberately: the reducer answers a gate at the moment it opens, and there
+// is no path from here to a rejection that sends work back. Recording a person's
+// wait is honest about that — the gate is still open, and what the lead concluded
+// belongs in front of whoever answers it.
+func (l *Lead) judge(ctx context.Context, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
+	if l.Ask == nil {
+		// The knob authorised a judgement and there is nobody to make it. Asking a
+		// person is the only honest answer: the alternative is approving a gate
+		// because no model was configured to look at it.
+		return fsm.GateDecisionWaited
+	}
+
+	said, err := l.Ask(ctx, JudgingBrief(spec, gate.Payload, ""))
+	if err != nil {
+		return fsm.GateDecisionWaited
+	}
+
+	if ReadJudgement(said) == JudgedApprove {
+		return fsm.GateDecisionJudged
+	}
+	return fsm.GateDecisionWaited
 }
 
 // stall records a task that stopped making progress.
