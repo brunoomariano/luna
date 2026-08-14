@@ -819,3 +819,116 @@ func TestAFailingLookupIsReported(t *testing.T) {
 		t.Fatal("the registry's failure was swallowed")
 	}
 }
+
+// TestAFinishedTaskLandsOnItsOwnBranch is the promise ADR-0062 makes, asserted
+// where a person would see it.
+//
+// The swarm bench found it unkept: a task ran every stage, recorded the right
+// commit, and left `luna/<task>` on the seed. `done` has to mean ready to
+// integrate, and a branch nobody moved means it does not.
+func TestAFinishedTaskLandsOnItsOwnBranch(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
+
+	var landed struct {
+		task, commit string
+	}
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileNightly)
+	if err != nil {
+		t.Fatalf("conduct: %v", err)
+	}
+	defer cleanup()
+
+	// The real Land touches a repository; this asks the narrower question — is
+	// the lead told to land at all, and with what.
+	conductor.Land = func(_ context.Context, taskID, commit string) error {
+		landed.task, landed.commit = taskID, commit
+		return nil
+	}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Status != fsm.StatusDone {
+		t.Fatalf("the task did not finish, got %q", state.Status)
+	}
+
+	if landed.task != "LUNA-1" {
+		t.Errorf("a finished task did not land, got %q", landed.task)
+	}
+	if landed.commit != state.Base {
+		t.Errorf("landed at %q, want the commit the task ended on %q", landed.commit, state.Base)
+	}
+}
+
+// TestATaskThatIsNotDoneDoesNotLand covers the other side.
+//
+// A task waiting at a gate has not finished, and pointing its branch would tell
+// a person the work is ready when it is halfway.
+func TestATaskThatIsNotDoneDoesNotLand(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	landedAnyway := false
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileInteractive)
+	if err != nil {
+		t.Fatalf("conduct: %v", err)
+	}
+	defer cleanup()
+	conductor.Land = func(context.Context, string, string) error {
+		landedAnyway = true
+		return nil
+	}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Status == fsm.StatusDone {
+		t.Fatal("this test needs a task that stops short of done")
+	}
+	if landedAnyway {
+		t.Errorf("a task in %q landed as though it were finished", state.Status)
+	}
+}
+
+// TestStatusNamesTheBranchAFinishedTaskLandedOn is the half of ADR-0062 a person
+// actually reads.
+//
+// `done` means ready to integrate, and integrating is a manual act — so status
+// has to say *where*. Before this it printed the sha and left the branch to be
+// worked out, which is how the swarm bench ended with a finished task and nobody
+// able to name what to merge.
+func TestStatusNamesTheBranchAFinishedTaskLandedOn(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
+	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+
+	out := h.mustRun(t, "status", "LUNA-1")
+
+	if !strings.Contains(out, "done") {
+		t.Fatalf("this test needs a finished task, got:\n%s", out)
+	}
+	if !strings.Contains(out, "branch luna/LUNA-1") {
+		t.Errorf("status does not name the branch the work is on:\n%s", out)
+	}
+}
+
+// TestStatusIsSilentAboutTheBranchUntilATaskEnds covers the other side.
+//
+// The branch exists from `setup` onwards, stranded where the task opened.
+// Naming it before the task finishes would point a person at the wrong commit —
+// which is worse than saying nothing.
+func TestStatusIsSilentAboutTheBranchUntilATaskEnds(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	out := h.mustRun(t, "status", "LUNA-1")
+
+	if strings.Contains(out, "branch") {
+		t.Errorf("status named a branch for a task that has not finished:\n%s", out)
+	}
+}

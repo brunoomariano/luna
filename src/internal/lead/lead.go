@@ -143,6 +143,24 @@ type Lead struct {
 	// sends every judgement to a person rather than approving what nobody looked
 	// at.
 	Ask func(ctx context.Context, prompt string) (string, error)
+
+	// Land points the task's branch at the commit it ended on (ADR-0062).
+	//
+	// A function rather than a git call here for the reason the reducer's purity
+	// already established: the lead decides *that* a task landed, and the node
+	// layer is what touches a filesystem. Nil skips it, which is what a test with
+	// no repository has.
+	Land func(ctx context.Context, taskID, commit string) error
+
+	// Warn reports what went wrong without failing the task. Nil discards.
+	Warn func(format string, args ...any)
+}
+
+// warn reports a problem that is worth saying and not worth failing over.
+func (l *Lead) warn(format string, args ...any) {
+	if l.Warn != nil {
+		l.Warn(format, args...)
+	}
 }
 
 // Run drives a task until it needs a person or reaches the end.
@@ -163,6 +181,7 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 		// Three endings, none of them the lead's to push past. A gate is waiting on
 		// a person, a block is waiting on a person, and done is done.
 		if state.IsTerminal() || state.NeedsHuman() {
+			l.land(ctx, state)
 			return state, nil
 		}
 
@@ -175,6 +194,27 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 		if err := l.step(ctx, taskID, state, flow); err != nil {
 			return fsm.TaskState{}, err
 		}
+	}
+}
+
+// land points the task's branch at what it delivered, so `done` means what
+// ADR-0062 says it means: ready to integrate, on a branch a person can name.
+//
+// It runs on the way out of the loop rather than at the last stage, because
+// "the task is finished" is a property of the state and not of any one stage —
+// and a task resumed after a block reaches the end through a different path.
+//
+// A failure to point the branch does not fail the task, and is reported rather
+// than swallowed. The work is committed by then and the state records the
+// commit; turning "it delivered" into "it failed" because a ref would not move
+// would lose the more important of the two — the same reasoning the worktree
+// cleanup already follows.
+func (l *Lead) land(ctx context.Context, state fsm.TaskState) {
+	if l.Land == nil || state.Status != fsm.StatusDone {
+		return
+	}
+	if err := l.Land(ctx, state.ID, state.Base); err != nil {
+		l.warn("%s finished but its branch was not moved: %v", state.ID, err)
 	}
 }
 

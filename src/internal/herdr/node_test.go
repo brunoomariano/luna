@@ -9,6 +9,7 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/node"
 )
 
 // TestAMechanicalStageDoesNotCollideWithARoleBranch covers a rule git enforces
@@ -784,5 +785,21 @@ func TestThePromptNamesTheScopeOfWhatItInherits(t *testing.T) {
 
 	if !strings.Contains(herdr.prompted[0], string(fsm.ScopeFull)) {
 		t.Errorf("the prompt should say how its input was proven, got:\n%s", herdr.prompted[0])
+	}
+}
+
+// TestTheTaskBranchAgreesWithWhatLandsOnIt keeps two packages from disagreeing
+// about one name.
+//
+// `setup` creates the branch through this package; `node.Land` points it at the
+// end. If the two ever named it differently, landing would create a second
+// branch and leave the first stranded — which is exactly the bug landing exists
+// to close, arriving by a different door.
+func TestTheTaskBranchAgreesWithWhatLandsOnIt(t *testing.T) {
+	spec := WorktreeSpec{TaskID: "LUNA-1"}
+
+	if spec.Branch() != node.TaskBranch("LUNA-1") {
+		t.Errorf("herdr creates %q and landing points %q",
+			spec.Branch(), node.TaskBranch("LUNA-1"))
 	}
 }

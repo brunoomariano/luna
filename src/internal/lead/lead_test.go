@@ -729,3 +729,41 @@ func TestTheBaseFollowsWhatTheStageCommitted(t *testing.T) {
 		t.Errorf("base = %q, want %q — the stage's commit never became the handoff", state.Base, want)
 	}
 }
+
+// TestAFailureToLandDoesNotFailTheTask covers the direction that matters when a
+// ref will not move.
+//
+// The work is committed by then and the state records the commit. Turning "it
+// delivered twelve stages" into "it failed" because a branch would not move
+// would lose the more important of the two — the same reasoning the worktree
+// cleanup already follows. It is reported rather than swallowed.
+func TestAFailureToLandDoesNotFailTheTask(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindChore)
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	var warned string
+	l := &Lead{
+		Store: s, Node: &deliveringNode{}, Judge: &alwaysRetries{}, Ask: approvingLead(),
+		Land: func(context.Context, string, string) error {
+			return errors.New("the ref is checked out somewhere")
+		},
+		Warn: func(format string, args ...any) { warned = fmt.Sprintf(format, args...) },
+	}
+
+	state, err := l.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("a branch that would not move failed the whole task: %v", err)
+	}
+	if state.Status != fsm.StatusDone {
+		t.Errorf("the task did not finish, got %q", state.Status)
+	}
+
+	// Reported rather than swallowed: a task whose branch is stranded and says
+	// nothing is the bug this whole feature exists to close.
+	if !strings.Contains(warned, "LUNA-1") || !strings.Contains(warned, "checked out") {
+		t.Errorf("the failure was not reported: %q", warned)
+	}
+}

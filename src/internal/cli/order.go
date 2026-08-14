@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/node"
 )
 
 // nextCommand prints the order for a task: what to run, where, from which
@@ -146,6 +147,12 @@ func statusCommand(env Env, args []string) error {
 	}
 
 	report := statusReport(state, fsm.DefaultFlow())
+	// Filled here rather than in statusReport, which is pure and takes no
+	// filesystem: reading a ref is a git call, and where the task landed is a
+	// fact about the repository rather than about the state (ADR-0024).
+	if state.Status == fsm.StatusDone {
+		report.Branch = node.TaskBranch(state.ID)
+	}
 	if asJSON {
 		return writeJSON(env.Out, report)
 	}
@@ -153,6 +160,12 @@ func statusCommand(env Env, args []string) error {
 	fmt.Fprintf(env.Out, "%s  %s\n", report.TaskID, report.Status)
 	if report.Base != "" {
 		fmt.Fprintf(env.Out, "  base   %s\n", report.Base)
+	}
+	// Where the work is, which is the half of `done` a person actually needs.
+	// `done` means ready to integrate, and integrating is a manual act — so the
+	// branch has to be named rather than left to be worked out (ADR-0062).
+	if report.Branch != "" {
+		fmt.Fprintf(env.Out, "  branch %s\n", report.Branch)
 	}
 	fmt.Fprintln(env.Out)
 	for _, stage := range report.Stages {
@@ -167,6 +180,11 @@ type StatusReport struct {
 	Status fsm.Status  `json:"status"`
 	Stage  fsm.StageID `json:"stage,omitempty"`
 	Base   string      `json:"base,omitempty"`
+
+	// Branch is the ref this task's work is on. Empty until the task ends —
+	// before that the branch exists but is stranded where the task opened, and
+	// naming it would point a person at the wrong commit (ADR-0062).
+	Branch string      `json:"branch,omitempty"`
 	Stages []StageMark `json:"stages"`
 }
 

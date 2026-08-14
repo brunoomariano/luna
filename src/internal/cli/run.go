@@ -127,6 +127,14 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// reached still goes to a person, because authority to judge is not a
 		// judgement (ADR-0043).
 		Ask: env.Lead,
+		// `done` means ready to integrate, and this is what makes it true: the
+		// task's own branch is pointed at what it delivered (ADR-0062).
+		Land: func(ctx context.Context, taskID, commit string) error {
+			return node.Land(ctx, opts.Repo, taskID, commit)
+		},
+		Warn: func(format string, args ...any) {
+			fmt.Fprintf(env.Err, format+"\n", args...)
+		},
 	}
 
 	if opts.Dry {

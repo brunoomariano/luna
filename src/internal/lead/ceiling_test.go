@@ -142,3 +142,22 @@ func TestTheLeadCanSendASpentCeilingToAPerson(t *testing.T) {
 		t.Error("the lead was asked without the history it is supposed to read")
 	}
 }
+
+// TestALeadThatSaysBlockBlocks completes the pair: the other reading of the same
+// history, arriving through the same path.
+//
+// Together with TestTheLeadCanSendASpentCeilingToAPerson this covers both
+// answers the brief offers, which is what makes "the lead decides" more than a
+// phrase — a decision with only one reachable outcome is not a decision.
+func TestALeadThatSaysBlockBlocks(t *testing.T) {
+	l := &Lead{Ask: func(context.Context, string) (string, error) {
+		return "BLOCK\n\nthree rounds and nothing changed", nil
+	}}
+
+	state := fsm.TaskState{Loop: fsm.LoopCounters{Rounds: 3, NoProgress: 3}}
+
+	if got := l.decideCeiling(context.Background(), state); got != fsm.GateDecisionAbsent {
+		t.Errorf("the lead said block and the decision recorded %q, want the absent "+
+			"decision the reducer turns into a block", got)
+	}
+}
