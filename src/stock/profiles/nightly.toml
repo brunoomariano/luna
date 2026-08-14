@@ -4,5 +4,4 @@
 # waiting blocks the task, because the alternative is the infinite loop
 # INV-core-8 names (ADR-0059).
 
-waits       = []
 turn_budget = "2h"

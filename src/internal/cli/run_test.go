@@ -567,8 +567,8 @@ func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
 func TestTheWatchdogBudgetComesFromTheTasksOwnProfile(t *testing.T) {
 	h := newHarness(t)
 	h.env.Config = Config{Profiles: map[fsm.Profile]Policy{
-		"tight": {Gates: map[fsm.GateKind]bool{}, Budgets: fsm.Budgets{Turn: time.Minute}},
-		"loose": {Gates: map[fsm.GateKind]bool{}, Budgets: fsm.Budgets{Turn: time.Hour}},
+		"tight": {Budgets: fsm.Budgets{Turn: time.Minute}},
+		"loose": {Budgets: fsm.Budgets{Turn: time.Hour}},
 	}}
 
 	// The two profiles differ only in their budgets, so whichever the run picks up

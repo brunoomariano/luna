@@ -53,33 +53,20 @@ type sectionRef struct {
 	name string
 }
 
-// Policy is everything one profile decides: which gates stop the task, and how
-// long the watchdog waits before calling it stuck.
+// Policy is how long the watchdog waits before calling a task stuck.
 //
-// The two live together because they answer the same question from opposite
-// ends. A profile that waits at no gate has nobody watching, which makes the
-// watchdog its only net — so the profile that most needs a short budget is
-// exactly the one that already declares how supervised the run is (ADR-0034).
+// It used to decide which gates stop the task as well, and that half is gone: a
+// gate waits because the stage declared something to answer it with, and the
+// knob decides who answers (ADR-0063). What remains is the clock, which was
+// never about gates — it bounds a node waiting on an agent that is not reacting
+// (ADR-0034, ADR-0051).
+//
+// It stays a named profile rather than becoming a bare setting because a task
+// records which one it ran under, and the budget has to be resolvable from that
+// name at replay.
 type Policy struct {
-	// Gates is a set rather than a list so a duplicate in the config is harmless,
-	// and so the question the resolver asks — does this kind wait — is a lookup.
-	Gates map[fsm.GateKind]bool
-
 	// Budgets bound how long the node waits on an agent that is not reacting.
 	Budgets fsm.Budgets
-}
-
-// Waits reports whether a gate of this kind stops the task under this policy.
-func (p Policy) Waits(gate fsm.GateKind) bool { return p.Gates[gate] }
-
-// knownGateKinds is what a profile may name. A closed list, because a typo in a
-// gate kind would otherwise define a profile that silently waits for nothing —
-// the failure mode a supervised run can least afford.
-var knownGateKinds = map[fsm.GateKind]bool{
-	fsm.GateConfirm:        true,
-	fsm.GateConfirmWrite:   true,
-	fsm.GateReviewArtifact: true,
-	fsm.GateLoopCeiling:    true,
 }
 
 // ShippedProfiles is the policy each built-in profile carries, expressed the same
@@ -106,22 +93,6 @@ func ShippedProfiles() map[fsm.Profile]Policy {
 func (c Config) Profile(name fsm.Profile) (Policy, bool) {
 	policy, ok := c.Profiles[name]
 	return policy, ok
-}
-
-// Waits reports whether a gate stops a task on this profile, which is what the
-// lead asks before recording an advance (ADR-0026).
-//
-// A profile the configuration does not define falls back to the cautious answer
-// rather than to nothing. It happens when a profile is deleted while tasks are
-// still running under it, and the two failure modes are not symmetric: waiting
-// too often stops a task that would have carried on, while waiting too little
-// lets an unsupervised run write something nobody approved.
-func (c Config) Waits(profile fsm.Profile, gate fsm.GateKind) bool {
-	policy, ok := c.Profile(profile)
-	if !ok {
-		return fsm.ShippedPolicy(fsm.ProfileInteractive, gate)
-	}
-	return policy.Waits(gate)
 }
 
 // Budgets reports how long the watchdog waits under this profile.
@@ -241,10 +212,7 @@ func openSection(cfg *Config, header, where string) (sectionRef, error) {
 	case sectionNone:
 		return sectionRef{}, fmt.Errorf("%s: section [%s] names nothing", where, header)
 	case sectionProfile:
-		cfg.Profiles[fsm.Profile(parsed.name)] = Policy{
-			Gates:   map[fsm.GateKind]bool{},
-			Budgets: fsm.DefaultBudgets(),
-		}
+		cfg.Profiles[fsm.Profile(parsed.name)] = Policy{Budgets: fsm.DefaultBudgets()}
 	case sectionRole:
 		cfg.Roles[fsm.RoleName(parsed.name)] = fsm.Role{}
 	}
@@ -324,11 +292,12 @@ func assignProfile(cfg *Config, section, key, value, where string) error {
 
 	switch key {
 	case "waits":
-		gates, err := parseGates(value, section, where)
-		if err != nil {
-			return err
-		}
-		policy.Gates = gates
+		// Refused rather than ignored. A profile that still lists gates would
+		// otherwise load and decide nothing, which is the silent kind of wrong: the
+		// person would keep a config that reads like supervision and get none.
+		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — a gate waits when "+
+			"its stage declares checks or judgement criteria, and `luna autonomy` "+
+			"decides who answers (ADR-0063)", where, key, section)
 	case "turn_budget":
 		budget, err := fsm.ParseBudget(strings.Trim(value, `"`))
 		if err != nil {
@@ -354,24 +323,6 @@ func assignProfile(cfg *Config, section, key, value, where string) error {
 
 	cfg.Profiles[fsm.Profile(section)] = policy
 	return nil
-}
-
-// parseGates reads the `waits` list and refuses a gate kind nobody declared.
-func parseGates(value, section, where string) (map[fsm.GateKind]bool, error) {
-	names, err := parseStringArray(value, where)
-	if err != nil {
-		return nil, err
-	}
-
-	gates := map[fsm.GateKind]bool{}
-	for _, name := range names {
-		kind := fsm.GateKind(name)
-		if !knownGateKinds[kind] {
-			return nil, fmt.Errorf("%s: unknown gate kind %q in [profile.%s] (%s)", where, name, section, gateKindList())
-		}
-		gates[kind] = true
-	}
-	return gates, nil
 }
 
 func assignRoot(cfg *Config, key, value, where string) error {
@@ -520,15 +471,6 @@ func stripComment(line string) string {
 		}
 	}
 	return line
-}
-
-func gateKindList() string {
-	kinds := make([]string, 0, len(knownGateKinds))
-	for kind := range knownGateKinds {
-		kinds = append(kinds, string(kind))
-	}
-	sort.Strings(kinds)
-	return strings.Join(kinds, ", ")
 }
 
 // ConfigPath is where a project's configuration lives, next to its store.

@@ -1,4 +1,3 @@
 # Stops at every gate: supervised work, every step confirmed.
 
-waits       = ["confirm", "confirm-write", "review-artifact", "loop-ceiling"]
 turn_budget = "2h"

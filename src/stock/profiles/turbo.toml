@@ -5,5 +5,4 @@
 # looping forever, because a ceiling nobody answers must not simply resolve
 # (ADR-0059).
 
-waits       = ["confirm-write"]
 turn_budget = "2h"

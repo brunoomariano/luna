@@ -82,12 +82,6 @@ func TestTheStockProfilesMatchTheShippedPolicy(t *testing.T) {
 			t.Errorf("%s has no file", name)
 			continue
 		}
-		for _, gate := range fsm.KnownGateKinds() {
-			if policy.Waits(gate) != fsm.ShippedPolicy(name, gate) {
-				t.Errorf("%s/%s: the file says %v and the replay fallback says %v",
-					name, gate, policy.Waits(gate), fsm.ShippedPolicy(name, gate))
-			}
-		}
 		if policy.Budgets.Resolve().Turn == 0 {
 			t.Errorf("%s has no turn budget", name)
 		}
@@ -156,11 +150,12 @@ func TestAnEmptyStockIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProfileThatWaitsAtNothingIsStillAProfile. `waits = []` is nightly, and it
-// has to be a name that exists rather than one that never appears.
-func TestAProfileThatWaitsAtNothingIsStillAProfile(t *testing.T) {
+// TestAProfileWithOnlyABudgetIsStillAProfile. A budget is all a profile decides
+// now (ADR-0063), so a file that states only that has to produce a name that
+// exists rather than one that never appears.
+func TestAProfileWithOnlyABudgetIsStillAProfile(t *testing.T) {
 	files := fstest.MapFS{
-		"profiles/yolo.toml": &fstest.MapFile{Data: []byte("waits = []\n")},
+		"profiles/yolo.toml": &fstest.MapFile{Data: []byte("turn_budget = \"30m\"\n")},
 	}
 
 	profiles, err := LoadProfiles(files, "profiles")
@@ -168,14 +163,8 @@ func TestAProfileThatWaitsAtNothingIsStillAProfile(t *testing.T) {
 		t.Fatalf("LoadProfiles: %v", err)
 	}
 
-	policy, ok := profiles["yolo"]
-	if !ok {
-		t.Fatal("a profile that waits at nothing did not appear at all")
-	}
-	for _, gate := range fsm.KnownGateKinds() {
-		if policy.Waits(gate) {
-			t.Errorf("%s waits, and the file said it waits at nothing", gate)
-		}
+	if _, ok := profiles["yolo"]; !ok {
+		t.Error("a profile the project defined did not appear at all")
 	}
 }
 
@@ -197,9 +186,9 @@ func TestABrokenStockFileIsRefused(t *testing.T) {
 		})
 	}
 
-	files := fstest.MapFS{"profiles/x.toml": &fstest.MapFile{Data: []byte("waits = [\"never\"]\n")}}
+	files := fstest.MapFS{"profiles/x.toml": &fstest.MapFile{Data: []byte("turn_budget = \"not a duration\"\n")}}
 	if _, err := LoadProfiles(files, "profiles"); err == nil {
-		t.Error("a profile naming an unknown gate kind was accepted")
+		t.Error("a profile whose budget cannot be read was accepted")
 	}
 }
 

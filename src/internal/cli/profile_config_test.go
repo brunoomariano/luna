@@ -10,101 +10,6 @@ import (
 	"github.com/brunoomariano/luna/src/internal/herdr"
 )
 
-// TestAProjectCanDefineItsOwnProfile covers what ADR-0017 promised and ADR-0026
-// delivered: a profile that is not one of the three.
-func TestAProjectCanDefineItsOwnProfile(t *testing.T) {
-	cfg := load(t, `
-[profile.paranoid]
-waits = ["confirm", "confirm-write", "review-artifact", "loop-ceiling"]
-`)
-
-	policy, ok := cfg.Profile("paranoid")
-	if !ok {
-		t.Fatalf("want the configured profile, got %v", cfg.ProfileNames())
-	}
-
-	for _, gate := range []fsm.GateKind{
-		fsm.GateConfirm, fsm.GateConfirmWrite, fsm.GateReviewArtifact, fsm.GateLoopCeiling,
-	} {
-		if !policy.Waits(gate) {
-			t.Errorf("paranoid was configured to wait for %s", gate)
-		}
-	}
-}
-
-// TestConfiguringOneProfileReplacesTheShippedSet covers the substitution rule.
-//
-// A config that names profiles defines the whole set. The alternative — merging
-// with the shipped three — would leave someone unable to remove `nightly` from a
-// repository where an unattended run is not acceptable.
-func TestConfiguringOneProfileReplacesTheShippedSet(t *testing.T) {
-	cfg := load(t, `
-[profile.supervised]
-waits = ["confirm-write"]
-`)
-
-	if _, ok := cfg.Profile("nightly"); ok {
-		t.Error("a config that names profiles replaces the shipped set")
-	}
-	if _, ok := cfg.Profile("supervised"); !ok {
-		t.Errorf("want the configured profile, got %v", cfg.ProfileNames())
-	}
-}
-
-// TestRedefiningAShippedProfileIsAllowed covers adjusting rather than extending.
-func TestRedefiningAShippedProfileIsAllowed(t *testing.T) {
-	cfg := load(t, `
-[profile.turbo]
-waits = ["confirm", "confirm-write"]
-`)
-
-	policy, ok := cfg.Profile("turbo")
-	if !ok {
-		t.Fatal("turbo was redefined, not removed")
-	}
-	if !policy.Waits(fsm.GateConfirm) {
-		t.Error("the redefined turbo waits for a plain confirm; the shipped one does not")
-	}
-}
-
-// TestAProfileThatWaitsForNothingIsWritable covers the empty section.
-//
-// `[profile.yolo]` with no `waits` is a legitimate thing to write — it is what
-// nightly is — so it must not be mistaken for a section someone forgot to finish.
-func TestAProfileThatWaitsForNothingIsWritable(t *testing.T) {
-	cfg := load(t, "[profile.yolo]\n")
-
-	policy, ok := cfg.Profile("yolo")
-	if !ok {
-		t.Fatalf("an empty section still declares the profile, got %v", cfg.ProfileNames())
-	}
-	if policy.Waits(fsm.GateConfirmWrite) {
-		t.Error("a profile with no waits stops at nothing")
-	}
-}
-
-// TestAMisspelledGateKindIsAnError covers the closed list of kinds.
-//
-// The failure it prevents is the quiet one: `confirm-writes` would parse, apply,
-// and wait for nothing, and nobody would learn why until an unattended run wrote
-// something it should have asked about.
-func TestAMisspelledGateKindIsAnError(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, `
-[profile.careful]
-waits = ["confirm-writes"]
-`))
-
-	if err == nil {
-		t.Fatal("a misspelled gate kind must be reported")
-	}
-	if !strings.Contains(err.Error(), "confirm-writes") {
-		t.Errorf("the error should name what was typed, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "confirm-write") {
-		t.Errorf("the error should name what was expected, got %v", err)
-	}
-}
-
 // TestAnUnknownSettingInsideAProfileIsAnError covers the section's key list.
 func TestAnUnknownSettingInsideAProfileIsAnError(t *testing.T) {
 	_, err := LoadConfig(writeConfig(t, `
@@ -159,7 +64,6 @@ func TestASettingSurvivesAProfileSection(t *testing.T) {
 editor = "hx"
 
 [profile.paranoid]
-waits = ["confirm"]
 `)
 
 	if cfg.Editor != "hx" {
@@ -192,21 +96,6 @@ func TestProfileNamesAreListedSorted(t *testing.T) {
 	}
 }
 
-// TestShippedProfilesMatchTheEnginesPolicy guards the seam between the two.
-//
-// The engine owns what the shipped profiles do; the config expresses them as
-// policies. If those drift, a project that redefines nothing would silently get
-// different gating than one that never wrote a config at all.
-func TestShippedProfilesMatchTheEnginesPolicy(t *testing.T) {
-	for name, policy := range ShippedProfiles() {
-		for gate := range knownGateKinds {
-			if policy.Waits(gate) != fsm.ShippedPolicy(name, gate) {
-				t.Errorf("%s + %s: the config policy and the engine's disagree", name, gate)
-			}
-		}
-	}
-}
-
 func load(t *testing.T, content string) Config {
 	t.Helper()
 
@@ -225,24 +114,12 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
-func TestADeletedProfileFallsBackToTheCautiousAnswer(t *testing.T) {
-	cfg := load(t, "[profile.paranoid]\nwaits = [\"confirm\"]\n")
-
-	for _, gate := range []fsm.GateKind{
-		fsm.GateConfirm, fsm.GateConfirmWrite, fsm.GateReviewArtifact, fsm.GateLoopCeiling,
-	} {
-		if !cfg.Waits("deleted-last-week", gate) {
-			t.Errorf("a profile the config no longer defines must not run free (%s)", gate)
-		}
-	}
-}
-
 // TestANestedProfileNameIsRejected covers the dotted-name refusal.
 //
 // `[profile.a.b]` names no profile this config can hold. Trimming it to "a" or
 // "b" would silently define a profile nobody wrote.
 func TestANestedProfileNameIsRejected(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.team.paranoid]\nwaits = []\n"))
+	_, err := LoadConfig(writeConfig(t, "[profile.team.paranoid]\nturn_budget = \"1h\"\n"))
 
 	if err == nil {
 		t.Fatal("a dotted profile name must be reported")
@@ -252,44 +129,30 @@ func TestANestedProfileNameIsRejected(t *testing.T) {
 	}
 }
 
-// TestAnEmptyListIsAProfileThatWaitsForNothing covers `waits = []`.
-//
-// It is how the shipped nightly is written, so it has to parse as a real profile
-// rather than as an omission.
-func TestAnEmptyListIsAProfileThatWaitsForNothing(t *testing.T) {
-	cfg := load(t, "[profile.headless]\nwaits = []\n")
-
-	policy, ok := cfg.Profile("headless")
-	if !ok {
-		t.Fatalf("want the profile declared, got %v", cfg.ProfileNames())
-	}
-	if policy.Waits(fsm.GateConfirmWrite) {
-		t.Error("an empty list waits for nothing")
-	}
-}
-
 // TestATrailingCommaInAListIsTolerated covers the skipped empty entry.
 //
 // The list is hand-parsed, and a trailing comma is the one piece of TOML slack
-// worth keeping: it is what someone leaves behind after deleting a gate kind.
+// worth keeping: it is what someone leaves behind after deleting an entry.
 func TestATrailingCommaInAListIsTolerated(t *testing.T) {
-	cfg := load(t, "[profile.careful]\nwaits = [\"confirm\", ]\n")
+	cfg := load(t, "[role.gherkin]\nskills = [\"scenarios\", ]\n")
 
-	policy, ok := cfg.Profile("careful")
+	role, ok := cfg.Roles["gherkin"]
 	if !ok {
-		t.Fatalf("want the profile, got %v", cfg.ProfileNames())
+		t.Fatal("want the role the config defined")
 	}
-	if !policy.Waits(fsm.GateConfirm) {
-		t.Error("the entry before the trailing comma still counts")
+	if len(role.Skills) != 1 || role.Skills[0] != "scenarios" {
+		t.Errorf("the entry before the trailing comma still counts, got %q", role.Skills)
 	}
 }
 
-// TestAProfileCanTightenItsWatchdog covers the third decision of ADR-0034: the
-// budgets live beside the gate policy, in the same section.
+// TestAProfileCanTightenItsWatchdog covers what a profile still decides: how
+// long the node waits on an agent that is not reacting (ADR-0034).
+//
+// It is all a profile decides now — which gates wait is the stage's declaration
+// and the knob's (ADR-0063).
 func TestAProfileCanTightenItsWatchdog(t *testing.T) {
 	cfg := load(t, `
 [profile.nightly]
-waits = []
 turn_budget = "45m"
 `)
 
@@ -308,7 +171,7 @@ turn_budget = "45m"
 // TestAProfileWithNoBudgetsGetsTheShippedOnes covers the ordinary case — every
 // profile written before this feature existed.
 func TestAProfileWithNoBudgetsGetsTheShippedOnes(t *testing.T) {
-	cfg := load(t, "[profile.careful]\nwaits = [\"confirm\"]\n")
+	cfg := load(t, "[profile.careful]\n")
 
 	if got := cfg.Budgets("careful"); got != fsm.DefaultBudgets() {
 		t.Errorf("want the shipped budgets, got %+v", got)
@@ -321,7 +184,7 @@ func TestAProfileWithNoBudgetsGetsTheShippedOnes(t *testing.T) {
 // would mean deleting a profile silently turns its running tasks into ones that
 // hang forever (ADR-0034).
 func TestADeletedProfileStillHasAWatchdog(t *testing.T) {
-	cfg := load(t, "[profile.paranoid]\nwaits = [\"confirm\"]\n")
+	cfg := load(t, "[profile.paranoid]\n")
 
 	if got := cfg.Budgets("deleted-last-week"); got != fsm.DefaultBudgets() {
 		t.Errorf("an undefined profile still gets a budget, got %+v", got)
@@ -459,7 +322,6 @@ func TestRolesAndProfilesCoexist(t *testing.T) {
 editor = "hx"
 
 [profile.paranoid]
-waits = ["confirm"]
 
 [role.reviewer]
 agent = "codex"
@@ -605,6 +467,27 @@ func TestTheOldBudgetNamesAreRefusedWithTheirReason(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "turn_budget") {
 			t.Errorf("%s: the refusal must name what to use instead, got %v", old, err)
+		}
+	}
+}
+
+// TestTheOldWaitsKeyIsRefusedWithItsReason covers the config a person already
+// has on disk.
+//
+// Ignoring it would be the silent kind of wrong: the file would keep reading like
+// supervision and decide nothing, so the person would believe gates were waiting
+// for reasons that no longer exist (ADR-0063).
+func TestTheOldWaitsKeyIsRefusedWithItsReason(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[profile.paranoid]\nwaits = [\"confirm\"]\n"))
+	if err == nil {
+		t.Fatal("a profile still listing gates was accepted")
+	}
+
+	// The message has to say what replaced it, or the person is left with a
+	// refusal and no way forward.
+	for _, want := range []string{"waits", "declares checks", "luna autonomy"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not mention %q: %v", want, err)
 		}
 	}
 }

@@ -52,18 +52,17 @@ const (
 // project define its own profiles without the engine growing a list of them.
 type Profile string
 
+// The three shipped names. They no longer decide which gates wait — that is the
+// stage's declaration and the knob (ADR-0063) — and what they still carry is the
+// watchdog budget.
+//
+// They are kept because a task records the profile it ran under and replay has to
+// reproduce it. Removing the names would make every existing log unreadable, so
+// they survive as history with nothing left to decide.
 const (
-	// ProfileInteractive stops at every gate.
 	ProfileInteractive Profile = "interactive"
-
-	// ProfileTurbo stops only before writing: the commit gate waits, the rest
-	// resolve on their own.
-	ProfileTurbo Profile = "turbo"
-
-	// ProfileNightly stops at nothing. It is what makes an unattended run
-	// unattended — and what makes the watchdog (ADR-0019) load-bearing rather
-	// than a nicety.
-	ProfileNightly Profile = "nightly"
+	ProfileTurbo       Profile = "turbo"
+	ProfileNightly     Profile = "nightly"
 )
 
 // GateWaited is whether a gate stopped the task, decided by the profile before
@@ -142,12 +141,17 @@ func (d GateWaited) AnsweredBy() string {
 	}
 }
 
-// ShippedPolicy is what the three built-in profiles do. It is the fallback for an
-// event recorded before the decision was part of the log, and the seed for the
-// defaults a project inherits when its config names no profiles of its own.
+// ShippedPolicy is what the profiles decided, for logs written while they still
+// decided anything.
 //
-// It is not consulted for a task whose events carry a decision: those replay from
-// what was recorded, so editing a profile cannot rewrite them (ADR-0026).
+// It is the replay fallback and nothing else now: an event recorded before the
+// decision was part of the log has only the profile name to be read by, and this
+// is the reading that produced it. Profiles no longer govern a gate that is
+// opening today — the stage declares what answers it and the knob decides who
+// does (ADR-0063) — so nothing consults this for a new decision.
+//
+// It is also not consulted for a task whose events carry a decision: those replay
+// from what was recorded, so editing anything cannot rewrite them (ADR-0026).
 func ShippedPolicy(p Profile, gate GateKind) bool {
 	switch p {
 	case ProfileNightly:

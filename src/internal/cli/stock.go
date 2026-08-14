@@ -70,13 +70,10 @@ func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]Policy, error) {
 			return nil, fmt.Errorf("reading %s: %w", file, err)
 		}
 
-		// Declared before its settings are read, so a profile whose file names no
-		// gates is a profile that waits at none — rather than a name that never
-		// appears. `[profile.yolo]` with no `waits` means the same thing.
-		profiles[fsm.Profile(name)] = Policy{
-			Gates:   map[fsm.GateKind]bool{},
-			Budgets: fsm.DefaultBudgets(),
-		}
+		// Declared before its settings are read, so a profile whose file states no
+		// budget carries the shipped one rather than being a name that never
+		// appears.
+		profiles[fsm.Profile(name)] = Policy{Budgets: fsm.DefaultBudgets()}
 
 		if err := eachSetting(string(content), file, func(key, value, at string) error {
 			return assignProfile(&cfg, name, key, value, at)

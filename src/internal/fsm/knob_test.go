@@ -227,3 +227,32 @@ func TestSetKnobRefusesWhatCannotBeHonoured(t *testing.T) {
 		}
 	}
 }
+
+// TestGateSpecInFindsWhatTheStageDeclared covers the accessor the lead reads a
+// gate's declaration through.
+//
+// It is what decides whether a gate waits at all now (ADR-0063), so a stage the
+// flow does not contain has to answer nil rather than panic: the caller is asking
+// about a gate that is opening, and a flow that does not describe it declares
+// nothing about it.
+func TestGateSpecInFindsWhatTheStageDeclared(t *testing.T) {
+	flow := []Stage{
+		{ID: "plain"},
+		{ID: "gated", Gate: &GateSpec{Kind: GateConfirm, Criticality: 4, Judge: []string{"a criterion"}}},
+	}
+
+	spec := GateSpecIn(flow, "gated")
+	if spec == nil {
+		t.Fatal("the declared gate was not found")
+	}
+	if spec.Criticality != 4 || len(spec.Judge) != 1 {
+		t.Errorf("the declaration did not survive: %+v", spec)
+	}
+
+	if GateSpecIn(flow, "plain") != nil {
+		t.Error("a stage with no gate reported one")
+	}
+	if GateSpecIn(flow, "no-such-stage") != nil {
+		t.Error("a stage the flow does not contain reported a gate")
+	}
+}
