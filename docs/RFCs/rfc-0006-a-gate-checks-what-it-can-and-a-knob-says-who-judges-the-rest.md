@@ -37,17 +37,34 @@ Every gate can carry two kinds of validation, and they coexist:
 gate opens
    ↓
 MECHANICAL — the checks declared for this gate, from the registry
+   ├── none declared       → nothing to run; straight to judgement
    ├── any exit ≠ 0        → reject. Nothing is judged: a failing command is an
    │                         objective answer, and asking a model to weigh it
    │                         would be inviting it to argue with an exit code.
    ├── a check cannot run  → a person answers, results attached
    └── all exit 0          ↓
 JUDGEMENT — the criteria declared for this stage
-   ├── nothing to judge    → approve
-   └── criteria present    → the knob decides who judges:
+   ├── no criteria declared → checks ran and passed? approve — they were the answer.
+   │                          nothing ran either?     a person answers.
+   └── criteria present     → the knob decides who judges:
          knob < gate's criticality  → a person answers
          knob ≥ gate's criticality  → the lead judges, against those criteria
+                                      └── "I cannot decide" → a person answers
 ```
+
+**Checks that pass are an approval, and that is the whole point.** A gate whose declared
+checks all exit 0, with no judgement criteria beside them, is answered — nobody is asked.
+Declaring `checks` for a gate *is* the statement that those commands answer it; a design
+that ran them and then asked anyway would have made the declaration meaningless.
+
+So the responsibility sits where it belongs: **a check that does not answer the gate is a
+badly written check**, not a hole in the mechanism. `approve-plan` with
+`checks = ["make fmt"]` gets approved by a formatter — which is wrong, and wrong in the
+place a person can see and fix, in their own registry entry.
+
+**A gate with neither checks nor criteria goes to a person**, which is every gate today and
+what makes this additive: a project that declares nothing keeps being asked about
+everything.
 
 **Where each half is declared, and why they live apart:**
 
@@ -267,9 +284,16 @@ reviewable afterwards, and put the decision to allow it in a person's hands.
       The measurement suggests it should also be made to answer criterion by criterion and
       quote its evidence — that alone turned 3/3 wrong into 3/3 right on the stated-defect
       case. Whether that shape is mandated by the design or left to the prompt is open.
-- [ ] **Can the lead defer?** "I cannot tell from this" is a correct answer and the
-      measurement showed the model reaching for it unprompted, with good reasoning. If it
-      can defer, a knob at 10 no longer means "never asks a person" — which may be right.
+- [x] ~~**Can the lead defer?**~~ **Yes, and it always falls to a person.** "I cannot decide
+      from this" is a correct answer, not a failure, and the measurement showed the model
+      reaching for it unprompted with sound reasoning — *"the artifact is a self-reported
+      review whose claims I have not independently verified"*.
+
+      The consequence is deliberate and worth stating: **a knob at 10 does not mean "never
+      asks a person"**. It means the lead may judge every gate, and a lead that judges
+      honestly will sometimes conclude it cannot. A run that stops for a question at the
+      most autonomous setting is the design working, not a bug — and it is the same
+      direction as `RF4`, failing towards the human.
 - [ ] **Where do the checks run?** The delivered checkout is the honest answer (INV-core-4)
       and `node.CheckoutDelivered` already builds one for verifiers. Worth confirming a gate
       can reach one at the moment it opens.
