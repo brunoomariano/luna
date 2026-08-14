@@ -68,6 +68,37 @@ One of four is mechanically checkable. So the lead runs `make ci`, and the perso
 about the other three **with that result already in hand** — which is strictly better than
 today, where they are asked with nothing.
 
+### What decides: the exit code, never the output
+
+A criterion passes when its command exits 0 and fails otherwise. Nothing reads the last
+line, greps for "ok", or interprets what the command printed — that would be judging a claim
+again, one layer down, and it is the mistake this whole route exists to avoid.
+
+This is not a new rule. `node.Shell.Prove` already works exactly this way for artifact
+verifiers, and the gate reuses it rather than growing its own:
+
+```go
+verdict := fsm.VerdictPassed
+if exit != 0 {
+    verdict = fsm.VerdictFailed
+}
+```
+
+The output is still captured, and goes into the evidence's `Detail` for a person to read
+afterwards. It informs; it does not decide.
+
+Three states, not two — and the third is why this stays honest:
+
+| result | meaning | answer |
+|---|---|---|
+| exit 0 | the check ran and passed | counts towards approving |
+| exit ≠ 0 | the check ran and failed | rejects |
+| **could not run** | no shell, no such directory, deadline hit | **falls through to a person** |
+
+`Prove` already separates the third from the second, and the comment there says why:
+recording it as a failure *"would tell the audit the tests ran and lost"*. A gate must draw
+the same line — a criterion that could not be evaluated is not a criterion that failed.
+
 ### What this actually is
 
 Every branch above is decided by an exit code. Nothing weighs, compares or forms an opinion,
@@ -101,10 +132,22 @@ commands is a contract question (see the open questions), not an inference.
 
 ### Detail (reference-level)
 
-- **The knob is a task setting, and it is not `lead.Autonomy`.** That one bounds what the
-  lead does about a **failure** and stays as it is. This one says whether a gate whose
-  criteria are runnable may be answered by running them — two positions, not three, because
-  there is no middle where something judges.
+- **One knob, on the task — never per gate.** It is a property of the run: *may a gate whose
+  criteria are runnable be answered by running them?* Every gate in that task is then treated
+  the same way, and what differs between them is not the setting but whether they have
+  criteria to run.
+
+  Per-gate configuration is deliberately rejected. It would be a second place where "which
+  gates matter" is decided, competing with the profile's `waits` and drifting from it — and
+  a person setting how supervised a run is should not have to enumerate gates to do it.
+
+  It has **two positions**, and that is about the knob's range rather than its scope: there
+  is no middle setting, because there is no behaviour in between. Either the criteria are
+  run and their exit codes answer, or a person is asked. Nothing judges, so there is nothing
+  to turn up halfway.
+
+  It is not `lead.Autonomy` — that one bounds what the lead does about a **failure** and
+  stays as it is, with its own three positions.
 
   It has to be available *before* the gate fires, which is at `Advance`, and changeable
   mid-run.
@@ -221,16 +264,21 @@ commands is a contract question (see the open questions), not an inference.
 - [ ] **Where does the criterion run?** The delivered checkout is the honest answer
       (INV-core-4), and it is what `node.CheckoutDelivered` already builds for verifiers.
       Worth confirming that a gate can reach one at the moment it opens.
-- [ ] **What if a criterion cannot run at all?** Not "failed" — the command was missing, or
-      the checkout would not build. That is the same distinction `Shell.Prove` already draws
-      between a failing check and a check that could not run, and it must fall through to a
-      person rather than count as a rejection.
+- [x] ~~**What if a criterion cannot run at all?**~~ **Answered: it falls through to a
+      person**, never counts as a rejection. `Shell.Prove` already draws that line and the
+      gate reuses it — see the exit-code table above.
 - [x] ~~**Does the lead need a model at all for this?**~~ **No.** Split, run, compare — all
       three outcomes are determined by exit codes, and none of them is a judgement. This is
       code, and calling it "the lead answering" would name it after a component that does
       not participate. See *What this actually is* below.
-- [ ] **How is the level changed in flight?** A command, a file the lead re-reads, a signal?
-      And what does it mean for a gate that is already open when it changes?
+- [ ] **How is the setting changed in flight?** A `luna` command writing an event, or
+      configuration re-read at each `Advance`? The first keeps it in the log where a person
+      can see when it changed; the second is simpler and leaves no trace of the change
+      itself.
+- [ ] **What happens to a gate that is already open when it changes?** Raising the setting
+      while a task waits could mean "answer it now with the criteria" or "this one was
+      already asked, leave it". Leaving it is the conservative reading and probably right,
+      but it means a person can raise the knob and still be asked once more.
 
 ## References
 
