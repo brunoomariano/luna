@@ -107,3 +107,86 @@ func TestAnythingUnreadableFallsToAPerson(t *testing.T) {
 		t.Error("the zero judgement is not the one that asks a person")
 	}
 }
+
+// TestAnApprovalItsOwnBodyRetractsIsNotAnApproval is a regression test written
+// from a real harness reply, caught by the swarm bench rather than by reasoning.
+//
+// Asked to judge a gate whose artifact never arrived, the model opened with
+// APPROVE, worked both criteria to UNSUPPORTED, and corrected itself in the body.
+// It then named the exact danger: "if this gate's harness reads only the first
+// line, it just got a false approval from me." It had — this parser read the
+// first line and nothing else.
+//
+// The failure this restores is the one the PRD measured and killed: a model
+// answering on tone before it has worked the problem.
+func TestAnApprovalItsOwnBodyRetractsIsNotAnApproval(t *testing.T) {
+	// Quoted from the run, trimmed to what matters.
+	real := `APPROVE
+
+**Criterion 1 — The plan names the file: UNSUPPORTED**
+
+I have no artifact. There is no plan text in front of me.
+
+**Correction to my first line: the answer is CANNOT-DECIDE, not APPROVE.**
+
+Both criteria are unsupported, so this goes to a person.`
+
+	if got := ReadJudgement(real); got != JudgedCannotDecide {
+		t.Errorf("a reply that retracts its own approval read as %v, want cannot-decide", got)
+	}
+
+	for _, retraction := range []string{
+		"APPROVE\n\nactually, CANNOT-DECIDE — nothing settles criterion 2",
+		"APPROVE\n\nCorrection to my first line: I cannot check this",
+		"APPROVE\n\nmy first line was wrong",
+		"APPROVE\n\nDisregard my first line; the artifact is missing",
+	} {
+		if got := ReadJudgement(retraction); got != JudgedCannotDecide {
+			t.Errorf("%q read as %v, want cannot-decide", retraction, got)
+		}
+	}
+}
+
+// TestAWorkedApprovalIsStillAnApproval guards the other direction.
+//
+// The retraction check must not turn every reasoned approval into a defer: a
+// model that approves and then explains itself has approved, and a parser that
+// found doubt in ordinary prose would make the knob unusable.
+func TestAWorkedApprovalIsStillAnApproval(t *testing.T) {
+	for _, worked := range []string{
+		"APPROVE\n\n1. met — §2 names calc.py and subtract\n2. met — nothing extra promised",
+		"APPROVE\n\nBoth criteria are met. I checked each against the plan.",
+		"APPROVE\n\n1. met. 2. met — I would reject if it had promised more.",
+	} {
+		if got := ReadJudgement(worked); got != JudgedApprove {
+			t.Errorf("a worked approval read as %v, want approve:\n%s", got, worked)
+		}
+	}
+}
+
+// TestAGateWithNoArtifactSaysSo covers the situation that produced the
+// retraction, at its source.
+//
+// A `confirm` gate carries no payload — only `review-artifact` does — so criteria
+// declared on one arrive with nothing to read. A model handed criteria and no
+// artifact reaches for a verdict anyway; naming the situation is what makes
+// CANNOT-DECIDE the first line rather than the third paragraph.
+func TestAGateWithNoArtifactSaysSo(t *testing.T) {
+	gate := &fsm.GateSpec{Kind: fsm.GateConfirm, Judge: []string{"a criterion"}}
+
+	brief := JudgingBrief(gate, "", "")
+
+	if !strings.Contains(brief, "no artifact attached") {
+		t.Error("the brief does not say the artifact is missing")
+	}
+	if !strings.Contains(brief, "CANNOT-DECIDE. Say so on the first line") {
+		t.Error("the brief does not tell it what the answer is when there is nothing to read")
+	}
+
+	// And with one attached, that instruction must be absent — it would tell a
+	// model to defer on a gate it can actually answer.
+	withArtifact := JudgingBrief(gate, "the plan changes calc.py", "")
+	if strings.Contains(withArtifact, "no artifact attached") {
+		t.Error("a gate carrying an artifact was told there was none")
+	}
+}

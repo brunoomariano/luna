@@ -59,6 +59,20 @@ Three rules, in order:
 		b.WriteString("\nThe artifact:\n\n")
 		b.WriteString(artifact)
 		b.WriteString("\n")
+	} else {
+		// Said outright rather than left as an absence. A `confirm` gate carries no
+		// payload — only `review-artifact` does — so criteria declared on one arrive
+		// with nothing to read, and a model given criteria and no artifact will
+		// reach for a verdict anyway. Measured: one opened with APPROVE before
+		// working out that it had nothing, then corrected itself.
+		//
+		// Naming the situation is what turns that into the right answer on the
+		// first line instead of the third paragraph.
+		b.WriteString(`
+There is no artifact attached to this gate. That is not an oversight you
+should work around: with nothing to read, every criterion above is
+UNSUPPORTED, and the answer is CANNOT-DECIDE. Say so on the first line.
+`)
 	}
 
 	b.WriteString(`
@@ -92,27 +106,67 @@ const (
 
 // ReadJudgement finds the verdict in what the lead said.
 //
-// It reads the first line only, which is what the brief asks for. Scanning the
-// whole reply would find the word "approve" in the working — "criterion 2 is met,
-// so I would approve if 3 held" is not an approval, and a parser that took it for
-// one would approve on reasoning that concluded the opposite.
+// The verdict is the first line, which is what the brief asks for — but an
+// approval is only an approval if the working below does not take it back.
 //
-// Anything it cannot read is CANNOT-DECIDE, which falls to a person.
+// That second half was measured, not imagined. Asked to judge a gate whose
+// artifact never arrived, a real harness opened with `APPROVE`, worked both
+// criteria to UNSUPPORTED, and then wrote: *"Correction to my first line: the
+// answer is CANNOT-DECIDE, not APPROVE."* It went on to name the danger itself —
+// *"if this gate's harness reads only the first line, it just got a false
+// approval from me"*. It was right: this function did exactly that.
+//
+// So a leading APPROVE is checked against the rest of the reply, and anything
+// that retracts it falls to a person. Only the approval is scrutinised, because
+// only the approval is the outcome that keeps a person out — a REJECT or a defer
+// already ends up in front of somebody, so re-reading the body to second-guess
+// them would buy nothing.
+//
+// The asymmetry is the whole design in one function: the cheap direction is
+// asking a person one more time, and the expensive one is approving something
+// nobody looked at.
 func ReadJudgement(said string) Judgement {
-	first, _, _ := strings.Cut(strings.TrimSpace(said), "\n")
+	trimmed := strings.TrimSpace(said)
+	first, rest, _ := strings.Cut(trimmed, "\n")
 	first = strings.ToUpper(strings.TrimSpace(first))
 
-	// Checked before APPROVE because "CANNOT-DECIDE" contains neither, but a reply
-	// like "CANNOT-DECIDE: I would approve if..." contains both — and the verdict
-	// is the one the model led with.
+	// Checked before APPROVE because a reply like "CANNOT-DECIDE: I would approve
+	// if..." contains both, and the verdict is the one the model led with.
 	switch {
 	case strings.HasPrefix(first, "CANNOT-DECIDE"), strings.HasPrefix(first, "CANNOT DECIDE"):
 		return JudgedCannotDecide
 	case strings.HasPrefix(first, "APPROVE"):
+		if retracted(rest) {
+			return JudgedCannotDecide
+		}
 		return JudgedApprove
 	case strings.HasPrefix(first, "REJECT"):
 		return JudgedReject
 	default:
 		return JudgedCannotDecide
 	}
+}
+
+// retracted reports whether the body of a reply takes back a leading approval.
+//
+// It looks for the model saying it cannot decide, or correcting itself. The
+// phrases are what a harness actually wrote rather than a guess at what one
+// might, and the check is deliberately generous: a false retraction costs one
+// question to a person, while a missed one costs an approval nobody made.
+func retracted(body string) bool {
+	lowered := strings.ToLower(body)
+
+	for _, phrase := range []string{
+		"cannot-decide",
+		"cannot decide",
+		"correction to my first line",
+		"correcting my first line",
+		"my first line was wrong",
+		"disregard my first line",
+	} {
+		if strings.Contains(lowered, phrase) {
+			return true
+		}
+	}
+	return false
 }
