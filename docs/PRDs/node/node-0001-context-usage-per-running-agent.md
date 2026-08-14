@@ -1,12 +1,18 @@
 # PRD node-0001: Context usage per running agent
 
-**Status:** NOT IMPLEMENTED
-**Last reviewed:** 2026-08-13
+**Status:** OBSOLETE
+**Last reviewed:** 2026-08-14
 **Source issue:** —
 **RFC:** —
 
-> Recorded so it is not lost, not to be built yet. Nothing here is decided: the open
-> questions at the end are the point, and answering them is the work.
+> **Rejected on 2026-08-14 — this will not be built.** The measurements below stand and
+> are the reason it is being closed rather than deferred: the number exists, three of four
+> harnesses report it, and the one path Luna actually uses cannot reach it. Tracking how
+> full a session is was judged not worth what it costs to obtain.
+>
+> The problem it names has not gone away, and INV-core-5 still addresses its cause by
+> giving every stage a fresh context. What is dropped is *measuring* the symptom.
+> If it comes back, start from the section below rather than from scratch.
 
 ## Overview
 
