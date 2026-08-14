@@ -372,36 +372,57 @@ func TestACancelledContextIsNotAVerdict(t *testing.T) {
 	}
 }
 
-// TestProveSurvivesAWorktreeThatWentAway is a regression test from the swarm
-// bench, where it cost a task that had already delivered.
+// TestProveSurvivesAWorktreeThatWentAway is the regression from the swarm bench,
+// where it cost a task that had already delivered.
 //
 // A stage stalled, the worktree was removed with it — correctly, since a stage
 // that ended has no tree (ADR-0055) — and every retry then failed on
-// `chdir ...: no such file or directory` rather than on the work. The delivery
-// was fine: `make ci` was green on the agent's own commit.
+// `chdir ...: no such file` rather than on the work. `make ci` was green on the
+// agent's own commit.
 //
-// The verification has to answer about the delivered commit, and a commit
-// outlives the tree that produced it. Reporting a missing directory as a failed
-// check would tell the audit the tests ran and lost.
+// The fix is what this asserts: the checkout is cut from the repository at the
+// delivered commit, and the repository outlives every stage.
 func TestProveSurvivesAWorktreeThatWentAway(t *testing.T) {
 	dir := repo(t)
+	delivered := strings.TrimSpace(output(t, dir, "git", "rev-parse", "HEAD"))
 
-	// The tree is gone, the way it is gone after a stage ends.
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("removing the worktree: %v", err)
-	}
+	// The tree the stage worked in, gone the way it is gone after a stage ends.
+	gone := filepath.Join(dir, "..", "wt-gone")
+	run(t, dir, "git", "worktree", "add", "--detach", "-q", gone, "HEAD")
+	run(t, dir, "git", "worktree", "remove", "--force", gone)
 
-	_, err := Shell{Dir: dir}.Prove(
-		context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 1,
+	// Pointed at the repository and the commit, which is what the node now passes.
+	evidence, err := Shell{Dir: dir, Commit: delivered}.Prove(
+		context.Background(), fsm.Command{Run: "test -f delivered.txt", Scope: fsm.ScopeFull}, 1,
 	)
-
-	if err == nil {
-		t.Fatal("a check against a directory that does not exist reported a verdict")
+	if err != nil {
+		t.Fatalf("verifying a stage whose worktree is gone: %v", err)
 	}
-	// It must not read as a failing check: nobody ran anything, so there is
-	// nothing to conclude about the work (INV-core-4).
-	if !strings.Contains(err.Error(), "no such file") &&
-		!strings.Contains(err.Error(), "checking out") {
-		t.Errorf("the error does not say the tree was missing: %v", err)
+	if !evidence.Passing() {
+		t.Errorf("the check did not pass against the delivered commit: %+v", evidence)
+	}
+}
+
+// TestProveVerifiesTheNamedCommitAndNotTheLatest is what the named commit buys.
+//
+// Two commits, and the check has to answer about the one the stage delivered.
+// Reading HEAD instead would verify whatever landed most recently, which on a
+// retry is a different stage's work.
+func TestProveVerifiesTheNamedCommitAndNotTheLatest(t *testing.T) {
+	dir := repo(t)
+	first := strings.TrimSpace(output(t, dir, "git", "rev-parse", "HEAD"))
+
+	write(t, dir, "later.txt", "a commit that came after")
+	run(t, dir, "git", "add", ".")
+	run(t, dir, "git", "commit", "-m", "a later stage")
+
+	evidence, err := Shell{Dir: dir, Commit: first}.Prove(
+		context.Background(), fsm.Command{Run: "test -f later.txt", Scope: fsm.ScopeFull}, 1,
+	)
+	if err != nil {
+		t.Fatalf("Prove: %v", err)
+	}
+	if evidence.Passing() {
+		t.Error("the check saw a file from a commit the stage did not deliver")
 	}
 }

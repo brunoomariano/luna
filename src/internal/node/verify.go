@@ -31,9 +31,26 @@ const DefaultTimeout = 10 * time.Minute
 
 // Shell runs verification commands over what a stage delivered.
 type Shell struct {
-	// Dir is the task's worktree — where the agent worked, and the repository the
-	// delivery is checked out from.
+	// Dir is where the delivery is checked out from. It is the repository, not
+	// the stage's worktree, and the difference is the bug this field's meaning
+	// changed to fix.
+	//
+	// Measured on the swarm bench: a stage stalled, its worktree was removed with
+	// it — correctly, since a stage that ended has no tree (ADR-0055) — and every
+	// retry then failed on `chdir ...: no such file` rather than on the work. The
+	// delivery was fine and `make ci` was green on the agent's own commit.
+	//
+	// A commit outlives the tree that produced it, and the repository outlives
+	// every stage. That is the same correction ADR-0055 made for the handoff and
+	// RFC-0006 made for gate checks; this is the third caller to make it.
 	Dir string
+
+	// Commit is what to verify. Empty means the delivery is whatever the
+	// repository's HEAD is, which is what a caller with no handoff to name has.
+	//
+	// It is named rather than discovered because discovering it meant reading
+	// HEAD from the stage's worktree, and that is the tree that goes away.
+	Commit string
 
 	// Timeout bounds one command. Zero means DefaultTimeout.
 	Timeout time.Duration
@@ -65,7 +82,7 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 	// out, and then the working tree is all there is to verify.
 	where := s.Dir
 	if !s.OverWorkingTree {
-		delivered, err := CheckoutDelivered(ctx, s.Dir)
+		delivered, err := CheckoutAt(ctx, s.Dir, s.Commit)
 		if err != nil {
 			return fsm.Evidence{}, err
 		}

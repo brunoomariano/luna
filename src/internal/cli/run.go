@@ -153,10 +153,15 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// overrides every role, which is what makes a run reproducible against one
 		// harness while the roles are still being tuned.
 		Roles: rolesFor(cfg, opts.Agent),
-		Prove: func(ws herdr.Workspace) herdr.Prover {
-			// The verification runs in the worktree herdr made, executed by Luna
+		Prove: func(commit string) herdr.Prover {
+			// Cut from the repository at the delivered commit, executed by Luna
 			// rather than through a pane (ADR-0035).
-			return node.Shell{Dir: ws.Path}
+			//
+			// The repository and not the stage's worktree: the tree is removed when
+			// the stage ends (ADR-0055), so a retry verified against a directory
+			// nobody had. This is the same `Dir: repo` the gate checks below already
+			// use — the two halves now agree about what outlives a stage.
+			return node.Shell{Dir: opts.Repo, Commit: commit}
 		},
 		// A worktree that would not go away does not fail the stage, but it does
 		// accumulate: a checkout left behind on every run eventually fills a disk,

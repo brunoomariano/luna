@@ -39,6 +39,9 @@ func TestAMechanicalStageDoesNotCollideWithARoleBranch(t *testing.T) {
 // test here is about what Luna does with what herdr said, so the answers have to
 // be set per case.
 type fakeHerdr struct {
+	// provedAt is the commit the verification was pointed at.
+	provedAt string
+
 	settlesAt AgentStatus
 
 	// exits maps a command to the code it returns. Absent means zero.
@@ -114,11 +117,12 @@ func (r recordingProver) Prove(_ context.Context, v fsm.Verifier, seq int) (fsm.
 }
 
 // proving wires a node to a recordingProver backed by this fake's answers.
-func (f *fakeHerdr) proving() func(Workspace) Prover {
+func (f *fakeHerdr) proving() func(commit string) Prover {
 	if f.exits == nil {
 		f.exits = map[string]int{}
 	}
-	return func(Workspace) Prover {
+	return func(commit string) Prover {
+		f.provedAt = commit
 		return recordingProver{exits: &f.exits, ran: &f.ran}
 	}
 }
@@ -306,7 +310,7 @@ func TestAnUnrunnableCheckIsNotAFailedCheck(t *testing.T) {
 	node := &Node{
 		Runner: herdr,
 		Roles:  fixedRole("claude"),
-		Prove:  func(Workspace) Prover { return brokenProver{err: broken} },
+		Prove:  func(string) Prover { return brokenProver{err: broken} },
 	}
 
 	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
@@ -801,5 +805,35 @@ func TestTheTaskBranchAgreesWithWhatLandsOnIt(t *testing.T) {
 	if spec.Branch() != node.TaskBranch("LUNA-1") {
 		t.Errorf("herdr creates %q and landing points %q",
 			spec.Branch(), node.TaskBranch("LUNA-1"))
+	}
+}
+
+// TestVerificationIsPointedAtTheDeliveredCommit is the correction the swarm
+// bench asked for.
+//
+// The verification used to be handed the stage's worktree, and a stage that
+// stalled had that tree removed with it (ADR-0055). Every retry then failed on
+// `chdir ...: no such file` rather than on the work — measured on a delivery
+// that was itself green.
+//
+// A commit outlives the tree that produced it, so the commit is what crosses.
+func TestVerificationIsPointedAtTheDeliveredCommit(t *testing.T) {
+	herdr := &fakeHerdr{}
+	node := &Node{
+		Runner: herdr,
+		Roles:  fixedRole("claude"),
+		Prove:  herdr.proving(),
+		Delivered: func(context.Context, string) (string, string) {
+			return "cafe1234", "build: what the stage committed"
+		},
+	}
+
+	if _, err := node.Run(context.Background(),
+		fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if herdr.provedAt != "cafe1234" {
+		t.Errorf("the verification was pointed at %q, want the delivered commit", herdr.provedAt)
 	}
 }

@@ -188,9 +188,14 @@ type Node struct {
 	// that cannot look should not block the work).
 	Statement func(ctx context.Context, taskID string) (fsm.Statement, error)
 
-	// Prove runs the contract's checks. It takes the worktree path, because that
-	// is where the commands run, and the node is what knows it (ADR-0035).
-	Prove func(ws Workspace) Prover
+	// Prove runs the contract's checks over a named commit.
+	//
+	// It takes the commit rather than the worktree, because the worktree is
+	// removed when the stage ends (ADR-0055) and a retry then had nowhere to run
+	// — measured on the swarm bench, on a delivery that was itself green. The
+	// commit outlives the tree, and the repository the node was configured with
+	// is what the checkout is cut from (ADR-0035).
+	Prove func(commit string) Prover
 
 	// Warn reports something that went wrong beside the work rather than in it —
 	// a worktree that would not be removed. Nil discards, because a node with no
@@ -418,7 +423,10 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 		}
 	}
 
-	prover := n.prover(ws)
+	// After result.Commit is read, because that is what gets verified: the commit
+	// the stage delivered, reached from the repository rather than from a tree
+	// that is about to be removed.
+	prover := n.prover(result.Commit)
 	for _, artifact := range owed {
 		evidence, err := prover.Prove(ctx, fsm.VerifierFor(stage, artifact), state.Seq)
 		if err != nil {
@@ -432,9 +440,9 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 // prover is what proves this stage's artifacts, defaulting to one that runs
 // nothing. The default keeps a zero Node usable — a stage still closes, on
 // existence evidence, which is the truth about what a Node with no prover proved.
-func (n *Node) prover(ws Workspace) Prover {
+func (n *Node) prover(commit string) Prover {
 	if n.Prove != nil {
-		return n.Prove(ws)
+		return n.Prove(commit)
 	}
 	return existenceOnly{}
 }

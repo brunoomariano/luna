@@ -57,14 +57,32 @@ func (d *Delivered) Close() {
 // first task, before anything was delivered. The caller gets nil and falls back to
 // verifying the working tree, which is all there is to verify.
 func CheckoutDelivered(ctx context.Context, worktree string) (*Delivered, error) {
-	head, err := git(ctx, worktree, "rev-parse", "--verify", "HEAD^{commit}")
+	return CheckoutAt(ctx, worktree, "")
+}
+
+// CheckoutAt makes a throwaway worktree at a named commit, cut from a repository.
+//
+// An empty commit means "whatever this repository's HEAD is", which is what
+// CheckoutDelivered asks for and what a caller with no handoff to name has.
+//
+// Naming the commit is what lets the checkout be cut from the repository rather
+// than from the stage's worktree. The repository outlives every stage; the
+// worktree is removed when the stage ends (ADR-0055), and a verification that
+// resolved HEAD from it failed on a missing directory the moment a stage was
+// retried — measured on the swarm bench, on work that was itself green.
+func CheckoutAt(ctx context.Context, repo, commit string) (*Delivered, error) {
+	if commit == "" {
+		commit = "HEAD"
+	}
+
+	resolved, err := git(ctx, repo, "rev-parse", "--verify", commit+"^{commit}")
 	if err != nil {
-		// No commit means nothing has been delivered yet, which is a state rather
-		// than a failure.
+		// Nothing to check out. Before the first delivery that is a state rather
+		// than a failure, and the caller falls back to the working tree.
 		return nil, nil //nolint:nilnil // "no delivery yet" is not an error
 	}
 
-	return throwawayCheckout(ctx, worktree, head, "luna-delivered-")
+	return throwawayCheckout(ctx, repo, resolved, "luna-delivered-")
 }
 
 // throwawayCheckout makes a detached worktree at a commit, and knows how to
