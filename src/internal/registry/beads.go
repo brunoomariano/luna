@@ -109,6 +109,17 @@ type Task struct {
 	// a label rather than as a field beads would have to understand.
 	Labels []string `json:"labels,omitempty"`
 
+	// Metadata is the shared bag beads keeps per task. Luna reads exactly one key
+	// out of it and leaves every other one undecoded.
+	//
+	// The deferred type is not laziness, it is the fix for a measured bug: typing
+	// this as `map[string]map[string]GateChecks` decodes correctly right up until
+	// another tool writes a scalar — `{"metadata": {"theirs": "a string"}}` — at
+	// which point the whole task fails to decode and Luna loses a task over
+	// metadata that was never its own. json.RawMessage defers each value, so a
+	// foreign key is carried past untouched whatever shape it has.
+	Metadata map[string]json.RawMessage `json:"metadata,omitempty"`
+
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
