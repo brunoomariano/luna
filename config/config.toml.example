@@ -23,55 +23,64 @@ editor = "vim"
 #
 # interpreter = "pi"
 
-# ── gate profiles ────────────────────────────────────────────────────────────
+# ── how supervised a run is ──────────────────────────────────────────────────
 #
-# A profile names which gates stop a task and wait for a person. It is chosen per
-# task (`luna task new LUNA-1 --profile turbo`), because the kind of work does not
-# predict the risk: a critical bug can deserve more gating than a trivial feature.
+# Two things decide it, and neither of them lives here.
 #
-# Three come installed — interactive (stops at everything), turbo (stops only
-# before the write) and nightly (stops at nothing). Naming any profile below
-# replaces that set with yours, so copy the ones you still want. Redefining a
-# shipped name is allowed: it is how you adjust turbo rather than work around it.
+# **Whether a gate waits** is the stage's own declaration: a gate stops when the
+# stage file gives it judgement criteria, or when the task's registry entry gives
+# it checks to run. A gate with neither was never going to put a question in
+# front of anybody, so it does not wait (ADR-0063). You edit that in
+# `.luna/stock/stages/`, beside the gate it governs.
 #
-# The gate kinds a profile may name:
+#   [gate]
+#   kind        = "review-artifact"
+#   artifact    = "contract"
+#   criticality = 9
+#   judge = [
+#     "The contract states what is required and what is forbidden",
+#   ]
 #
-#   confirm           a yes or no, with nothing attached
-#   confirm-write     the confirmation before the task writes — the commit
-#   review-artifact   the human reads what a stage produced, and may edit it
-#   loop-ceiling      a loop that stopped converging and needs a decision
+# **Who answers one that waited** is the autonomy knob, set per task:
 #
-# Editing a profile changes what tasks do from here on. It does not change what
-# past tasks replay to: each task's log records what its gates actually decided,
-# so history stays what happened (ADR-0026).
+#   luna autonomy LUNA-1        # show it
+#   luna autonomy LUNA-1 7      # the lead judges gates up to criticality 7
+#
+# 0 is the default and judges nothing. 10 lets the lead judge every gate — and a
+# lead judging honestly still asks when it cannot decide. Moving it writes an
+# event, so the log says when it changed; a gate already open keeps the answer it
+# opened with (RFC-0006).
+#
+# Declared checks are answered by their exit code before any of that, so a gate
+# whose commands pass is answered with no model involved. They are declared per
+# task, in the registry, because they vary per task:
+#
+#   bd create "..." --metadata '{"luna_gates": {
+#      "approve-spec": {"checks": ["make ci"]}
+#   }}'
 
-# A profile also decides how long to wait on an agent that has stopped reacting
-# before calling the task stuck. Two windows, because a real build runs silent
-# for many minutes and an agent that stopped does not:
+# ── profiles ─────────────────────────────────────────────────────────────────
 #
-#   idle_budget   nothing is running and the agent is not reacting
-#   tool_budget   a tool is in flight; a compile is not a stall
+# A profile now decides exactly one thing: how long to wait on an agent that has
+# stopped reacting before calling the task stuck. It used to decide which gates
+# wait, and no longer does (ADR-0063) — a `waits` key here is refused rather than
+# ignored, because a file that reads like supervision and decides nothing is
+# worse than one that will not load.
 #
-# Both are optional and default to 30m / 2h. There is deliberately no wall-clock
-# cap: progress, not elapsed time, is the signal worth acting on.
+# One budget bounds a whole turn, tool time included (ADR-0051). It defaults to
+# 2h. There is deliberately no wall-clock cap on the task: progress, not elapsed
+# time, is the signal worth acting on.
 #
-# The profile that waits at no gate has nobody watching, which makes its watchdog
-# the only net — so it is usually the one worth tightening.
-
-# [profile.interactive]
-# waits = ["confirm", "confirm-write", "review-artifact", "loop-ceiling"]
-
-# [profile.turbo]
-# waits = ["confirm-write"]
+# The profile is chosen per task (`luna task new LUNA-1 --profile nightly`) and
+# recorded in its log, so a replay reproduces the run as it happened.
 
 # [profile.nightly]
-# waits = []
-# idle_budget = "15m"
-# tool_budget = "1h"
+# turn_budget = "45m"
 
-# A profile of your own — this one reviews the contract but trusts the rest.
-# [profile.spec-only]
-# waits = ["review-artifact", "confirm-write"]
+# A profile of your own — this one gives a long-running build more room before
+# the watchdog calls it stuck.
+# [profile.patient]
+# turn_budget = "4h"
 
 # ── roles ────────────────────────────────────────────────────────────────────
 #

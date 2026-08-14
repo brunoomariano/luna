@@ -180,18 +180,25 @@ A gate stops the task and waits for a human decision. It does **not** hold a liv
 a short wait in the terminal, the task suspends and releases the slot. Another task uses the
 resource while you decide; `luna gate approve` resumes from the exact point.
 
-Which gates stop is decided by **profile**, chosen per task:
+**A gate stops when its stage declared something to answer it with** — judgement criteria in
+the stage file, or checks in the task's registry entry. A gate with neither was never going to
+put a question in front of anybody, so it does not wait
+([ADR-0063](../ADRs/0063-a-gate-waits-because-a-stage-declared-something-to-answer-it-with.md)).
 
-| Profile | Behavior |
+**Who answers one that stopped is the autonomy knob**, `0`–`10` per task:
+
+| Knob | Behavior |
 |---|---|
-| `interactive` | every gate waits for a human |
-| `turbo` | only the write (commit) waits |
-| `nightly` | nothing waits |
+| `0` | every gate with criteria goes to a person. The default. |
+| `n` | the lead judges every gate whose declared criticality is at or below `n` |
+| `10` | the lead judges all of them — and still asks when it cannot decide |
 
-These three come installed; a project defines its own in `.luna/config.toml`, naming the gate
-kinds that wait. Editing a profile changes what tasks do from here on and leaves the past
-alone: every advance records what its gate actually decided, so a replay reads a fact instead
-of recomputing one
+Declared checks are answered by their exit code before any of that, so a gate whose commands
+pass is answered without a model
+([RFC-0006](../RFCs/rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md)).
+
+Changing the knob changes what tasks do from here on and leaves the past alone: every advance
+records what its gate actually decided, so a replay reads a fact instead of recomputing one
 ([ADR-0026](../ADRs/0026-the-log-records-the-gate-decision-not-the-policy.md)).
 
 ### The gate carries what needs to be decided
@@ -280,7 +287,7 @@ Everything that defines behavior has a default version and a user version:
 |---|---|---|---|
 | Stages | `DefaultFlow()` | disable, edit, create | not yet — see below |
 | Roles | `ShippedRoles()` | your own, in `.luna/config.toml` | agent, brief and `tools_deny` |
-| Gate profiles | three | your own, in `.luna/config.toml` | yes |
+| Gate criticality | on the shipped stages | your own, in `.luna/stock/stages/` | yes |
 | Loops | one | declare others, with rules | not yet |
 | Skills | Luna's, installed alongside | point to your own directory | not yet |
 

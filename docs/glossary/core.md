@@ -138,21 +138,29 @@ process: after a short wait in the terminal, the task suspends and releases the 
 **Do not confuse with.** *Block by failure* — the gate is a planned pause; the block
 is the exit of a node that failed.
 
-**Where it appears.** Which gates stop is decided by *profile*.
+**Where it appears.** A gate stops when its stage declared something to answer it with, and
+the *autonomy knob* decides who answers.
 
 ---
 
-## Profile (*profile*)
+## Autonomy knob (*knob*)
 
-**Definition.** The set of rules that decides which gates wait for a human. Chosen
-**per task**, not per task type nor per repository — the type does not predict the risk.
+**Definition.** How far the lead may answer a gate on its own: a number `0`–`10`, set **per
+task**, compared against the criticality each gate declares. `0` judges nothing and is the
+default; `10` lets the lead judge every gate — and a lead judging honestly still asks when it
+cannot decide.
 
-**Where it appears.** Three come installed: `interactive` (every gate waits), `turbo` (only the
-write waits), `nightly` (nothing waits). A project defines its own in `.luna/config.toml`, and
-naming any profile there replaces the shipped set.
+**Where it appears.** `luna autonomy <id> [0-10]` shows it and moves it, including mid-run.
+Moving it writes an event, so the log says when it changed and why; a gate already open keeps
+the answer it opened with
+([RFC-0006](../RFCs/rfc-0006-a-gate-checks-what-it-can-and-a-knob-says-who-judges-the-rest.md)).
 
-A profile is configuration, so what a name means can change. What a task already did cannot:
-each gate its log records carries the decision that was taken, not the policy that produced it
+**Do not confuse with.** *Profile* — which used to decide which gates wait and no longer
+decides anything. It survives as the watchdog's budget and as history in a task's log
+([ADR-0063](../ADRs/0063-a-gate-waits-because-a-stage-declared-something-to-answer-it-with.md)).
+
+What a task already did cannot change: each gate its log records carries the decision that was
+taken, not the policy that produced it
 ([ADR-0026](../ADRs/0026-the-log-records-the-gate-decision-not-the-policy.md)).
 
 ---
