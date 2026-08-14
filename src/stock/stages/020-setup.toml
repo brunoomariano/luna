@@ -3,7 +3,7 @@
 # worktree is not a judgement.
 
 id       = "setup"
-requires = ["repos"]
+requires = ["task_id"]
 produces = ["worktree"]
 
 [verify.worktree]

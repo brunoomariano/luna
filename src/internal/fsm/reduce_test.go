@@ -85,13 +85,14 @@ func TestAdvanceEntersTheFirstStage(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Stage != "discovery" {
-		t.Errorf("want discovery, got %q", state.Stage)
+	if state.Stage != "setup" {
+		t.Errorf("want setup, got %q", state.Stage)
 	}
-	// discovery carries the confirm-repos gate, so under the default profile the
-	// task suspends rather than running.
-	if state.Status != StatusAwaitingGate {
-		t.Errorf("discovery has a gate; want awaiting_gate, got %q", state.Status)
+	// setup is mechanical and opens no gate, so the task runs straight into it.
+	// It became the first stage when ADR-0062 removed `commit` and `discovery`
+	// went with it.
+	if state.Status != StatusRunning {
+		t.Errorf("setup opens no gate; want running, got %q", state.Status)
 	}
 }
 
@@ -135,15 +136,21 @@ func TestAdvanceRefusesAStageMissingItsInputs(t *testing.T) {
 //
 // Reaching the end is the happy path, not a failure: the task becomes done.
 func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
-	state := atStage(t, KindDocs, "commit")
-	stage := stageIn(DefaultFlow(), "commit")
+	// `commit` was the last stage until ADR-0062. On a docs task the flow now ends
+	// after qa: code-review is not-docs, harden is feature-or-bug, and
+	// architecture needs a fact this task never discovered.
+	state := atStage(t, KindDocs, "qa")
+	stage := stageIn(DefaultFlow(), "qa")
 
+	// qa owes only a human-read report, so the delivery has to include
+	// ProducesForHuman — the exit check counts both fields (INV-core-11).
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	state, err := Reduce(state, Complete{
-		Delivered: stage.Produces,
-		Evidence:  passing(stage, stage.Produces),
+		Delivered: owed,
+		Evidence:  passing(stage, owed),
 	})
 	if err != nil {
-		t.Fatalf("completing commit: %v", err)
+		t.Fatalf("completing qa: %v", err)
 	}
 	state, err = Reduce(state, Advance{Flow: DefaultFlow()})
 	if err != nil {
@@ -350,12 +357,20 @@ func TestFailRetriesTwiceThenBlocks(t *testing.T) {
 
 // TestGateApproveResumesTheStage covers scenario H2.
 func TestGateApproveResumesTheStage(t *testing.T) {
-	state, err := Reduce(readyTask(KindFeature), Advance{Flow: DefaultFlow()})
+	// A one-stage flow with a gate: what this is about is the approve, not which
+	// shipped stage happens to carry one.
+	gated := []Stage{{
+		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
+		Produces: []Artifact{"thing"},
+		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
+	}}
+
+	state, err := Reduce(readyTask(KindFeature), Advance{Flow: gated})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if state.Status != StatusAwaitingGate {
-		t.Fatalf("expected a gate on discovery, got %q", state.Status)
+		t.Fatalf("expected a gate, got %q", state.Status)
 	}
 
 	state, err = Reduce(state, GateApprove{})
@@ -783,7 +798,12 @@ func TestAbandonEndsATaskFromWhereverItIs(t *testing.T) {
 // A gate left pending on a task nobody will finish would sit in `luna gates`
 // forever, waiting for a decision that no longer means anything (INV-core-12).
 func TestAbandonClearsAPendingGate(t *testing.T) {
-	waiting := mustReduce(t, readyTask(KindFeature), Advance{Flow: DefaultFlow()})
+	gated := []Stage{{
+		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
+		Produces: []Artifact{"thing"},
+		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
+	}}
+	waiting := mustReduce(t, readyTask(KindFeature), Advance{Flow: gated})
 	if waiting.Status != StatusAwaitingGate || waiting.Gate == nil {
 		t.Fatalf("setup: want a task waiting at a gate, got %q", waiting.Status)
 	}

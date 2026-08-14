@@ -74,7 +74,7 @@ shape, arrived at from the same problem.
   - `src/internal/fsm/fingerprint.go` — **the decision point**, see Drawbacks;
   - `src/internal/fsm/reduce.go` — the exit check consults it;
   - `src/internal/herdr/node.go` — the brief tells the agent the path;
-  - `src/stock/stages/*.toml` — 14 stages to classify.
+  - `src/stock/stages/*.toml` — every shipped stage to classify.
 
 - **Affected contracts:** the stage contract itself, which is the flow's identity.
 

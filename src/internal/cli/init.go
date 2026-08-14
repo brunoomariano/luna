@@ -27,16 +27,10 @@ func StockDir(storePath string) string {
 // fourteen stages raises "does this replace the default or extend it?", and
 // whichever answer is chosen, someone reads the other one into it.
 func initCommand(env Env, args []string) error {
-	flags, err := parseFlags(args)
+	force, err := parseInitOptions(args)
 	if err != nil {
 		return err
 	}
-	for name := range flags {
-		if name != "force" {
-			return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
-		}
-	}
-	_, force := flags["force"]
 
 	if env.Stock == "" {
 		return fmt.Errorf("no project directory to write into")
@@ -49,6 +43,16 @@ func initCommand(env Env, args []string) error {
 		if entries, err := os.ReadDir(env.Stock); err == nil && len(entries) > 0 {
 			return fmt.Errorf("%s already has a stock — edit it, or `luna init --force` "+
 				"to replace it with the shipped one (which discards your edits)", env.Stock)
+		}
+	}
+
+	// Replace means replace. Overwriting file by file leaves behind anything the
+	// shipped flow no longer carries — and a leftover stage is a valid stage, so
+	// the loader keeps running it and nothing says why. Measured after ADR-0062
+	// removed two stages: `luna flow check` still reported fourteen.
+	if force {
+		if err := clearStock(env.Stock); err != nil {
+			return err
 		}
 	}
 
@@ -120,4 +124,33 @@ func describeStock(dir string) string {
 // stockNote is the line `luna flow check` prints about where the flow came from.
 func stockNote(dir string) string {
 	return strings.TrimSpace("from " + describeStock(dir))
+}
+
+// clearStock empties the directories the stock owns, leaving anything else alone.
+//
+// Named subdirectories rather than the whole tree: `.luna` holds the log and
+// whatever else a project keeps there, and `--force` is about the stock.
+func clearStock(dir string) error {
+	for _, sub := range []string{"stages", "roles", "profiles"} {
+		path := filepath.Join(dir, sub)
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("clearing %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// parseInitOptions reads the one flag this command takes.
+func parseInitOptions(args []string) (force bool, err error) {
+	flags, err := parseFlags(args)
+	if err != nil {
+		return false, err
+	}
+	for name := range flags {
+		if name != "force" {
+			return false, fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		}
+	}
+	_, force = flags["force"]
+	return force, nil
 }

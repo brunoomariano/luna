@@ -19,25 +19,29 @@ cosmetic:
 
 | # | Stage | Role | Gate | Condition | Requires | Produces for the flow | Produces for human |
 |---|---|---|---|---|---|---|---|
-| 1 | `discovery` | `scout` | confirm-repos | | `task_id` | `repos` | |
-| 2 | `setup` | — | | | `repos` | `worktree` | |
-| 3 | `intake` | `analyst` | | | `task_id`, `worktree` | `briefing`, `kind` | |
-| 4 | `diagnose` | `investigator` | | is a bug | `briefing` | `root_cause` | `min_case` |
-| 5 | `scenarios` | `gherkin` | approve-plan | | `briefing`, `kind` | `scenarios`, `approach` | |
-| 6 | `spec` | `specifier` | approve-spec ⇄ | feature or bug | `approach` | `contract` | |
-| 7 | `build` | `implementer` | | 🔁 | `scenarios`, `approach`, `worktree`, `contract`* | `code`, `tests_green` | |
-| 8 | `refactor` | `cleaner` | | 🔁 | `code`, `tests_green` | `code` | |
-| 9 | `verify` | `verifier` | | 🔁 | `code`, `scenarios` | `ci_green` | `dod_checked` |
-| 10 | `qa` | `qa` | | not a chore | `ci_green`, `briefing` | | `qa_report` |
-| 11 | `code-review` | `reviewer` | | not docs | `code`, `ci_green` | | `review_report` |
-| 12 | `harden` | `hardener` | | feature or bug | `tests_green`, `code` | | `mutation_report` |
-| 13 | `architecture` | `architect` | | touches structure † | `code` | | `arch_report` |
-| 14 | `commit` | — | confirm-write | | `ci_green`, `code` | `commit_sha` | |
+| 1 | `setup` | — | | | `task_id` | `worktree` | |
+| 2 | `intake` | `analyst` | | | `task_id`, `worktree` | `briefing`, `kind` | |
+| 3 | `diagnose` | `investigator` | | is a bug | `briefing` | `root_cause` | `min_case` |
+| 4 | `scenarios` | `gherkin` | approve-plan | | `briefing`, `kind` | `scenarios`, `approach` | |
+| 5 | `spec` | `specifier` | approve-spec ⇄ | feature or bug | `approach` | `contract` | |
+| 6 | `build` | `implementer` | | 🔁 | `scenarios`, `approach`, `worktree`, `contract`* | `code`, `tests_green` | |
+| 7 | `refactor` | `cleaner` | | 🔁 | `code`, `tests_green` | `code` | |
+| 8 | `verify` | `verifier` | | 🔁 | `code`, `scenarios` | `ci_green` | `dod_checked` |
+| 9 | `qa` | `qa` | | not a chore | `ci_green`, `briefing` | | `qa_report` |
+| 10 | `code-review` | `reviewer` | | not docs | `code`, `ci_green` | | `review_report` |
+| 11 | `harden` | `hardener` | | feature or bug | `tests_green`, `code` | | `mutation_report` |
+| 12 | `architecture` | `architect` | | touches structure † | `code` | | `arch_report` |
 
 The role names are the ones `DefaultFlow()` declares, and
-`TestDefaultFlowMatchesDocumentedStages` compares them against this table. Only `setup` and
-`commit` are mechanical — a stage that produces a judgement and names no role is refused by
+`TestDefaultFlowMatchesDocumentedStages` compares them against this table. Only `setup` is
+mechanical — a stage that produces a judgement and names no role is refused by
 `AuditRoles` ([ADR-0040](../ADRs/0040-a-role-resolves-to-an-agent-and-mechanical-stages-have-none.md)).
+
+Two stages are gone since this table was first written, both by
+[ADR-0062](../ADRs/0062-luna-does-not-integrate-a-task-ends-on-its-own-branch.md): `commit`,
+because Luna does not integrate — a task ends on `luna/<task>` and moving that work is a
+manual act — and `discovery`, because a task is always about the current repository, so
+there is nothing to discover and nobody to confirm it with.
 
 **Every column above is a field of the stage**, including the gate and the condition. That
 was not always so: gates were a `switch` over these four stage ids inside the reducer, which

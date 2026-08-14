@@ -26,7 +26,7 @@ func TestAnEditedProfileDoesNotRewriteThePast(t *testing.T) {
 		fsm.Advance{GateDecision: fsm.GateDecisionPassed},
 	)
 
-	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	state, err := s.Replay("LUNA-1", gatedFlow())
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestAnEditedProfileDoesNotRewriteThePast(t *testing.T) {
 		fsm.Advance{GateDecision: fsm.GateDecisionWaited},
 	)
 
-	waited, err := s.Replay("LUNA-2", fsm.DefaultFlow())
+	waited, err := s.Replay("LUNA-2", gatedFlow())
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestALogWithoutDecisionsStillReplays(t *testing.T) {
 		fsm.Advance{},
 	)
 
-	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	state, err := s.Replay("LUNA-1", gatedFlow())
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestAProfileNoLongerDefinedStillReplays(t *testing.T) {
 		fsm.Advance{GateDecision: fsm.GateDecisionPassed},
 	)
 
-	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+	state, err := s.Replay("LUNA-1", gatedFlow())
 	if err != nil {
 		t.Fatalf("a profile the config no longer defines must still replay: %v", err)
 	}
@@ -108,4 +108,17 @@ func appendAll(t *testing.T, s *Store, taskID string, actions ...fsm.Action) {
 			t.Fatalf("appending %T: %v", action, err)
 		}
 	}
+}
+
+// gatedFlow is a one-stage flow whose stage opens a confirm.
+//
+// These tests are about what a recorded decision does on replay, not about the
+// shipped flow's shape — which changed when ADR-0062 removed `commit` and
+// `discovery` went with it, leaving the mechanical `setup` first and gateless.
+func gatedFlow() []fsm.Stage {
+	return []fsm.Stage{{
+		ID: "gated", Role: "someone", Requires: []fsm.Artifact{fsm.TaskID},
+		Produces: []fsm.Artifact{"thing"},
+		Gate:     &fsm.GateSpec{Kind: fsm.GateConfirm, Reason: "confirm it"},
+	}}
 }

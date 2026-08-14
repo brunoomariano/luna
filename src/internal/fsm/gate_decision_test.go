@@ -11,7 +11,7 @@ func TestARecordedDecisionOverridesTheShippedPolicy(t *testing.T) {
 	// interactive stops at every gate, and discovery opens one.
 	state := start(t, ProfileInteractive)
 
-	state, err := Reduce(state, Advance{Flow: DefaultFlow(), GateDecision: GateDecisionPassed})
+	state, err := Reduce(state, Advance{Flow: gatedFlow(), GateDecision: GateDecisionPassed})
 	if err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestARecordedDecisionOverridesTheShippedPolicy(t *testing.T) {
 func TestARecordedWaitHoldsAgainstAPermissiveProfile(t *testing.T) {
 	state := start(t, ProfileNightly)
 
-	state, err := Reduce(state, Advance{Flow: DefaultFlow(), GateDecision: GateDecisionWaited})
+	state, err := Reduce(state, Advance{Flow: gatedFlow(), GateDecision: GateDecisionWaited})
 	if err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
@@ -43,8 +43,8 @@ func TestARecordedWaitHoldsAgainstAPermissiveProfile(t *testing.T) {
 	if state.Gate == nil {
 		t.Fatal("a gate that waited must be pending")
 	}
-	if state.Gate.Stage != "discovery" {
-		t.Errorf("want the discovery gate, got %q", state.Gate.Stage)
+	if state.Gate.Stage != "gated" {
+		t.Errorf("want the gated stage, got %q", state.Gate.Stage)
 	}
 }
 
@@ -63,7 +63,7 @@ func TestAnEventWithNoDecisionFallsBackToTheShippedPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		state, err := Reduce(start(t, c.profile), Advance{Flow: DefaultFlow()})
+		state, err := Reduce(start(t, c.profile), Advance{Flow: gatedFlow()})
 		if err != nil {
 			t.Fatalf("%s: advancing: %v", c.profile, err)
 		}
@@ -150,12 +150,12 @@ func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
 func TestGateAheadNamesTheGateAnAdvanceWouldHit(t *testing.T) {
 	state := start(t, ProfileInteractive)
 
-	gate := GateAhead(state, DefaultFlow())
+	gate := GateAhead(state, gatedFlow())
 	if gate == nil {
-		t.Fatal("discovery opens a gate; want it named")
+		t.Fatal("the stage ahead opens a gate; want it named")
 	}
-	if gate.Kind != GateConfirm || gate.Stage != "discovery" {
-		t.Errorf("want the discovery confirm, got %+v", gate)
+	if gate.Kind != GateConfirm || gate.Stage != "gated" {
+		t.Errorf("want the confirm, got %+v", gate)
 	}
 
 	if state.Stage != "" || state.Status != StatusReady {
@@ -280,4 +280,17 @@ func TestAReviewFindingMakesTheGreenStale(t *testing.T) {
 	if after.Evidence["contract"].Verdict != VerdictPassed {
 		t.Error("existence evidence survives a rollback")
 	}
+}
+
+// gatedFlow is a one-stage flow whose stage opens a confirm.
+//
+// These tests are about what a recorded decision does, not about the shipped
+// flow's shape — which changed when ADR-0062 removed `commit` and `discovery`
+// went with it, leaving the mechanical `setup` first and gateless.
+func gatedFlow() []Stage {
+	return []Stage{{
+		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
+		Produces: []Artifact{"thing"},
+		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
+	}}
 }

@@ -109,13 +109,8 @@ func TestTheLoopStopsWhenSomethingNeedsAPerson(t *testing.T) {
 		return "carried on", nil
 	}
 
-	// Interactive stops at the first gate, which the first stage opens.
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{
-		Flow:         fsm.DefaultFlow(),
-		GateDecision: fsm.GateDecisionWaited,
-	}); err != nil {
-		t.Fatalf("advancing to the gate: %v", err)
-	}
+	// Interactive stops at every gate; walk to the first one there is.
+	seedAtFirstGate(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "lead", "LUNA-1")
 

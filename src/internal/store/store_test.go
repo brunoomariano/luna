@@ -153,10 +153,9 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	live := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
-		fsm.GateApprove{},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"repos"},
-			Evidence:  map[fsm.Artifact]fsm.Evidence{"repos": fsm.Exists(0)},
+			Delivered: []fsm.Artifact{"worktree"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(0)},
 		},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 	} {
@@ -227,7 +226,6 @@ func TestReplayIsDeterministic(t *testing.T) {
 
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
-		fsm.GateApprove{},
 	} {
 		if err := s.AppendAction("LUNA-1", action); err != nil {
 			t.Fatalf("appending: %v", err)
@@ -279,13 +277,12 @@ func TestAnUnknownActionInTheLogIsReported(t *testing.T) {
 func TestSuspendedTasksAreListable(t *testing.T) {
 	s := openTemp(t)
 
-	// One task stops at the discovery gate; another runs past it.
-	if err := s.AppendAction("waiting", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("appending: %v", err)
-	}
+	// One task stops at a gate; another runs past it. Reaching a gate takes a walk
+	// now: the shipped flow starts at the mechanical `setup`, which opens none
+	// (ADR-0062 removed `commit`, and `discovery` went with it).
+	walkToGate(t, s, "waiting")
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
-		fsm.GateApprove{},
 	} {
 		if err := s.AppendAction("running", action); err != nil {
 			t.Fatalf("appending: %v", err)
@@ -303,7 +300,7 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 	if waiting[0].TaskID != "waiting" {
 		t.Errorf("want the task that stopped at a gate, got %q", waiting[0].TaskID)
 	}
-	if waiting[0].Stage != "discovery" {
+	if waiting[0].Stage != "scenarios" {
 		t.Errorf("the listing says where it stopped; got %q", waiting[0].Stage)
 	}
 }
@@ -511,7 +508,7 @@ func TestALogWithoutAFingerprintStillReplays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an old log must still replay: %v", err)
 	}
-	if state.Stage != "discovery" {
+	if state.Stage != "setup" {
 		t.Errorf("want the task where its log left it, got %q", state.Stage)
 	}
 }
@@ -536,9 +533,7 @@ func TestAnUnreadableTaskDoesNotHideTheOthers(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("creating the healthy task: %v", err)
 	}
-	if err := s.AppendAction("LUNA-2", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("advancing: %v", err)
-	}
+	walkToGate(t, s, "LUNA-2")
 
 	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
 	if err != nil {
@@ -603,8 +598,7 @@ func TestAnAppendAtTheCurrentPositionLands(t *testing.T) {
 	// A real sequence rather than the same action three times: each append reads
 	// the log, decides, and writes, which is the loop the lead runs.
 	for _, action := range []fsm.Action{
-		fsm.Advance{Flow: fsm.DefaultFlow()}, // into discovery, which gates
-		fsm.GateApprove{},
+		fsm.Advance{Flow: fsm.DefaultFlow()}, // into setup, which is mechanical
 		fsm.Abandon{Reason: "done proving the point"},
 	} {
 		state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
@@ -620,8 +614,8 @@ func TestAnAppendAtTheCurrentPositionLands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading: %v", err)
 	}
-	if len(events) != 4 {
-		t.Errorf("want 4 events, got %d", len(events))
+	if len(events) != 3 {
+		t.Errorf("want 3 events, got %d", len(events))
 	}
 }
 
@@ -638,7 +632,6 @@ func TestTheReducersSequenceIsTheLogPosition(t *testing.T) {
 	for _, action := range []fsm.Action{
 		fsm.TaskCreated{Kind: fsm.KindChore},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
-		fsm.GateApprove{},
 	} {
 		if err := s.AppendAction("LUNA-1", action); err != nil {
 			t.Fatalf("appending %T: %v", action, err)
@@ -731,4 +724,45 @@ func TestAConditionalAppendRefusesAnActionItCannotEncode(t *testing.T) {
 	if err := s.AppendActionAt("LUNA-1", 0, nil); !errors.Is(err, ErrUnknownAction) {
 		t.Errorf("want ErrUnknownAction, got %v", err)
 	}
+}
+
+// walkToGate drives a task through the shipped flow until a stage opens a gate,
+// and leaves it suspended there.
+//
+// It closes each stage on its way, delivering whatever that stage's contract
+// asks for — the walk is scaffolding, and what the test is about is the task
+// being discoverable once it stops.
+func walkToGate(t *testing.T, s *Store, id string) {
+	t.Helper()
+
+	flow := fsm.DefaultFlow()
+	for range flow {
+		state, err := s.Replay(id, flow)
+		if err != nil {
+			t.Fatalf("walking %s: %v", id, err)
+		}
+		if state.Gate != nil {
+			return
+		}
+
+		var action fsm.Action = fsm.Advance{Flow: flow, GateDecision: fsm.GateDecisionWaited}
+		if state.Status == fsm.StatusRunning {
+			stage := fsm.Stage{ID: state.Stage}
+			for _, candidate := range flow {
+				if candidate.ID == state.Stage {
+					stage = candidate
+				}
+			}
+			owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+			evidence := map[fsm.Artifact]fsm.Evidence{}
+			for _, a := range owed {
+				evidence[a] = fsm.Evidence{Scope: fsm.VerifierFor(stage, a).Proves(), Verdict: fsm.VerdictPassed}
+			}
+			action = fsm.Complete{Delivered: owed, Evidence: evidence, Flow: flow}
+		}
+		if err := s.AppendAction(id, action); err != nil {
+			t.Fatalf("walking %s: %v", id, err)
+		}
+	}
+	t.Fatalf("no stage in the shipped flow opens a gate")
 }

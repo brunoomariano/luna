@@ -106,7 +106,7 @@ LLM steps sprinkled in at just the right points"*.
 Graph-based tracker for agents: dependencies, computing what is free to start, atomic
 claiming. Used for the ordering **between** tasks.
 
-It is not used for the stages **within** a task — modeling 14 stages × N tasks as
+It is not used for the stages **within** a task — modeling the stages × N tasks as
 sub-issues would inflate the graph with no gain.
 
 ## Agent of Empires and herdr

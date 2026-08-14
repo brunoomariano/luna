@@ -1,14 +1,14 @@
 {
   "ends": {
     "seq": 4,
-    "stage": "setup",
+    "stage": "intake",
     "status": "running"
   },
   "events": [
     {
       "Seq": 1,
       "Action": "TaskCreated",
-      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"c0c9ff4d121b43fc\"}",
+      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"a7da0f3c7ef41a06\"}",
       "Blob": ""
     },
     {
@@ -20,7 +20,7 @@
     {
       "Seq": 3,
       "Action": "Complete",
-      "Payload": "{\"delivered\":[\"repos\"],\"evidence\":{\"repos\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}",
+      "Payload": "{\"delivered\":[\"worktree\"],\"evidence\":{\"worktree\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}",
       "Blob": ""
     },
     {

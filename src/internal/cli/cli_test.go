@@ -307,15 +307,15 @@ func TestTaskShowListsWhatWasProducedWithItsEvidence(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
 
-	// Drive the task through discovery so it has produced something.
+	// Drive the task through the first stage so it has produced something.
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"repos"},
-			Evidence: map[fsm.Artifact]fsm.Evidence{"repos": {
+			Delivered: []fsm.Artifact{"worktree"},
+			Evidence: map[fsm.Artifact]fsm.Evidence{"worktree": {
 				Scope:   fsm.ScopeFull,
 				Verdict: fsm.VerdictPassed,
-				Command: "found 2 repositories",
+				Command: "git worktree add",
 			}},
 		},
 	} {
@@ -326,12 +326,12 @@ func TestTaskShowListsWhatWasProducedWithItsEvidence(t *testing.T) {
 
 	out := h.mustRun(t, "task", "show", "LUNA-1")
 
-	if !strings.Contains(out, "repos") {
+	if !strings.Contains(out, "worktree") {
 		t.Errorf("want the produced artifact listed, got %q", out)
 	}
 	// Evidence is what separates knowing a stage closed from knowing on what
 	// grounds it closed (ADR-0024).
-	if !strings.Contains(out, "found 2 repositories") {
+	if !strings.Contains(out, "git worktree add") {
 		t.Errorf("want the evidence shown, got %q", out)
 	}
 }
@@ -356,16 +356,14 @@ func TestTaskShowOnAnUnknownTask(t *testing.T) {
 func TestGatesListsWhatIsWaiting(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "waiting")
-	if err := h.env.Store.AppendAction("waiting", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("seeding: %v", err)
-	}
+	stage := seedAtFirstGate(t, h, "waiting")
 
 	out := h.mustRun(t, "gates")
 
 	if !strings.Contains(out, "waiting") {
 		t.Errorf("want the suspended task listed, got %q", out)
 	}
-	if !strings.Contains(out, "discovery") {
+	if !strings.Contains(out, string(stage)) {
 		t.Errorf("want the stage it stopped at, got %q", out)
 	}
 }
@@ -400,13 +398,11 @@ func TestANightlyTaskDoesNotAppearInTheListing(t *testing.T) {
 func TestGateShowSaysWhatIsBeingAskedFor(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("seeding: %v", err)
-	}
+	seedAtFirstGate(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
 
-	if !strings.Contains(out, "confirm the repositories") {
+	if !strings.Contains(out, "approve the plan") {
 		t.Errorf("want the reason it stopped, got %q", out)
 	}
 }
@@ -414,9 +410,7 @@ func TestGateShowSaysWhatIsBeingAskedFor(t *testing.T) {
 func TestGateApproveResumesTheTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("seeding: %v", err)
-	}
+	seedAtFirstGate(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "gate", "approve", "LUNA-1")
 
@@ -454,11 +448,9 @@ func TestGateCommandsRefuseATaskThatIsNotWaiting(t *testing.T) {
 func TestGateAdjustAppliesTheEditedVersion(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("seeding: %v", err)
-	}
+	seedAtFirstGate(t, h, "LUNA-1")
 
-	// discovery carries a plain confirm, which has nothing to adjust.
+	// scenarios carries a plain confirm, which has nothing to adjust.
 	err := h.run(t, "gate", "adjust", "LUNA-1")
 
 	if err == nil || !strings.Contains(err.Error(), "no artifact") {
@@ -596,9 +588,6 @@ func specGateStore(t *testing.T, h *harness, id string) {
 
 	actions := []fsm.Action{
 		fsm.TaskCreated{Kind: fsm.KindFeature},
-		fsm.Advance{Flow: fsm.DefaultFlow()}, // discovery, gated
-		fsm.GateApprove{},                    //
-		delivered("repos"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // setup
 		delivered("worktree"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // intake
@@ -771,7 +760,7 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 
 	// Advancing into a stage whose inputs are missing blocks the task.
 	flow := []fsm.Stage{
-		{ID: "first", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"repos"}},
+		{ID: "first", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"worktree"}},
 		{ID: "second", Requires: []fsm.Artifact{"never_produced"}, Produces: []fsm.Artifact{"x"}},
 	}
 	for _, action := range []fsm.Action{
@@ -779,8 +768,8 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 		// The first stage closes cleanly; the block has to come from the second
 		// stage's missing input, not from an unverified delivery.
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"repos"},
-			Evidence:  map[fsm.Artifact]fsm.Evidence{"repos": fsm.Exists(0)},
+			Delivered: []fsm.Artifact{"worktree"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(0)},
 			Flow:      flow,
 		},
 		fsm.Advance{Flow: flow},
@@ -956,9 +945,7 @@ func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("seeding: %v", err)
-	}
+	seedAtFirstGate(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "gates")
 	if !strings.Contains(out, "no longer defined") {

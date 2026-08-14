@@ -11,15 +11,8 @@ import "testing"
 func goFlow() []Stage {
 	return []Stage{
 		{
-			ID:       "discovery",
-			Role:     "scout",
-			Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm the repositories"},
-			Requires: []Artifact{TaskID},
-			Produces: []Artifact{"repos"},
-		},
-		{
 			ID:       "setup",
-			Requires: []Artifact{"repos"},
+			Requires: []Artifact{TaskID},
 			Produces: []Artifact{"worktree"},
 		},
 		{
@@ -149,19 +142,6 @@ func goFlow() []Stage {
 			// after looking at what build produced.
 			When: TouchedStructure,
 		},
-		{
-			ID:       "commit",
-			Gate:     &GateSpec{Kind: GateConfirmWrite, Reason: "confirm the write"},
-			Requires: []Artifact{"ci_green", "code"},
-			Produces: []Artifact{"commit_sha"},
-			Verifiers: map[Artifact]Verifier{
-				// INV-core-4 names this one literally: the commit resolves to
-				// exactly one object and that object is a commit. `^{commit}`
-				// makes git fail rather than answer for a tag or a tree, and
-				// --verify makes an ambiguous name an error instead of a guess.
-				"commit_sha": Command{Run: "git rev-parse --verify HEAD^{commit}", Scope: ScopeFull},
-			},
-		},
 	}
 }
 
@@ -186,7 +166,12 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 
 	// And the recorded value, so a change to *both* is still caught. Two things
 	// drifting together is exactly what a comparison between them cannot see.
-	const shipped = "c0c9ff4d121b43fc"
+	//
+	// It moved once, deliberately: ADR-0062 removed `commit` (Luna does not
+	// integrate) and `discovery` went with it (a task is always about the current
+	// repository). Any other change to this constant is a flow change that has to
+	// be argued for, because every open task's log was written under the old one.
+	const shipped = "a7da0f3c7ef41a06"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)

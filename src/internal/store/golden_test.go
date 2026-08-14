@@ -203,8 +203,10 @@ func writeReplayCorpus(t *testing.T, path string) {
 		},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"repos"},
-			Evidence:  map[fsm.Artifact]fsm.Evidence{"repos": fsm.Exists(2)},
+			// `setup` is the first stage since ADR-0062 removed `commit` and
+			// `discovery` went with it.
+			Delivered: []fsm.Artifact{"worktree"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(2)},
 			Flow:      fsm.DefaultFlow(),
 		},
 		fsm.Advance{Flow: fsm.DefaultFlow()},

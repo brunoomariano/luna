@@ -33,13 +33,13 @@ func TestDefaultFlowHasNoContractGap(t *testing.T) {
 func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	flow := DefaultFlow()
 
-	// The empty role is how the table writes "—": setup and commit are the two
-	// mechanical stages, and any third one would be a change to the contract.
+	// The empty role is how the table writes "—": setup is the only mechanical
+	// stage, and any second one would be a change to the contract. `commit` was
+	// the other until ADR-0062 removed integration from Luna's scope.
 	want := []struct {
 		ID   StageID
 		Role string
 	}{
-		{"discovery", "scout"},
 		{"setup", ""},
 		{"intake", "analyst"},
 		{"diagnose", "investigator"},
@@ -52,7 +52,6 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		{"code-review", "reviewer"},
 		{"harden", "hardener"},
 		{"architecture", "architect"},
-		{"commit", ""},
 	}
 
 	if len(flow) != len(want) {

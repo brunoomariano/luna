@@ -254,3 +254,31 @@ func TestAProfileFileThatCannotBeReadIsReported(t *testing.T) {
 		t.Skip("this filesystem allowed the read anyway")
 	}
 }
+
+// TestForceReplacesRatherThanOverwrites covers what `--force` promises.
+//
+// Its refusal message says it "replaces" the stock with the shipped one, and it
+// only ever wrote over what it recognised. A stage the shipped flow no longer
+// carries survived, so a project that ran `luna init --force` after upgrading
+// kept running a stage Luna had removed — silently, because the leftover file is
+// a valid stage and the loader reads whatever is in the directory.
+//
+// Measured after ADR-0062 removed two stages: `luna flow check` still reported 14.
+func TestForceReplacesRatherThanOverwrites(t *testing.T) {
+	h := newHarness(t)
+	h.env.Stock = t.TempDir()
+
+	h.mustRun(t, "init")
+
+	// A stage that is not in the shipped flow, left behind by an older version.
+	stale := filepath.Join(h.env.Stock, "stages", "999-gone.toml")
+	if err := os.WriteFile(stale, []byte("id = \"gone\"\nproduces = [\"x\"]\n"), 0o600); err != nil {
+		t.Fatalf("planting the stale stage: %v", err)
+	}
+
+	h.mustRun(t, "init", "--force")
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("a stage the shipped flow no longer carries survived --force: %v", err)
+	}
+}

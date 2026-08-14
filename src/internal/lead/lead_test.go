@@ -165,7 +165,7 @@ func TestTheLeadStopsAtAGate(t *testing.T) {
 	if state.Status != fsm.StatusAwaitingGate {
 		t.Fatalf("want the task waiting, got %q", state.Status)
 	}
-	if state.Stage != "discovery" {
+	if state.Stage != "scenarios" {
 		t.Errorf("want it stopped at the first gate, got %q", state.Stage)
 	}
 }
@@ -201,7 +201,7 @@ func TestTheLeadResumesFromWhereItStopped(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 
-	if state.Stage == "discovery" && state.Status == fsm.StatusAwaitingGate {
+	if state.Stage == "scenarios" && state.Status == fsm.StatusAwaitingGate {
 		t.Error("the second lead should have moved past the answered gate")
 	}
 }
@@ -361,8 +361,8 @@ func TestEvidenceReachesTheLog(t *testing.T) {
 	if len(state.Evidence) == 0 {
 		t.Fatal("the evidence must reach the log")
 	}
-	if !state.Evidence["repos"].Delivered() {
-		t.Errorf("want evidence for what discovery produced, got %v", state.Evidence)
+	if !state.Evidence["worktree"].Delivered() {
+		t.Errorf("want evidence for what the flow produced, got %v", state.Evidence)
 	}
 }
 

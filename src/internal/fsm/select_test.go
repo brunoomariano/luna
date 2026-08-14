@@ -24,8 +24,8 @@ func TestFlowStartsAtTheFirstStage(t *testing.T) {
 	if !ok {
 		t.Fatal("a non-empty flow always has a first stage")
 	}
-	if next != "discovery" {
-		t.Errorf("want discovery as the entry stage, got %q", next)
+	if next != "setup" {
+		t.Errorf("want setup as the entry stage, got %q", next)
 	}
 }
 
@@ -84,12 +84,11 @@ func TestSeveralConditionalsAreSkippedAtOnce(t *testing.T) {
 		t.Errorf("qa is out on a chore but code-review is not; want code-review, got %q", next)
 	}
 
-	next, ok, err = NextStage(DefaultFlow(), "code-review", ctx)
-	if err != nil || !ok {
-		t.Fatalf("want a stage after code-review; got ok=%v err=%v", ok, err)
-	}
-	if next != "commit" {
-		t.Errorf("harden and architecture are both out on a chore; want commit, got %q", next)
+	// harden is feature-or-bug and architecture needs a discovered fact, so on a
+	// chore both are out — and since ADR-0062 removed `commit`, code-review is the
+	// last stage that runs. Reaching the end is ok=false, not an error.
+	if _, ok, err := NextStage(DefaultFlow(), "code-review", ctx); ok || err != nil {
+		t.Errorf("a chore ends at code-review; got ok=%v err=%v", ok, err)
 	}
 }
 
@@ -100,7 +99,7 @@ func TestSeveralConditionalsAreSkippedAtOnce(t *testing.T) {
 func TestFlowEndsAfterTheLastStage(t *testing.T) {
 	ctx := NewTaskContext(KindFeature)
 
-	next, ok, err := NextStage(DefaultFlow(), "commit", ctx)
+	next, ok, err := NextStage(DefaultFlow(), "architecture", ctx)
 	if err != nil {
 		t.Fatalf("reaching the end of the flow is not an error: %v", err)
 	}
@@ -236,7 +235,7 @@ func TestOnlyTheAbsentArtifactsAreReported(t *testing.T) {
 // still catches it at runtime.
 func TestEntryCheckAgreesWithTheStaticCheck(t *testing.T) {
 	commit := Stage{
-		ID:       "commit",
+		ID:       "architecture",
 		Requires: []Artifact{"dod_checked"},
 		Produces: []Artifact{"commit_sha"},
 	}

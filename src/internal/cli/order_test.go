@@ -363,3 +363,62 @@ func mustState(t *testing.T, h *harness, id string) fsm.TaskState {
 	}
 	return state
 }
+
+// seedAtFirstGate walks a task to the first stage that opens a gate, and leaves
+// it waiting there.
+//
+// Tests about gates want a task at a gate, not a task at a particular stage. They
+// used to reach one with a single Advance because `discovery` was stage 1 and
+// gated; ADR-0062 removed it along with `commit`, so the first gate is now three
+// stages in. Walking until a gate opens says what the test means and survives the
+// next change to the flow.
+func seedAtFirstGate(t *testing.T, h *harness, id string) fsm.StageID {
+	t.Helper()
+
+	flow := fsm.DefaultFlow()
+	for range flow {
+		state := mustState(t, h, id)
+		if state.Gate != nil {
+			return state.Stage
+		}
+
+		if state.Status == fsm.StatusRunning {
+			// Close the stage it is in, delivering whatever the contract asks for,
+			// so the walk can move on to the next one.
+			stage := stageByID(flow, state.Stage)
+			owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+			evidence := map[fsm.Artifact]fsm.Evidence{}
+			for _, a := range owed {
+				evidence[a] = fsm.Evidence{
+					Scope:   fsm.VerifierFor(stage, a).Proves(),
+					Verdict: fsm.VerdictPassed,
+				}
+			}
+			if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Complete{
+				Delivered: owed, Evidence: evidence, Flow: flow, Commit: "c0ffee" + string(state.Stage),
+			}); err != nil {
+				t.Fatalf("closing %s: %v", state.Stage, err)
+			}
+			continue
+		}
+
+		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Advance{
+			Flow:         flow,
+			GateDecision: fsm.GateDecisionWaited,
+		}); err != nil {
+			t.Fatalf("walking to the first gate: %v", err)
+		}
+	}
+	t.Fatalf("no stage in the flow opens a gate")
+	return ""
+}
+
+// stageByID finds a stage in a flow, for tests that walk it.
+func stageByID(flow []fsm.Stage, id fsm.StageID) fsm.Stage {
+	for _, s := range flow {
+		if s.ID == id {
+			return s
+		}
+	}
+	return fsm.Stage{ID: id}
+}

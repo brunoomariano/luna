@@ -243,10 +243,10 @@ func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
-	if !strings.Contains(out, "waiting at discovery") {
+	if !strings.Contains(out, "waiting at scenarios") {
 		t.Errorf("want the stage it stopped at, got %q", out)
 	}
-	if !strings.Contains(out, "confirm the repositories") {
+	if !strings.Contains(out, "approve the plan") {
 		t.Errorf("want the reason it stopped, got %q", out)
 	}
 	if !strings.Contains(out, "luna gate show LUNA-1") {

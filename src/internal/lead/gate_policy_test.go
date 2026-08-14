@@ -41,8 +41,8 @@ func TestAConfiguredPolicyDecidesTheGate(t *testing.T) {
 	if state.Status != fsm.StatusAwaitingGate {
 		t.Fatalf("the configured policy waits at this gate, got %q", state.Status)
 	}
-	if state.Stage != "discovery" {
-		t.Errorf("want it stopped at discovery, got %q", state.Stage)
+	if state.Stage != "scenarios" {
+		t.Errorf("want it stopped at the first gate, got %q", state.Stage)
 	}
 	if policy.asked == 0 {
 		t.Error("the policy was never consulted")
@@ -67,7 +67,16 @@ func TestTheDecisionReachesTheLog(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if got := decisionsIn(t, s, "LUNA-1"); len(got) != 1 || got[0] != fsm.GateDecisionWaited {
+	// The run stops at the first confirm, so exactly one decision says "waited";
+	// the advances before it opened no gate and recorded nothing.
+	got := decisionsIn(t, s, "LUNA-1")
+	waited := 0
+	for _, d := range got {
+		if d == fsm.GateDecisionWaited {
+			waited++
+		}
+	}
+	if waited != 1 {
 		t.Errorf("want one recorded wait, got %v", got)
 	}
 }

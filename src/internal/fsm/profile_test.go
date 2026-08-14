@@ -137,11 +137,11 @@ func TestNightlyRunsStraightThroughTheGates(t *testing.T) {
 		t.Fatalf("advancing: %v", err)
 	}
 
-	if state.Stage != "discovery" {
-		t.Fatalf("want discovery, got %q", state.Stage)
+	if state.Stage != "setup" {
+		t.Fatalf("want setup, got %q", state.Stage)
 	}
 	if state.Status != StatusRunning {
-		t.Errorf("nightly does not stop at the discovery gate, got %q", state.Status)
+		t.Errorf("nightly stops at no gate, got %q", state.Status)
 	}
 	if state.Gate != nil {
 		t.Errorf("no gate should be pending under nightly, got %+v", state.Gate)
