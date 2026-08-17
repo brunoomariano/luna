@@ -1,6 +1,6 @@
 # ADR-0018: Tool gating is a blocking hook, not an instruction to the agent
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0042](0042-four-harnesses-four-ways-to-deny-a-tool.md)
 **Date:** 2026-08-06
 
 ## Context
