@@ -8,7 +8,6 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
-	"github.com/brunoomariano/luna/src/internal/node"
 )
 
 // AgentStatus is what herdr reports about a pane's occupant.
@@ -202,16 +201,10 @@ type Node struct {
 	// reporter configured should still run a stage.
 	Warn func(format string, args ...any)
 
-	// Merge integrates a delivered commit into the shared branch, and reports a
-	// conflict rather than resolving one (ADR-0053).
-	//
-	// A function rather than the Merger itself so a test can exercise a conflict
-	// without building two diverging repositories — but it returns node's own
-	// verdict rather than a copy of it, because two spellings of `merge_blocked`
-	// is exactly the drift that makes a rename stop working silently.
-	//
-	// Nil skips integration, which is what a dry run wants.
-	Merge func(ctx context.Context, commit, message string) (node.Merge, error)
+	// There is no Merge field, and its absence is the decision rather than an
+	// omission: Luna does not integrate. A task ends on its own branch and moving
+	// that work anywhere else is a manual act (ADR-0062), so nothing here brings
+	// a commit back into a shared branch.
 }
 
 // warn reports a problem that must not fail the stage.
@@ -223,54 +216,11 @@ func (n *Node) warn(format string, args ...any) {
 
 // runMechanical performs a stage with no agent in it.
 //
-// Integrating is part of what such a stage does, when there is something to
-// integrate: the work lives on the role's own branch (ADR-0055), so the stage
-// that closes a task has to bring it back — and that merge is Luna's,
-// deterministic, with no model in it (ADR-0053).
+// It verifies and nothing else. `setup` is a worktree and there is no longer a
+// stage that integrates — the work stays on the task's own branch (ADR-0062).
 func (n *Node) runMechanical(ctx context.Context, state fsm.TaskState, stage fsm.Stage, ws Workspace) (lead.Result, error) {
-	if err := n.integrate(ctx, state, stage); err != nil {
-		return lead.Result{}, err
-	}
 	return n.verify(ctx, ws, state, stage)
 }
-
-// integrate brings the delivered work back into the shared branch.
-//
-// It runs on the mechanical stage that closes a task's work — `commit` — because
-// that is where a task stops being a branch and starts being part of the
-// repository. Every earlier stage hands on through its commit and its base
-// (INV-core-6); nothing needs merging until the end.
-//
-// The merge itself is `node.Merger`: one owner, a dry run in a throwaway
-// worktree separate from the real merge, and no automatic conflict resolution
-// (ADR-0053). A conflict is a verdict, and it becomes a blocked stage rather
-// than an error — so the watchdog can see it and a person is told.
-func (n *Node) integrate(ctx context.Context, state fsm.TaskState, stage fsm.Stage) error {
-	if n.Merge == nil || state.Base == "" {
-		return nil
-	}
-	if !stage.ProducesArtifact(mergedArtifact) {
-		return nil
-	}
-
-	result, err := n.Merge(ctx, state.Base, fmt.Sprintf("luna: %s (%s)", state.ID, stage.ID))
-	if err != nil {
-		return err
-	}
-	if result.Verdict == node.MergeBlocked {
-		// Named, not summarised: the whole point of stopping is that somebody has
-		// to look, and "there was a conflict" does not tell them where.
-		return fmt.Errorf("%s could not be integrated: %s", state.ID, result.Detail)
-	}
-	return nil
-}
-
-// mergedArtifact is what a stage produces when it has integrated the work.
-//
-// Keyed on the artifact rather than the stage id so a project that renames
-// `commit` keeps the behaviour — the same reasoning ADR-0049 applies to gates
-// and reviews.
-const mergedArtifact fsm.Artifact = "commit_sha"
 
 // Run drives one stage and reports what it delivered.
 //

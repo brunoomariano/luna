@@ -157,9 +157,15 @@ func ShippedPolicy(p Profile, gate GateKind) bool {
 	case ProfileNightly:
 		return false
 	case ProfileTurbo:
-		// Only the write waits. A loop ceiling under turbo resolves by carrying
-		// on, which is the point of the profile.
-		return gate == GateConfirmWrite
+		// Turbo waited for exactly one gate kind — the write — and that kind left
+		// the flow with ADR-0062. Nothing under turbo waits any more, which is why
+		// it and nightly had silently become the same profile (ADR-0063).
+		//
+		// It answers false rather than being deleted because this is the reading of
+		// a log written while turbo still decided, and that reading has to stay
+		// what it was: no gate the flow could open was `confirm-write`, so every
+		// gate a turbo task actually met resolved on its own.
+		return false
 	case ProfileInteractive:
 		return true
 	default:
@@ -177,12 +183,6 @@ type GateKind string
 const (
 	// GateConfirm asks a yes or no. Nothing is attached.
 	GateConfirm GateKind = "confirm"
-
-	// GateConfirmWrite is the confirmation before the task writes — the commit.
-	// It is a kind of its own rather than a plain confirm because it is the one
-	// gate the turbo profile still waits for: everything before it is reversible,
-	// and this is not.
-	GateConfirmWrite GateKind = "confirm-write"
 
 	// GateReviewArtifact carries what the stage produced. The human may approve
 	// it, adjust it, or reject it, and the approved version is what the next

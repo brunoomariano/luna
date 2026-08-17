@@ -169,9 +169,6 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		Warn: func(format string, args ...any) {
 			fmt.Fprintf(env.Err, format+"\n", args...)
 		},
-		// Luna is the only thing that merges, and the ownership is claimed here
-		// rather than defaulted — the same shape as the log's (ADR-0053).
-		Merge: node.Merger{Repo: opts.Repo, As: node.LunaOwnsTheMerge}.Merge,
 		// What the task is about, read from the registry at the moment the stage
 		// starts. Nil when the project has none, which briefs from the contract
 		// alone — what every stage did before this existed.

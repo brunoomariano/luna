@@ -21,18 +21,17 @@ func TestShippedPolicyDecidesWhichGatesWait(t *testing.T) {
 		waits   bool
 	}{
 		{ProfileInteractive, GateConfirm, true},
-		{ProfileInteractive, GateConfirmWrite, true},
 		{ProfileInteractive, GateReviewArtifact, true},
 		{ProfileInteractive, GateLoopCeiling, true},
 
-		// Turbo waits only before the write: everything earlier is reversible.
+		// Turbo waited for exactly one kind — the write — and that kind left with
+		// ADR-0062, so nothing it can meet waits. This is the reading of a log
+		// written while turbo still decided, and it has to stay what it was.
 		{ProfileTurbo, GateConfirm, false},
-		{ProfileTurbo, GateConfirmWrite, true},
 		{ProfileTurbo, GateReviewArtifact, false},
 		{ProfileTurbo, GateLoopCeiling, false},
 
 		{ProfileNightly, GateConfirm, false},
-		{ProfileNightly, GateConfirmWrite, false},
 		{ProfileNightly, GateReviewArtifact, false},
 		{ProfileNightly, GateLoopCeiling, false},
 	}
@@ -52,7 +51,7 @@ func TestShippedPolicyDecidesWhichGatesWait(t *testing.T) {
 func TestAProfileWithNoShippedPolicyWaitsForEverything(t *testing.T) {
 	typo := Profile("interactve")
 
-	for _, gate := range []GateKind{GateConfirm, GateConfirmWrite, GateReviewArtifact, GateLoopCeiling} {
+	for _, gate := range []GateKind{GateConfirm, GateReviewArtifact, GateLoopCeiling} {
 		if !ShippedPolicy(typo, gate) {
 			t.Errorf("an unrecognised profile must not silently become unattended (%s)", gate)
 		}

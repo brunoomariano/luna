@@ -226,10 +226,6 @@ func TestHandoverReadsTheCommitAndItsMessage(t *testing.T) {
 	if !strings.Contains(message, "Delivered: repos") {
 		t.Errorf("the declaration did not survive: %q", message)
 	}
-	// Head is the same call, narrowed.
-	if got := Head(context.Background(), dir); got != commit {
-		t.Errorf("Head = %q, Handover = %q — they must agree", got, commit)
-	}
 }
 
 // TestHandoverOnARepositoryWithNoCommit. The first stage of the first task has

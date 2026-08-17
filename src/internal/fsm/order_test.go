@@ -130,7 +130,7 @@ func TestAGateIsAnOrderToWaitNotToRun(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 	state.Status = StatusAwaitingGate
 	state.Stage = "build"
-	state.Gate = &PendingGate{Kind: GateConfirmWrite, Stage: "build", Reason: "about to write"}
+	state.Gate = &PendingGate{Kind: GateConfirm, Stage: "build", Reason: "about to write"}
 
 	order, err := NextOrder(state, orderFlow(), catalogue())
 	if err != nil {

@@ -88,7 +88,7 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		// change whether a past Advance suspended, so only the kind and the
 		// artifact reach the digest.
 		"Gate": func(s *Stage) {
-			s.Gate = &GateSpec{Kind: GateConfirmWrite, Reason: "confirm something"}
+			s.Gate = &GateSpec{Kind: GateReviewArtifact, Reason: "confirm something"}
 		},
 		"Review": func(s *Stage) {
 			s.Review = &ReviewSpec{SendsBackTo: "elsewhere", Invalidates: []Artifact{"a"}}
