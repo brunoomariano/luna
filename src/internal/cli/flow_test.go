@@ -319,10 +319,11 @@ func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 	if !strings.Contains(out, "criteri") {
 		t.Errorf("the listing does not say what there is to judge:\n%s", out)
 	}
-	// The mechanical half lives per task in the registry, and a flow view that
-	// implied otherwise would have a person looking for checks in the wrong file.
-	if !strings.Contains(out, "declared per task in the registry") {
-		t.Errorf("the listing does not say where checks live:\n%s", out)
+	// The mechanical half is per task rather than per flow, and the listing has to
+	// name the command that declares it — otherwise a person edits the stage file
+	// looking for somewhere to put a check that does not belong there (ADR-0067).
+	if !strings.Contains(out, "luna gate checks") {
+		t.Errorf("the listing does not say how checks are declared:\n%s", out)
 	}
 }
 
@@ -334,5 +335,92 @@ func TestAGateDeclaringNoCriticalityReportsTheDefault(t *testing.T) {
 	if got := gate.Resolved(); got != fsm.DefaultCriticality {
 		t.Errorf("an undeclared criticality resolved to %d, want %d",
 			got, fsm.DefaultCriticality)
+	}
+}
+
+// TestFlowCheckReportsEachKindOfGap covers what `luna flow check` is for: a stock
+// somebody edited into something that cannot run.
+//
+// Each gap is a different way an edit goes wrong, and each has to be named — a
+// check that reports "there are problems" sends a person reading TOML by hand.
+func TestFlowCheckReportsEachKindOfGap(t *testing.T) {
+	for name, flow := range map[string][]fsm.Stage{
+		"an input nothing produces": {
+			{ID: "build", Requires: []fsm.Artifact{"a_spec_nobody_wrote"}, Produces: []fsm.Artifact{"code"}, Role: "implementer"},
+		},
+		"a stage with no role": {
+			{ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"}},
+		},
+		"a name too long for an agent": {
+			{
+				ID:       fsm.StageID(strings.Repeat("verylongstagename", 8)),
+				Requires: []fsm.Artifact{fsm.TaskID},
+				Produces: []fsm.Artifact{"code"},
+				Role:     "implementer",
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+
+			reportFlowGaps(h.env, flow)
+
+			out := h.out.String()
+			if strings.Contains(out, "the contract holds") {
+				t.Fatalf("a broken flow was reported as sound:\n%s", out)
+			}
+			if !strings.Contains(out, "build") && !strings.Contains(out, "verylongstagename") {
+				t.Errorf("the gap does not name the stage it is in:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestFlowCheckSaysSoWhenTheContractHolds. The shipped flow is sound, and a check
+// that only ever spoke up about problems would leave a person unsure whether it
+// ran at all.
+func TestFlowCheckSaysSoWhenTheContractHolds(t *testing.T) {
+	h := newHarness(t)
+
+	reportFlowGaps(h.env, fsm.DefaultFlow())
+
+	if !strings.Contains(h.out.String(), "the contract holds") {
+		t.Errorf("a sound flow said nothing:\n%s", h.out.String())
+	}
+}
+
+// TestFlowGatesNamesTheKnobThatReachesEach. The knob is a number, and a number is
+// meaningless without the list of what it reaches — this listing is what makes
+// `luna autonomy 6` a decision rather than a guess (RFC-0006).
+func TestFlowGatesNamesTheKnobThatReachesEach(t *testing.T) {
+	h := newHarness(t)
+
+	reportGates(h.env, []fsm.Stage{
+		{ID: "plan", Gate: &fsm.GateSpec{Kind: fsm.GateConfirm, Criticality: 3, Judge: []string{"is it in scope"}}},
+		{ID: "spec", Gate: &fsm.GateSpec{Kind: fsm.GateReviewArtifact}},
+	})
+
+	out := h.out.String()
+	for _, want := range []string{"plan", "confirm", "knob 3+", "1 criterion", "spec", "nothing to judge"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the gate listing does not carry %q:\n%s", want, out)
+		}
+	}
+	// An undeclared criticality is the highest, and saying so is what stops a
+	// person reading 10 as a deliberate choice somebody made.
+	if !strings.Contains(out, "undeclared") {
+		t.Errorf("an undeclared criticality was not flagged:\n%s", out)
+	}
+}
+
+// TestFlowGatesSaysSoWhenNothingStops. A flow with no gate runs start to finish
+// unattended, which is worth stating rather than showing an empty list.
+func TestFlowGatesSaysSoWhenNothingStops(t *testing.T) {
+	h := newHarness(t)
+
+	reportGates(h.env, []fsm.Stage{{ID: "build"}})
+
+	if !strings.Contains(h.out.String(), "nothing stops for a person") {
+		t.Errorf("a gateless flow said nothing:\n%s", h.out.String())
 	}
 }

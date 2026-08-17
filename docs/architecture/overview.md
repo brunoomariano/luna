@@ -181,7 +181,9 @@ a short wait in the terminal, the task suspends and releases the slot. Another t
 resource while you decide; `luna gate approve` resumes from the exact point.
 
 **A gate stops when its stage declared something to answer it with** — judgement criteria in
-the stage file, or checks in the task's registry entry. A gate with neither was never going to
+the stage file, or checks the task declared (`luna gate checks <id> --on <gate> --run <cmd>`,
+[ADR-0067](../ADRs/0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md)). A gate
+with neither was never going to
 put a question in front of anybody, so it does not wait
 ([ADR-0063](../ADRs/0063-a-gate-waits-because-a-stage-declared-something-to-answer-it-with.md)).
 

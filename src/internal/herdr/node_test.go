@@ -60,10 +60,17 @@ type fakeHerdr struct {
 	opened   []WorktreeSpec
 	closed   []string
 	closeErr error
+
+	// openErr is how a test makes herdr go away mid-stage, which is the failure
+	// ADR-0033 turns into a block rather than a failed stage.
+	openErr error
 }
 
 func (f *fakeHerdr) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspace, error) {
 	f.opened = append(f.opened, w)
+	if f.openErr != nil {
+		return Workspace{}, f.openErr
+	}
 	return Workspace{ID: "ws-1", RootPane: "pane-1", Path: "/tmp/wt"}, nil
 }
 
@@ -835,5 +842,25 @@ func TestVerificationIsPointedAtTheDeliveredCommit(t *testing.T) {
 
 	if herdr.provedAt != "cafe1234" {
 		t.Errorf("the verification was pointed at %q, want the delivered commit", herdr.provedAt)
+	}
+}
+
+// TestHerdrGoingAwayIsInfrastructureNotAFailedStage is the classification
+// ADR-0033 depends on: a stage that could not run because herdr vanished must
+// reach the lead as infrastructure, so it retries and blocks with a reason a
+// person can act on — rather than being recorded as work that failed.
+func TestHerdrGoingAwayIsInfrastructureNotAFailedStage(t *testing.T) {
+	fake := &fakeHerdr{settlesAt: StatusIdle, openErr: fmt.Errorf("dialing: %w", ErrGone)}
+	node := &Node{Runner: fake, Prove: fake.proving(), Roles: fixedRole("claude")}
+
+	_, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
+
+	if !errors.Is(err, lead.ErrInfrastructure) {
+		t.Errorf("herdr going away was not classified as infrastructure: %v", err)
+	}
+	// Both halves matter: the lead branches on ErrInfrastructure, and a person
+	// reading the block needs to know it was herdr rather than the work.
+	if !errors.Is(err, ErrGone) {
+		t.Errorf("the original cause was lost: %v", err)
 	}
 }

@@ -169,6 +169,68 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 				}
 			},
 		},
+		{
+			// The statement rides in the log now rather than being read from a
+			// registry on every stage (ADR-0067), so the round trip is what stands
+			// between an agent's briefing and silence.
+			name: "TaskCreated",
+			action: fsm.TaskCreated{
+				Kind:      fsm.KindBug,
+				Profile:   fsm.ProfileInteractive,
+				Statement: fsm.Statement{Description: "zsh-only glob", Acceptance: "bash -n exits 0"},
+			},
+			verify: func(t *testing.T, got fsm.Action) {
+				a, ok := got.(fsm.TaskCreated)
+				if !ok {
+					t.Fatalf("want TaskCreated, got %T", got)
+				}
+				if a.Kind != fsm.KindBug {
+					t.Errorf("the kind must survive, got %q", a.Kind)
+				}
+				if a.Statement.Description != "zsh-only glob" {
+					t.Errorf("what the task is about must survive, got %q", a.Statement.Description)
+				}
+				if a.Statement.Acceptance != "bash -n exits 0" {
+					t.Errorf("how it will be judged must survive, got %q", a.Statement.Acceptance)
+				}
+			},
+		},
+		{
+			// The empty-versus-absent distinction has to survive the log: one sends
+			// the gate to judgement having been decided, the other never decided.
+			name:   "GateChecksDeclared",
+			action: fsm.GateChecksDeclared{Gate: fsm.GateConfirm, Checks: []string{"make ci", "make race"}},
+			verify: func(t *testing.T, got fsm.Action) {
+				a, ok := got.(fsm.GateChecksDeclared)
+				if !ok {
+					t.Fatalf("want GateChecksDeclared, got %T", got)
+				}
+				if a.Gate != fsm.GateConfirm {
+					t.Errorf("the gate must survive, got %q", a.Gate)
+				}
+				if len(a.Checks) != 2 || a.Checks[0] != "make ci" {
+					t.Errorf("the checks must survive in order, got %v", a.Checks)
+				}
+			},
+		},
+		{
+			name: "StatementRevised",
+			action: fsm.StatementRevised{
+				Statement: fsm.Statement{Description: "corrected", Design: "a POSIX loop"},
+			},
+			verify: func(t *testing.T, got fsm.Action) {
+				a, ok := got.(fsm.StatementRevised)
+				if !ok {
+					t.Fatalf("want StatementRevised, got %T", got)
+				}
+				if a.Statement.Description != "corrected" {
+					t.Errorf("the revision must survive, got %q", a.Statement.Description)
+				}
+				if a.Statement.Design != "a POSIX loop" {
+					t.Errorf("the design must survive, got %q", a.Statement.Design)
+				}
+			},
+		},
 	}
 
 	for _, c := range cases {

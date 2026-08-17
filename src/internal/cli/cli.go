@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/registry"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -67,37 +66,6 @@ type Env struct {
 	// (RFC-0003). Empty, or a directory that has none, means the embedded copy is
 	// what runs, which is what a project that never ran `luna init` gets.
 	Stock string
-
-	// Registry is the central record of what exists across checkouts (ADR-0054).
-	// Nil means a project that has not adopted it, and every cross-checkout
-	// question answers "nothing" rather than failing — the local log still knows
-	// everything about this repository.
-	Registry Registry
-}
-
-// Registry is the part of the central record the CLI needs.
-//
-// An interface rather than *registry.Beads so the commands can be tested without
-// the binary, and so a project could put something else behind it. It is
-// deliberately small: what the CLI asks the registry is what the log cannot
-// answer on its own.
-type Registry interface {
-	// Blocked lists tasks the registry says are stopped, across every checkout.
-	Blocked(ctx context.Context) ([]registry.Task, error)
-
-	// Create opens a task with what a person said it is about.
-	Create(ctx context.Context, work registry.Work) (string, error)
-
-	// Move changes a task's status, refusing if it is no longer where the caller
-	// saw it. Guarded and with no unguarded sibling (ADR-0054).
-	Move(ctx context.Context, id string, from, to registry.Status) error
-
-	// EnterStage records which stage a task is in, as a label.
-	EnterStage(ctx context.Context, id, stage string) error
-
-	// Task reads one back, which is how Luna adopts an issue somebody wrote in
-	// beads directly — the path that costs no tokens.
-	Task(ctx context.Context, id string) (registry.Task, error)
 }
 
 // Run dispatches a command line. args excludes the program name.
@@ -151,7 +119,8 @@ func Usage() string {
 luna — deterministic orchestration for AI agents
 
   luna task new <id> --kind <kind> [--profile <profile>]
-        open a task's log
+        [--about <what>] [--design <how>] [--acceptance <done when>]
+        open a task's log, with what the task is about
 
   luna task show <id> [--json]
         the task's current state and what it has produced
@@ -231,6 +200,16 @@ luna — deterministic orchestration for AI agents
   luna gate reject <id> [reason]
         refuse the artifact; the stage that produced it runs again
 
+  luna gate checks <id> --on <gate> [--run <command>]...
+        declare the commands that answer a gate mechanically. They run
+        against what the stage delivered, and the first failure is the
+        answer. With no --run, the gate is declared to have no mechanical
+        answer and goes to judgement.
+
+  luna task statement <id> [--about ...] [--design ...] [--acceptance ...]
+        correct what a task is about. The previous wording stays in the
+        log — a revision is an event, not an overwrite.
+
 kinds:    feature, bug, chore, docs
 profiles: interactive (default), turbo, nightly, plus any the project
           defines in .luna/config.toml
@@ -239,7 +218,7 @@ profiles: interactive (default), turbo, nightly, plus any the project
 
 func runTask(env Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%w: task needs a subcommand (new, show, abandon)", ErrUsage)
+		return fmt.Errorf("%w: task needs a subcommand (new, show, statement, abandon)", ErrUsage)
 	}
 
 	switch args[0] {
@@ -247,6 +226,8 @@ func runTask(env Env, args []string) error {
 		return taskNew(env, args[1:])
 	case "show":
 		return taskShow(env, args[1:])
+	case "statement":
+		return taskStatement(env, args[1:])
 	case "abandon":
 		return taskAbandon(env, args[1:])
 	default:
@@ -318,65 +299,71 @@ func taskNew(env Env, args []string) error {
 		return fmt.Errorf("task %q already exists, with %d events", id, len(events))
 	}
 
-	stated, err := statementOfWork(env, id, opts)
-	if err != nil {
-		return err
-	}
-
 	// The flow the task is born under is recorded with it, so a later replay can
 	// tell it is being read against a different one (ADR-0046).
 	flow := fsm.Fingerprint(fsm.DefaultFlow())
-	if err := env.Store.AppendAction(id, fsm.TaskCreated{Kind: opts.kind, Profile: opts.profile, Flow: flow}); err != nil {
+	created := fsm.TaskCreated{
+		Kind:      opts.kind,
+		Profile:   opts.profile,
+		Flow:      flow,
+		Statement: opts.stated,
+	}
+	if err := env.Store.AppendAction(id, created); err != nil {
 		return err
 	}
 
 	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s flow=%s)\n", id, opts.kind, opts.profile, flow)
-	if stated != "" {
-		fmt.Fprintf(env.Out, "  %s\n", stated)
+	if opts.stated.Stated() {
+		fmt.Fprintf(env.Out, "  about: %s\n", opts.stated.Description)
 	}
 	return nil
 }
 
-// statementOfWork puts what the task is about where a task lives, and returns a
-// line describing what happened for the person who typed the command.
+// taskStatement records a new statement of work for a task that already exists.
 //
-// Two directions, because a statement of work is written either by someone at a
-// terminal or by someone taking their time in the tracker:
-//
-//   - `--about`/`--design`/`--acceptance` write it into the registry now;
-//   - `--adopt` reads one somebody already wrote there, which costs no tokens and
-//     no retyping.
-//
-// Neither is required. A project with no registry still creates tasks, and every
-// stage still runs — the agents are simply left with less to go on, which is the
-// state everything was in before this existed.
-func statementOfWork(env Env, id string, opts taskOptions) (string, error) {
-	if opts.adopt {
-		if env.Registry == nil {
-			return "", fmt.Errorf("%w: --adopt reads the task from the registry, and this project has none", ErrUsage)
-		}
-		task, err := env.Registry.Task(context.Background(), id)
-		if err != nil {
-			return "", fmt.Errorf("adopting %s: %w", id, err)
-		}
-		return "adopted: " + task.Title, nil
+// Separate from `task new` because the two answer different questions — "open
+// this" and "here is what it turned out to be" — and because a revision is an
+// action of its own, so the previous statement stays in the log (ADR-0067).
+func taskStatement(env Env, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%w: luna task statement <id> [--about ...] [--design ...] [--acceptance ...]", ErrUsage)
 	}
 
-	if nothingStated(opts.work) {
-		return "", nil
-	}
-	if env.Registry == nil {
-		return "", fmt.Errorf("%w: what a task is about is recorded in the registry, and this project has none", ErrUsage)
+	id := args[0]
+	if err := fsm.ValidateTaskID(id); err != nil {
+		return fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 
-	work := opts.work
-	if work.Title == "" {
-		work.Title = id
+	opts, err := parseTaskOptions(env.profiles(), args[1:])
+	if err != nil {
+		return err
 	}
-	if _, err := env.Registry.Create(context.Background(), work); err != nil {
-		return "", fmt.Errorf("recording what %s is about: %w", id, err)
+	if !opts.stated.Stated() {
+		return fmt.Errorf("%w: say something — --about, --design or --acceptance", ErrUsage)
 	}
-	return "about: " + work.Description, nil
+
+	// A task with no log replays to a zero state rather than an error, so its
+	// absence is checked here — otherwise describing a task nobody created would
+	// append an event and look like it worked.
+	events, err := env.Store.Events(id)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("no task %q", id)
+	}
+
+	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	if err != nil {
+		return err
+	}
+
+	if err := env.Store.AppendActionAt(id, state.Seq, fsm.StatementRevised{Statement: opts.stated}); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(env.Out, "%s is about: %s\n", id, opts.stated.Description)
+	return nil
 }
 
 // parseTaskOptions reads --kind and --profile, defaulting to the cautious pair:
@@ -392,18 +379,9 @@ type taskOptions struct {
 	kind    fsm.TaskKind
 	profile fsm.Profile
 
-	// work is the statement of work, when it was given on the command line.
-	work registry.Work
-
-	// adopt takes it from the registry instead, for a task written there by hand.
-	adopt bool
-}
-
-// nothingStated reports whether nothing was said about the work itself. A title
-// alone does not count: the id already names the task, and a task named twice
-// says no more than a task named once.
-func nothingStated(w registry.Work) bool {
-	return w.Description == "" && w.Design == "" && w.Acceptance == ""
+	// stated is what the task is about, as it was given on the command line. It
+	// rides into the log with the task rather than into a registry (ADR-0067).
+	stated fsm.Statement
 }
 
 // howToRun reads the flags that decide how the task is conducted, as opposed to
@@ -434,18 +412,15 @@ func howToRun(opts *taskOptions, cfg Config, name, value string) error {
 // of work does not make the option parser harder to read.
 //
 // `--about` rather than `--description`: it is what a person answers when asked
-// what the task is, and the registry's own field name is beads' business rather
-// than the command line's.
-func statedBy(work *registry.Work, name, value string) bool {
+// what the task is.
+func statedBy(stated *fsm.Statement, name, value string) bool {
 	switch name {
 	case "about":
-		work.Description = value
+		stated.Description = value
 	case "design":
-		work.Design = value
+		stated.Design = value
 	case "acceptance":
-		work.Acceptance = value
-	case "title":
-		work.Title = value
+		stated.Acceptance = value
 	default:
 		return false
 	}
@@ -461,22 +436,12 @@ func parseTaskOptions(cfg Config, args []string) (taskOptions, error) {
 	}
 
 	for name, value := range flags {
-		if name == "adopt" {
-			opts.adopt = true
-			continue
-		}
-		if statedBy(&opts.work, name, value) {
+		if statedBy(&opts.stated, name, value) {
 			continue
 		}
 		if err := howToRun(&opts, cfg, name, value); err != nil {
 			return taskOptions{}, err
 		}
-	}
-
-	if opts.adopt && !nothingStated(opts.work) {
-		return taskOptions{}, fmt.Errorf(
-			"%w: --adopt reads the statement of work from the registry, so giving one here would contradict it", ErrUsage,
-		)
 	}
 	return opts, nil
 }
@@ -525,6 +490,86 @@ func taskShow(env Env, args []string) error {
 	return nil
 }
 
+// gateChecks declares the commands that answer one of a task's gates.
+//
+// It exists because the declaration used to be hand-written JSON in the
+// registry's metadata (`bd update --metadata '{"luna_gates":...}'`), which is why
+// almost no task ever carried one. A gate that can be answered by a command
+// should not need a second tool and a schema to say so (ADR-0067).
+//
+// `--run` may be repeated, and the order is kept: the checks run in the order
+// they were declared, and the first failure is the answer.
+func gateChecks(env Env, id string, args []string) error {
+	gate, checks, err := parseGateChecks(args)
+	if err != nil {
+		return err
+	}
+
+	events, err := env.Store.Events(id)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("no task %q", id)
+	}
+
+	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	if err != nil {
+		return err
+	}
+
+	declared := fsm.GateChecksDeclared{Gate: gate, Checks: checks}
+	if err := env.Store.AppendActionAt(id, state.Seq, declared); err != nil {
+		return err
+	}
+
+	if len(checks) == 0 {
+		fmt.Fprintf(env.Out, "%s: %s has no mechanical answer, so it goes to judgement\n", id, gate)
+		return nil
+	}
+	fmt.Fprintf(env.Out, "%s: %s is answered by %s\n", id, gate, strings.Join(checks, ", "))
+	return nil
+}
+
+// parseGateChecks reads `--on <gate>` and any number of `--run <command>`.
+//
+// Hand-rolled rather than going through parseFlags because --run repeats, and a
+// map keyed by flag name would silently keep only the last one — which would look
+// like the declaration worked and run a third of what was asked.
+func parseGateChecks(args []string) (fsm.GateKind, []string, error) {
+	var gate fsm.GateKind
+	var checks []string
+
+	for i := 0; i < len(args); i++ {
+		if i+1 >= len(args) {
+			return "", nil, fmt.Errorf("%w: %s needs a value", ErrUsage, args[i])
+		}
+		value := args[i+1]
+		i++
+
+		switch args[i-1] {
+		case "--on":
+			// Checked against the closed set rather than stored as typed: a gate kind
+			// that does not exist would sit in the log answering nothing, and the
+			// declaration would look like it took.
+			parsed, err := fsm.ParseGateKind(value)
+			if err != nil {
+				return "", nil, fmt.Errorf("%w: %w", ErrUsage, err)
+			}
+			gate = parsed
+		case "--run":
+			checks = append(checks, value)
+		default:
+			return "", nil, fmt.Errorf("%w: unknown flag %s", ErrUsage, args[i-1])
+		}
+	}
+
+	if gate == "" {
+		return "", nil, fmt.Errorf("%w: luna gate checks <id> --on <gate> [--run <command>]", ErrUsage)
+	}
+	return gate, checks, nil
+}
+
 // printTask writes the form a person reads.
 //
 // Split from taskShow so the two output shapes stay separable: the structured one
@@ -541,6 +586,19 @@ func printTask(env Env, state fsm.TaskState, events int) {
 		fmt.Fprintf(env.Out, "  blocked  %s\n", state.Blocked)
 	}
 	fmt.Fprintf(env.Out, "  events   %d\n", events)
+
+	// What the task is about comes out of the log now rather than the registry
+	// (ADR-0067), so the command that shows a task can show it without a second
+	// lookup — and a person can check what the agents were told.
+	for _, line := range []struct{ label, value string }{
+		{"about", state.Statement.Description},
+		{"design", state.Statement.Design},
+		{"done", state.Statement.Acceptance},
+	} {
+		if line.value != "" {
+			fmt.Fprintf(env.Out, "  %-8s %s\n", line.label, line.value)
+		}
+	}
 
 	artifacts := sortedArtifacts(state.Context.Artifacts)
 	if len(artifacts) == 0 {
@@ -614,6 +672,12 @@ func runGate(env Env, args []string) error {
 
 	sub, id := args[0], args[1]
 
+	// Declaring checks is about a gate that has not opened yet, so it takes the
+	// branch before the one that insists on an open gate.
+	if sub == "checks" {
+		return gateChecks(env, id, args[2:])
+	}
+
 	// The subcommand is checked before the task: a typo in the verb is a usage
 	// error whatever state the task is in, and reporting the task's state instead
 	// would send someone looking in the wrong place.
@@ -623,6 +687,15 @@ func runGate(env Env, args []string) error {
 		return fmt.Errorf("%w: unknown gate subcommand %q", ErrUsage, sub)
 	}
 
+	return answerOpenGate(env, sub, id, args[2:])
+}
+
+// answerOpenGate handles the four subcommands that need a gate already waiting.
+//
+// Split from runGate so the one subcommand that works on a *closed* gate —
+// declaring what will answer it — does not have to thread past a guard written
+// for the others.
+func answerOpenGate(env Env, sub, id string, rest []string) error {
 	state, err := env.Store.Replay(id, fsm.DefaultFlow())
 	if err != nil {
 		return err
@@ -637,11 +710,11 @@ func runGate(env Env, args []string) error {
 	case "approve":
 		return answer(env, id, fsm.GateApprove{}, "approved")
 	case "reject":
-		return answer(env, id, fsm.GateReject{Reason: strings.Join(args[2:], " ")}, "rejected")
+		return answer(env, id, fsm.GateReject{Reason: strings.Join(rest, " ")}, "rejected")
 	case "adjust":
-		return gateAdjust(env, id, state, args[2:])
+		return gateAdjust(env, id, state, rest)
 	default:
-		// Unreachable: the switch above already rejected anything else.
+		// Unreachable: runGate already rejected anything else.
 		return fmt.Errorf("%w: unknown gate subcommand %q", ErrUsage, sub)
 	}
 }

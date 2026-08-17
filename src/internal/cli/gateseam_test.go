@@ -2,35 +2,38 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/registry"
 )
 
-// taskDeclaring builds a registry task carrying gate checks, through the JSON
-// decoder rather than by hand — the point being that Luna can read what beads
-// actually returns.
-func taskDeclaring(t *testing.T, metadata string) registry.Task {
+// The seam between the two halves of RFC-0006: what a task declared runs, and the
+// lead judges the rest. The declaration used to live in beads' metadata and is
+// replayed from the task's own log now (ADR-0067) — these are the same guarantees
+// asserted against the new source.
+
+// declaring opens a task and declares the checks that answer one of its gates,
+// through the real commands rather than by writing events by hand.
+func declaring(t *testing.T, gate fsm.GateKind, checks ...string) *harness {
 	t.Helper()
 
-	var task registry.Task
-	body := `{"id":"LUNA-1","title":"a task","status":"open","metadata":` + metadata + `}`
-	if err := json.Unmarshal([]byte(body), &task); err != nil {
-		t.Fatalf("building a task with metadata %s: %v", metadata, err)
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	args := []string{"gate", "checks", "LUNA-1", "--on", string(gate)}
+	for _, check := range checks {
+		args = append(args, "--run", check)
 	}
-	return task
+	h.mustRun(t, args...)
+	return h
 }
 
 // TestTheSeamRunsWhatTheTaskDeclared is the mechanical half arriving at the gate.
 func TestTheSeamRunsWhatTheTaskDeclared(t *testing.T) {
-	reg := &fakeRegistry{task: taskDeclaring(t,
-		`{"luna_gates":{"confirm":{"checks":["true"]}}}`)}
+	h := declaring(t, fsm.GateConfirm, "true")
 
-	check := checkGateWith(reg, t.TempDir())
-	got := check(context.Background(), "LUNA-1", fsm.GateConfirm)
+	got := checkGateWith(h.env.Store, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
 
 	if !got.Passed || got.Rejected || got.Unrunnable {
 		t.Errorf("a passing check reported %+v", got)
@@ -39,32 +42,50 @@ func TestTheSeamRunsWhatTheTaskDeclared(t *testing.T) {
 
 // TestTheSeamRejectsOnANonZeroExit covers the answer that needs no model.
 func TestTheSeamRejectsOnANonZeroExit(t *testing.T) {
-	reg := &fakeRegistry{task: taskDeclaring(t,
-		`{"luna_gates":{"confirm":{"checks":["exit 1"]}}}`)}
+	h := declaring(t, fsm.GateConfirm, "exit 1")
 
-	got := checkGateWith(reg, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
+	got := checkGateWith(h.env.Store, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
 
 	if !got.Rejected || got.Passed {
 		t.Errorf("a failing check reported %+v", got)
 	}
 }
 
+// TestTheSeamRunsEveryCheckInOrder. `--run` repeats, and a parser that kept only
+// the last one would run a third of what was asked while looking like it worked.
+func TestTheSeamRunsEveryCheckInOrder(t *testing.T) {
+	h := declaring(t, fsm.GateConfirm, "true", "exit 1", "true")
+
+	got := checkGateWith(h.env.Store, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
+
+	if !got.Rejected {
+		t.Errorf("a failure among several checks reported %+v, want rejected", got)
+	}
+}
+
 // TestTheSeamIsSilentAboutAGateNobodyDeclared is what keeps this additive.
 //
-// It is every task that exists today: no `luna_gates` at all. The gate has to
-// reach the judgement half with nothing decided, not be approved and not be
-// treated as broken.
+// It is every task that exists today: nothing declared at all. The gate has to
+// reach the judgement half with nothing decided — not approved, and not treated
+// as broken.
 func TestTheSeamIsSilentAboutAGateNobodyDeclared(t *testing.T) {
-	for name, metadata := range map[string]string{
-		"no metadata":         `{}`,
-		"another tool's only": `{"theirs":"a string"}`,
-		"a different gate":    `{"luna_gates":{"review-artifact":{"checks":["true"]}}}`,
-		"declared but empty":  `{"luna_gates":{"confirm":{"checks":[]}}}`,
+	for name, declare := range map[string]func(*testing.T) *harness{
+		"nothing declared": func(t *testing.T) *harness {
+			h := newHarness(t)
+			h.mustRun(t, "task", "new", "LUNA-1")
+			return h
+		},
+		"a different gate": func(t *testing.T) *harness {
+			return declaring(t, fsm.GateReviewArtifact, "true")
+		},
+		"declared but empty": func(t *testing.T) *harness {
+			return declaring(t, fsm.GateConfirm)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			reg := &fakeRegistry{task: taskDeclaring(t, metadata)}
+			h := declare(t)
 
-			got := checkGateWith(reg, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
+			got := checkGateWith(h.env.Store, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
 
 			if got.Passed || got.Rejected || got.Unrunnable {
 				t.Errorf("an undeclared gate reported %+v", got)
@@ -77,44 +98,103 @@ func TestTheSeamIsSilentAboutAGateNobodyDeclared(t *testing.T) {
 	}
 }
 
-// TestARegistryThatCannotBeReadIsNotAnApproval is the distinction that keeps a
-// broken registry from opening gates.
+// TestALogThatCannotBeReadIsNotAnApproval is the distinction that keeps a broken
+// read from opening gates.
 //
-// "The registry says nothing was declared" and "the registry could not be asked"
-// are different facts, and one of them approves a gate. Collapsing them would
-// mean a beads that is down answers every gate with checks as though nobody had
-// declared any.
-func TestARegistryThatCannotBeReadIsNotAnApproval(t *testing.T) {
-	reg := &fakeRegistry{taskErr: errors.New("beads is not answering")}
+// "Nothing was declared" and "the task could not be read" are different facts,
+// and one of them approves a gate. A task whose flow changed under it no longer
+// replays, which is the reachable version of that.
+func TestALogThatCannotBeReadIsNotAnApproval(t *testing.T) {
+	h := newHarness(t)
+	stale := []fsm.Stage{{ID: "gone", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"x"}}}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind: fsm.KindChore, Flow: fsm.Fingerprint(stale),
+	}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
 
-	got := checkGateWith(reg, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
+	got := checkGateWith(h.env.Store, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
 
 	if !got.Unrunnable {
-		t.Errorf("an unreadable registry reported %+v, want unrunnable", got)
+		t.Errorf("an unreadable log reported %+v, want unrunnable", got)
 	}
 	if answer := fsm.ResolveGate(nil, got, fsm.KnobAll); answer != fsm.AnswerPerson {
-		t.Errorf("an unreadable registry resolved to %v, want a person", answer)
+		t.Errorf("an unreadable log resolved to %v, want a person", answer)
 	}
 }
 
-// TestAMalformedDeclarationReachesAPerson covers the person's own typo.
+// TestAGateNobodyCanNameIsRefused covers the person's own typo.
 //
-// Treating it as "nothing declared" would answer the gate by asking them, which
-// hides the very thing they were trying to fix — so it is unrunnable, which
-// carries the results in front of somebody.
-func TestAMalformedDeclarationReachesAPerson(t *testing.T) {
-	reg := &fakeRegistry{task: taskDeclaring(t, `{"luna_gates":{"confirm":7}}`)}
+// Storing it as typed would leave a declaration in the log answering a gate that
+// does not exist — silence at the moment they were trying to stop being asked.
+func TestAGateNobodyCanNameIsRefused(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
 
-	got := checkGateWith(reg, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
-
-	if !got.Unrunnable {
-		t.Errorf("a malformed declaration reported %+v, want unrunnable", got)
+	if err := h.run(t, "gate", "checks", "LUNA-1", "--on", "aprove-plan", "--run", "true"); err == nil {
+		t.Fatal("a gate kind that does not exist was accepted")
+	}
+	if h.replay(t, "LUNA-1").GateChecks != nil {
+		t.Error("a refused declaration reached the log anyway")
 	}
 }
 
-// TestWithNoRegistryThereIsNoMechanicalHalf covers the project that has none.
-func TestWithNoRegistryThereIsNoMechanicalHalf(t *testing.T) {
-	if checkGateWith(nil, t.TempDir()) != nil {
-		t.Error("a project with no registry got a mechanical half anyway")
+// TestRedeclaringReplacesRatherThanAppends. A person correcting what they said is
+// not adding to it — and the previous list stays in the log either way.
+func TestRedeclaringReplacesRatherThanAppends(t *testing.T) {
+	h := declaring(t, fsm.GateConfirm, "exit 1")
+	h.mustRun(t, "gate", "checks", "LUNA-1", "--on", "confirm", "--run", "true")
+
+	got := checkGateWith(h.env.Store, t.TempDir())(context.Background(), "LUNA-1", fsm.GateConfirm)
+
+	if !got.Passed {
+		t.Errorf("the corrected declaration did not take: %+v", got)
+	}
+	if checks := h.replay(t, "LUNA-1").GateChecks[fsm.GateConfirm]; len(checks) != 1 {
+		t.Errorf("want the replacement alone, got %v", checks)
+	}
+}
+
+// TestDeclaringChecksNeedsAGate. Without --on there is nothing to attach them to,
+// and guessing would attach them to the wrong gate.
+func TestDeclaringChecksNeedsAGate(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	if err := h.run(t, "gate", "checks", "LUNA-1", "--run", "true"); err == nil {
+		t.Fatal("checks with no gate were accepted")
+	}
+}
+
+// TestDeclaringChecksNeedsATask. The task is named in the error rather than the
+// declaration landing in a log nobody opened.
+func TestDeclaringChecksNeedsATask(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "gate", "checks", "LUNA-404", "--on", "confirm", "--run", "true"); err == nil {
+		t.Fatal("checks were declared against a task that does not exist")
+	}
+}
+
+// TestDeclaringChecksRejectsAFlagWithNoValue. `--run` at the end of the line is a
+// half-typed command, and accepting it would declare a gate answered by nothing
+// while looking like it took.
+func TestDeclaringChecksRejectsAFlagWithNoValue(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	if err := h.run(t, "gate", "checks", "LUNA-1", "--on", "confirm", "--run"); !errors.Is(err, ErrUsage) {
+		t.Fatalf("want a usage error, got %v", err)
+	}
+}
+
+// TestDeclaringChecksRejectsAnUnknownFlag covers the typo that would otherwise be
+// read as a command to run.
+func TestDeclaringChecksRejectsAnUnknownFlag(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	if err := h.run(t, "gate", "checks", "LUNA-1", "--on", "confirm", "--exec", "make ci"); !errors.Is(err, ErrUsage) {
+		t.Fatalf("want a usage error, got %v", err)
 	}
 }

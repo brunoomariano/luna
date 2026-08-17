@@ -321,14 +321,27 @@ type TaskState struct {
 	// worktree branches from whatever the repository already is.
 	Base string
 
-	// Statement is what a person said the task is about. It is **not recorded**,
-	// for the same reason `Advance.Flow` is not: it lives in the registry, a
-	// person edits it there, and a copy frozen into the log would go quietly stale
-	// while still looking authoritative (ADR-0026, ADR-0054).
+	// Statement is what a person said the task is about, rebuilt from the log:
+	// `TaskCreated` carries the first one and `StatementRevised` every edit after
+	// it (ADR-0067).
 	//
-	// Empty is normal — a project with no registry states nothing, and every stage
-	// still runs.
+	// It used to be read from beads and deliberately left unrecorded, on the
+	// argument that a frozen copy would go stale while still looking
+	// authoritative. Recording the *revision* is what answers that — the log holds
+	// the current statement and how it got there.
+	//
+	// Empty is normal — a task nobody described still runs every stage.
 	Statement Statement
+
+	// GateChecks are the commands this task declared as the mechanical answer to
+	// each gate, keyed by gate kind (ADR-0067).
+	//
+	// A gate absent from the map declared nothing and goes to judgement. A gate
+	// present with an empty slice is a person saying it has no mechanical answer,
+	// which is a different statement and must stay sayable.
+	//
+	// Nil until something is declared, which is every task today.
+	GateChecks map[GateKind][]string
 
 	Gate  *PendingGate
 	Loop  LoopCounters

@@ -234,7 +234,6 @@ func TestEveryInjectedDependencyIsWired(t *testing.T) {
 		"Interpret": env.Interpret == nil,
 		"Lead":      env.Lead == nil,
 		"Notify":    env.Notify == nil,
-		"Registry":  env.Registry == nil,
 	}
 
 	for field, absent := range missing {

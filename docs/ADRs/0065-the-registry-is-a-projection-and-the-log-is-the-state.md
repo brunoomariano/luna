@@ -1,6 +1,6 @@
 # ADR-0065: The registry is a projection; the log is the state
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0067](0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md)
 **Date:** 2026-08-17
 
 ## Context

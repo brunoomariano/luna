@@ -9,6 +9,7 @@ import (
 	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/lead"
 	"github.com/brunoomariano/luna/src/internal/node"
+	"github.com/brunoomariano/luna/src/internal/store"
 )
 
 // runTask drives a task until it needs a person or reaches the end.
@@ -121,16 +122,12 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		Store: env.Store, Judge: lead.BudgetJudge{},
 		// The mechanical half of a gate: what the task declared, run over what it
 		// delivered (RFC-0006).
-		CheckGate: checkGateWith(env.Registry, opts.Repo),
+		CheckGate: checkGateWith(env.Store, opts.Repo),
 		// The judgement half, when the knob reaches a gate and a model is wired
 		// in. Nil is the ordinary case for `luna run` — and then a gate the knob
 		// reached still goes to a person, because authority to judge is not a
 		// judgement (ADR-0043).
 		Ask: env.Lead,
-		// Where the task is, mirrored into the registry so one question can be
-		// asked across every checkout. A projection, never a source: the log stays
-		// the state (ADR-0065).
-		Project: projectWith(env.Registry),
 		// `done` means ready to integrate, and this is what makes it true: the
 		// task's own branch is pointed at what it delivered (ADR-0062).
 		Land: func(ctx context.Context, taskID, commit string) error {
@@ -173,10 +170,6 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		Warn: func(format string, args ...any) {
 			fmt.Fprintf(env.Err, format+"\n", args...)
 		},
-		// What the task is about, read from the registry at the moment the stage
-		// starts. Nil when the project has none, which briefs from the contract
-		// alone — what every stage did before this existed.
-		Statement: statementFrom(env.Registry),
 		// Whether a sandbox is holding the boundary, which decides how much the
 		// agent is trusted with (INV-core-7). Luna does not contain anything
 		// itself; it asks whether something else is.
@@ -190,33 +183,29 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 // checkGateWith runs the commands a task declared for one gate, over what it
 // delivered.
 //
-// This is the seam between the two halves of RFC-0006: the registry says which
-// commands answer a gate, the node layer runs them in a checkout of the
-// delivered commit, and the lead gets a verdict rather than a shell.
+// This is the seam between the two halves of RFC-0006: the task's log says which
+// commands answer a gate, the node layer runs them in a checkout of the delivered
+// commit, and the lead gets a verdict rather than a shell.
 //
-// Nil when there is no registry, which is a project that never declared any
-// checks — so every gate is decided by the judgement half alone, and that is
-// today's behaviour unchanged.
-func checkGateWith(reg Registry, repo string) func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
-	if reg == nil {
-		return nil
-	}
-
+// The declaration used to be read from the registry's metadata (ADR-0054); it is
+// replayed from the task's own log now, which is what let the registry go
+// (ADR-0067). Nothing else about the seam changed — the outcome the lead sees is
+// the same three-way answer it always was.
+func checkGateWith(s *store.Store, repo string) func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 	return func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome {
-		task, err := reg.Task(ctx, taskID)
+		state, err := s.Replay(taskID, fsm.DefaultFlow())
 		if err != nil {
-			// The registry could not be read, so nothing is known about what should
-			// have run. That is not "no checks declared" — it is not knowing, and the
-			// two must not collapse: one approves a gate and the other asks a person.
+			// The log could not be read, so nothing is known about what should have
+			// run. That is not "no checks declared" — it is not knowing, and the two
+			// must not collapse: one approves a gate and the other asks a person.
 			return fsm.GateChecksOutcome{Unrunnable: true}
 		}
 
-		checks, declared, err := task.ChecksFor(string(gate))
-		if err != nil || !declared || len(checks) == 0 {
-			// A malformed declaration is unrunnable rather than absent, for the same
-			// reason: a person wrote something they meant to be run, and treating it
-			// as silence would answer the gate by asking them.
-			return fsm.GateChecksOutcome{Unrunnable: err != nil}
+		checks, declared := state.GateChecks[gate]
+		if !declared || len(checks) == 0 {
+			// Nothing declared, or declared empty on purpose: either way there is no
+			// command to run, so the gate goes to the judgement half.
+			return fsm.GateChecksOutcome{}
 		}
 
 		verdict := node.Shell{Dir: repo}.CheckGate(ctx, checks)
@@ -225,29 +214,6 @@ func checkGateWith(reg Registry, repo string) func(context.Context, string, fsm.
 			Rejected:   verdict.Rejected(),
 			Unrunnable: verdict.Unrunnable != nil,
 		}
-	}
-}
-
-// statementFrom adapts the registry to what the node asks for, and returns nil
-// when there is no registry to ask.
-//
-// Nil rather than a function answering empty, because the node's own nil check is
-// what keeps "this project has no registry" from being reported as a failure to
-// read one every single stage.
-func statementFrom(reg Registry) func(context.Context, string) (fsm.Statement, error) {
-	if reg == nil {
-		return nil
-	}
-	return func(ctx context.Context, taskID string) (fsm.Statement, error) {
-		task, err := reg.Task(ctx, taskID)
-		if err != nil {
-			return fsm.Statement{}, err
-		}
-		return fsm.Statement{
-			Description: task.Description,
-			Design:      task.Design,
-			Acceptance:  task.Acceptance,
-		}, nil
 	}
 }
 

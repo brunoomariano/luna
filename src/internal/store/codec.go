@@ -12,6 +12,8 @@ import (
 // type should not make yesterday's tasks unreadable.
 const (
 	actionTaskCreated   = "TaskCreated"
+	actionStatement     = "StatementRevised"
+	actionGateChecks    = "GateChecksDeclared"
 	actionAdvance       = "Advance"
 	actionComplete      = "Complete"
 	actionFail          = "Fail"
@@ -67,6 +69,23 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionReviewFinding, a)
 	case fsm.Block:
 		return withPayload(actionBlock, a)
+	default:
+		return encodeDeclaration(action)
+	}
+}
+
+// encodeDeclaration encodes what a person said *about* the task, as opposed to
+// what happened to it.
+//
+// Split from the switch above for the complexity gate, along a seam the domain
+// already has: a statement and a set of gate checks are both a person describing
+// their own task, and neither moves it (ADR-0067).
+func encodeDeclaration(action fsm.Action) (name, payload string, err error) {
+	switch a := action.(type) {
+	case fsm.StatementRevised:
+		return withPayload(actionStatement, a)
+	case fsm.GateChecksDeclared:
+		return withPayload(actionGateChecks, a)
 	default:
 		return encodeRunControl(action)
 	}
@@ -132,6 +151,8 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 // genuinely different.
 var fromPayload = map[string]func(string) (fsm.Action, error){
 	actionTaskCreated: decodeJSON[fsm.TaskCreated],
+	actionStatement:   decodeJSON[fsm.StatementRevised],
+	actionGateChecks:  decodeJSON[fsm.GateChecksDeclared],
 	actionFail:        decodeJSON[fsm.Fail],
 	actionGateAdjust:  decodeJSON[fsm.GateAdjust],
 	actionGateReject:  decodeJSON[fsm.GateReject],

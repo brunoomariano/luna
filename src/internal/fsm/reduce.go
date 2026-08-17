@@ -32,6 +32,47 @@ type TaskCreated struct {
 	//
 	// Empty means a log written before this field existed, which replays as before.
 	Flow FlowFingerprint `json:"flow,omitempty"`
+
+	// Statement is what a person said the task is about, recorded with the task
+	// rather than read from a registry (ADR-0067).
+	//
+	// It used to live in beads, and the argument for keeping it there was that a
+	// copy frozen into the log would go stale while still looking authoritative.
+	// What answers that is StatementRevised: an edit is a new action, so the log
+	// carries the current statement *and* how it got there — which is more than
+	// the registry offered, where an edit overwrote its own history.
+	//
+	// Empty is normal. A task nobody described still runs every stage; the agents
+	// are simply left with less to go on.
+	Statement Statement `json:"statement,omitzero"`
+}
+
+// StatementRevised is a person changing what the task is about, after it was
+// created.
+//
+// A separate action rather than a mutable field, for the reason the whole store
+// is append-only: the previous statement stays readable, and a replay can show
+// when the goal moved (INV-core-2). The last one wins, which is what a replay
+// already does with everything else.
+type StatementRevised struct {
+	Statement Statement `json:"statement"`
+}
+
+// GateChecksDeclared is a person saying which commands answer one gate.
+//
+// The commands used to live in the registry's metadata, written by hand as JSON
+// (`bd update --metadata`), which is why almost no task ever declared any. They
+// are a property of the task rather than of the flow — one task wants the whole
+// suite at a gate and another wants something narrower — so they belong in its
+// log (ADR-0067).
+//
+// Declaring an empty list is meaningful and not the same as declaring nothing: it
+// is a person saying this gate has no mechanical answer, so it goes to judgement
+// rather than to a command. That distinction is why Checks is a slice and the
+// absence of the gate from the map is the other answer.
+type GateChecksDeclared struct {
+	Gate   GateKind `json:"gate"`
+	Checks []string `json:"checks"`
 }
 
 // Advance moves to the next stage of the flow, applying the contract's entry
@@ -203,18 +244,20 @@ type SetKnob struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-func (TaskCreated) isAction()   {}
-func (SetKnob) isAction()       {}
-func (Advance) isAction()       {}
-func (Complete) isAction()      {}
-func (Fail) isAction()          {}
-func (GateApprove) isAction()   {}
-func (GateAdjust) isAction()    {}
-func (GateReject) isAction()    {}
-func (ReviewFinding) isAction() {}
-func (Block) isAction()         {}
-func (Unblock) isAction()       {}
-func (Abandon) isAction()       {}
+func (TaskCreated) isAction()        {}
+func (StatementRevised) isAction()   {}
+func (GateChecksDeclared) isAction() {}
+func (SetKnob) isAction()            {}
+func (Advance) isAction()            {}
+func (Complete) isAction()           {}
+func (Fail) isAction()               {}
+func (GateApprove) isAction()        {}
+func (GateAdjust) isAction()         {}
+func (GateReject) isAction()         {}
+func (ReviewFinding) isAction()      {}
+func (Block) isAction()              {}
+func (Unblock) isAction()            {}
+func (Abandon) isAction()            {}
 
 // Reduce applies an action to a task and returns the resulting state.
 //
@@ -237,6 +280,10 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 	switch a := action.(type) {
 	case TaskCreated:
 		return created(state, a)
+	case StatementRevised:
+		return statementRevised(state, a)
+	case GateChecksDeclared:
+		return gateChecksDeclared(state, a)
 	case Advance:
 		return advance(state, a)
 	case Complete:
@@ -314,6 +361,45 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 	// job, because the reducer sees one action at a time and the mismatch is a
 	// property of the whole replay (ADR-0046).
 	state.Flow = a.Flow
+	state.Statement = a.Statement
+	return state, nil
+}
+
+// statementRevised replaces what the task is about.
+//
+// It is accepted at any point in a task's life, including once it has finished:
+// a person correcting the goal of work already done is describing history more
+// accurately, and refusing that would only push the correction somewhere the log
+// cannot see.
+func statementRevised(state TaskState, a StatementRevised) (TaskState, error) {
+	if state.Stage == "" && state.Status == StatusReady && state.Context.Kind == "" {
+		return state, fmt.Errorf("%w: a task is described after it is created", ErrIllegalTransition)
+	}
+
+	state.Statement = a.Statement
+	return state, nil
+}
+
+// gateChecksDeclared records the commands that answer one gate.
+//
+// Replacing rather than appending: a person re-declaring a gate is correcting
+// what they said, not adding to it, and the previous list stays in the log where
+// a replay can show it.
+func gateChecksDeclared(state TaskState, a GateChecksDeclared) (TaskState, error) {
+	if a.Gate == "" {
+		return state, fmt.Errorf("%w: checks are declared for a named gate", ErrIllegalTransition)
+	}
+
+	// Copied rather than mutated in place, so a caller holding the previous state
+	// does not see it change under them — the same reason every other map in here
+	// is rebuilt rather than written through.
+	declared := make(map[GateKind][]string, len(state.GateChecks)+1)
+	for gate, checks := range state.GateChecks {
+		declared[gate] = checks
+	}
+	declared[a.Gate] = a.Checks
+	state.GateChecks = declared
+
 	return state, nil
 }
 

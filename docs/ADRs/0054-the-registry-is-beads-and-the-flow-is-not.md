@@ -1,6 +1,6 @@
 # ADR-0054: The registry is beads, and the flow is not
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0067](0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md)
 **Date:** 2026-08-12
 
 ## Context

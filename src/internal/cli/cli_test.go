@@ -3,13 +3,13 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/registry"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -78,6 +78,17 @@ func (h *harness) mustRun(t *testing.T, args ...string) string {
 	return h.out.String()
 }
 
+// replay rebuilds a task's state from its log, which is how a test asserts on
+// what a command actually recorded rather than on what it printed.
+func (h *harness) replay(t *testing.T, id string) fsm.TaskState {
+	t.Helper()
+	state, err := h.env.Store.Replay(id, fsm.DefaultFlow())
+	if err != nil {
+		t.Fatalf("replaying %s: %v", id, err)
+	}
+	return state
+}
+
 // ── task new ─────────────────────────────────────────────────────────────────
 
 func TestTaskNewOpensALog(t *testing.T) {
@@ -124,134 +135,162 @@ func TestTaskNewDefaultsToFeatureAndInteractive(t *testing.T) {
 // agents inferred the goal from the id string, and `spec` stopped to ask — six
 // times out of six.
 //
-// The statement of work goes to the registry, not into a field of Luna's own:
-// beads already has `description`, `design` and `acceptance_criteria`, and the
-// registry is where a task lives (ADR-0054).
+// The statement of work rides in the log with the task (ADR-0067). It used to go
+// to beads, and moving it here is what lets a task be created in a repository
+// that has no registry and no `bd` on the path.
 func TestTaskNewRecordsWhatTheTaskIsAbout(t *testing.T) {
 	h := newHarness(t)
-	fake := &fakeRegistry{created: "LUNA-1"}
-	h.env.Registry = fake
 
 	h.mustRun(t, "task", "new", "LUNA-1",
 		"--about", "the counts should be consumable by other programs",
 		"--acceptance", "valid JSON out; the default output unchanged")
 
-	if fake.work.Description != "the counts should be consumable by other programs" {
-		t.Errorf("the description never reached the registry, got %q", fake.work.Description)
+	state := h.replay(t, "LUNA-1")
+	if state.Statement.Description != "the counts should be consumable by other programs" {
+		t.Errorf("the description never reached the log, got %q", state.Statement.Description)
 	}
-	if fake.work.Acceptance != "valid JSON out; the default output unchanged" {
-		t.Errorf("the acceptance never reached the registry, got %q", fake.work.Acceptance)
-	}
-}
-
-// TestTaskNewAdoptsATaskAlreadyInTheRegistry is the other direction, and the one
-// that costs no tokens: a person writes the issue in beads, with as much care as
-// they like, and Luna picks it up by id rather than being told it all again.
-func TestTaskNewAdoptsATaskAlreadyInTheRegistry(t *testing.T) {
-	h := newHarness(t)
-	h.env.Registry = &fakeRegistry{
-		task: registry.Task{
-			ID:          "LUNA-1",
-			Title:       "add a --json flag",
-			Description: "written by hand, in beads",
-			Acceptance:  "valid JSON out",
-		},
-	}
-
-	out := h.mustRun(t, "task", "new", "LUNA-1", "--adopt")
-
-	if !strings.Contains(out, "add a --json flag") {
-		t.Errorf("adopting should show what it picked up, got %q", out)
-	}
-	if _, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow()); err != nil {
-		t.Fatalf("an adopted task has no log: %v", err)
+	if state.Statement.Acceptance != "valid JSON out; the default output unchanged" {
+		t.Errorf("the acceptance never reached the log, got %q", state.Statement.Acceptance)
 	}
 }
 
-// TestTheWholeStatementReachesTheRegistry covers the fields the first test does
-// not: a route decided up front, and a title that differs from the id.
-func TestTheWholeStatementReachesTheRegistry(t *testing.T) {
+// TestTheWholeStatementSurvivesAReplay covers the field the first test does not,
+// because a mapping that drops one shows up as an agent quietly missing its
+// design rather than as a failure.
+func TestTheWholeStatementSurvivesAReplay(t *testing.T) {
 	h := newHarness(t)
-	fake := &fakeRegistry{created: "LUNA-1"}
-	h.env.Registry = fake
 
 	h.mustRun(t, "task", "new", "LUNA-1",
-		"--about", "what", "--design", "a flag, not a subcommand", "--title", "add --json")
+		"--about", "what",
+		"--design", "a flag, not a subcommand",
+		"--acceptance", "valid JSON out")
 
-	if fake.work.Design != "a flag, not a subcommand" {
-		t.Errorf("design = %q", fake.work.Design)
+	state := h.replay(t, "LUNA-1")
+	want := fsm.Statement{
+		Description: "what",
+		Design:      "a flag, not a subcommand",
+		Acceptance:  "valid JSON out",
 	}
-	if fake.work.Title != "add --json" {
-		t.Errorf("title = %q", fake.work.Title)
+	if state.Statement != want {
+		t.Errorf("a field was lost on the way to the log:\n got %+v\nwant %+v", state.Statement, want)
 	}
 }
 
-// TestATaskWithNoStatementNeedsNoRegistry. Stating nothing is the old behaviour,
-// and it must not start requiring beads.
-func TestATaskWithNoStatementNeedsNoRegistry(t *testing.T) {
+// TestATaskWithNoStatementIsStillATask. Stating nothing is the ordinary case for
+// anything created without --about, and it must stay legal.
+func TestATaskWithNoStatementIsStillATask(t *testing.T) {
 	h := newHarness(t)
-	h.env.Registry = nil
 
 	if err := h.run(t, "task", "new", "LUNA-1"); err != nil {
-		t.Fatalf("a plain task now needs a registry: %v", err)
+		t.Fatalf("a plain task was refused: %v", err)
+	}
+	if h.replay(t, "LUNA-1").Statement.Stated() {
+		t.Error("a task created with no statement reports one")
 	}
 }
 
-// TestStatingWorkWithNoRegistrySaysSo. Accepting the words and dropping them
-// would be worse than refusing: the person would believe the agents were told.
-func TestStatingWorkWithNoRegistrySaysSo(t *testing.T) {
+// TestARevisionReachesTheLog is the command behind `task statement`, and the
+// reason it is a command at all: correcting what a task is about used to mean
+// editing it in beads, where the previous wording was overwritten.
+func TestARevisionReachesTheLog(t *testing.T) {
 	h := newHarness(t)
-	h.env.Registry = nil
+	h.mustRun(t, "task", "new", "LUNA-1", "--about", "make the script work")
 
-	err := h.run(t, "task", "new", "LUNA-1", "--about", "something")
+	h.mustRun(t, "task", "statement", "LUNA-1",
+		"--about", "the script is zsh-only",
+		"--acceptance", "bash -n exits 0")
 
-	if err == nil || !strings.Contains(err.Error(), "registry") {
-		t.Fatalf("want an error naming the registry, got %v", err)
+	state := h.replay(t, "LUNA-1")
+	if state.Statement.Description != "the script is zsh-only" {
+		t.Errorf("the revision did not take, got %q", state.Statement.Description)
+	}
+	if state.Statement.Acceptance != "bash -n exits 0" {
+		t.Errorf("the acceptance did not take, got %q", state.Statement.Acceptance)
 	}
 }
 
-// TestAdoptingAndStatingAtOnceIsRefused. The two are opposite directions, and
-// silently preferring one would leave the other's words nowhere.
-func TestAdoptingAndStatingAtOnceIsRefused(t *testing.T) {
+// TestRevisingSaysSomethingOrSaysWhy. A revision that states nothing would append
+// an event that erases the statement, which is not what anybody typing it means.
+func TestRevisingSaysSomethingOrSaysWhy(t *testing.T) {
 	h := newHarness(t)
-	h.env.Registry = &fakeRegistry{}
+	h.mustRun(t, "task", "new", "LUNA-1", "--about", "the original")
 
-	if err := h.run(t, "task", "new", "LUNA-1", "--adopt", "--about", "something"); err == nil {
-		t.Fatal("--adopt with a statement of work was accepted")
+	err := h.run(t, "task", "statement", "LUNA-1")
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("want a usage error, got %v", err)
+	}
+	if got := h.replay(t, "LUNA-1").Statement.Description; got != "the original" {
+		t.Errorf("the refused revision changed the statement anyway, got %q", got)
 	}
 }
 
-// TestARegistryThatRefusesToRecordFails. The task is not created behind a
-// registry that said no: the person would think the agents had been told.
-func TestARegistryThatRefusesToRecordFails(t *testing.T) {
+// TestRevisingNeedsATask. Naming no task at all is a different mistake from
+// naming one that does not exist, and the usage line is what tells them apart.
+func TestRevisingNeedsATask(t *testing.T) {
 	h := newHarness(t)
-	h.env.Registry = &fakeRegistry{err: errors.New("bd: database is locked")}
 
-	if err := h.run(t, "task", "new", "LUNA-1", "--about", "something"); err == nil {
-		t.Fatal("a registry that refused the write was treated as success")
+	err := h.run(t, "task", "statement")
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("want a usage error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "--about") {
+		t.Errorf("the usage line does not say what to pass: %v", err)
 	}
 }
 
-// TestAdoptingATaskThatIsNotThereFails. Adopting is reading, so an id nobody
-// wrote is a mistake worth naming rather than an empty task to fill in later.
-func TestAdoptingATaskThatIsNotThereFails(t *testing.T) {
+// TestRevisingRejectsAnUnknownFlag. The statement flags and the run flags share
+// one parser, so a typo has to land as a usage error rather than being recorded
+// as part of the statement.
+func TestRevisingRejectsAnUnknownFlag(t *testing.T) {
 	h := newHarness(t)
-	h.env.Registry = &fakeRegistry{taskErr: registry.ErrNoSuchTask}
+	h.mustRun(t, "task", "new", "LUNA-1", "--about", "the original")
 
-	if err := h.run(t, "task", "new", "LUNA-1", "--adopt"); err == nil {
-		t.Fatal("adopting a task that does not exist was accepted")
+	if err := h.run(t, "task", "statement", "LUNA-1", "--abuot", "a typo"); !errors.Is(err, ErrUsage) {
+		t.Fatalf("want a usage error, got %v", err)
+	}
+	if got := h.replay(t, "LUNA-1").Statement.Description; got != "the original" {
+		t.Errorf("a typo changed the statement, got %q", got)
 	}
 }
 
-// TestAdoptingNeedsARegistry. Without one there is nothing to adopt from, and
-// the message should say that rather than creating an empty task.
-func TestAdoptingNeedsARegistry(t *testing.T) {
+// TestRevisingRejectsAnIdThatCannotBeATask. The id becomes a branch name and an
+// agent name, so it is checked at the edge here for the same reason `task new`
+// checks it — a name that cannot be one of those fails much later, somewhere that
+// does not name the mistake.
+func TestRevisingRejectsAnIdThatCannotBeATask(t *testing.T) {
 	h := newHarness(t)
 
-	err := h.run(t, "task", "new", "LUNA-1", "--adopt")
+	if err := h.run(t, "task", "statement", "../etc/passwd", "--about", "anything"); !errors.Is(err, ErrUsage) {
+		t.Fatalf("want a usage error, got %v", err)
+	}
+}
 
-	if err == nil || !strings.Contains(err.Error(), "registry") {
-		t.Fatalf("want an error naming the registry, got %v", err)
+// TestRevisingATaskThatNoLongerReplaysFails. A task born under a flow this build
+// does not have cannot be read, so it cannot be described either — and saying so
+// is better than appending to a log nothing can rebuild. `flow check` is where
+// those surface, and `task abandon` is what ends them.
+func TestRevisingATaskThatNoLongerReplaysFails(t *testing.T) {
+	h := newHarness(t)
+
+	stale := []fsm.Stage{{ID: "gone", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"x"}}}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind: fsm.KindChore, Flow: fsm.Fingerprint(stale),
+	}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	if err := h.run(t, "task", "statement", "LUNA-1", "--about", "anything"); err == nil {
+		t.Fatal("a task that no longer replays accepted a revision")
+	}
+}
+
+// TestRevisingATaskThatDoesNotExistFails. The task is named in the error, rather
+// than surfacing as an illegal transition out of the reducer.
+func TestRevisingATaskThatDoesNotExistFails(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "task", "statement", "LUNA-404", "--about", "anything"); err == nil {
+		t.Fatal("revising a task that was never created succeeded")
 	}
 }
 
@@ -313,6 +352,81 @@ func TestTaskShowReportsTheState(t *testing.T) {
 	for _, want := range []string{"LUNA-1", "ready", "chore", "interactive"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("want %q in the output, got %q", want, out)
+		}
+	}
+}
+
+// TestTaskShowPrintsWhatTheTaskIsAbout. The statement replays with the task now
+// (ADR-0067), so the command that shows a task is where a person checks what the
+// agents were actually told.
+func TestTaskShowPrintsWhatTheTaskIsAbout(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1",
+		"--about", "the script is zsh-only",
+		"--design", "a POSIX loop",
+		"--acceptance", "bash -n exits 0")
+
+	out := h.mustRun(t, "task", "show", "LUNA-1")
+
+	for _, want := range []string{"the script is zsh-only", "a POSIX loop", "bash -n exits 0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in the output, got %q", want, out)
+		}
+	}
+}
+
+// TestTaskShowReportsTheStatementAsJSON. The structured output is a contract
+// (ADR-0043), and the statement is the field another program most wants: it is
+// what the task is for.
+func TestTaskShowReportsTheStatementAsJSON(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1",
+		"--about", "the script is zsh-only",
+		"--design", "a POSIX loop",
+		"--acceptance", "bash -n exits 0")
+
+	var report TaskReport
+	if err := json.Unmarshal([]byte(h.mustRun(t, "task", "show", "LUNA-1", "--json")), &report); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	if report.Statement == nil {
+		t.Fatal("the statement is missing from the structured view")
+	}
+	want := StatementReport{
+		About:      "the script is zsh-only",
+		Design:     "a POSIX loop",
+		Acceptance: "bash -n exits 0",
+	}
+	if *report.Statement != want {
+		t.Errorf("the statement did not survive:\n got %+v\nwant %+v", *report.Statement, want)
+	}
+}
+
+// TestTaskShowOmitsAnEmptyStatementFromJSON. A null field a reader has to
+// special-case is worse than an absent one.
+func TestTaskShowOmitsAnEmptyStatementFromJSON(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	out := h.mustRun(t, "task", "show", "LUNA-1", "--json")
+
+	if strings.Contains(out, "statement") {
+		t.Errorf("a task nobody described carries a statement field anyway:\n%s", out)
+	}
+}
+
+// TestTaskShowSaysNothingAboutATaskNobodyDescribed. An empty statement must not
+// grow headings with nothing under them.
+func TestTaskShowSaysNothingAboutATaskNobodyDescribed(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	out := h.mustRun(t, "task", "show", "LUNA-1")
+
+	for _, unwanted := range []string{"about", "design", "done"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("an empty statement was given a %q line anyway:\n%s", unwanted, out)
 		}
 	}
 }

@@ -2,8 +2,6 @@ package herdr
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -84,47 +82,27 @@ func TestTheBriefCarriesWhatTheTaskIsAbout(t *testing.T) {
 
 // TestTheStatementReachesTheAgent is the wiring, not the formatting: a lookup
 // that exists and is never called is the failure this project has met twice.
+//
+// The statement now arrives in the replayed state rather than from a registry
+// call at stage start (ADR-0067), so this is what proves the node still puts it
+// in front of the agent.
 func TestTheStatementReachesTheAgent(t *testing.T) {
 	fake := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{
 		Runner: fake,
 		Prove:  fake.proving(),
 		Roles:  fixedRole("claude"),
-		Statement: func(context.Context, string) (fsm.Statement, error) {
-			return fsm.Statement{Description: "consumable by other programs"}, nil
-		},
 	}
 
-	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
+	state := fsm.NewTaskState("LUNA-1", "")
+	state.Statement = fsm.Statement{Description: "consumable by other programs"}
+
+	if _, err := node.Run(context.Background(), state, stageWithTests()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if len(fake.prompted) != 1 || !strings.Contains(fake.prompted[0], "consumable by other programs") {
 		t.Errorf("the statement never reached the agent:\n%s", fake.prompted)
-	}
-}
-
-// TestARegistryThatCannotAnswerStillBriefs. Everything the contract requires is
-// in the state; the statement is extra. A stage that refuses to run because a
-// tracker is unreachable fails for a reason that has nothing to do with the work.
-func TestARegistryThatCannotAnswerStillBriefs(t *testing.T) {
-	fake := &fakeHerdr{settlesAt: StatusIdle}
-	var warned []string
-	node := &Node{
-		Runner: fake,
-		Prove:  fake.proving(),
-		Roles:  fixedRole("claude"),
-		Warn:   func(format string, args ...any) { warned = append(warned, fmt.Sprintf(format, args...)) },
-		Statement: func(context.Context, string) (fsm.Statement, error) {
-			return fsm.Statement{}, errors.New("bd: database is locked")
-		},
-	}
-
-	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
-		t.Fatalf("an unreachable registry failed the stage: %v", err)
-	}
-	if len(warned) != 1 {
-		t.Errorf("the failure to read the statement was swallowed (%d warnings)", len(warned))
 	}
 }
 

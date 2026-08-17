@@ -59,6 +59,18 @@ The route that was rejected, with the protocol measured against a running server
 [RFC-0007](../RFCs/rfc-0007-luna-hears-herdr-instead-of-only-asking-it.md) — kept OBSOLETE
 because the measurement is worth more than the plan was.
 
+### Decided and then undone
+
+**The registry is gone, and both ADRs about it are superseded.** ADR-0054 made beads the
+place a task lives; ADR-0065 demoted it to a projection. An audit found production called it
+in four places, of which one carried weight — the statement of work an agent is briefed
+with — and beads carries an open issue where a write **reports success and does not persist**
+under exactly Luna's pattern of concurrent agents
+([#4767](https://github.com/gastownhall/beads/issues/4767)).
+[ADR-0067](../ADRs/0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md) moved
+the statement and the gate checks into the task's own log. `internal/registry` no longer
+exists, and `bd` need not be installed.
+
 ### Two things worth not misreading
 
 **Agents are not reused across stages.** `internal/herdr/runner.go` reuses an agent
@@ -81,8 +93,10 @@ strands every open task, and this is what notices.
 Not divergences — work that is named and not done.
 
 - **The second timer** (PRD node-0002). Deliberately deferred; the PRD says why.
-- **`registry.RecordCommit` / `Commits`** ([ADR-0065](../ADRs/0065-the-registry-is-a-projection-and-the-log-is-the-state.md)).
-  Left unwired on purpose: the commit is the handoff and lives in the log.
+- **A consolidated view of every task.** `bd list` was one, and it went with the registry
+  ([ADR-0067](../ADRs/0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md)).
+  `luna gates`, `luna stuck` and `luna status` answer per question rather than per
+  inventory. A daemon over a central store is where a panel comes back.
 
 ## References
 

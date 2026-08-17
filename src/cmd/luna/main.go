@@ -16,7 +16,6 @@ import (
 	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/interpret"
 	"github.com/brunoomariano/luna/src/internal/node"
-	"github.com/brunoomariano/luna/src/internal/registry"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -135,8 +134,7 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 		// A block is only a block once someone knows. herdr already owns a
 		// notification layer and is already what a person is looking at, so this
 		// delegates rather than growing a transport of its own (INV-core-8).
-		Notify:   herdr.NewNotifier().Blocked,
-		Registry: registry.New(root),
+		Notify: herdr.NewNotifier().Blocked,
 	}
 }
 

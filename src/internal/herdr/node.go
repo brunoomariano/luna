@@ -177,16 +177,6 @@ type Node struct {
 	// that removes the harness's own checks rather than granting it by default.
 	Contained func() bool
 
-	// Statement reads what the task is about from wherever it lives — the
-	// registry, in practice. Injected for the same reason as Prove: the node runs
-	// things and does not know what a beads is.
-	//
-	// Nil, or an error, means the agent works from the contract alone. That is
-	// strictly what it had before this existed, so failing to reach the registry
-	// degrades the brief rather than the stage (INV-core-8's principle: a check
-	// that cannot look should not block the work).
-	Statement func(ctx context.Context, taskID string) (fsm.Statement, error)
-
 	// Prove runs the contract's checks over a named commit.
 	//
 	// It takes the commit rather than the worktree, because the worktree is
@@ -278,11 +268,10 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 		return lead.Result{}, err
 	}
 
-	// Read fresh rather than replayed: a person edits the statement in the
-	// registry while the task runs, and the stage about to start should see what
-	// they wrote (ADR-0026's line between history and configuration).
-	state.Statement = n.statement(ctx, state.ID)
-
+	// The statement arrives replayed, in the state the caller handed in. It used
+	// to be read fresh from the registry here, so that an edit made mid-run
+	// reached the next stage; now an edit *is* an event, so the replay already has
+	// it and there is nothing left to go and ask (ADR-0067).
 	name := agentName(state.ID, stage.ID)
 
 	// A gated role starts without what it must not have — the tool is absent
@@ -417,18 +406,6 @@ func (n *Node) contained() bool {
 // A registry that is down is a worse brief, not a stopped stage: everything the
 // contract requires is still in the state, and that is what every stage ran on
 // before a statement existed at all.
-func (n *Node) statement(ctx context.Context, taskID string) fsm.Statement {
-	if n.Statement == nil {
-		return fsm.Statement{}
-	}
-	stated, err := n.Statement(ctx, taskID)
-	if err != nil {
-		n.warn("could not read what %s is about, briefing without it: %v", taskID, err)
-		return fsm.Statement{}
-	}
-	return stated
-}
-
 func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	if n.Prompt != nil {
 		return n.Prompt(state, stage)

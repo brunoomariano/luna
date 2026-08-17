@@ -105,7 +105,7 @@ func reportGates(env Env, flow []fsm.Stage) {
 		}
 		fmt.Fprintln(env.Out)
 	}
-	fmt.Fprintf(env.Out, "checks are declared per task in the registry, not here\n")
+	fmt.Fprintf(env.Out, "checks are declared per task — `luna gate checks <id> --on <gate>` — not here\n")
 }
 
 func flowCheck(env Env, args []string) error {

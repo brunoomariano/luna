@@ -144,18 +144,6 @@ type Lead struct {
 	// at.
 	Ask func(ctx context.Context, prompt string) (string, error)
 
-	// Project mirrors where the task is into the registry, so one question can be
-	// asked across every checkout (ADR-0054).
-	//
-	// It is a projection and never a source: the log is the state, and nothing
-	// here is ever read back to decide anything (ADR-0065). A function for the
-	// same reason Land is one — the lead decides *that* a task moved, and talking
-	// to `bd` belongs to the layer that owns processes.
-	//
-	// Nil is the ordinary case for a project with no registry, and then nothing
-	// is projected and nothing changes.
-	Project func(ctx context.Context, state fsm.TaskState) error
-
 	// Land points the task's branch at the commit it ended on (ADR-0062).
 	//
 	// A function rather than a git call here for the reason the reducer's purity
@@ -189,11 +177,6 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 		if err != nil {
 			return fsm.TaskState{}, err
 		}
-
-		// Projected from the state the log just produced, on every pass — so a
-		// person asking the registry sees where the task is without Luna having a
-		// second place it decides from (ADR-0065).
-		l.project(ctx, state)
 
 		// Three endings, none of them the lead's to push past. A gate is waiting on
 		// a person, a block is waiting on a person, and done is done.
@@ -232,20 +215,6 @@ func (l *Lead) land(ctx context.Context, state fsm.TaskState) {
 	}
 	if err := l.Land(ctx, state.ID, state.Base); err != nil {
 		l.warn("%s finished but its branch was not moved: %v", state.ID, err)
-	}
-}
-
-// project mirrors the task's position into the registry.
-//
-// A failed projection is reported and does not fail the task. A projection that
-// is briefly stale is a projection; a state that is briefly stale would be a bug
-// — which is exactly why the log is the state and this is not (ADR-0065).
-func (l *Lead) project(ctx context.Context, state fsm.TaskState) {
-	if l.Project == nil {
-		return
-	}
-	if err := l.Project(ctx, state); err != nil {
-		l.warn("%s moved and the registry was not updated: %v", state.ID, err)
 	}
 }
 

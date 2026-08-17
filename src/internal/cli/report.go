@@ -34,6 +34,13 @@ type TaskReport struct {
 	// Gate is what the task is waiting on, present only when it is waiting.
 	Gate *GateReport `json:"gate,omitempty"`
 
+	// Statement is what a person said the task is about. It used to live in the
+	// registry, where `task show` could not see it without a second lookup; now it
+	// replays with the task (ADR-0067), so the command that shows a task shows it.
+	//
+	// Absent when nobody described the task, which is the ordinary case.
+	Statement *StatementReport `json:"statement,omitempty"`
+
 	Events   int              `json:"events"`
 	Produced []ArtifactReport `json:"produced,omitempty"`
 
@@ -41,6 +48,13 @@ type TaskReport struct {
 	// longer has. The task still replays — its decisions are in its log — but a
 	// reader should be able to say so (ADR-0026).
 	ProfileDefined bool `json:"profile_defined"`
+}
+
+// StatementReport is what the task is about, as a reader sees it.
+type StatementReport struct {
+	About      string `json:"about,omitempty"`
+	Design     string `json:"design,omitempty"`
+	Acceptance string `json:"acceptance,omitempty"`
 }
 
 // GateReport is a pause waiting for a person.
@@ -95,6 +109,14 @@ func taskReport(cfg Config, state fsm.TaskState, events int) TaskReport {
 		Blocked:        state.Blocked,
 		Events:         events,
 		ProfileDefined: defined,
+	}
+
+	if state.Statement.Stated() {
+		report.Statement = &StatementReport{
+			About:      state.Statement.Description,
+			Design:     state.Statement.Design,
+			Acceptance: state.Statement.Acceptance,
+		}
 	}
 
 	if state.Gate != nil {

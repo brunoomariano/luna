@@ -104,10 +104,23 @@ LLM steps sprinkled in at just the right points"*.
 <https://github.com/gastownhall/beads>
 
 Graph-based tracker for agents: dependencies, computing what is free to start, atomic
-claiming. Used for the ordering **between** tasks.
+claiming. **Adopted, then removed** — the record of both is
+[ADR-0054](ADRs/0054-the-registry-is-beads-and-the-flow-is-not.md) and
+[ADR-0067](ADRs/0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md).
 
-It is not used for the stages **within** a task — modeling the stages × N tasks as
-sub-issues would inflate the graph with no gain.
+What it was used for was never the graph. Luna referenced no dependency, no `blocked_by` and
+no `ready` computation; what it read back was the statement of work an agent is briefed with
+— three text fields. Against 0.08 ms to replay a whole task, one `bd show` cost 95 ms.
+
+Two things settled it. A write **reports success and does not persist** under concurrent
+agentic load ([#4767](https://github.com/gastownhall/beads/issues/4767)), which is exactly
+Luna's pattern; and `bd init` writes agent scaffolding for four harnesses plus a `git init`
+and an unprompted commit into whatever directory it is run in
+([#4635](https://github.com/gastownhall/beads/issues/4635)) — unacceptable in a repository
+somebody else owns.
+
+Still worth reading for the dependency graph, which is the part Luna never needed and the
+part a tracker should be judged on.
 
 ## Agent of Empires and herdr
 

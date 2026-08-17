@@ -8,6 +8,14 @@
 > Supersedes [RFC-0005](rfc-0005-a-gate-is-answered-by-running-its-criteria.md), which
 > covered only the mechanical half. Everything measured there still holds and is not
 > repeated here — this is the design that puts the other half back, deliberately.
+>
+> **Where the checks live changed after this shipped.** The two halves, the knob, and the
+> three-way outcome are as designed and built. What moved is the source of the mechanical
+> half: it was the registry's `--metadata` (`luna_gates`), written by hand as JSON, and is
+> now the task's own log, written by `luna gate checks <id> --on <gate> --run <cmd>`
+> ([ADR-0067](../ADRs/0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md)).
+> Read every mention of "the registry" below as "the task's log"; the reasoning for *why*
+> the checks are per task rather than per flow is unchanged, and is the part worth keeping.
 
 ## Motivation
 
