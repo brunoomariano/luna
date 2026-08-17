@@ -175,7 +175,7 @@ func TestClosingSendsTheWorkspaceAndForcesIt(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.remove", `{"id":"1","result":{"type":"worktree_removed"}}`)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	if err := runner.CloseWorktree(context.Background(), Workspace{ID: "w1", Path: "/tmp/wt"}); err != nil {
 		t.Fatalf("CloseWorktree: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestClosingSendsTheWorkspaceAndForcesIt(t *testing.T) {
 // before herdr answered has no workspace id, and there is nothing to remove.
 func TestClosingAWorkspaceThatWasNeverOpenedIsNotAnError(t *testing.T) {
 	server, path := newFakeServer(t)
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 
 	if err := runner.CloseWorktree(context.Background(), Workspace{}); err != nil {
 		t.Fatalf("closing an empty workspace: %v", err)
@@ -217,7 +217,7 @@ func TestARefusedRemovalIsReported(t *testing.T) {
 	server.reply("worktree.remove",
 		`{"id":"1","error":{"code":"worktree_busy","message":"the worktree is in use"}}`)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	err := runner.CloseWorktree(context.Background(), Workspace{ID: "w1", Path: "/tmp/wt"})
 
 	if err == nil {
@@ -244,7 +244,7 @@ func TestTheBaseIsSentOnlyWhenThereIsOne(t *testing.T) {
 			server, path := newFakeServer(t)
 			server.reply("worktree.create", worktreeReply)
 
-			runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+			runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 			_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{
 				TaskID: "LUNA-1",
 				Role:   "implementer",

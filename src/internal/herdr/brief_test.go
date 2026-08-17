@@ -132,7 +132,7 @@ func TestTheCommitTheStageMadeIsReported(t *testing.T) {
 		Runner:    fake,
 		Prove:     fake.proving(),
 		Roles:     fixedRole("claude"),
-		Delivered: func(context.Context, string) (string, string) { return "c0ffee1", "" },
+		Delivered: func(context.Context, string) (string, string, error) { return "c0ffee1", "", nil },
 	}
 
 	result, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests())
@@ -175,8 +175,8 @@ func TestTheAgentsDeclarationBeatsTheAssumption(t *testing.T) {
 		Runner: fake,
 		Prove:  fake.proving(),
 		Roles:  fixedRole("claude"),
-		Delivered: func(context.Context, string) (string, string) {
-			return "c0ffee1", "chore: did something else\n\nDelivered: something_else\n"
+		Delivered: func(context.Context, string) (string, string, error) {
+			return "c0ffee1", "chore: did something else\n\nDelivered: something_else\n", nil
 		},
 	}
 
@@ -206,8 +206,8 @@ func TestAnAgentThatDeclaredNothingFallsBack(t *testing.T) {
 		Runner: fake,
 		Prove:  fake.proving(),
 		Roles:  fixedRole("claude"),
-		Delivered: func(context.Context, string) (string, string) {
-			return "c0ffee1", "chore: a message with no declaration"
+		Delivered: func(context.Context, string) (string, string, error) {
+			return "c0ffee1", "chore: a message with no declaration", nil
 		},
 	}
 
@@ -248,9 +248,9 @@ func TestAMechanicalStageDeclaresNothingAndStillCloses(t *testing.T) {
 		Runner: fake,
 		Prove:  fake.proving(),
 		Roles:  fixedRole("claude"),
-		Delivered: func(context.Context, string) (string, string) {
+		Delivered: func(context.Context, string) (string, string, error) {
 			// The previous stage's commit, inherited with the branch.
-			return "c0ffee1", "chore: the stage before this one\n\nDelivered: repos\n"
+			return "c0ffee1", "chore: the stage before this one\n\nDelivered: repos\n", nil
 		},
 	}
 
@@ -284,8 +284,8 @@ func TestAStageThatCommittedNothingDoesNotInheritADeclaration(t *testing.T) {
 		Runner: fake,
 		Prove:  fake.proving(),
 		Roles:  fixedRole("claude"),
-		Delivered: func(context.Context, string) (string, string) {
-			return "base1", "chore: the stage before\n\nDelivered: repos\n"
+		Delivered: func(context.Context, string) (string, string, error) {
+			return "base1", "chore: the stage before\n\nDelivered: repos\n", nil
 		},
 	}
 
@@ -323,9 +323,9 @@ func TestAMechanicalStageAfterAnAgentStageDeclaresNothing(t *testing.T) {
 		Runner: fake,
 		Prove:  fake.proving(),
 		Roles:  fixedRole("claude"),
-		Delivered: func(context.Context, string) (string, string) {
+		Delivered: func(context.Context, string) (string, string, error) {
 			// code-review's commit, inherited as this worktree's HEAD.
-			return "review1", "chore: review\n\nDelivered: review_report\n"
+			return "review1", "chore: review\n\nDelivered: review_report\n", nil
 		},
 	}
 

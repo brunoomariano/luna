@@ -139,7 +139,7 @@ func TestOpenWorktreeReadsHerdrsFieldNames(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -164,7 +164,7 @@ func TestOpenWorktreeSendsTheRepository(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/some/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/some/repo", time.Minute, false)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestOpenWorktreeSendsAnAbsoluteRepository(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), ".", time.Minute)
+	runner := NewRunner(dialFake(t, path), ".", time.Minute, false)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 	server.reply("worktree.create", `{"id":"1","error":{"code":"worktree_exists","message":"branch already checked out"}}`)
 	server.reply("worktree.open", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("an existing worktree is resumable, not fatal: %v", err)
@@ -433,7 +433,7 @@ func TestEveryRequestCarriesAStringID(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestAWorktreeThatCannotBeMadeIsReported(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", `{"id":"1","error":{"code":"invalid_request","message":"require a workspace inside a Git work tree"}}`)
 
-	runner := NewRunner(dialFake(t, path), "/not/a/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/not/a/repo", time.Minute, false)
 	_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 
 	if err == nil {
@@ -573,7 +573,7 @@ func TestTheCheckoutPathFallsBackToThePanesDirectory(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1","cwd":"/from/the/pane"},"worktree":{}}}`)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -634,7 +634,7 @@ func TestTheWorktreeFollowsTheHouseNaming(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/home/someone/repos/api", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/home/someone/repos/api", time.Minute, false)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestTheWorktreeFollowsTheHouseNaming(t *testing.T) {
 // repository does to itself, and one inside a tool's directory is caught by that
 // tool's cleanup.
 func TestTheCheckoutIsASiblingNeverAChild(t *testing.T) {
-	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1")
+	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -664,10 +664,51 @@ func TestTheCheckoutIsASiblingNeverAChild(t *testing.T) {
 	}
 }
 
+// TestAContainedCheckoutLivesUnderTheRepository is the exception, and the reason
+// it exists is a measured failure rather than a preference.
+//
+// Inside ai-jail only the working directory is reachable, so a sibling is not
+// merely unwritable — it does not exist. Every read of the tree failed, every
+// stage reported no commit, the base never moved, and a twelve-stage run finished
+// `done` with the work scattered across twelve sibling branches.
+func TestAContainedCheckoutLivesUnderTheRepository(t *testing.T) {
+	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.HasPrefix(got, "/home/someone/repos/api/") {
+		t.Errorf("a contained checkout must be reachable from the repository, got %q", got)
+	}
+	// Under `.luna`, beside the log: it is already Luna's directory, and a linked
+	// worktree is tracked through `.git/worktrees` rather than showing up as
+	// untracked files in the repository it was cut from.
+	if !strings.Contains(got, "/.luna/") {
+		t.Errorf("want the checkout beside the log, got %q", got)
+	}
+}
+
+// TestTheTwoLayoutsDoNotCollide. A repository run both ways must not have one
+// task's contained checkout land on another's sibling path.
+func TestTheTwoLayoutsDoNotCollide(t *testing.T) {
+	sibling, err := checkoutPath("/home/someone/repos/api", "LUNA-1", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	contained, err := checkoutPath("/home/someone/repos/api", "LUNA-1", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sibling == contained {
+		t.Errorf("both layouts resolved to %q", sibling)
+	}
+}
+
 // TestARelativeRepositoryStillResolves covers `--repo .`, which is what someone
 // running from inside their checkout will type.
 func TestARelativeRepositoryStillResolves(t *testing.T) {
-	got, err := checkoutPath(".", "LUNA-1")
+	got, err := checkoutPath(".", "LUNA-1", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -690,7 +731,7 @@ func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
 	server.reply("worktree.create", `{"id":"1","error":{"code":"worktree_exists","message":"already checked out"}}`)
 	server.reply("worktree.open", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1"},"worktree":{"path":"/somewhere/older"}}}`)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -706,7 +747,7 @@ func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
 // The filesystem root has no name to build a sibling from, and `wt--LUNA-1` at
 // the root is not a checkout anyone meant to create. Refusing beats guessing.
 func TestARepositoryThatNamesNothingIsRefused(t *testing.T) {
-	if _, err := checkoutPath("/", "LUNA-1"); err == nil {
+	if _, err := checkoutPath("/", "LUNA-1", false); err == nil {
 		t.Error("the filesystem root does not name a repository")
 	}
 }
@@ -720,7 +761,7 @@ func TestOpenWorktreeRefusesAnUnusableRepository(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/", time.Minute)
+	runner := NewRunner(dialFake(t, path), "/", time.Minute, false)
 	_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 
 	if err == nil {

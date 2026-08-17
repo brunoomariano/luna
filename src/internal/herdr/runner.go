@@ -30,6 +30,11 @@ type socketRunner struct {
 	// Settle bounds how long a prompt waits for the agent to stop working. It is
 	// the budget the profile decided (ADR-0034), handed down by the caller.
 	Settle time.Duration
+
+	// Contained says a sandbox is holding the boundary, which decides where a
+	// worktree can live: outside one a sibling of the repository, inside one a
+	// directory under it, because that is all the process can reach.
+	Contained bool
 }
 
 // NewRunner builds a Runner backed by a herdr socket.
@@ -39,11 +44,15 @@ type socketRunner struct {
 // it to ".", which is the natural thing for a CLI run from inside the checkout.
 // Failing to resolve it leaves the caller's value alone — herdr's refusal names
 // the problem better than a path this could invent (ADR-0036).
-func NewRunner(client *Client, repo string, settle time.Duration) Runner {
+// contained is whether a sandbox is holding the boundary. It decides where a
+// worktree can live, so it is read once when the runner is built rather than per
+// stage: the answer cannot change mid-run, and asking repeatedly would read
+// /proc on every stage for a fact that is a property of the process.
+func NewRunner(client *Client, repo string, settle time.Duration, contained bool) Runner {
 	if absolute, err := filepath.Abs(repo); err == nil {
 		repo = absolute
 	}
-	return &socketRunner{client: client, Repo: repo, Settle: settle}
+	return &socketRunner{client: client, Repo: repo, Settle: settle, Contained: contained}
 }
 
 // worktreeCreated is herdr's answer: the whole home for a task at once.
@@ -79,7 +88,7 @@ func (r *socketRunner) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspac
 		label = w.TaskID + "-" + string(w.Role)
 	}
 
-	path, err := checkoutPath(r.Repo, label)
+	path, err := checkoutPath(r.Repo, label, r.Contained)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -268,7 +277,8 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 }
 
 // checkoutPath is where a task's worktree lives: `../wt-<repo>-<id>`, a sibling
-// of the repository.
+// of the repository — unless the process is contained, and then it is
+// `<repo>/.luna/wt/<id>`.
 //
 // herdr would otherwise put it under its own directory, which is fine for herdr
 // and wrong here — this project's worktrees follow one convention regardless of
@@ -278,7 +288,20 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 // A sibling rather than a child on purpose: a checkout nested inside the
 // repository, or inside a tool's directory, gets caught by that tool's own
 // cleanup and by every recursive walk the repository does to itself.
-func checkoutPath(repo, taskID string) (string, error) {
+//
+// **A sandbox inverts that.** Inside ai-jail only the working directory is
+// reachable — a sibling is not merely unwritable, it does not exist — so every
+// read of the tree fails. Measured: a full twelve-stage run where every stage
+// reported no commit, the base never moved, and the task finished `done` with the
+// work scattered across twelve sibling branches. The failure is now loud rather
+// than silent (`node.Handover`), and this is what stops it happening at all.
+//
+// Under the repository is the one place that is reachable in both worlds. It is
+// second choice, not first: `.luna/wt` sits beside the log, which is already
+// Luna's, and `.gitignore` is not consulted for a linked worktree — git tracks it
+// through `.git/worktrees`, so a checkout there does not show up as untracked
+// files in the repository it was cut from.
+func checkoutPath(repo, taskID string, contained bool) (string, error) {
 	absolute, err := filepath.Abs(repo)
 	if err != nil {
 		return "", fmt.Errorf("resolving the repository path %q: %w", repo, err)
@@ -289,6 +312,9 @@ func checkoutPath(repo, taskID string) (string, error) {
 		return "", fmt.Errorf("%q does not name a repository directory", repo)
 	}
 
+	if contained {
+		return filepath.Join(absolute, ".luna", "wt", taskID), nil
+	}
 	return filepath.Join(filepath.Dir(absolute), "wt-"+name+"-"+taskID), nil
 }
 

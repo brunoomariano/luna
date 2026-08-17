@@ -218,7 +218,10 @@ func TestHandoverReadsTheCommitAndItsMessage(t *testing.T) {
 	run(t, dir, "git", "add", ".")
 	run(t, dir, "git", "commit", "-m", "chore: the stage\n\nDelivered: repos")
 
-	commit, message := Handover(context.Background(), dir)
+	commit, message, err := Handover(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("reading a readable worktree: %v", err)
+	}
 
 	if commit == "" {
 		t.Error("no commit came back from a repository that has one")
@@ -234,7 +237,10 @@ func TestHandoverOnARepositoryWithNoCommit(t *testing.T) {
 	dir := t.TempDir()
 	run(t, dir, "git", "init", "--initial-branch=main")
 
-	commit, message := Handover(context.Background(), dir)
+	commit, message, err := Handover(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("a repository with no commit is a state, not a failure: %v", err)
+	}
 
 	if commit != "" || message != "" {
 		t.Errorf("got %q/%q, want nothing from a repository with no commit", commit, message)
@@ -279,5 +285,48 @@ func TestTheThrowawayCheckoutDoesNotRunAProjectsHooks(t *testing.T) {
 	// And it is a real checkout, not an empty directory that happened not to error.
 	if _, err := os.Stat(filepath.Join(delivered.Path, "delivered.txt")); err != nil {
 		t.Errorf("the checkout does not carry what was committed: %v", err)
+	}
+}
+
+// TestHandoverOnAnUnreadableWorktreeIsAnError is the regression from the first
+// full cycle run after the registry came out.
+//
+// Twelve stages ran, every one of them worked, and the task finished `done` with
+// green evidence — while `luna/<task>` still pointed at the seed commit. The fix,
+// the tests, the contract and the scenarios each ended up on a different sibling
+// branch, and nothing said a word.
+//
+// The cause was this function returning `"", ""` for two different facts. Inside
+// ai-jail only the cwd is visible, so a worktree created as a *sibling* of the
+// repository cannot be read at all — every `rev-parse` failed, every stage
+// reported "no commit", and "no commit" is a legitimate answer. So the base never
+// moved, and every stage branched from the same place.
+//
+// It is worse one layer down: an empty commit makes `CheckoutAt` verify `HEAD`,
+// so the stage is checked against the repository's own head rather than against
+// what it delivered — and passes. A silent failure that also launders the
+// evidence (INV-core-8).
+func TestHandoverOnAnUnreadableWorktreeIsAnError(t *testing.T) {
+	// A directory that is not a repository stands in for one the process cannot
+	// see: both make git fail, which is the condition being asserted on.
+	_, _, err := Handover(context.Background(), t.TempDir())
+
+	if err == nil {
+		t.Fatal("an unreadable worktree reported no commit, which is what let a " +
+			"whole task finish with its base never moving")
+	}
+}
+
+// TestHandoverTellsTheTwoApart. The distinction is the whole fix, so it is worth
+// asserting as one thing rather than as two tests that happen to disagree.
+func TestHandoverTellsTheTwoApart(t *testing.T) {
+	empty := t.TempDir()
+	run(t, empty, "git", "init", "--initial-branch=main")
+
+	if _, _, err := Handover(context.Background(), empty); err != nil {
+		t.Errorf("a repository with no commit must not be an error: %v", err)
+	}
+	if _, _, err := Handover(context.Background(), t.TempDir()); err == nil {
+		t.Error("a directory that is not a repository must be an error")
 	}
 }

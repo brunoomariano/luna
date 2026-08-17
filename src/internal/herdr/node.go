@@ -167,7 +167,7 @@ type Node struct {
 	// what happened before this existed: nine stages closed on a real run and
 	// seven of them branched from the pre-task commit, so the reviewer reviewed a
 	// tree with none of the implementer's work in it.
-	Delivered func(ctx context.Context, worktree string) (commit, message string)
+	Delivered func(ctx context.Context, worktree string) (commit, message string, err error)
 
 	// Contained reports whether something is confining this process, which decides
 	// how much the agent is trusted with (INV-core-7). Injected so a test does not
@@ -330,7 +330,15 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 	// the commit it is being asked for.
 	if n.Delivered != nil {
 		var message string
-		result.Commit, message = n.Delivered(ctx, ws.Path)
+		var err error
+		result.Commit, message, err = n.Delivered(ctx, ws.Path)
+		// A tree that cannot be read stops the stage. Carrying on would record an
+		// empty commit, which reads as "delivered nothing" — the base would not
+		// move and the verification would fall back to the repository's own HEAD,
+		// so the stage would pass having checked somebody else's work.
+		if err != nil {
+			return lead.Result{}, err
+		}
 
 		// What the agent says it produced, rather than what the stage was supposed
 		// to. Without this the exit check compares `owed` against `owed` and always

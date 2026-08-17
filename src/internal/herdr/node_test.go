@@ -830,8 +830,8 @@ func TestVerificationIsPointedAtTheDeliveredCommit(t *testing.T) {
 		Runner: herdr,
 		Roles:  fixedRole("claude"),
 		Prove:  herdr.proving(),
-		Delivered: func(context.Context, string) (string, string) {
-			return "cafe1234", "build: what the stage committed"
+		Delivered: func(context.Context, string) (string, string, error) {
+			return "cafe1234", "build: what the stage committed", nil
 		},
 	}
 

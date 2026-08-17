@@ -177,16 +177,36 @@ func short(sha string) string {
 //
 // Empty for both when there is no commit, which is the first stage of the first
 // task and not an error.
-func Handover(ctx context.Context, worktree string) (commit, message string) {
+//
+// An unreadable worktree **is** an error, and the two must not collapse. They did:
+// a sandbox that cannot see a sibling directory made every `rev-parse` fail, every
+// stage report no commit, and the base never move — so twelve stages each branched
+// from the same commit and the work ended up on twelve sibling branches, each with
+// a third of the answer. Nothing said anything, because "no commit" is a legitimate
+// state and this returned it for both cases.
+//
+// The empty commit is worse than it looks downstream: `CheckoutAt` reads it as
+// "verify HEAD", so the stage is checked against the repository's own head rather
+// than against what it delivered — and passes.
+func Handover(ctx context.Context, worktree string) (commit, message string, err error) {
+	// Asked first and separately from HEAD, because the failure that matters is
+	// not being able to read the tree at all, and `rev-parse HEAD` cannot tell
+	// that apart from a branch with no commits on it.
+	if _, err := git(ctx, worktree, "rev-parse", "--git-dir"); err != nil {
+		return "", "", fmt.Errorf("reading what %s delivered: %w", worktree, err)
+	}
+
 	head, err := git(ctx, worktree, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
-		return "", ""
+		// The tree is readable and has no commit: the first stage of the first
+		// task, which is a state rather than a failure.
+		return "", "", nil
 	}
 	// %B is the raw subject and body, which is what the declaration sits in.
 	// A message that cannot be read still leaves a usable commit.
 	body, err := git(ctx, worktree, "log", "-1", "--format=%B", head)
 	if err != nil {
-		return head, ""
+		return head, "", nil
 	}
-	return head, body
+	return head, body, nil
 }
