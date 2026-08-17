@@ -600,16 +600,30 @@ func specGateStore(t *testing.T, h *harness, id string) {
 		return fsm.Complete{Delivered: artifacts, Evidence: evidence}
 	}
 
+	// Same, with content on the artifact, so the gate that opens has something to
+	// carry — which is the whole point of a review gate (ADR-0022, ADR-0064).
+	deliveredWithPayload := func(artifact fsm.Artifact, payload string) fsm.Action {
+		return fsm.Complete{
+			Delivered: []fsm.Artifact{artifact},
+			Evidence: map[fsm.Artifact]fsm.Evidence{
+				artifact: {Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed, Detail: payload},
+			},
+		}
+	}
+
 	actions := []fsm.Action{
 		fsm.TaskCreated{Kind: fsm.KindFeature},
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // setup
 		delivered("worktree"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // intake
 		delivered("briefing", "kind"),
-		fsm.Advance{Flow: fsm.DefaultFlow()}, // scenarios, gated
+		fsm.Advance{Flow: fsm.DefaultFlow()}, // scenarios, gated on the way in
 		fsm.GateApprove{},                    //
 		delivered("scenarios", "approach"),
-		fsm.Advance{Flow: fsm.DefaultFlow()}, // spec, gated with the contract
+		fsm.Advance{Flow: fsm.DefaultFlow()}, // spec
+		// The review gate opens when `spec` closes, because that is the first
+		// moment the contract exists to be reviewed (ADR-0064).
+		deliveredWithPayload("contract", "the contract the stage wrote"),
 	}
 
 	for i, action := range actions {
@@ -669,8 +683,11 @@ func TestGateAdjustAppliesAnEditedContract(t *testing.T) {
 	if state.Evidence["contract"].Scope != fsm.ScopeHuman {
 		t.Errorf("want the adjustment scoped to the human who made it, got %q", state.Evidence["contract"].Scope)
 	}
-	if state.Status != fsm.StatusRunning {
-		t.Errorf("want the task running again, got %q", state.Status)
+	// The stage that produced the contract has already closed — its gate opened on
+	// the way out (ADR-0064) — so answering resumes at `stage_done`. `running`
+	// would ask the node to run that stage a second time.
+	if state.Status != fsm.StatusStageDone {
+		t.Errorf("want the task carrying on from the closed stage, got %q", state.Status)
 	}
 }
 
@@ -730,7 +747,10 @@ func TestAnswerRefusesWhatTheReducerWouldReject(t *testing.T) {
 	if err2 != nil {
 		t.Fatalf("the log must still replay after a refused command: %v", err2)
 	}
-	if state.Status != fsm.StatusRunning {
+	// Where it was is where the first approval left it: the gate opened on the way
+	// out of `spec`, so answering it resumes at `stage_done` (ADR-0064). The
+	// second command was refused and moved nothing.
+	if state.Status != fsm.StatusStageDone {
 		t.Errorf("the refused answer left the task where it was, got %q", state.Status)
 	}
 	_ = events

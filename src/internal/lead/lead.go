@@ -260,6 +260,10 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		Evidence:  result.Evidence,
 		Commit:    result.Commit,
 		Flow:      flow,
+		// A review gate opens when the stage that produced its artifact closes
+		// (ADR-0064), so this is the action that reaches it and the decision is
+		// owed here rather than on the next advance.
+		GateDecision: l.decideGate(ctx, state, fsm.GateClosing(state, flow)),
 	}); err != nil {
 		return err
 	}

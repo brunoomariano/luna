@@ -43,6 +43,15 @@ func atStage(t *testing.T, kind TaskKind, target StageID, produced ...Artifact) 
 			if err != nil {
 				t.Fatalf("completing %q: %v", next.Stage, err)
 			}
+			// A review gate opens on the way *out* now (ADR-0064), so a stage that
+			// carries one leaves the task waiting here rather than on the next
+			// advance. Approving keeps this helper doing what it says: driving.
+			if next.Status == StatusAwaitingGate {
+				next, err = Reduce(next, GateApprove{})
+				if err != nil {
+					t.Fatalf("approving the closing gate on %q: %v", next.Stage, err)
+				}
+			}
 		}
 		state = next
 	}
@@ -407,8 +416,11 @@ func TestGateAdjustReplacesThePayload(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Status != StatusRunning {
-		t.Errorf("want running after an adjustment, got %q", state.Status)
+	// A review gate opens on the way out of the stage that produced its artifact
+	// (ADR-0064), so answering resumes at `stage_done` — the stage has already
+	// run, and `running` would ask for it a second time.
+	if state.Status != StatusStageDone {
+		t.Errorf("want the task carrying on from the closed stage, got %q", state.Status)
 	}
 	if state.Evidence["contract"].Detail != "the contract a human fixed" {
 		t.Errorf("the adjusted version is what carries on, got %+v", state.Evidence["contract"])
@@ -862,4 +874,48 @@ func mustReduce(t *testing.T, state TaskState, action Action) TaskState {
 		t.Fatalf("applying %T: %v", action, err)
 	}
 	return next
+}
+
+// TestGateClosingAnswersOnlyForTheKindThatAsksAboutWorkDone is the seam the
+// caller uses to know whether a decision is owed when a stage closes.
+//
+// It has to be narrow in both directions: a `confirm` opens on the way in and
+// must not be decided twice, and a stage with no gate owes nothing at all.
+func TestGateClosingAnswersOnlyForTheKindThatAsksAboutWorkDone(t *testing.T) {
+	flow := []Stage{
+		{ID: "plain", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}},
+		{
+			ID: "reviewed", Requires: []Artifact{"a"}, Produces: []Artifact{"b"},
+			Gate: &GateSpec{Kind: GateReviewArtifact, Artifact: "b", Reason: "review it"},
+		},
+		{
+			ID: "confirmed", Requires: []Artifact{"b"}, Produces: []Artifact{"c"},
+			Gate: &GateSpec{Kind: GateConfirm, Reason: "carry on?"},
+		},
+	}
+
+	running := func(stage StageID) TaskState {
+		state := NewTaskState("LUNA-1", KindFeature)
+		state.Status = StatusRunning
+		state.Stage = stage
+		return state
+	}
+
+	if gate := GateClosing(running("reviewed"), flow); gate == nil || gate.Artifact != "b" {
+		t.Errorf("a review gate is owed a decision when its stage closes, got %+v", gate)
+	}
+	if gate := GateClosing(running("confirmed"), flow); gate != nil {
+		t.Errorf("a confirm opens on the way in and must not be decided again, got %+v", gate)
+	}
+	if gate := GateClosing(running("plain"), flow); gate != nil {
+		t.Errorf("a stage with no gate owes no decision, got %+v", gate)
+	}
+
+	// And nothing is owed while no stage is running: the question is about a
+	// stage that is about to close.
+	waiting := running("reviewed")
+	waiting.Status = StatusAwaitingGate
+	if gate := GateClosing(waiting, flow); gate != nil {
+		t.Errorf("a task that is not running owes no closing decision, got %+v", gate)
+	}
 }

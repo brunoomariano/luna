@@ -244,6 +244,19 @@ func TestACustomFlowCanOpenItsOwnGates(t *testing.T) {
 		t.Fatalf("entering the first stage: %v", err)
 	}
 
+	// The gate opens when `draft` closes, because that is the first moment `text`
+	// exists to be reviewed (ADR-0064).
+	state, err = Reduce(state, Complete{
+		Delivered: []Artifact{"text"},
+		Evidence: map[Artifact]Evidence{
+			"text": {Scope: ScopeExistence, Verdict: VerdictPassed, Detail: "what the stage wrote"},
+		},
+		Flow: custom,
+	})
+	if err != nil {
+		t.Fatalf("closing the first stage: %v", err)
+	}
+
 	if state.Status != StatusAwaitingGate {
 		t.Fatalf("a custom flow's gate must stop the task, got %q", state.Status)
 	}

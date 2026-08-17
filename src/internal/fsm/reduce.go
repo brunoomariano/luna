@@ -73,6 +73,16 @@ type Complete struct {
 	Evidence  map[Artifact]Evidence `json:"evidence,omitempty"`
 	Flow      []Stage               `json:"-"`
 
+	// GateDecision is what was decided about the review gate this stage's closing
+	// opens, or empty when the stage opens none — and also when the event
+	// predates the field, which replays as the shipped policy.
+	//
+	// It is here for the same reason Advance carries one: a review gate opens on
+	// the way *out* of the stage that produced its artifact (ADR-0064), so this
+	// is the action that reaches it, and the decision is history while the policy
+	// behind it is not (ADR-0026).
+	GateDecision GateWaited `json:"gate_decision,omitempty"`
+
 	// Commit is what the stage delivered, as a git object. It becomes the next
 	// stage's base, which is what makes the handoff the artifact itself rather
 	// than a description of it (INV-core-6, RFC-0002).
@@ -336,10 +346,15 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	state.Stage = next
 	state.Retry.Attempts = 0
 
-	// The profile decided whether this gate stops the task, and the decision
-	// arrived in the action. A gate that resolves on its own still happened — it
-	// is just that nobody was asked (ADR-0013, ADR-0026).
-	if gate := gateFor(stage); gate != nil && gateWaits(a.GateDecision, state.Profile, gate.Kind) {
+	// Only the gates that ask about work not yet done open here. A `confirm`
+	// before a stage runs is a question about that stage; a `review-artifact`
+	// asks about something the stage has to produce first, so it opens when the
+	// stage closes (ADR-0064).
+	//
+	// The decision arrived in the action, and a gate that resolves on its own
+	// still happened — it is just that nobody was asked (ADR-0026).
+	if gate := gateFor(stage); asksAboutWorkAhead(gate) &&
+		gateWaits(a.GateDecision, state.Profile, gate.Kind) {
 		state.Status = StatusAwaitingGate
 		state.Gate = withPayload(gate, state.Evidence)
 		return state, nil
@@ -417,6 +432,19 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	if a.Commit != "" {
 		state.Base = a.Commit
 	}
+
+	// The review gate opens here rather than on entry to the next stage, because
+	// this is the first moment its artifact exists (ADR-0064). The evidence was
+	// absorbed above, so the payload is a read of something real instead of the
+	// blank line `luna gate show` used to print.
+	//
+	// After the base advances, so a task answering the gate resumes from what the
+	// stage delivered — the gate is a pause in the handoff, not a step before it.
+	if gate := gateFor(stage); asksAboutWorkDone(gate) &&
+		gateWaits(a.GateDecision, state.Profile, gate.Kind) {
+		state.Status = StatusAwaitingGate
+		state.Gate = withPayload(gate, state.Evidence)
+	}
 	return state, nil
 }
 
@@ -442,7 +470,15 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 
 	gate := state.Gate
 	state.Gate = nil
+
+	// Where the task resumes depends on which side of the stage the gate was on.
+	// A gate that opened on the way *in* leaves a stage to run; one that opened
+	// on the way *out* leaves a stage already closed, and saying `running` would
+	// ask the node to run it a second time (ADR-0064).
 	state.Status = StatusRunning
+	if asksAboutWorkDone(gate) {
+		state.Status = StatusStageDone
+	}
 
 	switch a := action.(type) {
 	case GateApprove:
@@ -457,10 +493,24 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 		// looked and accepted, which is a different fact from a check that ran.
 		state.Evidence[gate.Artifact] = Approved(a.Payload, state.Seq)
 	case GateReject:
-		// Nothing enters the context: unlike the review rollback, this happens
-		// before the artifact was ever accepted, so there is no green to
-		// invalidate (ADR-0022).
+		// The artifact leaves the context. A review gate now opens on the way out
+		// of the stage that produced it (ADR-0064), so by the time a person can
+		// reject it the exit check has already let it in — where the old timing
+		// asked before it existed and there was nothing to take back.
+		//
+		// Its evidence goes too. What is being said is "this is not acceptable",
+		// and leaving a passing record behind would let the next attempt's exit
+		// check close on the rejected version's proof.
+		delete(state.Context.Artifacts, gate.Artifact)
+		delete(state.Evidence, gate.Artifact)
+
+		// Back to the stage that produced it — which is this gate's own stage now,
+		// and is the sentence ADR-0022 wrote. It *runs again*, so the status is
+		// `running` even though the gate opened on the way out: `stage_done` is
+		// what the other two answers resume to, and it would carry a rejected
+		// stage forward as though it had closed.
 		state.Stage = gate.Stage
+		state.Status = StatusRunning
 		state.Blocked = ""
 	}
 
@@ -674,6 +724,29 @@ func ceilingHit(loop LoopCounters, limits LoopLimits) string {
 	}
 }
 
+// GateClosing is the gate the running stage opens when it closes, or nil.
+//
+// The mirror of GateAhead, for the kind that asks about work already done: a
+// `review-artifact` gate opens on the way out of the stage that produced its
+// artifact (ADR-0064), so the caller that records the closing is the one that has
+// to decide it.
+//
+// It answers for the stage that is running rather than the next one, and it does
+// not check whether the stage will actually close — that is the exit check's
+// answer, taken inside the reducer. A caller asks this to know whether a decision
+// is owed at all.
+func GateClosing(state TaskState, flow []Stage) *PendingGate {
+	if state.Status != StatusRunning {
+		return nil
+	}
+
+	gate := gateFor(stageIn(flow, state.Stage))
+	if !asksAboutWorkDone(gate) {
+		return nil
+	}
+	return gate
+}
+
 // GateAhead reports the gate an Advance would walk into, or nil.
 //
 // It exists so the caller can ask the profile about that gate *before* recording
@@ -725,6 +798,23 @@ func gateFor(stage Stage) *PendingGate {
 		Reason:   stage.Gate.Reason,
 		Artifact: stage.Gate.Artifact,
 	}
+}
+
+// asksAboutWorkAhead reports whether this gate belongs on the way *into* a stage.
+//
+// A `confirm` asks about work not yet done, so it opens before the stage runs. A
+// `review-artifact` asks about something the stage has to produce first, so it
+// opens when the stage closes — opening it on entry was asking a person to review
+// a file that did not exist yet (ADR-0064).
+//
+// A nil gate is not a gate, which is the ordinary case for most stages.
+func asksAboutWorkAhead(gate *PendingGate) bool {
+	return gate != nil && gate.Kind != GateReviewArtifact
+}
+
+// asksAboutWorkDone is its mirror: the gate that opens on the way out.
+func asksAboutWorkDone(gate *PendingGate) bool {
+	return gate != nil && gate.Kind == GateReviewArtifact
 }
 
 // withPayload fills a review gate with the artifact the human is being asked to
