@@ -53,34 +53,42 @@ editor = "vim"
 #
 # Declared checks are answered by their exit code before any of that, so a gate
 # whose commands pass is answered with no model involved. They are declared per
-# task, in the registry, because they vary per task:
+# task, because they vary per task — one task must pass the whole suite at a
+# gate and another something narrower (ADR-0067):
 #
-#   bd create "..." --metadata '{"luna_gates": {
-#      "approve-spec": {"checks": ["make ci"]}
-#   }}'
+#   luna gate checks LUNA-1 --on review-artifact --run "make ci"
+#
+# `--run` repeats and keeps its order; the first failure is the answer. With no
+# --run at all, the gate is declared to have no mechanical answer and goes
+# straight to judgement — which is a different statement from saying nothing.
+
+# ── the watchdog ─────────────────────────────────────────────────────────────
+#
+# How long to wait on an agent that has stopped reacting before calling the task
+# stuck. One budget bounds a whole turn, tool time included (ADR-0051), and it
+# defaults to 2h.
+#
+# Project-wide rather than per profile: how long a suite takes is a fact about
+# this repository, not about who answers a gate (ADR-0063). There is deliberately
+# no wall-clock cap on the task — progress, not elapsed time, is the signal worth
+# acting on.
+
+# turn_budget = "45m"
 
 # ── profiles ─────────────────────────────────────────────────────────────────
 #
-# A profile now decides exactly one thing: how long to wait on an agent that has
-# stopped reacting before calling the task stuck. It used to decide which gates
-# wait, and no longer does (ADR-0063) — a `waits` key here is refused rather than
-# ignored, because a file that reads like supervision and decides nothing is
-# worse than one that will not load.
+# A profile holds nothing but its name. It used to decide which gates wait and
+# how long the watchdog waited; the first went to the stage's own declaration
+# and the knob (ADR-0063), the second is `turn_budget` above.
 #
-# One budget bounds a whole turn, tool time included (ADR-0051). It defaults to
-# 2h. There is deliberately no wall-clock cap on the task: progress, not elapsed
-# time, is the signal worth acting on.
+# What it still is: history. A task records the profile it was created under, so
+# a replay reproduces the run as it happened, and `--profile` validates against
+# the names defined here.
 #
-# The profile is chosen per task (`luna task new LUNA-1 --profile nightly`) and
-# recorded in its log, so a replay reproduces the run as it happened.
+# Every key inside one is refused rather than ignored — a file that reads like
+# supervision and decides nothing is worse than one that will not load.
 
-# [profile.nightly]
-# turn_budget = "45m"
-
-# A profile of your own — this one gives a long-running build more room before
-# the watchdog calls it stuck.
 # [profile.patient]
-# turn_budget = "4h"
 
 # ── roles ────────────────────────────────────────────────────────────────────
 #

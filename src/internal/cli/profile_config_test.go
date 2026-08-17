@@ -20,8 +20,14 @@ wait = ["confirm"]
 	if err == nil {
 		t.Fatal("an unknown key inside a profile must be reported")
 	}
-	if !strings.Contains(err.Error(), "wait") || !strings.Contains(err.Error(), "waits") {
-		t.Errorf("the error should name what arrived and what was expected, got %v", err)
+	// The error names what arrived and says where settings went, because there is
+	// no list of valid keys to offer any more: a profile holds only its name
+	// (ADR-0063).
+	if !strings.Contains(err.Error(), "wait") {
+		t.Errorf("the error should name what arrived, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "only its name") {
+		t.Errorf("the error should say a profile holds no settings, got %v", err)
 	}
 }
 
@@ -146,48 +152,27 @@ func TestATrailingCommaInAListIsTolerated(t *testing.T) {
 }
 
 // TestAProfileCanTightenItsWatchdog covers what a profile still decides: how
-// long the node waits on an agent that is not reacting (ADR-0034).
-//
-// It is all a profile decides now — which gates wait is the stage's declaration
-// and the knob's (ADR-0063).
-func TestAProfileCanTightenItsWatchdog(t *testing.T) {
-	cfg := load(t, `
-[profile.nightly]
-turn_budget = "45m"
-`)
+// The watchdog's clock is project-wide now, not a property of a profile
+// (ADR-0063): profiles stopped deciding anything, and how long a suite takes is
+// a fact about the repository rather than about who answers a gate.
 
-	budgets := cfg.Budgets("nightly")
-	if budgets.Turn != 45*time.Minute {
-		t.Errorf("want the configured turn budget, got %s", budgets.Turn)
-	}
+func TestTheTurnBudgetIsProjectWide(t *testing.T) {
+	cfg := load(t, "turn_budget = \"45m\"\n")
 
-	// The gates in the same section still work: the two settings coexist rather
-	// than one shadowing the other.
-	if _, ok := cfg.Profile("nightly"); !ok {
-		t.Error("the profile is still defined")
+	if got := cfg.Turn(); got != 45*time.Minute {
+		t.Errorf("want the configured turn budget, got %s", got)
 	}
 }
 
-// TestAProfileWithNoBudgetsGetsTheShippedOnes covers the ordinary case — every
-// profile written before this feature existed.
-func TestAProfileWithNoBudgetsGetsTheShippedOnes(t *testing.T) {
-	cfg := load(t, "[profile.careful]\n")
-
-	if got := cfg.Budgets("careful"); got != fsm.DefaultBudgets() {
-		t.Errorf("want the shipped budgets, got %+v", got)
-	}
-}
-
-// TestADeletedProfileStillHasAWatchdog covers the direction that matters.
+// TestAProjectWithNoBudgetStillHasAWatchdog covers the direction that matters.
 //
-// A task whose profile was removed must keep its net: falling back to no limit
-// would mean deleting a profile silently turns its running tasks into ones that
-// hang forever (ADR-0034).
-func TestADeletedProfileStillHasAWatchdog(t *testing.T) {
-	cfg := load(t, "[profile.paranoid]\n")
+// Falling back to no limit would mean a project that never set one has tasks
+// that hang forever (ADR-0034).
+func TestAProjectWithNoBudgetStillHasAWatchdog(t *testing.T) {
+	cfg := load(t, "editor = \"vi\"\n")
 
-	if got := cfg.Budgets("deleted-last-week"); got != fsm.DefaultBudgets() {
-		t.Errorf("an undefined profile still gets a budget, got %+v", got)
+	if got := cfg.Turn(); got != fsm.DefaultBudgets().Turn {
+		t.Errorf("want the shipped budget, got %s", got)
 	}
 }
 
@@ -196,7 +181,7 @@ func TestADeletedProfileStillHasAWatchdog(t *testing.T) {
 // Someone who wrote `turn_budget = "30"` believes they tightened the watchdog. A
 // silent fallback would leave them believing it.
 func TestAMalformedBudgetIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.p]\nturn_budget = \"30\"\n"))
+	_, err := LoadConfig(writeConfig(t, "turn_budget = \"30\"\n"))
 
 	if err == nil {
 		t.Fatal("a budget that is not a duration must be reported")
@@ -209,18 +194,41 @@ func TestAMalformedBudgetIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnUnknownProfileKeyNamesTheAlternatives covers the message someone sees
-// after a typo, now that a section accepts three keys.
-func TestAnUnknownProfileKeyNamesTheAlternatives(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.p]\nidle_budgets = \"30m\"\n"))
+// TestABudgetInAProfileIsRefused. It used to live there, so a project that
+// upgrades has one — and silently ignoring it would leave them believing a
+// per-profile budget still applies.
+func TestABudgetInAProfileIsRefused(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "[profile.nightly]\nturn_budget = \"45m\"\n"))
 
 	if err == nil {
-		t.Fatal("an unknown key must be reported")
+		t.Fatal("a budget inside a profile must be reported")
 	}
-	for _, want := range []string{"waits", "turn_budget"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error should list %q, got %v", want, err)
-		}
+	if !strings.Contains(err.Error(), "project-wide") {
+		t.Errorf("the error should say where it moved to, got %v", err)
+	}
+}
+
+// TestARetiredProfileKeySaysWhereItWent covers the message someone sees after
+// upgrading a config that was valid before ADR-0063.
+//
+// Each retired key is refused by name and says where its behaviour moved, which
+// is the difference between "this does not work" and "this moved".
+func TestARetiredProfileKeySaysWhereItWent(t *testing.T) {
+	for key, want := range map[string]string{
+		"waits":       "luna autonomy",
+		"turn_budget": "project-wide",
+		"idle_budget": "one budget bounds a whole turn",
+	} {
+		t.Run(key, func(t *testing.T) {
+			_, err := LoadConfig(writeConfig(t, "[profile.p]\n"+key+" = \"30m\"\n"))
+
+			if err == nil {
+				t.Fatalf("%q must be reported", key)
+			}
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the error should say where %q went (%q), got %v", key, want, err)
+			}
+		})
 	}
 }
 

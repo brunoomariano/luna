@@ -150,12 +150,14 @@ func TestAnEmptyStockIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProfileWithOnlyABudgetIsStillAProfile. A budget is all a profile decides
-// now (ADR-0063), so a file that states only that has to produce a name that
-// exists rather than one that never appears.
-func TestAProfileWithOnlyABudgetIsStillAProfile(t *testing.T) {
+// TestAProfileFileWithNothingInItIsStillAProfile. A profile decides nothing now
+// (ADR-0063) — the stage declares whether a gate waits and the knob decides who
+// answers — so the shipped files carry only comments. The name still has to
+// exist, because `task new --profile` validates against this set and a task's
+// log carries the name as history.
+func TestAProfileFileWithNothingInItIsStillAProfile(t *testing.T) {
 	files := fstest.MapFS{
-		"profiles/yolo.toml": &fstest.MapFile{Data: []byte("turn_budget = \"30m\"\n")},
+		"profiles/yolo.toml": &fstest.MapFile{Data: []byte("# nothing but a name\n")},
 	}
 
 	profiles, err := LoadProfiles(files, "profiles")
@@ -165,6 +167,24 @@ func TestAProfileWithOnlyABudgetIsStillAProfile(t *testing.T) {
 
 	if _, ok := profiles["yolo"]; !ok {
 		t.Error("a profile the project defined did not appear at all")
+	}
+}
+
+// TestABudgetInAStockProfileIsRefused. It lived there until ADR-0063, so a
+// project upgrading its own stock has one — and loading it silently would leave
+// them believing a per-profile watchdog still applies.
+func TestABudgetInAStockProfileIsRefused(t *testing.T) {
+	files := fstest.MapFS{
+		"profiles/yolo.toml": &fstest.MapFile{Data: []byte("turn_budget = \"30m\"\n")},
+	}
+
+	_, err := LoadProfiles(files, "profiles")
+
+	if err == nil {
+		t.Fatal("a budget inside a profile must be reported")
+	}
+	if !strings.Contains(err.Error(), "project-wide") {
+		t.Errorf("the error should say where it moved to, got %v", err)
 	}
 }
 

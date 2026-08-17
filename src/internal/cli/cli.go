@@ -570,6 +570,23 @@ func parseGateChecks(args []string) (fsm.GateKind, []string, error) {
 	return gate, checks, nil
 }
 
+// knobNote says what a knob setting means, because a bare number does not.
+//
+// The two ends are the ones worth naming: 0 is the default and sends every gate
+// to a person, and 10 lets the lead judge all of them. In between, the number is
+// only meaningful against `luna flow` — which lists each gate's criticality — so
+// that is what it points at.
+func knobNote(knob fsm.Knob) string {
+	switch knob {
+	case fsm.KnobAsk:
+		return "  (every gate goes to a person)"
+	case fsm.KnobAll:
+		return "  (the lead may judge every gate)"
+	default:
+		return "  (the lead judges gates up to this criticality — see `luna flow`)"
+	}
+}
+
 // printTask writes the form a person reads.
 //
 // Split from taskShow so the two output shapes stay separable: the structured one
@@ -578,7 +595,11 @@ func parseGateChecks(args []string) (fsm.GateKind, []string, error) {
 func printTask(env Env, state fsm.TaskState, events int) {
 	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, state.Status)
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
-	fmt.Fprintf(env.Out, "  profile  %s%s\n", state.Profile, undefinedProfileNote(env.profiles(), state.Profile))
+	// The knob rather than the profile: the profile decides nothing since
+	// ADR-0063 and is kept only so old logs replay, while the knob is what bounds
+	// who answers a gate — and it moves through the log, so a replay reproduces
+	// every value it held.
+	fmt.Fprintf(env.Out, "  autonomy %d%s\n", state.Knob, knobNote(state.Knob))
 	if state.Stage != "" {
 		fmt.Fprintf(env.Out, "  stage    %s\n", state.Stage)
 	}

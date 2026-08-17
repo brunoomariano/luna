@@ -3,5 +3,3 @@
 # "Nothing" does not include the loop ceiling: a spent ceiling with nobody
 # waiting blocks the task, because the alternative is the infinite loop
 # INV-core-8 names (ADR-0059).
-
-turn_budget = "2h"

@@ -558,33 +558,24 @@ func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
 	}
 }
 
-// TestTheWatchdogBudgetComesFromTheTasksOwnProfile covers where the budget is
-// read from.
+// TestTheWatchdogBudgetIsProjectWide covers where the budget is read from.
 //
-// It has to be the profile the task was created under, taken from its log — not a
-// fixed one. Reading a constant gave a nightly run the supervised timeout, which
-// is backwards: the run with nobody watching is the one whose watchdog is its
-// only net (ADR-0034).
-func TestTheWatchdogBudgetComesFromTheTasksOwnProfile(t *testing.T) {
+// It used to be the profile the task was created under, and that went with
+// ADR-0063: profiles stopped deciding anything, and the watchdog's clock never
+// had to do with who answers a gate. How long a suite takes is a fact about the
+// repository — one takes twenty minutes and another takes two.
+func TestTheWatchdogBudgetIsProjectWide(t *testing.T) {
 	h := newHarness(t)
-	h.env.Config = Config{Profiles: map[fsm.Profile]Policy{
-		"tight": {Budgets: fsm.Budgets{Turn: time.Minute}},
-		"loose": {Budgets: fsm.Budgets{Turn: time.Hour}},
-	}}
+	h.env.Config = Config{TurnBudget: time.Minute}
 
-	// The two profiles differ only in their budgets, so whichever the run picks up
-	// is observable.
-	if got := h.env.profiles().Budgets("tight").Turn; got != time.Minute {
-		t.Fatalf("the config must carry the profile's own budget, got %s", got)
-	}
-	if got := h.env.profiles().Budgets("loose").Turn; got != time.Hour {
-		t.Fatalf("the config must carry the profile's own budget, got %s", got)
+	if got := h.env.Config.Turn(); got != time.Minute {
+		t.Errorf("the configured budget must be what the run uses, got %s", got)
 	}
 
-	// A profile the config never defined still gets a net rather than none:
-	// deleting a profile must not turn its running tasks into ones that hang.
-	if got := h.env.profiles().Budgets("deleted").Resolve().Turn; got != fsm.DefaultBudgets().Turn {
-		t.Errorf("an undefined profile falls back to the shipped budget, got %s", got)
+	// A project that set none still gets a net rather than no limit: the direction
+	// that matters, because no budget is a task that hangs forever (ADR-0034).
+	if got := (Config{}).Turn(); got != fsm.DefaultBudgets().Turn {
+		t.Errorf("an unset budget falls back to the shipped one, got %s", got)
 	}
 }
 

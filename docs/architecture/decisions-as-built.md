@@ -59,6 +59,20 @@ The route that was rejected, with the protocol measured against a running server
 [RFC-0007](../RFCs/rfc-0007-luna-hears-herdr-instead-of-only-asking-it.md) — kept OBSOLETE
 because the measurement is worth more than the plan was.
 
+### Decided and built late
+
+**ADR-0063 said "profiles are removed", and half of it shipped.** Whether a gate waits moved
+to the stage's declaration and the knob immediately; `turn_budget` was supposed to become
+ordinary configuration in the same decision and stayed in `[profile.<name>]` for another
+five days. It is project-wide now, and a budget written inside a profile is refused with the
+line that says where it went. What survives of a profile is its name: a task records the one
+it was created under so a replay reproduces the run, and `--profile` validates against the
+set.
+
+`luna task show` reports the **autonomy knob** rather than the profile for the same reason —
+the knob is what bounds who answers a gate, and it moves through the log, so a replay
+reproduces every value it held.
+
 ### Decided and then undone
 
 **The registry is gone, and both ADRs about it are superseded.** ADR-0054 made beads the

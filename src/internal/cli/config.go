@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
@@ -24,6 +25,17 @@ type Config struct {
 	// Interpreter is which official harness `luna chat` asks to understand what a
 	// person said. Empty means the house default (ADR-0044).
 	Interpreter string
+
+	// TurnBudget bounds how long the node waits on an agent that is not reacting.
+	//
+	// Ordinary project configuration rather than a property of a profile, which is
+	// what ADR-0063 decided when profiles stopped governing gates: this is the
+	// watchdog's clock (ADR-0034, ADR-0051) and has nothing to do with who answers
+	// a gate. One repository's suite takes twenty minutes and another's takes two,
+	// and that is a fact about the repository.
+	//
+	// Zero means the shipped default, so a project with no config still has a net.
+	TurnBudget time.Duration
 
 	// Profiles are the gate policies this project defines, by name. A project
 	// that names none inherits the three shipped ones; naming one that already
@@ -95,18 +107,18 @@ func (c Config) Profile(name fsm.Profile) (Policy, bool) {
 	return policy, ok
 }
 
-// Budgets reports how long the watchdog waits under this profile.
+// Turn is how long the node waits on an agent that is not reacting.
 //
-// A profile the configuration no longer defines falls back to the shipped
-// defaults rather than to no limit at all. The direction matters: a task whose
-// profile was deleted must still have a net, or removing a profile would silently
-// turn its running tasks into ones that hang forever (ADR-0034).
-func (c Config) Budgets(profile fsm.Profile) fsm.Budgets {
-	policy, ok := c.Profile(profile)
-	if !ok {
-		return fsm.DefaultBudgets()
+// It takes no profile: the budget is the watchdog's clock and stopped being a
+// property of a profile when profiles stopped deciding anything (ADR-0063). A
+// project that sets none gets the shipped default, so there is always a net —
+// the direction that matters, because no budget means a task that hangs forever
+// (ADR-0034).
+func (c Config) Turn() time.Duration {
+	if c.TurnBudget == 0 {
+		return fsm.DefaultBudgets().Turn
 	}
-	return policy.Budgets.Resolve()
+	return c.TurnBudget
 }
 
 // ProfileNames lists the profiles this project offers, sorted, for error messages
@@ -286,43 +298,38 @@ func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
 	return denied, nil
 }
 
-// assignProfile places one setting inside a `[profile.<name>]` section.
-func assignProfile(cfg *Config, section, key, value, where string) error {
-	policy := cfg.Profiles[fsm.Profile(section)]
-
+// assignProfile refuses every setting inside a `[profile.<name>]` section.
+//
+// A profile decides nothing since ADR-0063: whether a gate waits is the stage's
+// declaration, who answers it is the knob, and the watchdog's clock is
+// project-wide. What survives is the *name* — a task's log carries the one it
+// was created under, and `task new --profile` validates against the set — so the
+// section still declares a profile into existence and simply holds no settings.
+//
+// Every key is refused rather than ignored, and each says where it went. A
+// config that loads and decides nothing is the silent kind of wrong: the person
+// keeps a file that reads like supervision and gets none.
+func assignProfile(_ *Config, section, key, _, where string) error {
 	switch key {
 	case "waits":
-		// Refused rather than ignored. A profile that still lists gates would
-		// otherwise load and decide nothing, which is the silent kind of wrong: the
-		// person would keep a config that reads like supervision and get none.
 		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — a gate waits when "+
 			"its stage declares checks or judgement criteria, and `luna autonomy` "+
 			"decides who answers (ADR-0063)", where, key, section)
 	case "turn_budget":
-		budget, err := fsm.ParseBudget(strings.Trim(value, `"`))
-		if err != nil {
-			return fmt.Errorf("%s: %s in [profile.%s]: %w", where, key, section, err)
-		}
-		policy.Budgets.Turn = budget
+		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — the turn budget is "+
+			"project-wide now, so set it at the top of the file (ADR-0063)", where, key, section)
 	case "idle_budget", "tool_budget":
-		// Refused rather than mapped onto the new name. The two never behaved as
-		// their names said — Luna cannot tell a tool in flight from an agent
-		// thinking, so the idle window was bounding whole turns and the tool one
-		// was read and discarded (ADR-0051). Quietly accepting either would carry
-		// the wrong mental model forward.
+		// The two never behaved as their names said — Luna cannot tell a tool in
+		// flight from an agent thinking, so the idle window was bounding whole turns
+		// and the tool one was read and discarded (ADR-0051).
 		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — one budget bounds a whole "+
-			"turn now, tool time included, so use turn_budget (ADR-0051)", where, key, section)
-	default:
-		// An unknown key is an error rather than a warning, for the same reason a
-		// misspelled gate kind is: the profile would parse, apply, and wait for
-		// nothing, and nobody would learn why until an unattended run wrote
-		// something it should have asked about.
-		return fmt.Errorf("%s: unknown setting %q in [profile.%s] (expected waits, turn_budget)",
+			"turn now, tool time included — set turn_budget at the top of the file "+
+			"(ADR-0051, ADR-0063)",
 			where, key, section)
+	default:
+		return fmt.Errorf("%s: unknown setting %q in [profile.%s] — a profile holds no "+
+			"settings now, only its name (ADR-0063)", where, key, section)
 	}
-
-	cfg.Profiles[fsm.Profile(section)] = policy
-	return nil
 }
 
 func assignRoot(cfg *Config, key, value, where string) error {
@@ -333,11 +340,18 @@ func assignRoot(cfg *Config, key, value, where string) error {
 	case "interpreter":
 		cfg.Interpreter = strings.Trim(value, `"`)
 		return nil
+	case "turn_budget":
+		budget, err := fsm.ParseBudget(strings.Trim(value, `"`))
+		if err != nil {
+			return fmt.Errorf("%s: %s: %w", where, key, err)
+		}
+		cfg.TurnBudget = budget
+		return nil
 	default:
 		// An unknown key is an error rather than a warning: a typo in `editor`
 		// would otherwise leave the setting silently unapplied, and the person
 		// would conclude the feature does not work.
-		return fmt.Errorf("%s: unknown setting %q (expected editor, interpreter)", where, key)
+		return fmt.Errorf("%s: unknown setting %q (expected editor, interpreter, turn_budget)", where, key)
 	}
 }
 

@@ -349,7 +349,9 @@ func TestTaskShowReportsTheState(t *testing.T) {
 
 	out := h.mustRun(t, "task", "show", "LUNA-1")
 
-	for _, want := range []string{"LUNA-1", "ready", "chore", "interactive"} {
+	// The autonomy knob rather than the profile: the knob is what bounds who
+	// answers a gate, and it is what moves through the log (ADR-0063).
+	for _, want := range []string{"LUNA-1", "ready", "chore", "autonomy 0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("want %q in the output, got %q", want, out)
 		}
@@ -1169,12 +1171,12 @@ func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
 		t.Errorf("want the listing to flag it, got %q", out)
 	}
 
-	out = h.mustRun(t, "task", "show", "LUNA-1")
-	if !strings.Contains(out, "paranoid") {
-		t.Errorf("want the profile as recorded, got %q", out)
-	}
-	if !strings.Contains(out, "no longer defined") {
-		t.Errorf("want task show to flag it too, got %q", out)
+	// `task show` no longer carries the profile at all: it decides nothing since
+	// ADR-0063 and is kept only so old logs replay. Showing it there implied it
+	// still governed the run. The listing is where an undefined one still
+	// surfaces, because that is where a person is choosing what to answer.
+	if out := h.mustRun(t, "task", "show", "LUNA-1"); strings.Contains(out, "paranoid") {
+		t.Errorf("task show reports a profile that decides nothing, got %q", out)
 	}
 }
 

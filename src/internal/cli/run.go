@@ -149,7 +149,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 	}
 
 	conductor.Node = &herdr.Node{
-		Runner: herdr.NewRunner(client, opts.Repo, cfg.Budgets(profile).Resolve().Turn, node.Contained()),
+		Runner: herdr.NewRunner(client, opts.Repo, cfg.Turn(), node.Contained()),
 		// The stage's role decides which agent runs it (ADR-0040). --agent
 		// overrides every role, which is what makes a run reproducible against one
 		// harness while the roles are still being tuned.
