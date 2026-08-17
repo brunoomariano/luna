@@ -169,14 +169,6 @@ type Node struct {
 	// tree with none of the implementer's work in it.
 	Delivered func(ctx context.Context, worktree string) (commit, message string, err error)
 
-	// Contained reports whether something is confining this process, which decides
-	// how much the agent is trusted with (INV-core-7). Injected so a test does not
-	// need a sandbox to exercise either answer.
-	//
-	// Nil means uncontained, which is the safe direction: it withholds the flag
-	// that removes the harness's own checks rather than granting it by default.
-	Contained func() bool
-
 	// Prove runs the contract's checks over a named commit.
 	//
 	// It takes the commit rather than the worktree, because the worktree is
@@ -277,7 +269,7 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 	// A gated role starts without what it must not have — the tool is absent
 	// rather than discouraged (ADR-0018). A harness Luna cannot gate stops the
 	// stage instead of running an ungated review (ADR-0041).
-	args, err := gateArgs(role, n.contained())
+	args, err := gateArgs(role)
 	if err != nil {
 		return lead.Result{}, fmt.Errorf("stage %q: %w", stage.ID, err)
 	}
@@ -287,10 +279,10 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 		return lead.Result{}, err
 	}
 
-	// The prompt targets the agent by name rather than by pane. herdr resolves a
-	// pane id to a terminal, not to "the named agent running in it", and refuses
-	// with `agent_not_ready` — the name is the handle it wants.
-	status, err := n.Runner.Prompt(ctx, name, n.prompt(state, stage, role))
+	// The prompt targets the pane. An agent started through `pane.run` has no
+	// herdr-side name to be reached by — measured: `agent.prompt` resolves a pane
+	// id and answers, and only an unknown *name* is refused (ADR-0069).
+	status, err := n.Runner.Prompt(ctx, pane, n.prompt(state, stage, role))
 	if err != nil {
 		// A stall is translated here so nothing above this package has to read
 		// herdr's error codes. What crosses the boundary is Luna's vocabulary
@@ -403,10 +395,6 @@ func (existenceOnly) Prove(_ context.Context, v fsm.Verifier, seq int) (fsm.Evid
 
 // contained reports whether something is confining this process, defaulting to
 // no. The default is the conservative one on purpose: an unset field must not be
-// what hands an agent every permission.
-func (n *Node) contained() bool {
-	return n.Contained != nil && n.Contained()
-}
 
 // statement reads what the task is about, and reports nothing rather than
 // failing when it cannot.

@@ -139,7 +139,7 @@ func TestOpenWorktreeReadsHerdrsFieldNames(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -164,7 +164,7 @@ func TestOpenWorktreeSendsTheRepository(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/some/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/some/repo", time.Minute)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestOpenWorktreeSendsAnAbsoluteRepository(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), ".", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), ".", time.Minute)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 	server.reply("worktree.create", `{"id":"1","error":{"code":"worktree_exists","message":"branch already checked out"}}`)
 	server.reply("worktree.open", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("an existing worktree is resumable, not fatal: %v", err)
@@ -255,8 +255,13 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 	}
 }
 
-// TestStartAgentWaitsForThePaneToReachItsPrompt covers a race a live herdr
-// showed and a fake never would.
+// An agent starts inside the sandbox, through `pane.run` rather than
+// `agent.start` (ADR-0069). `agent.start` takes a `kind` from a closed set
+// compiled into herdr, so there is nowhere to put a wrapper — measured: a custom
+// kind is refused with `unsupported_agent_kind`.
+
+// TestStartAgentWaitsForThePaneToReachItsPrompt covers a race a live herdr showed
+// and a fake never would.
 //
 // A freshly created worktree's pane is not at its shell prompt yet, and herdr
 // refuses with `agent_pane_busy`. The identical call succeeds seconds later. Not
@@ -264,9 +269,14 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 func TestStartAgentWaitsForThePaneToReachItsPrompt(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.replyOnce(
-		"agent.start",
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.replyOnce(
+		"pane.send_text",
 		`{"id":"1","error":{"code":"agent_pane_busy","message":"not an available shell"}}`,
-		`{"id":"1","result":{"type":"agent_started","agent":{"pane_id":"w1:p1"}}}`,
+		`{"id":"1","result":{"type":"ok"}}`,
 	)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
@@ -277,70 +287,61 @@ func TestStartAgentWaitsForThePaneToReachItsPrompt(t *testing.T) {
 	if pane != "w1:p1" {
 		t.Errorf("want the pane, got %q", pane)
 	}
-	if got := len(server.sent("agent.start")); got != 2 {
-		t.Errorf("want one retry after the busy pane, got %d attempts", got)
-	}
 }
 
-// TestStartAgentDoesNotRetryARealRefusal covers the other side of the retry.
+// TestStartAgentRunsTheAgentInsideTheSandbox is the whole point of the change.
 //
-// Retrying every failure would turn an unsupported agent kind into a long wait
-// ending in the same refusal, with the reason buried.
-func TestStartAgentDoesNotRetryARealRefusal(t *testing.T) {
+// Luna talks to herdr over a socket, so an agent started by herdr is a child of
+// the herdr server and inherits nothing from Luna's process — wrapping `luna run`
+// contained Luna and left the agent free. The wrapper has to be on the agent's
+// own command line, and `HERDR_AGENT` is herdr's documented way to keep detecting
+// it through one.
+func TestStartAgentRunsTheAgentInsideTheSandbox(t *testing.T) {
 	server, path := newFakeServer(t)
-	server.reply("agent.start", `{"id":"1","error":{"code":"invalid_request","message":"unsupported interactive agent kind nope"}}`)
+	// Empty first — nothing to reuse — then present, which is the agent herdr
+	// detects a moment after the command runs.
+	server.replyOnce(
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
-	_, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "nope", "luna-1", nil)
+	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"},
+		"claude", "luna-1", []string{"--permission-mode", "bypassPermissions"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	if err == nil {
-		t.Fatal("an unsupported kind must be reported")
-	}
-	if got := len(server.sent("agent.start")); got != 1 {
-		t.Errorf("a real refusal is not retried, got %d attempts", got)
-	}
-	if !strings.Contains(err.Error(), "nope") {
-		t.Errorf("the error should name the kind, got %v", err)
+	sent, _ := json.Marshal(server.sent("pane.send_text")[0].Params)
+	for _, want := range []string{"HERDR_AGENT=claude", "ai-jail", "claude", "bypassPermissions"} {
+		if !strings.Contains(string(sent), want) {
+			t.Errorf("the command does not carry %q: %s", want, sent)
+		}
 	}
 }
 
-// TestATaskReusesItsOwnAgent covers one agent per task, not per stage.
+// TestAnAgentAlreadyInThePaneIsReused covers a resumed stage.
 //
-// herdr keys agent names globally and refuses a second use. The second stage must
-// find the agent the first started: a fresh one would lose its context and strand
-// the old one holding a pane.
-func TestATaskReusesItsOwnAgent(t *testing.T) {
+// `worktree.open` returns the pane a stopped run left behind — measured against a
+// live herdr, with `already_open: true` and the same pane id. Starting a second
+// agent on top of the first would strand the one that was working, and pane.run
+// has no name to collide with, so the check has to happen before the start.
+func TestAnAgentAlreadyInThePaneIsReused(t *testing.T) {
 	server, path := newFakeServer(t)
-	server.reply("agent.start", `{"id":"1","error":{"code":"agent_name_taken","message":"already used"}}`)
-	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[{"name":"other","pane_id":"w9:p9"},{"name":"luna-1","pane_id":"w1:p1"}]}}`)
+	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`)
 
 	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
 	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
 	if err != nil {
-		t.Fatalf("a taken name means reuse, not failure: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if pane != "w1:p1" {
 		t.Errorf("want the pane the agent already runs in, got %q", pane)
 	}
-}
-
-// TestAnUnfindableAgentIsReported covers the contradiction.
-//
-// herdr held the name and then did not list it. Guessing a pane would prompt the
-// wrong agent, so this stops instead.
-func TestAnUnfindableAgentIsReported(t *testing.T) {
-	server, path := newFakeServer(t)
-	server.reply("agent.start", `{"id":"1","error":{"code":"agent_name_taken","message":"already used"}}`)
-	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[]}}`)
-
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
-	_, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
-
-	if err == nil {
-		t.Fatal("a name held by nothing must be reported")
-	}
-	if !strings.Contains(err.Error(), "luna-1") {
-		t.Errorf("the error should name the agent, got %v", err)
+	if got := len(server.sent("pane.send_text")); got != 0 {
+		t.Errorf("a second agent was started on top of the first (%d runs)", got)
 	}
 }
 
@@ -433,7 +434,7 @@ func TestEveryRequestCarriesAStringID(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -458,7 +459,6 @@ func TestTheRetryPredicatesReadCodesNotMessages(t *testing.T) {
 	}{
 		{"paneBusy", paneBusy, "agent_pane_busy"},
 		{"notReady", notReady, "agent_not_ready"},
-		{"nameTaken", nameTaken, "agent_name_taken"},
 	}
 
 	for _, c := range cases {
@@ -549,7 +549,7 @@ func TestAWorktreeThatCannotBeMadeIsReported(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", `{"id":"1","error":{"code":"invalid_request","message":"require a workspace inside a Git work tree"}}`)
 
-	runner := NewRunner(dialFake(t, path), "/not/a/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/not/a/repo", time.Minute)
 	_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 
 	if err == nil {
@@ -573,7 +573,7 @@ func TestTheCheckoutPathFallsBackToThePanesDirectory(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1","cwd":"/from/the/pane"},"worktree":{}}}`)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -634,7 +634,7 @@ func TestTheWorktreeFollowsTheHouseNaming(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/home/someone/repos/api", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/home/someone/repos/api", time.Minute)
 	if _, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestTheWorktreeFollowsTheHouseNaming(t *testing.T) {
 // repository does to itself, and one inside a tool's directory is caught by that
 // tool's cleanup.
 func TestTheCheckoutIsASiblingNeverAChild(t *testing.T) {
-	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1", false)
+	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -664,51 +664,10 @@ func TestTheCheckoutIsASiblingNeverAChild(t *testing.T) {
 	}
 }
 
-// TestAContainedCheckoutLivesUnderTheRepository is the exception, and the reason
-// it exists is a measured failure rather than a preference.
-//
-// Inside ai-jail only the working directory is reachable, so a sibling is not
-// merely unwritable — it does not exist. Every read of the tree failed, every
-// stage reported no commit, the base never moved, and a twelve-stage run finished
-// `done` with the work scattered across twelve sibling branches.
-func TestAContainedCheckoutLivesUnderTheRepository(t *testing.T) {
-	got, err := checkoutPath("/home/someone/repos/api", "LUNA-1", true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.HasPrefix(got, "/home/someone/repos/api/") {
-		t.Errorf("a contained checkout must be reachable from the repository, got %q", got)
-	}
-	// Under `.luna`, beside the log: it is already Luna's directory, and a linked
-	// worktree is tracked through `.git/worktrees` rather than showing up as
-	// untracked files in the repository it was cut from.
-	if !strings.Contains(got, "/.luna/") {
-		t.Errorf("want the checkout beside the log, got %q", got)
-	}
-}
-
-// TestTheTwoLayoutsDoNotCollide. A repository run both ways must not have one
-// task's contained checkout land on another's sibling path.
-func TestTheTwoLayoutsDoNotCollide(t *testing.T) {
-	sibling, err := checkoutPath("/home/someone/repos/api", "LUNA-1", false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	contained, err := checkoutPath("/home/someone/repos/api", "LUNA-1", true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if sibling == contained {
-		t.Errorf("both layouts resolved to %q", sibling)
-	}
-}
-
 // TestARelativeRepositoryStillResolves covers `--repo .`, which is what someone
 // running from inside their checkout will type.
 func TestARelativeRepositoryStillResolves(t *testing.T) {
-	got, err := checkoutPath(".", "LUNA-1", false)
+	got, err := checkoutPath(".", "LUNA-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -731,7 +690,7 @@ func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
 	server.reply("worktree.create", `{"id":"1","error":{"code":"worktree_exists","message":"already checked out"}}`)
 	server.reply("worktree.open", `{"id":"1","result":{"type":"worktree_created","workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1"},"worktree":{"path":"/somewhere/older"}}}`)
 
-	runner := NewRunner(dialFake(t, path), "/repo", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/repo", time.Minute)
 	ws, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -747,7 +706,7 @@ func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
 // The filesystem root has no name to build a sibling from, and `wt--LUNA-1` at
 // the root is not a checkout anyone meant to create. Refusing beats guessing.
 func TestARepositoryThatNamesNothingIsRefused(t *testing.T) {
-	if _, err := checkoutPath("/", "LUNA-1", false); err == nil {
+	if _, err := checkoutPath("/", "LUNA-1"); err == nil {
 		t.Error("the filesystem root does not name a repository")
 	}
 }
@@ -761,7 +720,7 @@ func TestOpenWorktreeRefusesAnUnusableRepository(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("worktree.create", worktreeReply)
 
-	runner := NewRunner(dialFake(t, path), "/", time.Minute, false)
+	runner := NewRunner(dialFake(t, path), "/", time.Minute)
 	_, err := runner.OpenWorktree(context.Background(), WorktreeSpec{TaskID: "LUNA-1"})
 
 	if err == nil {
@@ -769,5 +728,87 @@ func TestOpenWorktreeRefusesAnUnusableRepository(t *testing.T) {
 	}
 	if len(server.sent("worktree.create")) != 0 {
 		t.Error("nothing should have been asked of herdr")
+	}
+}
+
+// TestWithoutTheSandboxLunaRefusesToStartAnAgent is the decision, asserted where
+// somebody would meet it.
+//
+// The alternative is a fallback to an uncontained agent, which is what shipped
+// before and is worse than a refusal: the agent runs holding the permissions this
+// passes it — `bypassPermissions`, every check off — on the strength of a sandbox
+// that is not there, and nothing on screen says so (INV-core-7, ADR-0069).
+func TestWithoutTheSandboxLunaRefusesToStartAnAgent(t *testing.T) {
+	// An empty PATH is how the sandbox is made absent: `jailed` looks it up, so
+	// this is the same condition as a machine that never installed it.
+	t.Setenv("PATH", "")
+
+	_, err := jailed("claude", nil)
+
+	if !errors.Is(err, ErrNoSandbox) {
+		t.Fatalf("want ErrNoSandbox, got %v", err)
+	}
+	if !strings.Contains(err.Error(), jailBinary) {
+		t.Errorf("the refusal must name what is missing, got %v", err)
+	}
+}
+
+// TestTheJailedCommandCarriesEveryPart. Each of the three does something, and
+// dropping any one fails in a way that looks like something else: no
+// HERDR_AGENT and herdr reports no agent at all; no wrapper and the containment
+// is gone while the permissions stay; no args and the agent stops to ask.
+func TestTheJailedCommandCarriesEveryPart(t *testing.T) {
+	command, err := jailed("claude", []string{"--permission-mode", "bypassPermissions"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := "HERDR_AGENT=claude " + jailBinary + " claude --permission-mode bypassPermissions"
+	if command != want {
+		t.Errorf("the command line is wrong:\n got %s\nwant %s", command, want)
+	}
+}
+
+// TestAnAgentThatNeverAppearsIsReported. herdr detects an agent by what is on
+// the screen, so one that fails to boot leaves the pane at a shell prompt and
+// herdr reporting nothing. Prompting into that is refused with
+// `agent_not_found`, several seconds later and with no clue why — so the wait
+// gives up here and names the pane instead.
+func TestAnAgentThatNeverAppearsIsReported(t *testing.T) {
+	server, path := newFakeServer(t)
+	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[]}}`)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+
+	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	_, err := runner.StartAgent(ctx, Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
+
+	if err == nil {
+		t.Fatal("an agent that never appeared must be reported")
+	}
+	if !strings.Contains(err.Error(), "w1:p1") {
+		t.Errorf("the error must name the pane, got %v", err)
+	}
+}
+
+// TestAnUnreadableAgentListStartsRatherThanFails. Not knowing whether a pane
+// holds an agent is not the same as knowing it holds none — but the next move is
+// the same either way, and failing the stage over a listing that did not answer
+// would stop work that could have run.
+func TestAnUnreadableAgentListStartsRatherThanFails(t *testing.T) {
+	server, path := newFakeServer(t)
+	server.reply("agent.list", `{"id":"1","error":{"code":"whatever","message":"not answering"}}`)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+
+	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	_, _ = runner.StartAgent(ctx, Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
+
+	if got := len(server.sent("pane.send_text")); got != 1 {
+		t.Errorf("an unreadable listing stopped the start, got %d runs", got)
 	}
 }

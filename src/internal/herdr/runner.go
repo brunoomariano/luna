@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,11 +31,6 @@ type socketRunner struct {
 	// Settle bounds how long a prompt waits for the agent to stop working. It is
 	// the budget the profile decided (ADR-0034), handed down by the caller.
 	Settle time.Duration
-
-	// Contained says a sandbox is holding the boundary, which decides where a
-	// worktree can live: outside one a sibling of the repository, inside one a
-	// directory under it, because that is all the process can reach.
-	Contained bool
 }
 
 // NewRunner builds a Runner backed by a herdr socket.
@@ -44,15 +40,11 @@ type socketRunner struct {
 // it to ".", which is the natural thing for a CLI run from inside the checkout.
 // Failing to resolve it leaves the caller's value alone — herdr's refusal names
 // the problem better than a path this could invent (ADR-0036).
-// contained is whether a sandbox is holding the boundary. It decides where a
-// worktree can live, so it is read once when the runner is built rather than per
-// stage: the answer cannot change mid-run, and asking repeatedly would read
-// /proc on every stage for a fact that is a property of the process.
-func NewRunner(client *Client, repo string, settle time.Duration, contained bool) Runner {
+func NewRunner(client *Client, repo string, settle time.Duration) Runner {
 	if absolute, err := filepath.Abs(repo); err == nil {
 		repo = absolute
 	}
-	return &socketRunner{client: client, Repo: repo, Settle: settle, Contained: contained}
+	return &socketRunner{client: client, Repo: repo, Settle: settle}
 }
 
 // worktreeCreated is herdr's answer: the whole home for a task at once.
@@ -88,7 +80,7 @@ func (r *socketRunner) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspac
 		label = w.TaskID + "-" + string(w.Role)
 	}
 
-	path, err := checkoutPath(r.Repo, label, r.Contained)
+	path, err := checkoutPath(r.Repo, label)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -174,54 +166,141 @@ func (r *socketRunner) CloseWorktree(_ context.Context, ws Workspace) error {
 // call just produced. herdr blocks until the agent is detected and ready, which
 // removes a race the node would otherwise have to handle itself.
 func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name string, args []string) (string, error) {
-	var started struct {
-		Agent struct {
-			PaneID string `json:"pane_id"`
-		} `json:"agent"`
+	// An agent already running in this worktree's pane is this same stage's, and
+	// it is reused rather than restarted: `worktree.open` returns the pane a
+	// resumed stage left behind, so a retry after a stall finds the agent that was
+	// already working instead of losing its context (INV-core-5, ADR-0006).
+	//
+	// Checked before starting rather than after being refused, because pane.run
+	// has no name to collide with — it would happily start a second agent on top
+	// of the first.
+	if pane, running := r.agentIn(ws.RootPane); running {
+		return pane, nil
+	}
+
+	command, err := jailed(kind, args)
+	if err != nil {
+		return "", fmt.Errorf("starting %q for %s: %w", kind, name, err)
 	}
 
 	// A freshly created worktree's pane is not at its prompt yet, and herdr
-	// refuses to start an agent in one that is still busy. Observed against a
-	// live 0.8.0: the identical call fails and then succeeds seconds later with
-	// nothing else changed. Retrying briefly is the difference between a working
-	// run and a block on the first stage of every task.
-	params := map[string]any{
-		"name":       name,
-		"kind":       kind,
-		"pane_id":    ws.RootPane,
-		"timeout_ms": startTimeout.Milliseconds(),
-	}
-	if len(args) > 0 {
-		// herdr passes these through to the agent, which is how a denied
-		// capability reaches it (ADR-0042). The field is `args`: `agent_args`
-		// is accepted and silently ignored, which is the trap ADR-0036 names.
-		params["args"] = args
-	}
-
-	err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
-		return r.client.Call("agent.start", params, &started)
-	}, paneBusy)
-
-	// The name carries the stage (agentName), so this only ever finds an agent
-	// this same stage started — a retry after a stall, or a resumed run. A later
-	// stage asks for a different name and gets a fresh agent, which is what
-	// INV-core-5 and ADR-0006 require: no stage inherits the session of the one
-	// before it.
-	//
-	// herdr says the name is taken by refusing it, and the refusal carries the
-	// pane it is already running in.
-	if err != nil && nameTaken(err) {
-		return r.reuse(name, ws)
-	}
-	if err != nil {
+	// refuses to run in one that is still busy. Observed against a live 0.8.0:
+	// the identical call fails and then succeeds seconds later with nothing else
+	// changed. Retrying briefly is the difference between a working run and a
+	// block on the first stage of every task.
+	if err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
+		// `pane.send_text` rather than a "run a command" method, because herdr has
+		// none: the protocol's verbs are typed at panes and agents, and the way to
+		// start a process is to type at the shell that is already there. The
+		// newline is what submits it — measured, since text without one sits at
+		// the prompt and nothing runs.
+		return r.client.Call("pane.send_text", map[string]any{
+			"pane_id": ws.RootPane,
+			"text":    command + "\n",
+		}, nil)
+	}, paneBusy); err != nil {
 		return "", fmt.Errorf("starting %q as %q in %s: %w", kind, name, ws.RootPane, err)
 	}
 
-	if started.Agent.PaneID != "" {
-		return started.Agent.PaneID, nil
+	// pane.run returns as soon as the command is sent; the agent is interactive
+	// some seconds later. Waiting here rather than letting the first prompt race
+	// it is the same reason Prompt and its wait are one call.
+	if err := r.awaitAgent(ctx, ws.RootPane); err != nil {
+		return "", fmt.Errorf("waiting for %q in %s: %w", kind, ws.RootPane, err)
 	}
-	// herdr started it where we asked and did not echo the pane back.
 	return ws.RootPane, nil
+}
+
+// jailed is the command line that starts an agent inside the sandbox.
+//
+//	HERDR_AGENT=claude ai-jail claude --permission-mode bypassPermissions
+//
+// Three parts, each load-bearing. `ai-jail` is the containment, and it wraps the
+// *agent* — which is the whole point: Luna talks to herdr over a socket, so an
+// agent started through `agent.start` is a child of the herdr server and inherits
+// nothing from Luna's own process. Wrapping `luna run` contained Luna and left
+// the agent free (ADR-0069).
+//
+// `HERDR_AGENT` is herdr's own answer to a wrapper hiding the real process — it
+// names which screen manifest to detect with, and without it herdr sees `ai-jail`
+// and reports no agent at all. The pattern is herdr's, documented with `fence`
+// and `nono` as its examples.
+//
+// This is why `agent.start` cannot be used: its `kind` is a closed set compiled
+// into herdr, so there is nowhere to put a wrapper. Measured — a custom kind is
+// refused with `unsupported_agent_kind`, and a new one needs a herdr binary
+// update rather than a local manifest.
+func jailed(kind string, args []string) (string, error) {
+	if _, err := exec.LookPath(jailBinary); err != nil {
+		return "", fmt.Errorf(
+			"%w: %s is not on PATH, and Luna runs every agent inside it — an agent "+
+				"outside a sandbox would hold the permissions this passes it (INV-core-7)",
+			ErrNoSandbox, jailBinary,
+		)
+	}
+
+	command := fmt.Sprintf("HERDR_AGENT=%s %s %s", kind, jailBinary, kind)
+	for _, arg := range args {
+		command += " " + arg
+	}
+	return command, nil
+}
+
+// agentIn reports the agent herdr sees in a pane, if any.
+func (r *socketRunner) agentIn(pane string) (string, bool) {
+	var listed struct {
+		Agents []struct {
+			PaneID string `json:"pane_id"`
+		} `json:"agents"`
+	}
+	if err := r.client.Call("agent.list", map[string]any{}, &listed); err != nil {
+		// Not knowing is not the same as knowing there is none, but the caller's
+		// next move either way is to start one — and starting into a pane that
+		// already has an agent is what the check exists to avoid, not an error to
+		// fail the stage over.
+		return "", false
+	}
+
+	for _, agent := range listed.Agents {
+		if agent.PaneID == pane {
+			return pane, true
+		}
+	}
+	return "", false
+}
+
+// awaitAgent waits until herdr reports an agent in the pane.
+//
+// herdr detects an agent by what is on the screen, so a wrapped one appears a
+// moment after the command runs rather than when the call returns. Prompting
+// before that is refused with `agent_not_found`.
+//
+// Detection is not readiness. herdr reports `idle` as soon as it recognises the
+// screen, while the agent behind it is still booting — and `agent.prompt`'s wait
+// "first requires an observed state change within 5000ms; otherwise it returns
+// agent_prompt_stalled". A freshly started claude takes longer than that to react
+// to its first prompt, so the stage stalled on every run: the prompt was never
+// submitted, and the failure read as an agent that would not answer.
+//
+// The settle here is what closes that window. It is a fixed wait rather than a
+// poll because there is nothing to poll for: `interactive_ready` is absent from a
+// `pane.send_text` agent, which is exactly the field that would have said so.
+func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
+	if err := retry(ctx, agentStartAttempts, paneSettleWait, func() error {
+		if _, running := r.agentIn(pane); running {
+			return nil
+		}
+		return errNoAgentYet
+	}, func(err error) bool { return errors.Is(err, errNoAgentYet) }); err != nil {
+		return err
+	}
+
+	select {
+	case <-time.After(agentBootSettle):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Prompt submits the stage's brief and waits for the agent to settle.
@@ -277,8 +356,7 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 }
 
 // checkoutPath is where a task's worktree lives: `../wt-<repo>-<id>`, a sibling
-// of the repository — unless the process is contained, and then it is
-// `<repo>/.luna/wt/<id>`.
+// of the repository.
 //
 // herdr would otherwise put it under its own directory, which is fine for herdr
 // and wrong here — this project's worktrees follow one convention regardless of
@@ -289,19 +367,12 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 // repository, or inside a tool's directory, gets caught by that tool's own
 // cleanup and by every recursive walk the repository does to itself.
 //
-// **A sandbox inverts that.** Inside ai-jail only the working directory is
-// reachable — a sibling is not merely unwritable, it does not exist — so every
-// read of the tree fails. Measured: a full twelve-stage run where every stage
-// reported no commit, the base never moved, and the task finished `done` with the
-// work scattered across twelve sibling branches. The failure is now loud rather
-// than silent (`node.Handover`), and this is what stops it happening at all.
-//
-// Under the repository is the one place that is reachable in both worlds. It is
-// second choice, not first: `.luna/wt` sits beside the log, which is already
-// Luna's, and `.gitignore` is not consulted for a linked worktree — git tracks it
-// through `.git/worktrees`, so a checkout there does not show up as untracked
-// files in the repository it was cut from.
-func checkoutPath(repo, taskID string, contained bool) (string, error) {
+// This briefly had a second form, under `.luna/wt`, for when Luna itself ran
+// inside the sandbox and could not see a sibling. That is gone with ADR-0069:
+// the sandbox wraps the *agent* now, so Luna reads the tree from outside it and
+// the agent works in it as its own cwd. Both reach it, and there is one layout
+// again.
+func checkoutPath(repo, taskID string) (string, error) {
 	absolute, err := filepath.Abs(repo)
 	if err != nil {
 		return "", fmt.Errorf("resolving the repository path %q: %w", repo, err)
@@ -312,9 +383,6 @@ func checkoutPath(repo, taskID string, contained bool) (string, error) {
 		return "", fmt.Errorf("%q does not name a repository directory", repo)
 	}
 
-	if contained {
-		return filepath.Join(absolute, ".luna", "wt", taskID), nil
-	}
 	return filepath.Join(filepath.Dir(absolute), "wt-"+name+"-"+taskID), nil
 }
 
@@ -334,42 +402,36 @@ const (
 	paneSettleAttempts = 6
 	paneSettleWait     = 2 * time.Second
 	startTimeout       = 30 * time.Second
+
+	// agentStartAttempts is longer than paneSettleAttempts because it waits for a
+	// process to boot and paint a screen rather than for a shell prompt: measured
+	// at four to eight seconds for claude, against under two for a pane.
+	agentStartAttempts = 15
+
+	// agentBootSettle is the pause between herdr recognising an agent's screen and
+	// that agent being able to react to a prompt. herdr's wait needs a state change
+	// within 5000ms, and a cold claude takes longer — measured: the first prompt
+	// stalled every time, the second answered.
+	agentBootSettle = 8 * time.Second
 )
 
-// reuse finds the pane a task's agent is already running in.
+// jailBinary is the sandbox every agent runs inside.
 //
-// Reusing rather than restarting is what keeps one agent per task: a fresh agent
-// per stage would lose whatever context the previous one built, and would leave
-// the abandoned one holding a pane.
-func (r *socketRunner) reuse(name string, ws Workspace) (string, error) {
-	var listed struct {
-		Agents []struct {
-			Name   string `json:"name"`
-			PaneID string `json:"pane_id"`
-		} `json:"agents"`
-	}
-	if err := r.client.Call("agent.list", map[string]any{}, &listed); err != nil {
-		return "", fmt.Errorf("looking for the agent already named %q: %w", name, err)
-	}
+// Named rather than configurable, deliberately: which sandbox holds the boundary
+// is not a per-project preference but the thing INV-core-7 rests on, and a
+// project that could swap it for `cat` would be a project with no boundary.
+const jailBinary = "ai-jail"
 
-	for _, agent := range listed.Agents {
-		if agent.Name == name {
-			return agent.PaneID, nil
-		}
-	}
-	// herdr refused the name and then did not list it. Nothing here can resolve
-	// that, and guessing a pane would prompt the wrong agent.
-	return "", fmt.Errorf("herdr holds the name %q but reports no agent using it", name)
-}
+// ErrNoSandbox is returned when the sandbox is not installed.
+//
+// Luna refuses rather than falling back to an uncontained agent. The fallback
+// exists — it is what shipped before this — and it is worse than a refusal: the
+// agent runs with permissions granted on the assumption of a sandbox that is not
+// there, and nothing on screen says so (ADR-0069).
+var ErrNoSandbox = errors.New("no sandbox")
 
-// nameTaken reports the name colliding with an agent this task already started.
-func nameTaken(err error) bool {
-	var api *apiError
-	if errors.As(err, &api) {
-		return api.Code == "agent_name_taken"
-	}
-	return false
-}
+// errNoAgentYet is the retry signal while herdr has not yet detected the agent.
+var errNoAgentYet = errors.New("herdr reports no agent in the pane yet")
 
 // notReady reports herdr refusing a prompt to an agent it has registered but not
 // yet marked interactive — the same startup race as paneBusy, one layer up.

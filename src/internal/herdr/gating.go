@@ -67,8 +67,13 @@ type Harness struct {
 // containing the process. Withholding it on a bare host is the point: the failure
 // there is a stage that stops and says so, which is recoverable, against an agent
 // with no checks at all on a machine with the person's real files.
-func unattendedFor(harness Harness, contained bool) []string {
-	if contained && len(harness.Contained) > 0 {
+func unattendedFor(harness Harness) []string {
+	// Always the contained set: Luna starts every agent inside the sandbox now, so
+	// there is no uncontained case left to be cautious about (ADR-0069). It used
+	// to ask whether *Luna's own process* was contained, which decided the
+	// *agent's* permissions — two unrelated facts, because the agent is a child of
+	// the herdr server and inherits nothing from Luna.
+	if len(harness.Contained) > 0 {
 		return harness.Contained
 	}
 	return harness.Unattended
@@ -194,7 +199,7 @@ func SupportedHarnesses() []string {
 // A role that does deny something and names an agent Luna cannot gate stops the
 // stage. The message names the harness and the alternatives, because this refusal
 // will read as a bug the first time someone meets it (ADR-0041).
-func gateArgs(role fsm.Role, contained bool) ([]string, error) {
+func gateArgs(role fsm.Role) ([]string, error) {
 	harness, ok := HarnessFor(role.Agent)
 	if !ok {
 		if role.Gated() {
@@ -206,7 +211,7 @@ func gateArgs(role fsm.Role, contained bool) ([]string, error) {
 		return nil, nil
 	}
 
-	args := append([]string{}, unattendedFor(harness, contained)...)
+	args := append([]string{}, unattendedFor(harness)...)
 	if !role.Gated() {
 		return args, nil
 	}

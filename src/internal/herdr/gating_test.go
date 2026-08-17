@@ -102,7 +102,7 @@ func TestCodexCannotDenyOneCapabilityAlone(t *testing.T) {
 // Guessing that an agent supports denial and being wrong fails open: a reviewer
 // that can edit, with nothing in the log saying the denial did not take.
 func TestAnUnlistedHarnessIsRefused(t *testing.T) {
-	_, err := gateArgs(fsm.Role{Agent: "cursor", ToolsDeny: noWriting}, false)
+	_, err := gateArgs(fsm.Role{Agent: "cursor", ToolsDeny: noWriting})
 
 	if err == nil {
 		t.Fatal("an agent Luna cannot gate must stop the stage")
@@ -124,7 +124,7 @@ func TestAnUnlistedHarnessIsRefused(t *testing.T) {
 // Most roles deny nothing. Requiring a table entry for them would restrict the
 // whole flow to four agents for no reason.
 func TestAnUngatedRoleNeedsNoHarnessSupport(t *testing.T) {
-	args, err := gateArgs(fsm.Role{Agent: "some-agent-nobody-listed"}, false)
+	args, err := gateArgs(fsm.Role{Agent: "some-agent-nobody-listed"})
 	if err != nil {
 		t.Errorf("a role that denies nothing needs nothing: %v", err)
 	}
@@ -162,47 +162,43 @@ func TestAnAgentStartsUnattended(t *testing.T) {
 	}
 }
 
-// TestAContainedAgentGetsTheFlagThatActuallyWorks. `acceptEdits` auto-approves
-// edits and not arbitrary Bash, so an agent running `make test` or `bd show`
-// still stops at a confirmation — measured, on the real flow: `acceptEdits`
-// settled at `blocked`, `bypassPermissions` at `done` with a real commit.
+// TestEveryAgentGetsTheFlagThatActuallyWorks. `acceptEdits` auto-approves edits
+// and not arbitrary Bash, so an agent running `make test` still stops at a
+// confirmation — measured, on the real flow: `acceptEdits` settled at `blocked`,
+// `bypassPermissions` at `done` with a real commit.
 //
-// The wider flag is only defensible with something else doing the containing,
-// which is why it is asked for rather than assumed.
-func TestAContainedAgentGetsTheFlagThatActuallyWorks(t *testing.T) {
-	args := unattendedFor(harnesses[0], true)
+// The wider flag is defensible because Luna now starts every agent inside the
+// sandbox itself (ADR-0069). It used to be conditional on whether *Luna's own
+// process* was contained, which decided the *agent's* permissions — two
+// unrelated facts, since the agent is a child of the herdr server. Where there
+// is no sandbox to start it in, Luna refuses rather than falling back.
+func TestEveryAgentGetsTheFlagThatActuallyWorks(t *testing.T) {
+	args := unattendedFor(harnesses[0])
 
 	if !strings.Contains(strings.Join(args, " "), "bypassPermissions") {
-		t.Errorf("a contained agent still has to ask before each command: %v", args)
+		t.Errorf("an agent Luna contains still has to ask before each command: %v", args)
 	}
 }
 
-// TestAnUncontainedAgentDoesNotGetIt is the other half, and the one that matters:
-// on a plain host the sandbox is absent, so the flag that removes every check
-// must be withheld — Luna delegates containment rather than pretending to it
-// (INV-core-7).
-func TestAnUncontainedAgentDoesNotGetIt(t *testing.T) {
-	args := unattendedFor(harnesses[0], false)
+// TestAHarnessWithNoContainedFormKeepsItsUnattendedOne. Not every harness has a
+// second flag, and one that does not must still run unattended rather than
+// falling through to nothing.
+func TestAHarnessWithNoContainedFormKeepsItsUnattendedOne(t *testing.T) {
+	plain := Harness{Kind: "plain", Unattended: []string{"--yes"}}
 
-	if strings.Contains(strings.Join(args, " "), "bypassPermissions") {
-		t.Errorf("an uncontained agent was handed the flag that skips every check: %v", args)
-	}
-	// It still gets the narrower one: an agent that cannot edit is no more use
-	// than one that cannot run, and this is what ran before containment existed.
-	if !strings.Contains(strings.Join(args, " "), "acceptEdits") {
-		t.Errorf("an uncontained agent was left asking about every edit too: %v", args)
+	if got := unattendedFor(plain); len(got) != 1 || got[0] != "--yes" {
+		t.Errorf("want the unattended form, got %v", got)
 	}
 }
 
 // TestContainmentReachesTheAgentThatStarts is the wiring rather than the table:
 // a Node told it is contained has to actually pass the wider flag on.
-func TestContainmentReachesTheAgentThatStarts(t *testing.T) {
+func TestTheAgentStartsWithThePermissionItsContainmentAllows(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{
-		Runner:    herdr,
-		Prove:     herdr.proving(),
-		Roles:     fixedRole("claude"),
-		Contained: func() bool { return true },
+		Runner: herdr,
+		Prove:  herdr.proving(),
+		Roles:  fixedRole("claude"),
 	}
 
 	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
@@ -210,22 +206,7 @@ func TestContainmentReachesTheAgentThatStarts(t *testing.T) {
 	}
 
 	if !strings.Contains(strings.Join(herdr.startArgs, " "), "bypassPermissions") {
-		t.Errorf("the node knew it was contained and started the agent anyway asking: %v", herdr.startArgs)
-	}
-}
-
-// TestANodeWithNoContainmentCheckAssumesNone. An unset field must not be what
-// hands an agent every permission — the default has to fail closed.
-func TestANodeWithNoContainmentCheckAssumesNone(t *testing.T) {
-	herdr := &fakeHerdr{settlesAt: StatusIdle}
-	node := &Node{Runner: herdr, Prove: herdr.proving(), Roles: fixedRole("claude")}
-
-	if _, err := node.Run(context.Background(), fsm.NewTaskState("LUNA-1", ""), stageWithTests()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if strings.Contains(strings.Join(herdr.startArgs, " "), "bypassPermissions") {
-		t.Errorf("an unset containment check granted every permission: %v", herdr.startArgs)
+		t.Errorf("Luna contains the agent it starts and still handed it the asking flag: %v", herdr.startArgs)
 	}
 }
 

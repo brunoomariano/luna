@@ -149,7 +149,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 	}
 
 	conductor.Node = &herdr.Node{
-		Runner: herdr.NewRunner(client, opts.Repo, cfg.Turn(), node.Contained()),
+		Runner: herdr.NewRunner(client, opts.Repo, cfg.Turn()),
 		// The stage's role decides which agent runs it (ADR-0040). --agent
 		// overrides every role, which is what makes a run reproducible against one
 		// harness while the roles are still being tuned.
@@ -170,10 +170,6 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		Warn: func(format string, args ...any) {
 			fmt.Fprintf(env.Err, format+"\n", args...)
 		},
-		// Whether a sandbox is holding the boundary, which decides how much the
-		// agent is trusted with (INV-core-7). Luna does not contain anything
-		// itself; it asks whether something else is.
-		Contained: node.Contained,
 		// What the stage committed, which is what the next one branches from.
 		Delivered: node.Handover,
 	}
