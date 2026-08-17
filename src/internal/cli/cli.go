@@ -88,6 +88,13 @@ type Registry interface {
 	// Create opens a task with what a person said it is about.
 	Create(ctx context.Context, work registry.Work) (string, error)
 
+	// Move changes a task's status, refusing if it is no longer where the caller
+	// saw it. Guarded and with no unguarded sibling (ADR-0054).
+	Move(ctx context.Context, id string, from, to registry.Status) error
+
+	// EnterStage records which stage a task is in, as a label.
+	EnterStage(ctx context.Context, id, stage string) error
+
 	// Task reads one back, which is how Luna adopts an issue somebody wrote in
 	// beads directly — the path that costs no tokens.
 	Task(ctx context.Context, id string) (registry.Task, error)

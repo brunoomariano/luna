@@ -31,6 +31,33 @@ type fakeRegistry struct {
 	// fails to.
 	task    registry.Task
 	taskErr error
+
+	// What was projected into it: the last status it was moved to, and every
+	// stage it was told about. Recorded rather than asserted on a mock, because
+	// the claim these tests make is about what Luna *sent* (ADR-0065).
+	movedTo registry.Status
+	stages  []string
+
+	// moveErr and stageErr are how a projection fails.
+	moveErr  error
+	stageErr error
+}
+
+func (f *fakeRegistry) Move(_ context.Context, _ string, _, to registry.Status) error {
+	if f.moveErr != nil {
+		return f.moveErr
+	}
+	f.movedTo = to
+	f.task.Status = to
+	return nil
+}
+
+func (f *fakeRegistry) EnterStage(_ context.Context, _, stage string) error {
+	if f.stageErr != nil {
+		return f.stageErr
+	}
+	f.stages = append(f.stages, stage)
+	return nil
 }
 
 func (f *fakeRegistry) Blocked(context.Context) ([]registry.Task, error) {

@@ -193,9 +193,14 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 		return r.client.Call("agent.start", params, &started)
 	}, paneBusy)
 
-	// The agent belongs to the task, not to the stage: the second stage finds the
-	// one the first started and reuses it. herdr says so by refusing the name, and
-	// the refusal carries the pane it is already running in.
+	// The name carries the stage (agentName), so this only ever finds an agent
+	// this same stage started — a retry after a stall, or a resumed run. A later
+	// stage asks for a different name and gets a fresh agent, which is what
+	// INV-core-5 and ADR-0006 require: no stage inherits the session of the one
+	// before it.
+	//
+	// herdr says the name is taken by refusing it, and the refusal carries the
+	// pane it is already running in.
 	if err != nil && nameTaken(err) {
 		return r.reuse(name, ws)
 	}

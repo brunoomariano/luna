@@ -127,6 +127,10 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// reached still goes to a person, because authority to judge is not a
 		// judgement (ADR-0043).
 		Ask: env.Lead,
+		// Where the task is, mirrored into the registry so one question can be
+		// asked across every checkout. A projection, never a source: the log stays
+		// the state (ADR-0065).
+		Project: projectWith(env.Registry),
 		// `done` means ready to integrate, and this is what makes it true: the
 		// task's own branch is pointed at what it delivered (ADR-0062).
 		Land: func(ctx context.Context, taskID, commit string) error {
