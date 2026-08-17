@@ -1,14 +1,26 @@
 # RFC-0007: Luna hears herdr, instead of only asking it
 
-**Status:** DRAFT
+**Status:** OBSOLETE
 **Last reviewed:** 2026-08-17
 **Source issue:** —
 **PRD:** —
 
-> The largest gap the ADR audit found. [ADR-0027](../ADRs/0027-luna-runs-under-herdr-as-a-socket-client.md)
-> and [ADR-0029](../ADRs/0029-herdr-blocked-becomes-a-luna-block.md) both assume Luna
-> learns what herdr does; it never did. Everything below the protocol section is
-> measured against herdr 0.8.0, protocol 19, running.
+> **Obsoleted by [ADR-0066](../ADRs/0066-herdrs-panes-are-a-view-and-luna-does-not-react-to-them.md)
+> before it was built, and the reason is worth more than the plan was.**
+>
+> Its two hardest open questions turned out to be one decision. herdr's panes are a
+> **view**: Luna owns the log, and a pane is where an agent *was* running rather than
+> where the task *is*. So herdr may be closed, restarted and recreated, and a task
+> resumes from the log — which means none of the three events below is Luna's to react
+> to. Reacting would have made a person tidying their terminal able to block a working
+> task.
+>
+> **What survives is the measurement.** The protocol section below is the contract of a
+> running herdr 0.8.0, protocol 19, exercised over the socket rather than read — and it
+> corrected the schema four times. Whoever wants events for a *view* (`luna status`
+> naming the pane a stage is in, say) should start here rather than measuring again.
+>
+> The rest is kept as the route that was rejected, and why.
 
 ## Motivation
 

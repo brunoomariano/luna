@@ -46,6 +46,19 @@ where the name is built.
 The substance of the ADR — one worktree per task *and* role, branched from the last
 delivery, removed when the stage ends — is built as written.
 
+### Decided not to build, rather than pending
+
+**Luna does not observe herdr's events.** ADR-0027 lists what it would learn by watching —
+a pane closed behind its back, an agent blocking between stages — and none of it is built.
+That is now a decision rather than a gap:
+[ADR-0066](../ADRs/0066-herdrs-panes-are-a-view-and-luna-does-not-react-to-them.md) makes
+herdr's runtime a **view**. Luna owns the log; a pane is where an agent was running, never
+where the task is. herdr can be closed and recreated and a task resumes.
+
+The route that was rejected, with the protocol measured against a running server, is
+[RFC-0007](../RFCs/rfc-0007-luna-hears-herdr-instead-of-only-asking-it.md) — kept OBSOLETE
+because the measurement is worth more than the plan was.
+
 ### Two things worth not misreading
 
 **Agents are not reused across stages.** `internal/herdr/runner.go` reuses an agent
@@ -67,10 +80,6 @@ strands every open task, and this is what notices.
 
 Not divergences — work that is named and not done.
 
-- **`events.subscribe`** ([ADR-0027](../ADRs/0027-luna-runs-under-herdr-as-a-socket-client.md),
-  [ADR-0029](../ADRs/0029-herdr-blocked-becomes-a-luna-block.md)). Luna learns herdr's
-  state only as the return value of its own `agent.prompt`. A pane closed behind Luna's
-  back, or an agent that goes `blocked` between stages, is invisible.
 - **The second timer** (PRD node-0002). Deliberately deferred; the PRD says why.
 - **`registry.RecordCommit` / `Commits`** ([ADR-0065](../ADRs/0065-the-registry-is-a-projection-and-the-log-is-the-state.md)).
   Left unwired on purpose: the commit is the handoff and lives in the log.
