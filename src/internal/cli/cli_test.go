@@ -535,6 +535,75 @@ func TestGateShowSaysWhatIsBeingAskedFor(t *testing.T) {
 	}
 }
 
+// TestGateShowNamesWhatItIsJudgedOn is the fix for a gate answered blind.
+//
+// A `confirm` gate carries no artifact — it asks about work that has not run —
+// so before this the whole prompt was three lines and "approve the plan". On the
+// first real run in somebody else's repository it was approved without the
+// person knowing what was being asked, because nothing on screen said.
+func TestGateShowNamesWhatItIsJudgedOn(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	seedAtFirstGate(t, h, "LUNA-1")
+
+	out := h.mustRun(t, "gate", "show", "LUNA-1")
+
+	if !strings.Contains(out, "judged on") {
+		t.Errorf("the gate does not say what it is judged on:\n%s", out)
+	}
+	// The shipped `scenarios` gate declares two criteria; showing one and hiding
+	// the other would be worse than showing neither.
+	for _, want := range []string{"observable behaviour", "nothing outside the task"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the criterion %q is missing:\n%s", want, out)
+		}
+	}
+}
+
+// TestGateShowNamesTheChecksTheTaskDeclared. The mechanical half is the other
+// thing a person is deciding against, and it is per task rather than per flow.
+func TestGateShowNamesTheChecksTheTaskDeclared(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "gate", "checks", "LUNA-1", "--on", "confirm", "--run", "make ci")
+	seedAtFirstGate(t, h, "LUNA-1")
+
+	out := h.mustRun(t, "gate", "show", "LUNA-1")
+
+	if !strings.Contains(out, "make ci") {
+		t.Errorf("the declared check is not shown:\n%s", out)
+	}
+}
+
+// TestGateShowTellsUndeclaredFromDeclaredEmpty. The two mean different things —
+// one is silence, the other is a person saying this gate has no mechanical
+// answer — and a listing that collapsed them would hide a decision somebody made.
+func TestGateShowTellsUndeclaredFromDeclaredEmpty(t *testing.T) {
+	silent := newHarness(t)
+	silent.mustRun(t, "task", "new", "LUNA-1")
+	seedAtFirstGate(t, silent, "LUNA-1")
+	quiet := silent.mustRun(t, "gate", "show", "LUNA-1")
+
+	decided := newHarness(t)
+	decided.mustRun(t, "task", "new", "LUNA-1")
+	decided.mustRun(t, "gate", "checks", "LUNA-1", "--on", "confirm")
+	seedAtFirstGate(t, decided, "LUNA-1")
+	stated := decided.mustRun(t, "gate", "show", "LUNA-1")
+
+	// Silence points at the command that ends it.
+	if !strings.Contains(quiet, "luna gate checks") {
+		t.Errorf("an undeclared gate does not say how to declare one:\n%s", quiet)
+	}
+	// A deliberate "nothing runs here" says so, and must not offer the command as
+	// though nobody had decided.
+	if !strings.Contains(stated, "declared no mechanical answer") {
+		t.Errorf("a deliberate empty declaration is not reported as one:\n%s", stated)
+	}
+	if strings.Contains(stated, "luna gate checks") {
+		t.Errorf("a gate somebody already decided about was offered the command:\n%s", stated)
+	}
+}
+
 func TestGateApproveResumesTheTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")

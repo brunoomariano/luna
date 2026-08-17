@@ -706,7 +706,7 @@ func answerOpenGate(env Env, sub, id string, rest []string) error {
 
 	switch sub {
 	case "show":
-		return gateShow(env, state)
+		return gateShow(env, state, fsm.DefaultFlow())
 	case "approve":
 		return answer(env, id, fsm.GateApprove{}, "approved")
 	case "reject":
@@ -719,15 +719,77 @@ func answerOpenGate(env Env, sub, id string, rest []string) error {
 	}
 }
 
-func gateShow(env Env, state fsm.TaskState) error {
+// gateShow is what a person reads before answering a gate.
+//
+// It shows the criteria on purpose. A `confirm` gate carries no artifact — it
+// asks about work that has not run yet — so without them the whole prompt was
+// three lines and "approve the plan", and there was nothing on screen to decide
+// against. Measured on the first real run in somebody else's repository: the
+// gate was approved blind, because approving blind was the only option offered.
+//
+// What it does not do is fetch the previous stage's delivery. That is a commit
+// and possibly a large one, and printing it here would bury the question. The
+// command to read it is named instead.
+func gateShow(env Env, state fsm.TaskState, flow []fsm.Stage) error {
 	gate := state.Gate
 
 	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, gate.Kind)
 	fmt.Fprintf(env.Out, "  stage   %s\n", gate.Stage)
 	fmt.Fprintf(env.Out, "  waiting %s\n", gate.Reason)
 
+	printGateCriteria(env, state, flow)
+
 	if gate.Kind == fsm.GateReviewArtifact {
 		fmt.Fprintf(env.Out, "\n%s\n%s\n", gate.Artifact, gate.Payload)
+		return nil
+	}
+
+	// A gate about work ahead has nothing of its own to read, so it points at the
+	// last thing that was delivered — which is what the decision is actually made
+	// against.
+	if state.Base != "" {
+		// The whole sha rather than an abbreviation, because the line below is meant
+		// to be copied — the same reason `luna next` prints the base in full.
+		fmt.Fprintf(env.Out, "\nwhat came before is commit %s\n", state.Base)
+		fmt.Fprintf(env.Out, "  git show %s --stat\n", state.Base)
+	}
+	return nil
+}
+
+// printGateCriteria lists what this gate is judged on and what answers it
+// mechanically, so a person can see both halves before deciding (RFC-0006).
+func printGateCriteria(env Env, state fsm.TaskState, flow []fsm.Stage) {
+	spec := gateSpecFor(flow, state.Gate.Stage)
+	if spec != nil && len(spec.Judge) > 0 {
+		fmt.Fprintf(env.Out, "\njudged on\n")
+		for _, criterion := range spec.Judge {
+			fmt.Fprintf(env.Out, "  - %s\n", criterion)
+		}
+	}
+
+	checks, declared := state.GateChecks[state.Gate.Kind]
+	switch {
+	case declared && len(checks) > 0:
+		fmt.Fprintf(env.Out, "\nanswered mechanically by\n")
+		for _, check := range checks {
+			fmt.Fprintf(env.Out, "  $ %s\n", check)
+		}
+	case declared:
+		fmt.Fprintf(env.Out, "\nthis task declared no mechanical answer for %s\n", state.Gate.Kind)
+	default:
+		fmt.Fprintf(env.Out, "\nnothing declared to answer this mechanically\n")
+		fmt.Fprintf(env.Out, "  luna gate checks %s --on %s --run <command>\n", state.ID, state.Gate.Kind)
+	}
+}
+
+// gateSpecFor finds the gate a stage declares, which is where the criteria live.
+// The pending gate carries what a person is being asked; the flow carries what
+// they are being asked to judge it on.
+func gateSpecFor(flow []fsm.Stage, id fsm.StageID) *fsm.GateSpec {
+	for _, stage := range flow {
+		if stage.ID == id {
+			return stage.Gate
+		}
 	}
 	return nil
 }
