@@ -175,3 +175,55 @@ func TestTheShippedFlowMatchesItself(t *testing.T) {
 		t.Error("the shipped flow must match itself")
 	}
 }
+
+// TestTheShippedFlowFingerprintIsPinned is the guard that was missing, and the
+// only one whose absence could strand every open task in silence.
+//
+// The fingerprint is a task's contract with the flow it was born under: a log
+// whose fingerprint no longer matches refuses to replay (ADR-0046), and the
+// person is told to abandon the task. That is correct when someone changed the
+// flow on purpose, and a disaster when a stage file was edited by accident —
+// a reordered `requires`, a renamed artifact, a stage inserted.
+//
+// Nothing caught that. The two other shipped-flow tests here are reflexive —
+// the empty flow has no fingerprint, and the shipped flow matches itself —
+// which hold no matter what the stock says.
+//
+// So the value is written down. A change to this constant is a deliberate act
+// with a visible diff, and it is the moment to ask what happens to the tasks
+// already open. Editing the stock without touching it fails here instead.
+func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
+	// The shipped stock as it stands, after `discovery` and `commit` left the
+	// flow (ADR-0062) and criticality was declared on the two gates that remained
+	// (ADR-0063).
+	const pinned FlowFingerprint = "a7da0f3c7ef41a06"
+
+	if got := Fingerprint(DefaultFlow()); got != pinned {
+		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+
+			"If the stock was changed on purpose, update the constant — and say in the "+
+			"commit what happens to tasks already open, because every one of them stops "+
+			"replaying (ADR-0046).\n\n"+
+			"If it was not, something edited a stage file by accident and this is the "+
+			"only thing that would have noticed.", got, pinned)
+	}
+}
+
+// TestEveryShippedStageIsCoveredByTheFingerprint is the other half: the digest
+// has to actually read the stock, not a prefix of it.
+//
+// A fingerprint built from the first stage alone would be stable, pinned, and
+// blind to a change anywhere else — so this asserts that touching any one stage
+// moves it.
+func TestEveryShippedStageIsCoveredByTheFingerprint(t *testing.T) {
+	shipped := Fingerprint(DefaultFlow())
+
+	for i := range DefaultFlow() {
+		altered := DefaultFlow()
+		altered[i].ID += "-renamed"
+
+		if got := Fingerprint(altered); got == shipped {
+			t.Errorf("renaming stage %d (%q) did not move the fingerprint — the digest "+
+				"does not cover the whole flow", i, DefaultFlow()[i].ID)
+		}
+	}
+}
