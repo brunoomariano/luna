@@ -837,8 +837,8 @@ func TestTheJailedCommandCarriesEveryPart(t *testing.T) {
 	}
 
 	want := "HERDR_AGENT=claude " + jailBinary +
-		` sh -c 'printf "{\"projects\":{\"%s\":{\"hasTrustDialogAccepted\":true}}}" "$PWD" > ~/.claude.json` +
-		` && exec claude --permission-mode bypassPermissions'`
+		` sh -c '[ -s ~/.claude.json ] || printf "{\"projects\":{\"%s\":{\"hasTrustDialogAccepted\":true}}}" "$PWD" > ~/.claude.json;` +
+		` exec claude --permission-mode bypassPermissions'`
 	if command != want {
 		t.Errorf("the command line is wrong:\n got %s\nwant %s", command, want)
 	}
@@ -938,7 +938,7 @@ func TestClaudeIsTrustedBeforeItAsks(t *testing.T) {
 	for _, want := range []string{
 		"hasTrustDialogAccepted", // the key claude reads
 		"> ~/.claude.json",       // written to the jail's own home
-		"&& exec claude",         // in the SAME jail invocation, or the tmpfs is gone
+		"; exec claude",          // in the SAME jail invocation, or the tmpfs is gone
 	} {
 		if !strings.Contains(command, want) {
 			t.Errorf("the command must carry %q, got %q", want, command)

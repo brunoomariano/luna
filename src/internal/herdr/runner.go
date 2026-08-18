@@ -293,19 +293,21 @@ func jailed(kind, socket string, args []string) (string, error) {
 
 // inJail is the command the sandbox runs for a harness.
 //
-// For claude it is not the bare binary. Inside the jail $HOME is a fresh tmpfs,
-// so ~/.claude.json is empty on every start and claude opens its folder-trust
-// dialog instead of a prompt — measured: the pane sat at "Is this a project you
-// trust?" while herdr reported the agent settled, and the stage closed having
-// delivered nothing. Worse, it was intermittent: the brief's trailing newline
-// sometimes confirmed the dialog by accident, so the same flow passed one stage
-// and starved the next.
+// For claude it is not the bare binary: inside a jail whose $HOME starts empty,
+// ~/.claude.json does not exist and claude opens its folder-trust dialog instead
+// of a prompt — measured: the pane sat at "Is this a project you trust?" while
+// herdr reported the agent settled, and the stage closed having delivered
+// nothing, intermittently, because the brief's trailing newline sometimes
+// confirmed the dialog by accident.
 //
-// The trust is pre-written before claude starts, in the same jail invocation —
-// a separate one would write to a tmpfs that no longer exists. Answering it for
-// the agent is not overriding a person's judgement: the folder is a worktree
-// Luna itself cut from the user's repository, and the boundary is the sandbox,
-// not the dialog (INV-core-7).
+// The trust file is written **only when none exists**. The first version wrote
+// unconditionally, and that was measured destroying the real ~/.claude.json:
+// a jail may bind the user's own claude config into its home read-write, and
+// the overwrite went straight through to the file outside — OAuth included.
+// `[ -s ]` is the guard: a config that is already there, whatever brought it,
+// is the user's and is not Luna's to replace. The dialog can still appear for
+// a worktree path that config has never trusted; that is a stall the retry
+// handles, and it is strictly better than touching a file Luna does not own.
 func inJail(kind string, args []string) string {
 	command := kind
 	for _, arg := range args {
@@ -314,7 +316,8 @@ func inJail(kind string, args []string) string {
 	if kind != "claude" {
 		return command
 	}
-	return `sh -c 'printf "{\"projects\":{\"%s\":{\"hasTrustDialogAccepted\":true}}}" "$PWD" > ~/.claude.json && exec ` + command + "'"
+	return `sh -c '[ -s ~/.claude.json ] || printf "{\"projects\":{\"%s\":{\"hasTrustDialogAccepted\":true}}}" "$PWD" > ~/.claude.json; exec ` +
+		command + `'`
 }
 
 // agentIn reports the agent herdr sees in a pane, if any.
