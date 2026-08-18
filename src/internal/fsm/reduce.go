@@ -30,7 +30,8 @@ type TaskCreated struct {
 	// editable and still lets a replay notice it is reading a log against a
 	// contract that is not the one it was written under.
 	//
-	// Empty means a log written before this field existed, which replays as before.
+	// Empty is a task opened against no flow, which agrees with no flow a build
+	// runs — so a replay refuses it rather than reading it against the shipped one.
 	Flow FlowFingerprint `json:"flow,omitempty"`
 
 	// Statement is what a person said the task is about, recorded with the task
@@ -92,9 +93,9 @@ type GateChecksDeclared struct {
 type Advance struct {
 	Flow []Stage `json:"-"`
 
-	// GateDecision is what the profile decided about the gate this advance walks
-	// into, or empty when the stage opens no gate — and also when the event
-	// predates the field, which is why replay still needs a fallback.
+	// GateDecision is what was decided about the gate this advance walks into, or
+	// empty when the stage opens no gate. An empty value on a stage that does open
+	// one is a gate nobody answered, and it waits.
 	GateDecision GateWaited `json:"gate_decision,omitempty"`
 }
 
@@ -107,16 +108,14 @@ type Advance struct {
 // Flow is carried for the same reason Advance carries it: a task may run a flow
 // other than the shipped one (ADR-0017), and the exit check has to compare the
 // delivery against the contract that task is actually running. It defaults to the
-// shipped flow when empty, so a log written before this field existed still
-// replays.
+// shipped flow when empty, which is what a caller driving the shipped one has.
 type Complete struct {
 	Delivered []Artifact            `json:"delivered"`
 	Evidence  map[Artifact]Evidence `json:"evidence,omitempty"`
 	Flow      []Stage               `json:"-"`
 
 	// GateDecision is what was decided about the review gate this stage's closing
-	// opens, or empty when the stage opens none — and also when the event
-	// predates the field, which replays as the shipped policy.
+	// opens, or empty when the stage opens none.
 	//
 	// It is here for the same reason Advance carries one: a review gate opens on
 	// the way *out* of the stage that produced its artifact (ADR-0064), so this
@@ -129,8 +128,8 @@ type Complete struct {
 	// than a description of it (INV-core-6, RFC-0002).
 	//
 	// Optional, and the omission is deliberate: a mechanical stage may produce no
-	// commit at all, and a log written before the field existed still replays. An
-	// empty commit leaves the base where it was rather than clearing it — losing
+	// commit at all. An empty commit leaves the base where it was rather than
+	// clearing it — losing
 	// the base would send the next stage back to the repository's own HEAD and
 	// silently discard every stage before it.
 	Commit string `json:"commit,omitempty"`
@@ -440,7 +439,7 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	// The decision arrived in the action, and a gate that resolves on its own
 	// still happened — it is just that nobody was asked (ADR-0026).
 	if gate := gateFor(stage); asksAboutWorkAhead(gate) &&
-		gateWaits(a.GateDecision, state.Profile, gate.Kind) {
+		gateWaits(a.GateDecision) {
 		state.Status = StatusAwaitingGate
 		state.Gate = withPayload(gate, state.Evidence)
 		return state, nil
@@ -527,7 +526,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// After the base advances, so a task answering the gate resumes from what the
 	// stage delivered — the gate is a pause in the handoff, not a step before it.
 	if gate := gateFor(stage); asksAboutWorkDone(gate) &&
-		gateWaits(a.GateDecision, state.Profile, gate.Kind) {
+		gateWaits(a.GateDecision) {
 		state.Status = StatusAwaitingGate
 		state.Gate = withPayload(gate, state.Evidence)
 	}
@@ -660,7 +659,7 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	// decision to make with the history in view, not an anomaly of the node
 	// (ADR-0023).
 	if reason := ceilingHit(state.Loop, limits); reason != "" {
-		if gateWaits(a.GateDecision, state.Profile, GateLoopCeiling) {
+		if gateWaits(a.GateDecision) {
 			state.Status = StatusAwaitingGate
 			state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
 			return state, nil
@@ -858,18 +857,22 @@ func GateAhead(state TaskState, flow []Stage) *PendingGate {
 	return gateFor(stage)
 }
 
-// gateWaits reports whether a gate stops the task, preferring the decision the
-// log recorded over anything this build would compute.
+// gateWaits reports whether a gate stops the task, reading the decision the log
+// recorded and never recomputing one.
 //
-// The fallback is not a second policy: it is what an event written before the
-// decision existed replays as. Those logs recorded a name and nothing else, so
-// the shipped policy is the only reading of them available — and it is the same
-// one that produced them (ADR-0026).
-func gateWaits(decision GateWaited, profile Profile, gate GateKind) bool {
-	if waited, recorded := decision.Waits(); recorded {
-		return waited
-	}
-	return ShippedPolicy(profile, gate)
+// An unrecorded decision means the gate waits, which is the same choice `KnobAsk`
+// makes and for the same reason: no missing value may quietly turn a supervised
+// run into an unattended one. The alternative was to re-derive the decision from
+// the task's profile, which is what ADR-0026 rules out — a policy consulted at
+// replay time means editing a profile rewrites how past tasks read.
+//
+// The loop ceiling reads the same answer, and what it does with a `false` is what
+// differs: every other gate carries on, while a ceiling nobody is waiting on
+// blocks rather than loops (ADR-0059). That is the caller's decision, not this
+// one's.
+func gateWaits(decision GateWaited) bool {
+	waited, recorded := decision.Waits()
+	return waited || !recorded
 }
 
 // gateFor returns the gate a stage opens, or nil. The profile decides whether it

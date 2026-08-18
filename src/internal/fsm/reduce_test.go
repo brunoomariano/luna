@@ -732,26 +732,6 @@ func TestBlockingWhatIsAlreadyOverIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProfileTheEngineHasNoPolicyFor covers the fallback path.
-//
-// A profile named in a log may be one the engine has no shipped policy for —
-// either defined by the project, or since deleted from its config. Replay must
-// still work, and the fallback must be the cautious direction: a name that
-// resolves to nothing must not become an unattended run (ADR-0026).
-func TestAProfileTheEngineHasNoPolicyFor(t *testing.T) {
-	configured := Profile("paranoid")
-
-	if !ShippedPolicy(configured, GateConfirm) {
-		t.Error("a profile with no shipped policy must fall back to waiting, not to running free")
-	}
-
-	// The shipped three keep their policies: they are the defaults a project
-	// inherits, not special cases the engine treats differently.
-	if ShippedPolicy(ProfileNightly, GateConfirm) {
-		t.Error("nightly waits for nothing")
-	}
-}
-
 // TestShippedProfilesAreTheDefaults covers the list the engine still owns.
 //
 // It is a seed for configuration rather than a validation list: the engine does

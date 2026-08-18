@@ -5,59 +5,6 @@ import (
 	"testing"
 )
 
-// TestShippedPolicyDecidesWhichGatesWait covers the profile table of ADR-0013.
-//
-// The three profiles are the whole point of the mechanism: the same flow, run at
-// three different levels of supervision. Getting one cell of this table wrong
-// means a run is either more interrupted or more unattended than someone asked
-// for, and the second is the expensive direction.
-//
-// This is the shipped policy, which is also the fallback for an event recorded
-// before decisions were part of the log (ADR-0026).
-func TestShippedPolicyDecidesWhichGatesWait(t *testing.T) {
-	cases := []struct {
-		profile Profile
-		gate    GateKind
-		waits   bool
-	}{
-		{ProfileInteractive, GateConfirm, true},
-		{ProfileInteractive, GateReviewArtifact, true},
-		{ProfileInteractive, GateLoopCeiling, true},
-
-		// Turbo waited for exactly one kind — the write — and that kind left with
-		// ADR-0062, so nothing it can meet waits. This is the reading of a log
-		// written while turbo still decided, and it has to stay what it was.
-		{ProfileTurbo, GateConfirm, false},
-		{ProfileTurbo, GateReviewArtifact, false},
-		{ProfileTurbo, GateLoopCeiling, false},
-
-		{ProfileNightly, GateConfirm, false},
-		{ProfileNightly, GateReviewArtifact, false},
-		{ProfileNightly, GateLoopCeiling, false},
-	}
-
-	for _, c := range cases {
-		if got := ShippedPolicy(c.profile, c.gate); got != c.waits {
-			t.Errorf("%s + %s: want waits=%v, got %v", c.profile, c.gate, c.waits, got)
-		}
-	}
-}
-
-// TestAProfileWithNoShippedPolicyWaitsForEverything covers the default branch.
-//
-// The two failure modes are not symmetric. Guessing permissive would let a name
-// that resolved to nothing turn a supervised run into an unattended one; guessing
-// cautious only stops a task that would have carried on.
-func TestAProfileWithNoShippedPolicyWaitsForEverything(t *testing.T) {
-	typo := Profile("interactve")
-
-	for _, gate := range []GateKind{GateConfirm, GateReviewArtifact, GateLoopCeiling} {
-		if !ShippedPolicy(typo, gate) {
-			t.Errorf("an unrecognised profile must not silently become unattended (%s)", gate)
-		}
-	}
-}
-
 // TestTaskCreatedStampsKindAndProfile covers the opening event.
 //
 // It is what makes the log self-describing: replay reads the kind and the profile

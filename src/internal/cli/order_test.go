@@ -145,11 +145,21 @@ func TestAStageThatDeliveredLessThanItOwedDoesNotClose(t *testing.T) {
 
 // enterStage opens the stage the order named. `next` is a read and `done`
 // reports a finish, so the transition between them belongs to the engine.
+//
+// The decision is recorded rather than left empty, because an `Advance` that
+// records nothing is a gate nobody answered and the reducer stops at it. The one
+// `Advance` in the product always carries a decision (lead.go); leaving it off
+// here was the harness taking a shortcut the real caller cannot, and it only went
+// unnoticed while an unrecorded decision fell back to the profile.
+//
+// `passed` is what these tests mean: they drive a task whose gates are not the
+// subject, and a gate the profile let through is exactly that (ADR-0026).
 func enterStage(t *testing.T, h *harness, id string) {
 	t.Helper()
 
 	state := mustState(t, h, id)
-	if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
+	advance := fsm.Advance{Flow: fsm.DefaultFlow(), GateDecision: fsm.GateDecisionPassed}
+	if err := h.env.Store.AppendActionAt(id, state.Seq, advance); err != nil {
 		t.Fatalf("entering the stage: %v", err)
 	}
 }

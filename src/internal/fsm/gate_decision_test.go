@@ -48,27 +48,23 @@ func TestARecordedWaitHoldsAgainstAPermissiveProfile(t *testing.T) {
 	}
 }
 
-// TestAnEventWithNoDecisionFallsBackToTheShippedPolicy covers the old log.
+// TestAnEventWithNoDecisionWaitsWhateverTheProfile covers what an unrecorded
+// decision means, and that the profile no longer changes it.
 //
-// Every Advance written before this field existed carries nothing. Those tasks
-// have to keep replaying, and the shipped policy is the only reading of them
-// available — it is also the one that produced them.
-func TestAnEventWithNoDecisionFallsBackToTheShippedPolicy(t *testing.T) {
-	cases := []struct {
-		profile Profile
-		want    Status
-	}{
-		{ProfileInteractive, StatusAwaitingGate},
-		{ProfileNightly, StatusRunning},
-	}
-
-	for _, c := range cases {
-		state, err := Reduce(start(t, c.profile), Advance{Flow: gatedFlow()})
+// It used to fall back to the profile's own policy, so the same event replayed
+// two ways depending on a name — which is what ADR-0026 rules out: a policy read
+// at replay time means editing a profile rewrites how past tasks read. What
+// replaced it is the conservative reading, the same one `KnobAsk` takes: a gate
+// nobody recorded an answer for is a gate to ask about.
+func TestAnEventWithNoDecisionWaitsWhateverTheProfile(t *testing.T) {
+	for _, profile := range []Profile{ProfileInteractive, ProfileNightly} {
+		state, err := Reduce(start(t, profile), Advance{Flow: gatedFlow()})
 		if err != nil {
-			t.Fatalf("%s: advancing: %v", c.profile, err)
+			t.Fatalf("%s: advancing: %v", profile, err)
 		}
-		if state.Status != c.want {
-			t.Errorf("%s with no recorded decision: want %q, got %q", c.profile, c.want, state.Status)
+		if state.Status != StatusAwaitingGate {
+			t.Errorf("%s with no recorded decision: want %q, got %q",
+				profile, StatusAwaitingGate, state.Status)
 		}
 	}
 }
@@ -106,19 +102,24 @@ func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 			"the silent failure INV-core-8 forbids")
 	}
 
-	// The same state with no decision recorded falls back, and interactive waits.
-	fellBack, err := Reduce(spent, ReviewFinding{Aligned: true})
+	// The same state with no decision recorded waits, because an unrecorded
+	// decision is a gate nobody answered rather than one nobody needs.
+	unrecorded, err := Reduce(spent, ReviewFinding{Aligned: true})
 	if err != nil {
 		t.Fatalf("reviewing: %v", err)
 	}
-	if fellBack.Status != StatusAwaitingGate {
-		t.Errorf("with no decision recorded the shipped policy waits, got %q", fellBack.Status)
+	if unrecorded.Status != StatusAwaitingGate {
+		t.Errorf("an unrecorded decision asks rather than resolving, got %q", unrecorded.Status)
 	}
 }
 
-// TestAnUnattendedRunStopsAtTheCeiling is the same rule through the profile that
-// makes it matter. `nightly` stops at nothing, and "nothing" cannot include the
-// ceiling that exists to stop a loop burning tokens.
+// TestAnUnattendedRunStopsAtTheCeiling is the rule that matters most about a
+// spent ceiling: a run with nobody watching cannot answer a gate, so the ceiling
+// that exists to stop a loop burning tokens has to end the task rather than
+// suspend it.
+//
+// The decision arrives in the action rather than being read off the profile — a
+// run nobody is supervising is one whose lead let the gate through (ADR-0063).
 func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
 	spent := TaskState{
 		Status:   StatusRunning,
@@ -129,7 +130,7 @@ func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
 		Evidence: map[Artifact]Evidence{},
 	}
 
-	after, err := Reduce(spent, ReviewFinding{Aligned: true})
+	after, err := Reduce(spent, ReviewFinding{Aligned: true, GateDecision: GateDecisionPassed})
 	if err != nil {
 		t.Fatalf("reviewing: %v", err)
 	}

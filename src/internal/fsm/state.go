@@ -21,7 +21,7 @@ const (
 	// stage finished, the status should say so.
 	StatusStageDone Status = "stage_done"
 
-	// StatusAwaitingGate is a planned pause. The profile foresaw it, and the slot
+	// StatusAwaitingGate is a planned pause. The stage declared it, and the slot
 	// is released while it waits (INV-core-10) — this is not a failure, and it
 	// must not be reported as one.
 	StatusAwaitingGate Status = "awaiting_gate"
@@ -56,35 +56,34 @@ type Profile string
 // stage's declaration and the knob (ADR-0063) — and what they still carry is the
 // watchdog budget.
 //
-// They are kept because a task records the profile it ran under and replay has to
-// reproduce it. Removing the names would make every existing log unreadable, so
-// they survive as history with nothing left to decide.
+// A task records the profile it ran under, so the name stays part of the log's
+// vocabulary even where it decides nothing.
 const (
 	ProfileInteractive Profile = "interactive"
 	ProfileTurbo       Profile = "turbo"
 	ProfileNightly     Profile = "nightly"
 )
 
-// GateWaited is whether a gate stopped the task, decided by the profile before
-// the action was recorded.
+// GateWaited is whether a gate stopped the task, decided before the action was
+// recorded and never recomputed at replay (ADR-0026).
 //
-// It is a tri-state rather than a bool because the log has to distinguish "the
-// profile said carry on" from "this event predates the field". A bool would make
-// those identical, and the older one has to fall back to recomputing while the
-// newer one must not (ADR-0026).
+// It is a tri-state rather than a bool because the log has to distinguish "it was
+// decided that nobody would be asked" from "nothing was decided here". A bool
+// would make those identical, and they are not: the first is a gate that
+// resolved, the second is one still owed an answer.
 type GateWaited string
 
 const (
-	// GateDecisionAbsent is an event written before the decision was recorded.
-	// Replaying one falls back to the shipped policy, which is the best guess
-	// available and the only behaviour that keeps old logs replaying.
+	// GateDecisionAbsent is a gate nobody decided about — most often a stage that
+	// opens none at all. Where a stage does open one, it is read as waiting: no
+	// unrecorded value may turn a supervised run into an unattended one.
 	GateDecisionAbsent GateWaited = ""
 
 	// GateDecisionWaited means the gate stopped the task and a human answered it.
 	GateDecisionWaited GateWaited = "waited"
 
-	// GateDecisionPassed means the gate was reached and the profile let it
-	// through. It still happened — nobody was asked (ADR-0013).
+	// GateDecisionPassed means the gate was reached and let through. It still
+	// happened — nobody was asked (ADR-0013).
 	GateDecisionPassed GateWaited = "passed"
 
 	// GateDecisionChecked means the commands declared for this gate ran over the
@@ -97,14 +96,15 @@ const (
 	// in advance, because the knob reached the gate's criticality (RFC-0006).
 	//
 	// It is separate from GateDecisionPassed for the reason the whole tri-state
-	// exists: "nobody was asked because the profile said so" and "nobody was asked
-	// because a model answered" are different claims about the same transition,
-	// and an audit that could not tell them apart would be the weaker for it.
+	// exists: "nobody was asked because nothing was declared to ask about" and
+	// "nobody was asked because a model answered" are different claims about the
+	// same transition, and an audit that could not tell them apart would be the
+	// weaker for it.
 	GateDecisionJudged GateWaited = "judged"
 )
 
 // Waits reports what the recorded decision says, and whether it said anything at
-// all. A caller that gets false must fall back to a policy.
+// all. A caller that gets recorded=false has a gate nothing answered.
 //
 // The three "did not wait" values collapse here on purpose: for the question
 // *did the task stop*, a gate answered by a command and one answered by the lead
@@ -135,44 +135,9 @@ func (d GateWaited) AnsweredBy() string {
 	case GateDecisionJudged:
 		return "the lead"
 	case GateDecisionPassed:
-		return "nobody: the profile let it through"
+		return "nobody: the gate declared nothing to answer it with"
 	default:
 		return "unrecorded"
-	}
-}
-
-// ShippedPolicy is what the profiles decided, for logs written while they still
-// decided anything.
-//
-// It is the replay fallback and nothing else now: an event recorded before the
-// decision was part of the log has only the profile name to be read by, and this
-// is the reading that produced it. Profiles no longer govern a gate that is
-// opening today — the stage declares what answers it and the knob decides who
-// does (ADR-0063) — so nothing consults this for a new decision.
-//
-// It is also not consulted for a task whose events carry a decision: those replay
-// from what was recorded, so editing anything cannot rewrite them (ADR-0026).
-func ShippedPolicy(p Profile, gate GateKind) bool {
-	switch p {
-	case ProfileNightly:
-		return false
-	case ProfileTurbo:
-		// Turbo waited for exactly one gate kind — the write — and that kind left
-		// the flow with ADR-0062. Nothing under turbo waits any more, which is why
-		// it and nightly had silently become the same profile (ADR-0063).
-		//
-		// It answers false rather than being deleted because this is the reading of
-		// a log written while turbo still decided, and that reading has to stay
-		// what it was: no gate the flow could open was `confirm-write`, so every
-		// gate a turbo task actually met resolved on its own.
-		return false
-	case ProfileInteractive:
-		return true
-	default:
-		// A profile this build has no policy for is treated as the most cautious
-		// one. Guessing the permissive answer would let a name that resolved to
-		// nothing turn a supervised run into an unattended one.
-		return true
 	}
 }
 
@@ -310,7 +275,7 @@ type TaskState struct {
 	// which contract the history was written against, and asking the caller for
 	// what the log already holds would let the two disagree.
 	//
-	// Empty means a log written before the field existed.
+	// Empty is a task opened against no flow, which no build's flow agrees with.
 	Flow FlowFingerprint
 
 	// Base is the commit the last closed stage delivered, and the one the next
@@ -391,15 +356,14 @@ func (s TaskState) NeedsHuman() bool {
 	return s.Status == StatusAwaitingGate || s.Status == StatusBlocked
 }
 
-// ShippedProfiles are the three names ShippedPolicy has an answer for.
+// ShippedProfiles are the three names Luna comes with.
 //
 // It is no longer where the defaults come from — those are files now
 // (ADR-0060) — and it is not a list the engine validates against: a name it has
 // never heard of is a profile someone defined, not an error (ADR-0026).
 //
-// What it still is: the domain of the replay fallback. `ShippedPolicy` answers
-// for exactly these three and treats everything else as the most cautious
-// reading, so this is the list that has to match `src/stock/profiles/`. A test
+// What it still is: the list that has to match `src/stock/profiles/`, so that a
+// name shipped in Go and a name shipped as a file cannot drift apart. A test
 // walks it to compare the two, and without the list that comparison would have
 // to hardcode the names it is checking.
 func ShippedProfiles() []Profile {
