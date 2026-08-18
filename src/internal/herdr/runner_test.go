@@ -6,12 +6,80 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+// withSandboxOnPath puts a stub `ai-jail` where `jailed` will find it.
+//
+// Luna refuses to start an agent without a sandbox (ADR-0069), so every test that
+// starts one needs the binary to exist. Taking it from the machine's own PATH is
+// what these tests did implicitly, and it made them pass on a developer's machine
+// — where mise installs ai-jail — and fail on CI, where nothing does. Neither
+// answer was about the code under test.
+//
+// A stub rather than a stubbed-out lookup: `jailed` runs the real
+// `exec.LookPath`, so the sandbox's absence stays a condition a test can create
+// (TestWithoutTheSandboxLunaRefusesToStartAnAgent creates it by emptying PATH)
+// rather than a branch nothing reaches. What the stub does is irrelevant — no
+// test here executes the command it builds; herdr would.
+func withSandboxOnPath(t *testing.T) {
+	t.Helper()
+
+	dir := t.TempDir()
+	stub := filepath.Join(dir, jailBinary)
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexec \"$@\"\n"), 0o755); err != nil {
+		t.Fatalf("writing the sandbox stub: %v", err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// fastRunner is a socketRunner whose startup waits are short enough to test.
+//
+// The real waits are measured against a live herdr — two seconds between retries,
+// eight for a cold agent to become promptable — and a test driving a fake socket
+// gains nothing by sleeping through them. Three tests spent 18 of the suite's 28
+// seconds here, which no CI hardware can recover: a sleep is a sleep.
+//
+// The values are small rather than zero so the retry paths still take more than
+// one turn, which is the behaviour several of these tests are about.
+func fastRunner(t *testing.T, path string) *socketRunner {
+	t.Helper()
+
+	return &socketRunner{
+		client:     dialFake(t, path),
+		Repo:       "/repo",
+		Settle:     time.Minute,
+		retryWait:  time.Millisecond,
+		bootSettle: time.Millisecond,
+	}
+}
+
+// TestTheMeasuredWaitsAreWhatAProductionRunnerUses guards the default the tests
+// deliberately do not use.
+//
+// Every test above overrides the startup waits so the suite does not sleep, which
+// means nothing else exercises the values a real run gets. Without this, dropping
+// the constants — or a `fastRunner` that leaked into `NewRunner` — would leave the
+// whole suite green while a live agent was prompted before it could answer, which
+// is the stall the eight seconds were measured to avoid.
+func TestTheMeasuredWaitsAreWhatAProductionRunnerUses(t *testing.T) {
+	runner, ok := NewRunner(nil, "/repo", time.Minute).(*socketRunner)
+	if !ok {
+		t.Fatal("NewRunner no longer returns a socketRunner")
+	}
+
+	if got := runner.paneWait(); got != paneSettleWait {
+		t.Errorf("pane wait = %v, want the measured %v", got, paneSettleWait)
+	}
+	if got := runner.agentBoot(); got != agentBootSettle {
+		t.Errorf("agent boot settle = %v, want the measured %v", got, agentBootSettle)
+	}
+}
 
 // fakeServer is a herdr-shaped socket: one exchange per connection, newline
 // delimited JSON, string ids.
@@ -267,6 +335,7 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 // refuses with `agent_pane_busy`. The identical call succeeds seconds later. Not
 // retrying meant every task blocked on its first stage.
 func TestStartAgentWaitsForThePaneToReachItsPrompt(t *testing.T) {
+	withSandboxOnPath(t)
 	server, path := newFakeServer(t)
 	server.replyOnce(
 		"agent.list",
@@ -279,7 +348,7 @@ func TestStartAgentWaitsForThePaneToReachItsPrompt(t *testing.T) {
 		`{"id":"1","result":{"type":"ok"}}`,
 	)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
 	if err != nil {
 		t.Fatalf("a busy pane is a wait, not a failure: %v", err)
@@ -297,6 +366,7 @@ func TestStartAgentWaitsForThePaneToReachItsPrompt(t *testing.T) {
 // own command line, and `HERDR_AGENT` is herdr's documented way to keep detecting
 // it through one.
 func TestStartAgentRunsTheAgentInsideTheSandbox(t *testing.T) {
+	withSandboxOnPath(t)
 	server, path := newFakeServer(t)
 	// Empty first — nothing to reuse — then present, which is the agent herdr
 	// detects a moment after the command runs.
@@ -307,7 +377,7 @@ func TestStartAgentRunsTheAgentInsideTheSandbox(t *testing.T) {
 	)
 	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"},
 		"claude", "luna-1", []string{"--permission-mode", "bypassPermissions"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -331,7 +401,7 @@ func TestAnAgentAlreadyInThePaneIsReused(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	pane, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -354,7 +424,8 @@ func TestPromptSubmitsAndWaitsInOneCall(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","result":{"type":"agent_prompted","agent":{"agent_status":"idle"}}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: 90 * time.Second}
+	runner := fastRunner(t, path)
+	runner.Settle = 90 * time.Second
 	status, err := runner.Prompt(context.Background(), "luna-1", "do the thing")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -395,7 +466,7 @@ func TestPromptWaitsForTheAgentToBecomeReady(t *testing.T) {
 		`{"id":"1","result":{"type":"agent_prompted","agent":{"agent_status":"done"}}}`,
 	)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	status, err := runner.Prompt(context.Background(), "luna-1", "go")
 	if err != nil {
 		t.Fatalf("an agent still starting is a wait, not a failure: %v", err)
@@ -416,7 +487,7 @@ func TestAPromptWithNoStatusIsUnknown(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","result":{"type":"agent_prompted"}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	status, err := runner.Prompt(context.Background(), "luna-1", "go")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -525,7 +596,7 @@ func TestPromptReportsAStallRatherThanRetryingIt(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","error":{"code":"agent_prompt_stalled","message":"no observed state change"}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	_, err := runner.Prompt(context.Background(), "luna-1", "go")
 
 	if err == nil {
@@ -593,7 +664,7 @@ func TestAPromptFailureThatIsNotARaceIsReported(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","error":{"code":"agent_not_found","message":"no such agent"}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	_, err := runner.Prompt(context.Background(), "luna-1", "go")
 
 	if err == nil {
@@ -612,7 +683,8 @@ func TestAPromptWithNoBudgetStillHasADeadline(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","result":{"type":"agent_prompted","agent":{"agent_status":"idle"}}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo"}
+	runner := fastRunner(t, path)
+	runner.Settle = 0
 	if _, err := runner.Prompt(context.Background(), "luna-1", "go"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -758,6 +830,7 @@ func TestWithoutTheSandboxLunaRefusesToStartAnAgent(t *testing.T) {
 // HERDR_AGENT and herdr reports no agent at all; no wrapper and the containment
 // is gone while the permissions stay; no args and the agent stops to ask.
 func TestTheJailedCommandCarriesEveryPart(t *testing.T) {
+	withSandboxOnPath(t)
 	command, err := jailed("claude", []string{"--permission-mode", "bypassPermissions"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -775,11 +848,12 @@ func TestTheJailedCommandCarriesEveryPart(t *testing.T) {
 // `agent_not_found`, several seconds later and with no clue why — so the wait
 // gives up here and names the pane instead.
 func TestAnAgentThatNeverAppearsIsReported(t *testing.T) {
+	withSandboxOnPath(t)
 	server, path := newFakeServer(t)
 	server.reply("agent.list", `{"id":"1","result":{"type":"agent_list","agents":[]}}`)
 	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 
@@ -798,11 +872,12 @@ func TestAnAgentThatNeverAppearsIsReported(t *testing.T) {
 // the same either way, and failing the stage over a listing that did not answer
 // would stop work that could have run.
 func TestAnUnreadableAgentListStartsRatherThanFails(t *testing.T) {
+	withSandboxOnPath(t)
 	server, path := newFakeServer(t)
 	server.reply("agent.list", `{"id":"1","error":{"code":"whatever","message":"not answering"}}`)
 	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
 
-	runner := &socketRunner{client: dialFake(t, path), Repo: "/repo", Settle: time.Minute}
+	runner := fastRunner(t, path)
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 

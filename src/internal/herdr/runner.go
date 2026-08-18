@@ -31,6 +31,37 @@ type socketRunner struct {
 	// Settle bounds how long a prompt waits for the agent to stop working. It is
 	// the budget the profile decided (ADR-0034), handed down by the caller.
 	Settle time.Duration
+
+	// retryWait and bootSettle are the startup waits, overridable so a test can
+	// exercise the retry logic without sleeping through it.
+	//
+	// They are fields rather than the constants they default to because the
+	// constants are measured against a real herdr — eight seconds for a cold
+	// claude to answer its first prompt — and a test driving a fake socket waits
+	// that long for nothing. Measured: three tests spent 18 of the suite's 28
+	// seconds asleep, and no amount of CI hardware recovers a `time.Sleep`.
+	//
+	// Zero means the measured default, so a production caller that sets neither
+	// gets exactly what it got before these existed. Nothing outside a test sets
+	// them (RNF: the timings a real run uses stay the measured ones).
+	retryWait  time.Duration
+	bootSettle time.Duration
+}
+
+// waits report the startup timings, defaulting to what was measured against a
+// live herdr.
+func (r *socketRunner) paneWait() time.Duration {
+	if r.retryWait > 0 {
+		return r.retryWait
+	}
+	return paneSettleWait
+}
+
+func (r *socketRunner) agentBoot() time.Duration {
+	if r.bootSettle > 0 {
+		return r.bootSettle
+	}
+	return agentBootSettle
 }
 
 // NewRunner builds a Runner backed by a herdr socket.
@@ -188,7 +219,7 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 	// the identical call fails and then succeeds seconds later with nothing else
 	// changed. Retrying briefly is the difference between a working run and a
 	// block on the first stage of every task.
-	if err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
+	if err := retry(ctx, paneSettleAttempts, r.paneWait(), func() error {
 		// `pane.send_text` rather than a "run a command" method, because herdr has
 		// none: the protocol's verbs are typed at panes and agents, and the way to
 		// start a process is to type at the shell that is already there. The
@@ -286,7 +317,7 @@ func (r *socketRunner) agentIn(pane string) (string, bool) {
 // poll because there is nothing to poll for: `interactive_ready` is absent from a
 // `pane.send_text` agent, which is exactly the field that would have said so.
 func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
-	if err := retry(ctx, agentStartAttempts, paneSettleWait, func() error {
+	if err := retry(ctx, agentStartAttempts, r.paneWait(), func() error {
 		if _, running := r.agentIn(pane); running {
 			return nil
 		}
@@ -296,7 +327,7 @@ func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
 	}
 
 	select {
-	case <-time.After(agentBootSettle):
+	case <-time.After(r.agentBoot()):
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -327,7 +358,7 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 	// The agent is registered before it is interactive, so a prompt sent straight
 	// after `agent.start` can be refused with `agent_not_ready`. Same shape as the
 	// pane race above: the identical call succeeds moments later.
-	err := retry(ctx, paneSettleAttempts, paneSettleWait, func() error {
+	err := retry(ctx, paneSettleAttempts, r.paneWait(), func() error {
 		return r.client.Call("agent.prompt", map[string]any{
 			"target": pane,
 			"text":   text,

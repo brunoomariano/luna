@@ -177,5 +177,22 @@ func runHarness(t *testing.T, agent string, args []string) string {
 	if err != nil && len(out) == 0 {
 		t.Skipf("could not run %s: %v", agent, err)
 	}
-	return strings.ToLower(string(out))
+
+	answer := strings.ToLower(string(out))
+
+	// A launcher that could not produce the harness at all answers instead of it,
+	// and its answer mentions no flag — so every assertion about what the harness
+	// accepted or refused reads as though the harness had been permissive.
+	//
+	// Measured: a mise shim for an agent with no version selected exits non-zero
+	// with `no version is set for shim: claude`, which contains neither "unknown
+	// option" nor "unknown flag". The control assertion — that an invented flag is
+	// refused — then failed, reporting a version-drift alarm about a harness that
+	// never ran. `exec.LookPath` cannot catch this: the shim is on PATH and
+	// executable, it just resolves to nothing.
+	if strings.Contains(answer, "no version is set") {
+		t.Skipf("%s is on PATH but not resolvable: %s", agent, answer)
+	}
+
+	return answer
 }
