@@ -71,7 +71,13 @@ func goFlow() []Stage {
 			ID:       "refactor",
 			Role:     "cleaner",
 			Requires: []Artifact{"code", "tests_green"},
-			Produces: []Artifact{"code"},
+			Produces: []Artifact{"code", "tests_green"},
+			Verifiers: map[Artifact]Verifier{
+				// The stage rewrites code that was already green, so the green is
+				// earned again rather than inherited (ADR-0020, INV-core-4).
+				"tests_green": Command{Run: "make test", Scope: ScopeTargeted},
+				"code":        Existence{},
+			},
 		},
 		{
 			ID: "verify",
@@ -167,11 +173,16 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	// And the recorded value, so a change to *both* is still caught. Two things
 	// drifting together is exactly what a comparison between them cannot see.
 	//
-	// It moved once, deliberately: ADR-0062 removed `commit` (Luna does not
-	// integrate) and `discovery` went with it (a task is always about the current
-	// repository). Any other change to this constant is a flow change that has to
-	// be argued for, because every open task's log was written under the old one.
-	const shipped = "a7da0f3c7ef41a06"
+	// It has moved twice, both deliberately. ADR-0062 removed `commit` (Luna does
+	// not integrate) and `discovery` went with it (a task is always about the
+	// current repository). Then `refactor` gained `tests_green`: it rewrites code
+	// that was already green, so the green is earned again rather than inherited,
+	// and until then a stage whose whole purpose is rewriting working code closed
+	// without running anything (INV-core-4, ADR-0020).
+	//
+	// Any other change to this constant is a flow change that has to be argued
+	// for, because every open task's log was written under the old one.
+	const shipped = "e29ecd956d3ac836"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)

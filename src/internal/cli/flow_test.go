@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
 // TestFlowCheckReportsAnOpenTask covers the primary defence of ADR-0046.
@@ -258,12 +259,17 @@ func TestNoNotifierIsNotAnError(t *testing.T) {
 	}
 }
 
-// TestRetryExhaustionBlocksAndNotifies is INV-core-8's first acceptance criterion,
-// and it was unreachable until this round.
+// TestRetryExhaustionBlocksAndNotifies is INV-core-8's first acceptance
+// criterion: the budget is spent, the task ends `blocked`, **and** somebody is
+// told.
 //
-// Both halves were missing: with no Judge the lead blocked on the first failure,
-// so the budget was never exhausted, and with no notifier there was nothing to
-// emit. The criterion asked for a test of behaviour that had no code path.
+// It drives the real lead against a node that always fails, rather than handing
+// `reportRun` a TaskState with `Retry{Attempts: 3}` written into it. The
+// fabricated version passed identically with `Attempts: 0` — the retry was
+// decoration, and a refactor that broke exhaustion in the lead would have left
+// this green. The criterion asks for both halves in one test because the seam
+// between them is what has no other cover: `lead` exhausts, `cli` notifies, and
+// nothing crossed from one to the other.
 func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
 	h := newHarness(t)
 
@@ -273,26 +279,57 @@ func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
 		return nil
 	}
 
-	// A task whose budget is spent: the next failure is the one that escalates.
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
-		t.Fatalf("creating: %v", err)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore")
+
+	// A node that never succeeds, and a judge that keeps asking for another go:
+	// the budget is the only thing that can end this, which is the point.
+	node := &alwaysFailingNode{}
+	conductor := &lead.Lead{
+		Store: h.env.Store,
+		Node:  node,
+		Judge: retryingJudge{},
+		Ask:   func(context.Context, string) (string, error) { return "APPROVE", nil },
 	}
 
-	blocked := fsm.TaskState{
-		Status:  fsm.StatusBlocked,
-		Blocked: `stage "build" failed 3 times: the node broke`,
-		Retry:   fsm.Retry{Attempts: 3, Max: 2},
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("running: %v", err)
 	}
-	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
+	if err := reportRun(h.env, "LUNA-1", state); err != nil {
 		t.Fatalf("reporting: %v", err)
 	}
 
+	if state.Status != fsm.StatusBlocked {
+		t.Fatalf("an exhausted budget must end blocked, got %q", state.Status)
+	}
+	// Reached rather than declared: the state got here by failing until the
+	// reducer stopped allowing it.
+	if state.Retry.Attempts == 0 {
+		t.Error("the budget was never spent, so the exhaustion path was not exercised")
+	}
 	if notified != 1 {
 		t.Errorf("an exhausted budget must notify exactly once, got %d", notified)
 	}
 	if !strings.Contains(h.out.String(), "blocked") {
 		t.Errorf("and say so in the terminal too, got %q", h.out.String())
 	}
+}
+
+// alwaysFailingNode is a stage that never delivers, so the retry budget is the
+// only thing that can end the run.
+type alwaysFailingNode struct{ calls int }
+
+func (n *alwaysFailingNode) Run(context.Context, fsm.TaskState, fsm.Stage) (lead.Result, error) {
+	n.calls++
+	return lead.Result{}, errors.New("the node broke")
+}
+
+// retryingJudge always asks for another attempt, so nothing but the ceiling stops
+// the loop — which is what makes this a test of the ceiling.
+type retryingJudge struct{}
+
+func (retryingJudge) OnFailure(context.Context, fsm.TaskState, string) lead.Decision {
+	return lead.DecideRetry
 }
 
 // TestFlowCheckSaysWhichKnobReachesEachGate is what makes the knob choosable.

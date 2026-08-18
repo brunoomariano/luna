@@ -231,3 +231,143 @@ func TestAStageDoesNotCloseWithoutItsHumanFacingArtifact(t *testing.T) {
 		t.Error("a human-facing artifact entered the flow's context")
 	}
 }
+
+// TestEveryMechanicallyProvableArtifactRunsSomething is INV-core-4's first
+// criterion, and the one the shipped flow had already broken.
+//
+// The rule is that an artifact closing on `existence` alone must be a **declared**
+// choice rather than the default nobody noticed. The parser enforces half of it —
+// `TestAnArtifactWithNoVerifierIsRefused` — but a TOML file cannot tell a choice
+// from an omission: `kind = "existence"` is what both look like.
+//
+// What separates them is whether a command *could* have proved it. That is not a
+// property the engine can compute, so this test names the artifacts nothing can
+// prove and demands a command for everything else. Adding an artifact to that
+// list is the declaration, and it is a line somebody has to write in a test that
+// says why.
+//
+// It caught `refactor`: it required `tests_green`, produced only `code`, and
+// `code` closes on existence — so the stage whose whole purpose is rewriting
+// working code closed without running anything. It produces `tests_green` now,
+// re-earning the green rather than inheriting it (ADR-0020).
+func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
+	// Artifacts no command can prove, each for a reason that is about the artifact
+	// and not about the effort of writing the check.
+	unprovable := map[Artifact]string{
+		"worktree":    "a directory either exists or the stage that makes it failed",
+		"briefing":    "prose: what it says is judgement, and running it is not a thing",
+		"kind":        "a classification, which is a word rather than a state of the repository",
+		"root_cause":  "prose about why something happened",
+		"scenarios":   "prose a person reads to decide whether the work was understood",
+		"approach":    "prose naming what will change",
+		"contract":    "prose stating obligations; whether it is right is the gate's question",
+		"code":        "the compiler is part of `make test`, and a non-empty diff proves nothing",
+		"dod_checked": "a checklist a person reads; recording it as a passing check is the lie ADR-0032 names",
+
+		// The reports. What each says is judgement — whether the QA found the right
+		// gaps, whether the review is fair — and a command can only ever prove that
+		// a file was written. They declare a path instead, so at least the writing
+		// is git's answer rather than the agent's (ADR-0070).
+		"qa_report":       "a report: what it found is judgement, and only that it exists is checkable",
+		"review_report":   "a report: whether the review is right is not a thing a command decides",
+		"mutation_report": "a report: the mutation run is the agent's, and its reading is judgement",
+		"arch_report":     "a report: an assessment of structure, which no command computes",
+
+		// Deliberately here rather than given a command, and the reason is worth
+		// writing down: `min_case` is a runnable reproduction, so a command *could*
+		// run it — but what it would prove is that the bug still reproduces, which
+		// is true before the fix and false after it. A check that must fail at one
+		// end of the stage and pass at the other is two checks wearing one name.
+		"min_case": "a reproduction: running it proves the bug is present, which is not what the stage owes",
+	}
+
+	for _, stage := range DefaultFlow() {
+		owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+		for _, artifact := range owed {
+			if why, named := unprovable[artifact]; named {
+				if why == "" {
+					t.Errorf("%s is listed as unprovable with no reason", artifact)
+				}
+				continue
+			}
+
+			if _, runs := VerifierFor(stage, artifact).(Command); !runs {
+				t.Errorf("%s produces %s and nothing runs to prove it — either give it a "+
+					"command, or add it to `unprovable` above with the reason no command can "+
+					"(INV-core-4)", stage.ID, artifact)
+			}
+		}
+	}
+}
+
+// TestTheUnprovableListDescribesTheFlowItGuards keeps the list above honest.
+//
+// A name left in it after the artifact is gone is a hole nobody sees: the next
+// artifact to take that name inherits an exemption argued for something else.
+func TestTheUnprovableListDescribesTheFlowItGuards(t *testing.T) {
+	produced := map[Artifact]bool{}
+	for _, stage := range DefaultFlow() {
+		for _, a := range append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...) {
+			produced[a] = true
+		}
+	}
+
+	// Rebuilt rather than shared with the test above, so the two cannot drift into
+	// agreeing with each other about a list neither checks.
+	for _, artifact := range []Artifact{
+		"worktree", "briefing", "kind", "root_cause", "scenarios",
+		"approach", "contract", "code", "dod_checked", "min_case",
+		"qa_report", "review_report", "mutation_report", "arch_report",
+	} {
+		if !produced[artifact] {
+			t.Errorf("%s is exempted from proof and no stage produces it — the exemption "+
+				"outlived the artifact", artifact)
+		}
+	}
+}
+
+// TestAStageThatRewritesWhatItWasGivenReprovesIt is the other half of
+// INV-core-4's first criterion, and the half that caught the real defect.
+//
+// The test above asks whether each produced artifact has a proof. It cannot see
+// the failure `refactor` had, because that one was about an artifact the stage
+// did *not* produce: it required `tests_green`, rewrote the `code` that green
+// attested to, and produced only `code` — so the green carried over from `build`,
+// describing code that no longer existed. That is the invalidation ADR-0020
+// names, arrived at from the producing side.
+//
+// The rule: a stage that produces an artifact it also requires has rewritten it,
+// and everything that was proven *about* the old one has to be proven again.
+func TestAStageThatRewritesWhatItWasGivenReprovesIt(t *testing.T) {
+	for _, stage := range DefaultFlow() {
+		required := map[Artifact]bool{}
+		for _, a := range stage.Requires {
+			required[a] = true
+		}
+
+		rewrites := false
+		for _, a := range stage.Produces {
+			if required[a] {
+				rewrites = true
+			}
+		}
+		if !rewrites {
+			continue
+		}
+
+		// Everything else it was given was proven against what it just changed, so
+		// it owes those proofs again.
+		produces := map[Artifact]bool{}
+		for _, a := range stage.Produces {
+			produces[a] = true
+		}
+		for _, given := range stage.Requires {
+			if !produces[given] {
+				t.Errorf("%s rewrites what it was given and does not re-deliver %s — "+
+					"that proof describes the version it replaced (INV-core-4, ADR-0020)",
+					stage.ID, given)
+			}
+		}
+	}
+}

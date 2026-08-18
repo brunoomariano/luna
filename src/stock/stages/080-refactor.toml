@@ -1,7 +1,21 @@
 id       = "refactor"
 role     = "cleaner"
 requires = ["code", "tests_green"]
-produces = ["code"]
+produces = ["code", "tests_green"]
+
+[verify.tests_green]
+# The stage rewrites code that was already green, so the green has to be earned
+# again rather than inherited: `tests_green` from `build` attested to code this
+# stage just changed, which is the invalidation ADR-0020 names.
+#
+# It produced only `code` until this was noticed, and `code` closes on existence
+# — so a stage whose entire purpose is rewriting working code closed without
+# running anything (INV-core-4).
+run   = "make test"
+scope = "targeted"
 
 [verify.code]
+# The same reasoning as `build`: no command proves `code` itself — the compiler
+# is part of `make test`, and "the diff is non-empty" proves nothing. It closes
+# on existence, and that is said rather than defaulted.
 kind = "existence"

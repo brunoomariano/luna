@@ -25,7 +25,7 @@ cosmetic:
 | 4 | `scenarios` | `gherkin` | approve-plan | | `briefing`, `kind` | `scenarios`, `approach` | |
 | 5 | `spec` | `specifier` | approve-spec ⇄ | feature or bug | `approach` | `contract` | |
 | 6 | `build` | `implementer` | | 🔁 | `scenarios`, `approach`, `worktree`, `contract`* | `code`, `tests_green` | |
-| 7 | `refactor` | `cleaner` | | 🔁 | `code`, `tests_green` | `code` | |
+| 7 | `refactor` | `cleaner` | | 🔁 | `code`, `tests_green` | `code`, `tests_green` | |
 | 8 | `verify` | `verifier` | | 🔁 | `code`, `scenarios` | `ci_green` | `dod_checked` |
 | 9 | `qa` | `qa` | | not a chore | `ci_green`, `briefing` | | `qa_report` |
 | 10 | `code-review` | `reviewer` | | not docs | `code`, `ci_green` | | `review_report` |

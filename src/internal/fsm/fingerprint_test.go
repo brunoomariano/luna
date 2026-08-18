@@ -200,7 +200,7 @@ func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
 	// The shipped stock as it stands, after `discovery` and `commit` left the
 	// flow (ADR-0062) and criticality was declared on the two gates that remained
 	// (ADR-0063).
-	const pinned FlowFingerprint = "a7da0f3c7ef41a06"
+	const pinned FlowFingerprint = "e29ecd956d3ac836"
 
 	if got := Fingerprint(DefaultFlow()); got != pinned {
 		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+

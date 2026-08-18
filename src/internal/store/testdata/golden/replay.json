@@ -8,26 +8,22 @@
     {
       "Seq": 1,
       "Action": "TaskCreated",
-      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"a7da0f3c7ef41a06\"}",
-      "Blob": ""
+      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"e29ecd956d3ac836\"}"
     },
     {
       "Seq": 2,
       "Action": "Advance",
-      "Payload": "{}",
-      "Blob": ""
+      "Payload": "{}"
     },
     {
       "Seq": 3,
       "Action": "Complete",
-      "Payload": "{\"delivered\":[\"worktree\"],\"evidence\":{\"worktree\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}",
-      "Blob": ""
+      "Payload": "{\"delivered\":[\"worktree\"],\"evidence\":{\"worktree\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}"
     },
     {
       "Seq": 4,
       "Action": "Advance",
-      "Payload": "{}",
-      "Blob": ""
+      "Payload": "{}"
     }
   ]
 }
