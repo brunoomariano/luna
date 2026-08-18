@@ -224,6 +224,14 @@ func inDir(t *testing.T, dir string, fn func()) {
 // So this asserts on the assembled environment rather than on any one command:
 // a dependency added to Env and forgotten here is one the binary does not have.
 func TestEveryInjectedDependencyIsWired(t *testing.T) {
+	// `Edit` is the one field whose wiring depends on the machine: `cli.Editor`
+	// answers nil when no editor is configured anywhere, which is deliberate —
+	// the command names what to set instead of launching nothing. So a bare
+	// assertion here passed on a developer's machine, where $EDITOR is set, and
+	// failed on CI, where it is not. Configuring one makes this ask what it means
+	// to ask: is the field wired, rather than is this machine set up.
+	t.Setenv("EDITOR", "true")
+
 	env := environment(nil, "/tmp/stock", cli.Config{}, "/tmp/root")
 
 	missing := map[string]bool{
@@ -241,5 +249,27 @@ func TestEveryInjectedDependencyIsWired(t *testing.T) {
 			t.Errorf("Env.%s is nil in the real binary — the feature that reads it "+
 				"is off on every machine, and it fails safe so nothing says so", field)
 		}
+	}
+}
+
+// TestWithNoEditorConfiguredEditIsAbsent is the other half of the field above.
+//
+// The wiring test sets an editor, so on its own it would pass just as well if
+// `cli.Editor` always answered a function. What makes nil the right answer for an
+// unconfigured machine is that `luna gate adjust` can then say which variable to
+// set, instead of launching nothing and reporting a crash — and that only holds
+// while something proves the nil is real.
+func TestWithNoEditorConfiguredEditIsAbsent(t *testing.T) {
+	// All four sources `resolveEditor` consults, emptied: this is a machine where
+	// nobody ever set one.
+	for _, name := range []string{"LUNA_EDITOR", "EDITOR", "VISUAL"} {
+		t.Setenv(name, "")
+	}
+
+	env := environment(nil, "/tmp/stock", cli.Config{}, "/tmp/root")
+
+	if env.Edit != nil {
+		t.Error("Env.Edit is wired with nothing configured — `gate adjust` would " +
+			"launch nothing instead of naming what to set")
 	}
 }
