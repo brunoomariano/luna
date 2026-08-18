@@ -17,34 +17,6 @@ func TestTheTurnBudgetIsTwoHours(t *testing.T) {
 	}
 }
 
-func TestAnUnstatedBudgetFallsBackToTheDefault(t *testing.T) {
-	stated := Budgets{Turn: 5 * time.Minute}.Resolve()
-
-	if stated.Turn != 5*time.Minute {
-		t.Errorf("a stated budget is honoured, got %s", stated.Turn)
-	}
-	if unstated := (Budgets{}).Resolve(); unstated.Turn != DefaultBudgets().Turn {
-		t.Errorf("an unstated one falls back, got %s", unstated.Turn)
-	}
-
-	// A profile from before the feature existed behaves exactly as the defaults.
-	if empty := (Budgets{}).Resolve(); empty != DefaultBudgets() {
-		t.Errorf("an empty budget set is the shipped one, got %+v", empty)
-	}
-}
-
-// TestANegativeBudgetIsNotABudget covers the guard on the zero value.
-//
-// A budget of zero or less would mean "call it stuck immediately", which is never
-// what someone meant to write.
-func TestANegativeBudgetIsNotABudget(t *testing.T) {
-	resolved := Budgets{Turn: -time.Second}.Resolve()
-
-	if resolved != DefaultBudgets() {
-		t.Errorf("a non-positive budget falls back rather than firing at once, got %+v", resolved)
-	}
-}
-
 // TestParseBudgetRefusesWhatItCannotRead covers the config path.
 //
 // A malformed budget stops rather than reverting quietly: someone who wrote

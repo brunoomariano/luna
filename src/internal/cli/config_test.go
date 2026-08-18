@@ -22,7 +22,7 @@ func TestAMissingConfigIsTheOrdinaryCase(t *testing.T) {
 
 	// The profiles are not zero, though: a project with no config still gets the
 	// three shipped ones, or `--profile nightly` would stop working.
-	if _, ok := cfg.Profile("nightly"); !ok {
+	if !cfg.Defines("nightly") {
 		t.Errorf("want the shipped profiles, got %v", cfg.ProfileNames())
 	}
 }

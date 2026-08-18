@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, no CGO — see ADR-0025
@@ -123,10 +122,9 @@ CREATE TABLE IF NOT EXISTS events (
     --
     -- It exists for the watchdog, which asks a question no replay can answer —
     -- "how long has this been blocked" — because a rebuilt state carries no
-    -- clock (ADR-0053). DEFAULT 0 so a row written without one reports an age of
-    -- zero rather than one measured from the epoch, which would make the task look
-    -- stuck for decades — and nothing is worse for a watchdog than an alert
-    -- everyone has learned to ignore.
+    -- clock (ADR-0053). Every insert writes it; the default is what an aggregate
+    -- over no rows returns, which the watchdog reads as "no age" rather than as a
+    -- time in 1970.
     at       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (task_id, seq)
 );
@@ -198,34 +196,7 @@ func openOwned(path string, owner Owner) (*Store, error) {
 		return nil, fmt.Errorf("creating the schema in %s: %w", path, err)
 	}
 
-	if err := addMissingColumns(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("bringing %s up to date: %w", path, err)
-	}
-
 	return &Store{db: db, As: owner}, nil
-}
-
-// addMissingColumns adds columns that `CREATE TABLE IF NOT EXISTS` cannot, since
-// it does nothing at all once the table is there.
-//
-// The append-only rule is about *rows*: history is never rewritten, and adding a
-// column rewrites nothing — every existing event keeps exactly what it recorded
-// and gains a default for what it did not (INV-core-2).
-//
-// A duplicate-column error is the ordinary case rather than a failure: it means
-// the store is already current, which is true on every run but the first after
-// an upgrade. SQLite has no `ADD COLUMN IF NOT EXISTS`, so the error is the
-// check.
-func addMissingColumns(db *sql.DB) error {
-	for _, statement := range []string{
-		`ALTER TABLE events ADD COLUMN at INTEGER NOT NULL DEFAULT 0`,
-	} {
-		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
-			return fmt.Errorf("%s: %w", statement, err)
-		}
-	}
-	return nil
 }
 
 // Close releases the database handle.

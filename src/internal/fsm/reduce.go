@@ -185,10 +185,10 @@ type ReviewFinding struct {
 	// observation about the world: the reducer decides what it means, it does not
 	// go looking (ADR-0024, RNF1).
 	//
-	// Empty means the round did not say — the first round, a node that could not
-	// compute it, a log written before the field existed. All three are treated
-	// as "no comparison available" rather than as "no progress", because a
-	// detector that fires on missing data is one people turn off.
+	// Empty means the round did not say — the first round, or a node that could
+	// not compute it. Both are treated as "no comparison available" rather than
+	// as "no progress", because a detector that fires on missing data is one
+	// people turn off.
 	Progress string `json:"progress,omitempty"`
 }
 

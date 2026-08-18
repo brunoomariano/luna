@@ -75,7 +75,7 @@ editor = "hx"
 	if cfg.Editor != "hx" {
 		t.Errorf("want the root setting, got %q", cfg.Editor)
 	}
-	if _, ok := cfg.Profile("paranoid"); !ok {
+	if !cfg.Defines("paranoid") {
 		t.Error("want the profile too")
 	}
 }
@@ -194,44 +194,6 @@ func TestAMalformedBudgetIsRefused(t *testing.T) {
 	}
 }
 
-// TestABudgetInAProfileIsRefused. It used to live there, so a project that
-// upgrades has one — and silently ignoring it would leave them believing a
-// per-profile budget still applies.
-func TestABudgetInAProfileIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.nightly]\nturn_budget = \"45m\"\n"))
-
-	if err == nil {
-		t.Fatal("a budget inside a profile must be reported")
-	}
-	if !strings.Contains(err.Error(), "project-wide") {
-		t.Errorf("the error should say where it moved to, got %v", err)
-	}
-}
-
-// TestARetiredProfileKeySaysWhereItWent covers the message someone sees after
-// upgrading a config that was valid before ADR-0063.
-//
-// Each retired key is refused by name and says where its behaviour moved, which
-// is the difference between "this does not work" and "this moved".
-func TestARetiredProfileKeySaysWhereItWent(t *testing.T) {
-	for key, want := range map[string]string{
-		"waits":       "luna autonomy",
-		"turn_budget": "project-wide",
-		"idle_budget": "one budget bounds a whole turn",
-	} {
-		t.Run(key, func(t *testing.T) {
-			_, err := LoadConfig(writeConfig(t, "[profile.p]\n"+key+" = \"30m\"\n"))
-
-			if err == nil {
-				t.Fatalf("%q must be reported", key)
-			}
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("the error should say where %q went (%q), got %v", key, want, err)
-			}
-		})
-	}
-}
-
 // TestAProjectCanDefineARole covers what ADR-0040 makes configurable.
 func TestAProjectCanDefineARole(t *testing.T) {
 	cfg := load(t, `
@@ -338,7 +300,7 @@ agent = "codex"
 	if cfg.Editor != "hx" {
 		t.Errorf("want the root setting, got %q", cfg.Editor)
 	}
-	if _, ok := cfg.Profile("paranoid"); !ok {
+	if !cfg.Defines("paranoid") {
 		t.Error("want the profile")
 	}
 	if role, _ := cfg.Role("reviewer"); role.Agent != "codex" {
@@ -460,42 +422,43 @@ func TestAnUnknownCapabilityIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheOldBudgetNamesAreRefusedWithTheirReason covers the rename of ADR-0051.
+// TestEveryProfileKeyIsRefused. A profile holds nothing but its name since
+// ADR-0063 — whether a gate waits is the stage's declaration, who answers is the
+// knob, and the watchdog's clock is project-wide.
 //
-// Neither name behaved as it said: Luna cannot tell a tool in flight from an agent
-// thinking, so the idle window was bounding whole turns and the tool one was read
-// and discarded. Quietly mapping them onto the new name would carry that wrong
-// mental model forward, which is why they are refused and told why.
-func TestTheOldBudgetNamesAreRefusedWithTheirReason(t *testing.T) {
-	for _, old := range []string{"idle_budget", "tool_budget"} {
-		_, err := LoadConfig(writeConfig(t, "[profile.p]\n"+old+" = \"30m\"\n"))
+// Refused rather than ignored, and that is the whole of it: a config that loads
+// and decides nothing is the silent kind of wrong, because the file keeps reading
+// like supervision while nothing supervises.
+//
+// The retired keys used to be refused one by one, each naming where its setting
+// had moved. That is worth writing for a config somebody already has, and this
+// project has no released version and so no such config.
+func TestEveryProfileKeyIsRefused(t *testing.T) {
+	for _, key := range []string{"waits", "turn_budget", "idle_budget", "tool_budget", "anything"} {
+		_, err := LoadConfig(writeConfig(t, "[profile.p]\n"+key+" = \"whatever\"\n"))
+
 		if err == nil {
-			t.Errorf("%s no longer exists and must be refused", old)
+			t.Errorf("%q inside a profile was accepted", key)
 			continue
 		}
-		if !strings.Contains(err.Error(), "turn_budget") {
-			t.Errorf("%s: the refusal must name what to use instead, got %v", old, err)
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("the refusal must name what arrived, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "only its name") {
+			t.Errorf("the refusal must say a profile holds no settings, got %v", err)
 		}
 	}
 }
 
-// TestTheOldWaitsKeyIsRefusedWithItsReason covers the config a person already
-// has on disk.
-//
-// Ignoring it would be the silent kind of wrong: the file would keep reading like
-// supervision and decide nothing, so the person would believe gates were waiting
-// for reasons that no longer exist (ADR-0063).
-func TestTheOldWaitsKeyIsRefusedWithItsReason(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.paranoid]\nwaits = [\"confirm\"]\n"))
-	if err == nil {
-		t.Fatal("a profile still listing gates was accepted")
-	}
+// TestANonPositiveBudgetIsNotABudget covers the guard on the value the parser
+// accepts. A budget of zero or less means "call it stuck immediately", which is
+// never what anybody meant to write.
+func TestANonPositiveBudgetIsNotABudget(t *testing.T) {
+	for _, budget := range []time.Duration{0, -time.Second} {
+		cfg := Config{TurnBudget: budget}
 
-	// The message has to say what replaced it, or the person is left with a
-	// refusal and no way forward.
-	for _, want := range []string{"waits", "declares checks", "luna autonomy"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error does not mention %q: %v", want, err)
+		if got := cfg.Turn(); got != fsm.DefaultBudgets().Turn {
+			t.Errorf("a budget of %s must fall back rather than fire at once, got %s", budget, got)
 		}
 	}
 }

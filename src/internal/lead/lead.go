@@ -98,13 +98,6 @@ type Judge interface {
 	OnFailure(ctx context.Context, state fsm.TaskState, reason string) Decision
 }
 
-// What became of GatePolicy: it is gone with the profiles (ADR-0063).
-//
-// Whether a gate waits is no longer a policy's answer at all — it waits when the
-// stage declared something to answer it with. The decision still reaches the log
-// the same way, so replay is unchanged: what a past advance recorded is what it
-// replays as (ADR-0026).
-
 // Lead conducts one task. One per task, never shared: the parallelism is between
 // tasks, not inside them (ADR-0003).
 // There is no watchdog field, and the absence is deliberate. ADR-0019 imagined one

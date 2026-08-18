@@ -78,10 +78,9 @@ func (s *Store) Stalled(flow []fsm.Stage, patience time.Duration) ([]Stuck, erro
 		if err != nil {
 			return nil, err
 		}
-		// A log written before the timestamp existed reports an age of zero
-		// rather than an age measured from the epoch, which would make every old
-		// task look stuck for fifty-six years. Nothing is worse for a watchdog
-		// than an alert everyone has learned to ignore.
+		// A task with no log has no age, rather than an age measured from the
+		// epoch — which would report it stuck for fifty-six years, and nothing is
+		// worse for a watchdog than an alert everyone has learned to ignore.
 		if at.IsZero() {
 			continue
 		}
@@ -102,8 +101,8 @@ func (s *Store) Stalled(flow []fsm.Stage, patience time.Duration) ([]Stuck, erro
 	return stuck, nil
 }
 
-// lastEventAt is when the task last moved. A zero time means the log predates
-// the column.
+// lastEventAt is when the task last moved. A zero time means there is no log to
+// read it from — an id nobody has written to.
 func (s *Store) lastEventAt(taskID string) (time.Time, error) {
 	var at int64
 	row := s.db.QueryRow(`SELECT COALESCE(MAX(at), 0) FROM events WHERE task_id = ?`, taskID)

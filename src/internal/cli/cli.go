@@ -396,7 +396,7 @@ func howToRun(opts *taskOptions, cfg Config, name, value string) error {
 		}
 		opts.kind = kind
 	case "profile":
-		if _, ok := cfg.Profile(fsm.Profile(value)); !ok {
+		if !cfg.Defines(fsm.Profile(value)) {
 			return fmt.Errorf("%w: unknown profile %q (%s)",
 				ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
 		}
@@ -680,7 +680,7 @@ func undefinedProfileNote(cfg Config, p fsm.Profile) string {
 	if p == "" {
 		return ""
 	}
-	if _, ok := cfg.Profile(p); ok {
+	if cfg.Defines(p) {
 		return ""
 	}
 	return fmt.Sprintf("  ⚠ no longer defined — remaining gates treated as %s", fsm.ProfileInteractive)

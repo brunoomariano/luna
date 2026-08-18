@@ -77,13 +77,8 @@ func TestTheStockProfilesMatchTheShippedPolicy(t *testing.T) {
 	profiles := ShippedProfiles()
 
 	for _, name := range fsm.ShippedProfiles() {
-		policy, ok := profiles[name]
-		if !ok {
+		if !profiles[name] {
 			t.Errorf("%s has no file", name)
-			continue
-		}
-		if policy.Budgets.Resolve().Turn == 0 {
-			t.Errorf("%s has no turn budget", name)
 		}
 	}
 }
@@ -170,10 +165,10 @@ func TestAProfileFileWithNothingInItIsStillAProfile(t *testing.T) {
 	}
 }
 
-// TestABudgetInAStockProfileIsRefused. It lived there until ADR-0063, so a
-// project upgrading its own stock has one — and loading it silently would leave
-// them believing a per-profile watchdog still applies.
-func TestABudgetInAStockProfileIsRefused(t *testing.T) {
+// TestASettingInAStockProfileIsRefused. A profile file declares a name and
+// nothing else since ADR-0063; loading a setting silently would leave a project
+// believing a per-profile watchdog still applies.
+func TestASettingInAStockProfileIsRefused(t *testing.T) {
 	files := fstest.MapFS{
 		"profiles/yolo.toml": &fstest.MapFile{Data: []byte("turn_budget = \"30m\"\n")},
 	}
@@ -183,8 +178,8 @@ func TestABudgetInAStockProfileIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a budget inside a profile must be reported")
 	}
-	if !strings.Contains(err.Error(), "project-wide") {
-		t.Errorf("the error should say where it moved to, got %v", err)
+	if !strings.Contains(err.Error(), "only its name") {
+		t.Errorf("the error should say a profile holds no settings, got %v", err)
 	}
 }
 

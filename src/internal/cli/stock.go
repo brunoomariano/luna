@@ -28,7 +28,7 @@ func LoadRoles(files fs.FS, dir string) (map[fsm.RoleName]fsm.Role, error) {
 	}
 
 	roles := map[fsm.RoleName]fsm.Role{}
-	cfg := Config{Roles: roles, Profiles: map[fsm.Profile]Policy{}}
+	cfg := Config{Roles: roles, Profiles: map[fsm.Profile]bool{}}
 
 	for _, file := range names {
 		name := strings.TrimSuffix(file, ".toml")
@@ -53,13 +53,13 @@ func LoadRoles(files fs.FS, dir string) (map[fsm.RoleName]fsm.Role, error) {
 // LoadProfiles reads the profile definitions from a stock directory.
 //
 // The same shape as roles: one file per profile, named after it.
-func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]Policy, error) {
+func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]bool, error) {
 	names, err := tomlFiles(files, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	profiles := map[fsm.Profile]Policy{}
+	profiles := map[fsm.Profile]bool{}
 	cfg := Config{Roles: map[fsm.RoleName]fsm.Role{}, Profiles: profiles}
 
 	for _, file := range names {
@@ -73,7 +73,7 @@ func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]Policy, error) {
 		// Declared before its settings are read, so a profile whose file states no
 		// budget carries the shipped one rather than being a name that never
 		// appears.
-		profiles[fsm.Profile(name)] = Policy{Budgets: fsm.DefaultBudgets()}
+		profiles[fsm.Profile(name)] = true
 
 		if err := eachSetting(string(content), file, func(key, value, at string) error {
 			return assignProfile(&cfg, name, key, value, at)
@@ -144,7 +144,7 @@ var (
 		return LoadRoles(stock.Files, stock.RolesDir)
 	})
 
-	shippedProfiles = sync.OnceValues(func() (map[fsm.Profile]Policy, error) {
+	shippedProfiles = sync.OnceValues(func() (map[fsm.Profile]bool, error) {
 		return LoadProfiles(stock.Files, stock.ProfilesDir)
 	})
 )

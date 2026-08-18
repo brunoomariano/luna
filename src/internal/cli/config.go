@@ -37,11 +37,15 @@ type Config struct {
 	// Zero means the shipped default, so a project with no config still has a net.
 	TurnBudget time.Duration
 
-	// Profiles are the gate policies this project defines, by name. A project
-	// that names none inherits the three shipped ones; naming one that already
-	// exists replaces it, which is what makes `turbo` adjustable rather than
-	// merely extendable (ADR-0017).
-	Profiles map[fsm.Profile]Policy
+	// Profiles are the names this project defines. A project that names none
+	// inherits the three shipped ones; naming one that already exists is not an
+	// error, because there is nothing left in a profile to conflict.
+	//
+	// A set rather than a map to settings: a profile decides nothing since
+	// ADR-0063, and what the name is still for is validation — `task new
+	// --profile` refuses one nobody defined — and history, since a task records
+	// the profile it ran under.
+	Profiles map[fsm.Profile]bool
 
 	// Roles are what each role name resolves to: the agent that runs it, what it
 	// is told, and the skills it loads. A project that names none inherits the
@@ -65,46 +69,30 @@ type sectionRef struct {
 	name string
 }
 
-// Policy is how long the watchdog waits before calling a task stuck.
-//
-// It used to decide which gates stop the task as well, and that half is gone: a
-// gate waits because the stage declared something to answer it with, and the
-// knob decides who answers (ADR-0063). What remains is the clock, which was
-// never about gates — it bounds a node waiting on an agent that is not reacting
-// (ADR-0034, ADR-0051).
-//
-// It stays a named profile rather than becoming a bare setting because a task
-// records which one it ran under, and the budget has to be resolvable from that
-// name at replay.
-type Policy struct {
-	// Budgets bound how long the node waits on an agent that is not reacting.
-	Budgets fsm.Budgets
-}
-
-// ShippedProfiles is the policy each built-in profile carries, expressed the same
-// way a configured one is. They are defaults, not special cases (ADR-0026).
-func ShippedProfiles() map[fsm.Profile]Policy {
+// ShippedProfiles are the names the shipped stock defines, expressed the same way
+// a configured one is. They are defaults, not special cases (ADR-0026).
+func ShippedProfiles() map[fsm.Profile]bool {
 	profiles, err := shippedProfiles()
 	if err != nil {
 		panic(fmt.Sprintf("the embedded profiles do not parse, which is a broken build: %v", err))
 	}
 
-	out := make(map[fsm.Profile]Policy, len(profiles))
+	out := make(map[fsm.Profile]bool, len(profiles))
 	for name, policy := range profiles {
 		out[name] = policy
 	}
 	return out
 }
 
-// Profile resolves a name to the policy that decides its gates.
+// Defines reports whether this project names the profile.
 //
-// A name with no policy is reported rather than defaulted, because the caller has
-// to tell the two situations apart: creating a task under an unknown profile is a
-// mistake worth refusing, while replaying a task whose profile was since deleted
-// is ordinary and must still work.
-func (c Config) Profile(name fsm.Profile) (Policy, bool) {
-	policy, ok := c.Profiles[name]
-	return policy, ok
+// A question rather than a lookup, because there is nothing to look up: a profile
+// holds only its name (ADR-0063). The answer separates two situations the callers
+// must tell apart — creating a task under an unknown profile is a mistake worth
+// refusing, while replaying a task whose profile was since deleted is ordinary
+// and must still work, flagged rather than blocked.
+func (c Config) Defines(name fsm.Profile) bool {
+	return c.Profiles[name]
 }
 
 // Turn is how long the node waits on an agent that is not reacting.
@@ -114,8 +102,11 @@ func (c Config) Profile(name fsm.Profile) (Policy, bool) {
 // project that sets none gets the shipped default, so there is always a net —
 // the direction that matters, because no budget means a task that hangs forever
 // (ADR-0034).
+// Non-positive rather than zero: a budget of zero or less means "call it stuck
+// immediately", which is never what anybody meant to write. ParseBudget refuses
+// what it cannot read; this is the guard on what it can.
 func (c Config) Turn() time.Duration {
-	if c.TurnBudget == 0 {
+	if c.TurnBudget <= 0 {
 		return fsm.DefaultBudgets().Turn
 	}
 	return c.TurnBudget
@@ -161,7 +152,7 @@ func LoadConfig(path string) (Config, error) {
 // the point to replace this rather than extend it.
 func parseConfig(content, path string) (Config, error) {
 	cfg := Config{
-		Profiles: map[fsm.Profile]Policy{},
+		Profiles: map[fsm.Profile]bool{},
 		Roles:    map[fsm.RoleName]fsm.Role{},
 	}
 	var section sectionRef
@@ -224,7 +215,7 @@ func openSection(cfg *Config, header, where string) (sectionRef, error) {
 	case sectionNone:
 		return sectionRef{}, fmt.Errorf("%s: section [%s] names nothing", where, header)
 	case sectionProfile:
-		cfg.Profiles[fsm.Profile(parsed.name)] = Policy{Budgets: fsm.DefaultBudgets()}
+		cfg.Profiles[fsm.Profile(parsed.name)] = true
 	case sectionRole:
 		cfg.Roles[fsm.RoleName(parsed.name)] = fsm.Role{}
 	}
@@ -306,30 +297,18 @@ func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
 // was created under, and `task new --profile` validates against the set — so the
 // section still declares a profile into existence and simply holds no settings.
 //
-// Every key is refused rather than ignored, and each says where it went. A
-// config that loads and decides nothing is the silent kind of wrong: the person
-// keeps a file that reads like supervision and gets none.
+// Refused rather than ignored. A config that loads and decides nothing is the
+// silent kind of wrong: the person keeps a file that reads like supervision and
+// gets none.
+//
+// One message rather than one per retired key. `waits`, `turn_budget`,
+// `idle_budget` and `tool_budget` each had their own, naming where the setting
+// had moved — which is worth writing for a config somebody already has, and this
+// project has no released version and so no such config. What is left is the
+// sentence that is true for any key at all.
 func assignProfile(_ *Config, section, key, _, where string) error {
-	switch key {
-	case "waits":
-		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — a gate waits when "+
-			"its stage declares checks or judgement criteria, and `luna autonomy` "+
-			"decides who answers (ADR-0063)", where, key, section)
-	case "turn_budget":
-		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — the turn budget is "+
-			"project-wide now, so set it at the top of the file (ADR-0063)", where, key, section)
-	case "idle_budget", "tool_budget":
-		// The two never behaved as their names said — Luna cannot tell a tool in
-		// flight from an agent thinking, so the idle window was bounding whole turns
-		// and the tool one was read and discarded (ADR-0051).
-		return fmt.Errorf("%s: %q in [profile.%s] no longer exists — one budget bounds a whole "+
-			"turn now, tool time included — set turn_budget at the top of the file "+
-			"(ADR-0051, ADR-0063)",
-			where, key, section)
-	default:
-		return fmt.Errorf("%s: unknown setting %q in [profile.%s] — a profile holds no "+
-			"settings now, only its name (ADR-0063)", where, key, section)
-	}
+	return fmt.Errorf("%s: unknown setting %q in [profile.%s] — a profile holds no "+
+		"settings now, only its name (ADR-0063)", where, key, section)
 }
 
 func assignRoot(cfg *Config, key, value, where string) error {

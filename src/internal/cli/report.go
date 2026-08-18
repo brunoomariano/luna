@@ -98,7 +98,7 @@ type WaitingReport struct {
 
 // taskReport builds the machine-readable view of a task.
 func taskReport(cfg Config, state fsm.TaskState, events int) TaskReport {
-	_, defined := cfg.Profile(state.Profile)
+	defined := cfg.Defines(state.Profile)
 
 	report := TaskReport{
 		ID:             state.ID,
@@ -163,7 +163,7 @@ func gatesReport(cfg Config, waiting []store.Waiting) GatesReport {
 	report := GatesReport{Waiting: []WaitingReport{}}
 
 	for _, w := range waiting {
-		_, defined := cfg.Profile(w.Profile)
+		defined := cfg.Defines(w.Profile)
 		report.Waiting = append(report.Waiting, WaitingReport{
 			TaskID:         w.TaskID,
 			Stage:          string(w.Stage),

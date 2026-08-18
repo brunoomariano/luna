@@ -38,15 +38,6 @@ func DefaultBudgets() Budgets {
 	return Budgets{Turn: 2 * time.Hour}
 }
 
-// Resolve fills in whatever the profile left unstated, which is the ordinary case
-// rather than an error.
-func (b Budgets) Resolve() Budgets {
-	if b.Turn <= 0 {
-		b.Turn = DefaultBudgets().Turn
-	}
-	return b
-}
-
 // ParseBudget reads a duration from configuration, refusing what it cannot read.
 //
 // A malformed budget is an error rather than a silent fallback: the cautious
