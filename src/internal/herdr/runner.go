@@ -44,8 +44,9 @@ type socketRunner struct {
 	// Zero means the measured default, so a production caller that sets neither
 	// gets exactly what it got before these existed. Nothing outside a test sets
 	// them (RNF: the timings a real run uses stay the measured ones).
-	retryWait  time.Duration
-	bootSettle time.Duration
+	retryWait   time.Duration
+	bootSettle  time.Duration
+	dialogPause time.Duration
 }
 
 // waits report the startup timings, defaulting to what was measured against a
@@ -62,6 +63,15 @@ func (r *socketRunner) agentBoot() time.Duration {
 		return r.bootSettle
 	}
 	return agentBootSettle
+}
+
+// dialogWait is the pause after the trust-dialog Enter, overridable so a test
+// does not sit through the real one.
+func (r *socketRunner) dialogWait() time.Duration {
+	if r.dialogPause > 0 {
+		return r.dialogPause
+	}
+	return dialogSettle
 }
 
 // NewRunner builds a Runner backed by a herdr socket.
@@ -371,6 +381,31 @@ func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
 
 	select {
 	case <-time.After(r.agentBoot()):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// One bare Enter before the first prompt. In a jail whose home does not
+	// already trust the worktree, claude boots into its folder-trust dialog and
+	// sits there while herdr reports it settled — measured from a live pane, and
+	// the cause of a stage closing with nothing delivered. The dialog's default
+	// is "Yes, I trust this folder" and Enter confirms it; at a claude that is
+	// already at its prompt, an empty Enter does nothing. Sent here, after the
+	// boot settle, so the dialog has had time to render — and never as part of
+	// the brief, whose newline reaching the dialog by accident is exactly the
+	// race that made this fail intermittently.
+	// Best effort: a pane that cannot receive text will fail the prompt right
+	// after this with an error that names the real problem, and failing the start
+	// over the nudge would turn a maybe-dialog into a certain block.
+	_ = r.client.Call("pane.send_text", map[string]any{
+		"pane_id": pane,
+		"text":    "\n",
+	}, nil)
+
+	// A moment for the screen to move past the dialog, so the brief lands at the
+	// prompt rather than racing the transition.
+	select {
+	case <-time.After(r.dialogWait()):
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -487,6 +522,10 @@ const (
 	// within 5000ms, and a cold claude takes longer — measured: the first prompt
 	// stalled every time, the second answered.
 	agentBootSettle = 8 * time.Second
+
+	// dialogSettle is the pause after the trust-dialog Enter, so the brief lands
+	// at a prompt rather than racing the screen transition.
+	dialogSettle = 2 * time.Second
 )
 
 // jailBinary is the sandbox every agent runs inside.

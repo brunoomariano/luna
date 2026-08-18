@@ -962,3 +962,64 @@ func TestOnlyClaudeGetsTheTrustPreWrite(t *testing.T) {
 		t.Errorf("command:\ngot  %q\nwant %q", command, want)
 	}
 }
+
+// TestTheTrustDialogGetsOneEnterBeforeTheFirstPrompt pins route 1 for the
+// folder-trust dialog: after the boot settle, one bare Enter reaches the pane —
+// it confirms the dialog when one is up and does nothing at a prompt. It is
+// deliberately not part of the brief, whose newline reaching the dialog by
+// accident is the race that made stages fail intermittently.
+func TestTheTrustDialogGetsOneEnterBeforeTheFirstPrompt(t *testing.T) {
+	withSandboxOnPath(t)
+	server, path := newFakeServer(t)
+	server.replyOnce(
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+
+	runner := fastRunner(t, path)
+	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil); err != nil {
+		t.Fatalf("starting: %v", err)
+	}
+
+	var bare int
+	for _, call := range server.sent("pane.send_text") {
+		raw, _ := json.Marshal(call.Params)
+		if strings.Contains(string(raw), `"text":"\n"`) {
+			bare++
+		}
+	}
+	if bare != 1 {
+		t.Errorf("exactly one bare Enter after the settle, got %d", bare)
+	}
+}
+
+// TestACancelledStartStopsInsideTheSettles covers both cancellation windows: a
+// person killing the run must not leave the start waiting out its pauses.
+func TestACancelledStartStopsInsideTheSettles(t *testing.T) {
+	withSandboxOnPath(t)
+
+	for name, tune := range map[string]func(*socketRunner){
+		"during the boot settle":   func(r *socketRunner) { r.bootSettle = time.Hour },
+		"during the dialog settle": func(r *socketRunner) { r.bootSettle = time.Millisecond; r.dialogPause = time.Hour },
+	} {
+		server, path := newFakeServer(t)
+		server.replyOnce(
+			"agent.list",
+			`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+			`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+		)
+		server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+
+		runner := fastRunner(t, path)
+		tune(runner)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		_, err := runner.StartAgent(ctx, Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil)
+		cancel()
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("%s: a cancelled start reports the cancellation, got %v", name, err)
+		}
+	}
+}
