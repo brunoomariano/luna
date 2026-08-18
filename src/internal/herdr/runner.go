@@ -406,11 +406,52 @@ func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
 	// prompt rather than racing the transition.
 	select {
 	case <-time.After(r.dialogWait()):
-		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+
+	return r.awaitInputReady(ctx, pane)
 }
+
+// awaitInputReady waits until the agent's screen shows an input prompt, because
+// text typed into an agent that is still booting is text that never arrives.
+//
+// The fixed boot settle was the first answer and it was a bet on a constant that
+// is not one: measured twice, the same claude booted inside the settle one
+// morning and outside it the same afternoon — and every stage of three tasks
+// then "settled" in seconds with nothing delivered, because the brief was typed
+// at a banner. The prompt marker is claude's own ready signal, read from the
+// screen the way herdr itself detects agents.
+//
+// An agent whose screen never shows the marker falls through after the retries
+// and the prompt is attempted anyway: a marker this code does not know must not
+// hard-block a harness that is actually ready.
+func (r *socketRunner) awaitInputReady(ctx context.Context, pane string) error {
+	_ = retry(ctx, inputReadyAttempts, r.paneWait(), func() error {
+		var answer struct {
+			Read struct {
+				Text string `json:"text"`
+			} `json:"read"`
+		}
+		if err := r.client.Call("pane.read", map[string]any{
+			"pane_id": pane,
+			"source":  "visible",
+		}, &answer); err != nil {
+			return nil //nolint:nilerr // an unreadable pane is the prompt's error to report
+		}
+		if strings.Contains(answer.Read.Text, inputMarker) {
+			return nil
+		}
+		return errNotReadyYet
+	}, func(err error) bool { return errors.Is(err, errNotReadyYet) })
+	return ctx.Err()
+}
+
+// inputMarker is what claude's screen shows once it accepts input. The booting
+// banner does not contain it; the ready prompt and every menu do.
+const inputMarker = "❯"
+
+var errNotReadyYet = errors.New("the agent screen shows no input prompt yet")
 
 // Prompt submits the stage's brief and waits for the agent to settle.
 //
@@ -516,6 +557,12 @@ const (
 	// process to boot and paint a screen rather than for a shell prompt: measured
 	// at four to eight seconds for claude, against under two for a pane.
 	agentStartAttempts = 15
+
+	// inputReadyAttempts bounds the wait for the agent's input prompt. With the
+	// production paneWait of 2s this is a minute — far past any boot measured,
+	// and still bounded so a screen this code cannot read does not hold a stage
+	// forever.
+	inputReadyAttempts = 30
 
 	// agentBootSettle is the pause between herdr recognising an agent's screen and
 	// that agent being able to react to a prompt. herdr's wait needs a state change

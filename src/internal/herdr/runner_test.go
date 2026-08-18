@@ -1023,3 +1023,53 @@ func TestACancelledStartStopsInsideTheSettles(t *testing.T) {
 		}
 	}
 }
+
+// TestTheBriefWaitsForTheInputPrompt is the regression for three tasks' worth of
+// stages that "settled" in seconds having delivered nothing: the brief was typed
+// at a booting agent's banner and never arrived. The start now waits until the
+// screen shows claude's input marker before returning.
+func TestTheBriefWaitsForTheInputPrompt(t *testing.T) {
+	withSandboxOnPath(t)
+	server, path := newFakeServer(t)
+	server.replyOnce(
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+	// Booting first — a banner with no input marker — then the ready prompt.
+	server.replyOnce(
+		"pane.read",
+		`{"id":"1","result":{"type":"pane_read","read":{"text":"Welcome to Claude Code"}}}`,
+		`{"id":"1","result":{"type":"pane_read","read":{"text":"❯ Try \"write a test\""}}}`,
+	)
+
+	runner := fastRunner(t, path)
+	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil); err != nil {
+		t.Fatalf("starting: %v", err)
+	}
+
+	if got := len(server.sent("pane.read")); got < 2 {
+		t.Errorf("the start keeps reading until the input prompt shows, got %d reads", got)
+	}
+}
+
+// TestAScreenWithNoMarkerDoesNotHoldTheStageForever pins the fall-through: a
+// harness whose ready screen this code cannot recognise still gets its prompt,
+// after the bounded wait.
+func TestAScreenWithNoMarkerDoesNotHoldTheStageForever(t *testing.T) {
+	withSandboxOnPath(t)
+	server, path := newFakeServer(t)
+	server.replyOnce(
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+	server.reply("pane.read", `{"id":"1","result":{"type":"pane_read","read":{"text":"an unrecognisable screen"}}}`)
+
+	runner := fastRunner(t, path)
+	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil); err != nil {
+		t.Fatalf("an unknown screen must not fail the start, got %v", err)
+	}
+}
