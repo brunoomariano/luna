@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/node"
@@ -23,37 +22,27 @@ func TestAFirstRunAdoptsTheDirectory(t *testing.T) {
 	}
 }
 
-// TestAGhostStoreIsRefused is the regression for the failure measured against
-// ai-jail 1.17.0: a contained process cannot see the real log, creates its own on
-// a tmpfs, reports success, and loses everything.
-//
-// The jail is reproduced by its observable consequence rather than by running one:
-// from inside, the directory holds a database and *not* the anchor Luna wrote,
-// because the anchor is on the filesystem the container cannot reach.
-func TestAGhostStoreIsRefused(t *testing.T) {
+// TestAStoreFromBeforeTheAnchorIsAdopted is the regression for the guard's
+// second false positive: a database with no anchor beside it is every store
+// written before the anchor existed — measured on this project's own log — and
+// refusing it refuses adoption itself. The contained case creates its database
+// and its anchor together on the same tmpfs, so "db without anchor" never
+// describes it from inside; the git anchor is what actually catches it.
+func TestAStoreFromBeforeTheAnchorIsAdopted(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".luna")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("setting up: %v", err)
+	}
+	// A real, pre-guard store: database present, anchor never written.
+	if err := os.WriteFile(filepath.Join(dir, "luna.db"), []byte("real history"), 0o600); err != nil {
+		t.Fatalf("setting up the old store: %v", err)
+	}
 
-	// What the real run does, outside the jail.
 	if err := node.EnsureDurable(dir); err != nil {
-		t.Fatalf("setting up the real log: %v", err)
+		t.Fatalf("a store from before the anchor existed must be adopted, got %v", err)
 	}
-
-	// What the contained process sees: its own database, and no anchor.
-	if err := os.Remove(filepath.Join(dir, ".luna-anchor")); err != nil {
-		t.Fatalf("simulating the invisible anchor: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "luna.db"), []byte("invented"), 0o600); err != nil {
-		t.Fatalf("simulating the store the container invented: %v", err)
-	}
-
-	err := node.EnsureDurable(dir)
-	if !errors.Is(err, node.ErrGhostStore) {
-		t.Fatalf("a log with no anchor must be refused as a ghost, got %v", err)
-	}
-	// The message has to name the directory, because the person reading it is
-	// looking for which path lied to them.
-	if !strings.Contains(err.Error(), dir) {
-		t.Errorf("the refusal must name the directory it refused, got %q", err)
+	if _, err := os.Stat(filepath.Join(dir, ".luna-anchor")); err != nil {
+		t.Errorf("adoption writes the anchor it found missing, got %v", err)
 	}
 }
 

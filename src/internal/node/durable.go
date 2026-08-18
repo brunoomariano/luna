@@ -69,16 +69,19 @@ func EnsureDurable(dir string) error {
 		return fmt.Errorf("reading the log's anchor in %s: %w", dir, err)
 	}
 
-	// No anchor, and a database already here: the log was created by something
-	// that could not see the one Luna wrote. That is the ghost.
-	if _, err := os.Stat(filepath.Join(dir, "luna.db")); err == nil {
-		return fmt.Errorf("%w: %s holds a log with no anchor, so the one Luna wrote is not visible from here — "+
-			"a contained process reaches only its working directory, and a write here would be reported as saved and then lost",
-			ErrGhostStore, dir)
-	}
-
-	// No anchor and no database: either a genuine first run, or a root that only
-	// exists inside this process. The second is the one that must not proceed.
+	// No anchor: either a store from before the anchor existed, a genuine first
+	// run, or a root that only exists inside this process. Only the last one is
+	// refused, and the git directory is what tells it apart — it is the one place
+	// visible from both sides of a sandbox, so an anchor there naming a log this
+	// process cannot see is a contradiction nothing legitimate produces.
+	//
+	// A database with no anchor beside it is deliberately *not* the signal. It
+	// looked like one — "the log was created by something that could not see the
+	// real anchor" — and refused every store written before the anchor existed:
+	// measured on this project's own log, which predates the guard and is as real
+	// as a log gets. The contained case it meant to catch creates its database
+	// and its anchor together on the same tmpfs, so the pair is always consistent
+	// from inside anyway, and the git anchor is what actually catches it.
 	if hollow, why := hollowRoot(dir); hollow {
 		return fmt.Errorf("%w: %s", ErrGhostStore, why)
 	}
