@@ -8,59 +8,95 @@ on:
 permissions:
   contents: read
 
+# A superseded run has nothing to say. Cancelling on a force-push to a PR frees
+# the runner for the commit that replaced it; pushes to main are left alone,
+# because there the run is the record of whether that commit was green.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The toolchain is mise's to decide. Without this, a `go` directive newer than
+  # what mise installed makes Go silently download another toolchain — which is a
+  # slow step nobody asked for and a pin that stopped meaning anything.
+  GOTOOLCHAIN: local
+
 jobs:
   # The gate. Mirrors the local `make ci-check` exactly — what passes here passes
   # there, and vice versa. If the two ever diverge, that is a bug in the pipeline,
   # not a quirk to work around.
+  #
+  # The reported metrics run here too. They are a separate concern and were a
+  # separate job, which meant paying a whole checkout and toolchain install to run
+  # two commands that finish in seconds — and to rebuild the exact objects `cover`
+  # had just built. `cyclo` cannot fail (it ends in `|| true`); `mod` can, and
+  # deliberately: a go.mod that is not tidy is a real defect and was previously
+  # reported into a log nobody reads.
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
         with:
           # The toolchain is pinned in mise.toml: same linter version locally and
           # here. A linter that changes its mind between the two turns a green CI
           # red with no code change, and the fix becomes guesswork.
           install: true
           cache: true
+      - uses: actions/cache@v6
+        with:
+          # mise's own cache covers the tools it installs and nothing else, so
+          # without this every job recompiled the module graph from scratch.
+          # golangci-lint keeps its own cache and it is by far the slowest step.
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+            ~/.cache/golangci-lint
+          key: go-${{ runner.os }}-${{ runner.arch }}-check-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-check-
       - run: make ci-check
+      - run: make cyclo
+      - run: make mod
 
   # Kept out of ci-check because it needs CGO and roughly doubles the test time.
   # It runs here, where the cost is paid once, rather than on every local run.
+  #
+  # Its cache key is its own: race-instrumented objects are not the ones `check`
+  # built, and sharing a key would have the two jobs overwrite each other's cache
+  # with objects the other cannot use.
   race:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
         with:
           install: true
           cache: true
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ runner.arch }}-race-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-race-
       - run: make race
 
   # Kept out of ci-check because it reaches the network. Reachability-filtered:
   # it reports only what the code actually calls, so a finding here is a finding
   # that matters.
   vuln:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
         with:
           install: true
           cache: true
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ runner.arch }}-vuln-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-vuln-
       - run: make vuln
-
-  # Reports rather than gates. These answer "how healthy is the code", which is a
-  # judgement call and not a threshold — so they surface the numbers in the run
-  # log without blocking a merge on a figure nobody agreed on.
-  metrics:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-        with:
-          install: true
-          cache: true
-      - run: make cyclo
-      - run: make mod

@@ -76,7 +76,7 @@ cover: ## tests with coverage, failing below COVER_MIN
 	  if ($$3+0 < min) { printf "coverage %.1f%% below the %d%% minimum\n", $$3, min; exit 1 } }'
 
 race: ## data race detector (needs CGO)
-	@CGO_ENABLED=1 go test -race ./src/...
+	@CGO_ENABLED=1 $(GO_TEST) -race ./src/...
 
 # ── security ─────────────────────────────────────────────────────────────────
 vuln: ## known vulnerabilities in dependencies, filtered by reachability
