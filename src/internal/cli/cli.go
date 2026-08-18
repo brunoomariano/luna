@@ -104,6 +104,7 @@ func Run(env Env, args []string) error {
 		"autonomy": autonomyCommand,
 		"init":     initCommand,
 		"artifact": artifactCommand,
+		"trust":    trustCommand,
 	}
 
 	command, ok := commands[args[0]]
