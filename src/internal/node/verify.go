@@ -68,10 +68,18 @@ type Shell struct {
 
 // Prove runs a verifier and reports what it observed.
 //
-// A verifier that executes nothing — existence, and anything like it — produces
-// evidence without touching the filesystem: the artifact was delivered and that
-// is the entire claim (ADR-0032).
+// A verifier that executes nothing and names no path produces evidence without
+// touching anything: the artifact was delivered and that is the entire claim
+// (ADR-0032). An existence check *with* a path asks git instead — see
+// provePath.
 func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence, error) {
+	if existence, ok := v.(fsm.Existence); ok {
+		if existence.Path == "" {
+			return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
+		}
+		return s.provePath(ctx, existence, seq)
+	}
+
 	command, ok := v.(fsm.Command)
 	if !ok {
 		return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
@@ -112,6 +120,49 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 		Detail:     summarise(output, verdict),
 		RecordedAt: seq,
 	}, nil
+}
+
+// provePath asks git whether the stage committed anything under the declared
+// directory.
+//
+// The delivered commit rather than the worktree, for the reason every other check
+// here uses it: the tree the agent worked in is removed when the stage ends, and
+// verifying it is the incoherence INV-core-4 exists to prevent. `git ls-tree`
+// reads the commit directly, so nothing has to be checked out to answer.
+//
+// A stage with no commit is not a failure. It is the first stage of the first
+// task, before anything was delivered, and there is no tree to look in — the
+// verdict falls back to what an undeclared path would have said, which is the
+// agent's word.
+func (s Shell) provePath(ctx context.Context, v fsm.Existence, seq int) (fsm.Evidence, error) {
+	evidence := fsm.Evidence{
+		Scope:      v.Proves(),
+		Command:    v.Describe(),
+		RecordedAt: seq,
+	}
+	if s.Commit == "" {
+		evidence.Verdict = fsm.VerdictPassed
+		evidence.Detail = "nothing delivered yet, so nothing to look in"
+		return evidence, nil
+	}
+
+	found, err := git(ctx, s.Dir, "ls-tree", "-r", "--name-only", s.Commit, "--", v.Path)
+	if err != nil {
+		// The tree could not be read at all, which is not the artifact being
+		// absent. Reporting it as absent would blame the agent for a broken
+		// repository.
+		return fsm.Evidence{}, fmt.Errorf("looking for %s in %s: %w", v.Path, short(s.Commit), err)
+	}
+
+	if strings.TrimSpace(found) == "" {
+		evidence.Verdict = fsm.VerdictFailed
+		evidence.Detail = fmt.Sprintf("%s committed nothing under %s", short(s.Commit), v.Path)
+		return evidence, nil
+	}
+
+	evidence.Verdict = fsm.VerdictPassed
+	evidence.Detail = strings.TrimSpace(found)
+	return evidence, nil
 }
 
 // run executes one command line and reports how it exited.

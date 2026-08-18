@@ -56,14 +56,40 @@ func (Command) isVerifier()        {}
 // It is the honest floor for prose — a briefing, a set of scenarios, a diagnosis.
 // Recording those as a passing check would be a lie the log tells forever, so
 // they carry ScopeExistence and say exactly what happened (ADR-0032).
-type Existence struct{}
+type Existence struct {
+	// Path is where the artifact lives, as a directory inside the repository.
+	//
+	// Declared, the delivery is checked against the commit: `git ls-tree <sha>
+	// <path>` either finds a file there or does not, and the answer comes from git
+	// rather than from the agent. Undeclared, nothing is checked and the agent's
+	// word is the whole record — which is every artifact today (RFC-0004).
+	//
+	// A directory rather than a filename: the agent names the file, which is what
+	// swarm-forge's `features/` does and what keeps a contract from having to
+	// predict a name it cannot know. A fixed filename would give the agent less to
+	// get wrong and give the contract more to be wrong about.
+	//
+	// Deliberately not part of the flow fingerprint: where an artifact lives is
+	// not whether the stage closed, and freezing every open task to move a
+	// directory would be disproportionate (ADR-0070).
+	Path string
+}
 
-// Proves reports that nothing was checked beyond the artifact being there.
+// Proves reports what an existence check proves, which is that the artifact is
+// there and nothing more. A declared path does not raise it: a file in the right
+// directory is still just a file (ADR-0032).
 func (Existence) Proves() Scope { return ScopeExistence }
 
-// Describe names the non-check for a human.
-func (Existence) Describe() string { return "delivered" }
-func (Existence) isVerifier()      {}
+// Describe names the check for a human, which is a non-check until a path says
+// otherwise.
+func (e Existence) Describe() string {
+	if e.Path == "" {
+		return "delivered"
+	}
+	return "delivered under " + e.Path
+}
+
+func (Existence) isVerifier() {}
 
 // VerifierFor returns how the stage proves an artifact, defaulting to existence.
 //

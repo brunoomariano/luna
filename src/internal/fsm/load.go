@@ -122,11 +122,20 @@ type verifierSpec struct {
 	kind  string
 	run   string
 	scope string
+	path  string
 }
 
 // build turns the collected keys into a verifier, refusing anything ambiguous.
 func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) {
 	switch {
+	case s.path != "" && s.run != "":
+		// A command already says what it proves by running. A path beside it would
+		// be a second, weaker check on the same artifact, and the question "which
+		// one decided?" has no good answer (RFC-0004: the path is for the artifacts
+		// nothing runs against).
+		return nil, fmt.Errorf("%s: %s runs a command and declares a path — a command proves what a path would",
+			where, artifact)
+
 	case s.run != "" && s.kind != "":
 		return nil, fmt.Errorf("%s: %s declares both a command and kind=%q — a verifier is one or the other",
 			where, artifact, s.kind)
@@ -146,7 +155,7 @@ func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) 
 		return Command{Run: s.run, Scope: scope}, nil
 
 	case s.kind == "existence":
-		return Existence{}, nil
+		return Existence{Path: s.path}, nil
 
 	case s.kind != "":
 		return nil, fmt.Errorf("%s: %s declares kind=%q; the only kind that runs nothing is `existence`",
@@ -348,6 +357,8 @@ func assignVerify(spec *verifierSpec, key, value, at string) error {
 		spec.scope = unquote(value)
 	case "kind":
 		spec.kind = unquote(value)
+	case "path":
+		spec.path = unquote(value)
 	default:
 		return fmt.Errorf("%s: unknown key %q in a verify block", at, key)
 	}

@@ -1,9 +1,14 @@
 # RFC-0004: An artifact declares where it lives
 
-**Status:** DRAFT
-**Last reviewed:** 2026-08-13
+**Status:** DONE
+**Last reviewed:** 2026-08-18
 **Source issue:** —
 **PRD:** —
+
+> Built as [ADR-0070](../ADRs/0070-an-artifact-can-declare-where-it-lives.md), which records
+> the four decisions and why. In short: the path is a **directory**, it stays **out of the
+> fingerprint**, it is **refused beside a command**, and it sits **beside** the `Delivered:`
+> line rather than replacing it.
 
 ## Motivation
 
@@ -146,20 +151,23 @@ shape, arrived at from the same problem.
 
 ## Open questions
 
-- [ ] **Does the path belong in the fingerprint?** The whole shape of phases 1–2 depends on
-      this. Argument for: it is part of the exit check, and the exit check is what the
-      fingerprint exists to protect. Argument against: it changes where an artifact lives,
-      not whether the stage closed, and freezing every open task for that is
-      disproportionate.
-- [ ] **Is `path` a file or a directory?** `features/` in swarm-forge is a prefix, and the
-      agent names the file. A fixed filename is stricter and gives the agent nothing to get
-      wrong.
-- [ ] **What about the artifacts that are facts?** `ci_green` already has a real verifier
-      that runs a command. Is "has a command verifier" the same distinction as "is not a
-      document", or are those two different axes that happen to line up in the shipped flow?
-- [ ] **Does this subsume the declaration, or sit beside it?** If a path is checked against
-      the commit, the agent's `Delivered:` line adds nothing for that artifact — but it is
-      still the only signal for the ones with no path.
+All four are answered in [ADR-0070](../ADRs/0070-an-artifact-can-declare-where-it-lives.md);
+kept here because the questions are what the design turned on.
+
+- [x] **Does the path belong in the fingerprint?** No. What the fingerprint protects is the
+      requirement, and a path changes what is checked rather than what was owed — so
+      stranding every open task to move a directory is disproportionate. It falls out for
+      free: `writeProofs` records the scope, and a path does not raise it.
+- [x] **Is `path` a file or a directory?** A directory. The agent names the file; the
+      contract names where it goes. A fixed filename would make the contract predict names
+      for work it has not seen.
+- [x] **What about the artifacts that are facts?** The same axis, not two. A command already
+      proves what a path would, so declaring both is refused rather than resolved — there is
+      no good answer to "which one decided?".
+- [x] **Does this subsume the declaration, or sit beside it?** Beside. Git decides for the
+      artifacts with a path; the `Delivered:` line is still the only signal for the ones
+      without, which is most of them. The path is evidence and the line is a claim, and
+      ADR-0028 already separates the two.
 
 ## References
 

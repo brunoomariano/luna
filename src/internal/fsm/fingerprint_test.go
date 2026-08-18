@@ -231,3 +231,26 @@ func TestEveryShippedStageIsCoveredByTheFingerprint(t *testing.T) {
 		}
 	}
 }
+
+// TestAPathDoesNotChangeTheFingerprint is the decision RFC-0004 turned on.
+//
+// Where an artifact lives is not whether the stage closed. Putting it in the
+// fingerprint would freeze every open task to move a directory — disproportionate
+// for a field that changes what is checked, not what the stage owed. What the
+// fingerprint protects is the requirement, and `Proves()` is unchanged by a path:
+// a file in the right directory is still just a file (ADR-0070).
+func TestAPathDoesNotChangeTheFingerprint(t *testing.T) {
+	bare := []Stage{{
+		ID: "x", Produces: []Artifact{"a"},
+		Verifiers: map[Artifact]Verifier{"a": Existence{}},
+	}}
+	pathed := []Stage{{
+		ID: "x", Produces: []Artifact{"a"},
+		Verifiers: map[Artifact]Verifier{"a": Existence{Path: "reports/"}},
+	}}
+
+	if Fingerprint(bare) != Fingerprint(pathed) {
+		t.Errorf("declaring a path stranded every open task:\n bare   %s\n pathed %s",
+			Fingerprint(bare), Fingerprint(pathed))
+	}
+}

@@ -342,3 +342,38 @@ func TestAMechanicalStageAfterAnAgentStageDeclaresNothing(t *testing.T) {
 		t.Errorf("delivered = %v, want [commit_sha] — a mechanical stage has no agent to declare", result.Delivered)
 	}
 }
+
+// TestTheBriefNamesWhereAnArtifactGoes. A declared path is checked against the
+// commit, so an agent that writes the right content in the wrong directory fails
+// a check nobody showed it (ADR-0070).
+func TestTheBriefNamesWhereAnArtifactGoes(t *testing.T) {
+	stage := fsm.Stage{
+		ID:       "verify",
+		Produces: []fsm.Artifact{"dod_checked"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"dod_checked": fsm.Existence{Path: "reports/"},
+		},
+	}
+
+	got := brief(fsm.NewTaskState("LUNA-1", ""), stage, fsm.Role{})
+
+	if !strings.Contains(got, "reports/") {
+		t.Errorf("the brief does not say where the artifact goes:\n%s", got)
+	}
+}
+
+// TestAnArtifactWithNoPathIsBriefedAsBefore keeps this additive: most artifacts
+// declare none, and a brief that grew a clause about nothing would be noise.
+func TestAnArtifactWithNoPathIsBriefedAsBefore(t *testing.T) {
+	stage := fsm.Stage{
+		ID:        "build",
+		Produces:  []fsm.Artifact{"code"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{"code": fsm.Existence{}},
+	}
+
+	got := brief(fsm.NewTaskState("LUNA-1", ""), stage, fsm.Role{})
+
+	if strings.Contains(got, "which is where it is looked for") {
+		t.Errorf("an artifact with no path was told about one:\n%s", got)
+	}
+}

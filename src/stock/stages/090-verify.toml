@@ -15,5 +15,11 @@ scope = "full"
 
 [verify.dod_checked]
 # A checklist a person reads. Recording it as a passing check would be the lie
-# ADR-0032 names.
+# ADR-0032 names — so the check is that it was written, not that it is right.
+#
+# This is the artifact RFC-0004 was written about: an agent produced 144 lines of
+# exactly this content, committed them to a file called `verification`, and the
+# stage closed green without `dod_checked` ever appearing. The path is what git
+# answers instead of the agent (ADR-0070).
 kind = "existence"
+path = "reports/"

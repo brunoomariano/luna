@@ -426,3 +426,86 @@ func TestProveVerifiesTheNamedCommitAndNotTheLatest(t *testing.T) {
 		t.Error("the check saw a file from a commit the stage did not deliver")
 	}
 }
+
+// TestADeclaredPathIsCheckedAgainstTheCommit is what RFC-0004 is for.
+//
+// Measured on a real run before this existed: six of six artifacts closed with
+// scope `existence`, which proves nothing — an agent that writes `Delivered:
+// contract` and commits no file at all closed the stage green. That is the
+// self-reported completion ADR-0028 rejects for status, one level down.
+func TestADeclaredPathIsCheckedAgainstTheCommit(t *testing.T) {
+	dir := repo(t)
+	if err := os.MkdirAll(filepath.Join(dir, "reports"), 0o755); err != nil {
+		t.Fatalf("making the directory: %v", err)
+	}
+	write(t, dir, "reports/dod.md", "the done-when list, clause by clause")
+	run(t, dir, "git", "add", ".")
+	run(t, dir, "git", "commit", "-m", "verify: the report")
+	commit := strings.TrimSpace(output(t, dir, "git", "rev-parse", "HEAD"))
+
+	shell := Shell{Dir: dir, Commit: commit}
+	evidence, err := shell.Prove(context.Background(), fsm.Existence{Path: "reports/"}, 1)
+	if err != nil {
+		t.Fatalf("proving a path that is there: %v", err)
+	}
+
+	if evidence.Verdict != fsm.VerdictPassed {
+		t.Errorf("a committed file under the declared path did not pass: %+v", evidence)
+	}
+	// What was found, so a person reading the log can see what satisfied it.
+	if !strings.Contains(evidence.Detail, "reports/dod.md") {
+		t.Errorf("the evidence does not name what it found: %q", evidence.Detail)
+	}
+}
+
+// TestAnEmptyPathIsTheAgentsWordAgainstItself is the failure that used to close
+// green: the stage says it delivered and the directory is empty.
+func TestAnEmptyPathIsTheAgentsWordAgainstItself(t *testing.T) {
+	dir := repo(t)
+	write(t, dir, "elsewhere.md", "committed, but not where the contract says")
+	run(t, dir, "git", "add", ".")
+	run(t, dir, "git", "commit", "-m", "verify: the wrong place")
+	commit := strings.TrimSpace(output(t, dir, "git", "rev-parse", "HEAD"))
+
+	shell := Shell{Dir: dir, Commit: commit}
+	evidence, err := shell.Prove(context.Background(), fsm.Existence{Path: "reports/"}, 1)
+	if err != nil {
+		t.Fatalf("proving a path that is not there: %v", err)
+	}
+
+	if evidence.Verdict != fsm.VerdictFailed {
+		t.Errorf("an empty directory passed: %+v", evidence)
+	}
+	if !strings.Contains(evidence.Detail, "reports/") {
+		t.Errorf("the evidence does not say what was missing: %q", evidence.Detail)
+	}
+}
+
+// TestAnUndeclaredPathChecksNothing keeps this additive. It is every artifact in
+// the shipped stock today, and none of them may start failing.
+func TestAnUndeclaredPathChecksNothing(t *testing.T) {
+	shell := Shell{Dir: t.TempDir(), Commit: "not-a-commit"}
+
+	evidence, err := shell.Prove(context.Background(), fsm.Existence{}, 1)
+	if err != nil {
+		t.Fatalf("an existence check with no path must not touch anything: %v", err)
+	}
+	if evidence.Verdict != fsm.VerdictPassed {
+		t.Errorf("an undeclared path stopped passing: %+v", evidence)
+	}
+}
+
+// TestNothingDeliveredYetIsNotAMissingArtifact. The first stage of the first task
+// has no commit to look in, and reporting that as absence would block a task for
+// not yet having done what it is about to do.
+func TestNothingDeliveredYetIsNotAMissingArtifact(t *testing.T) {
+	shell := Shell{Dir: repo(t)}
+
+	evidence, err := shell.Prove(context.Background(), fsm.Existence{Path: "reports/"}, 1)
+	if err != nil {
+		t.Fatalf("proving with no commit: %v", err)
+	}
+	if evidence.Verdict != fsm.VerdictPassed {
+		t.Errorf("a stage with nothing delivered was blamed for it: %+v", evidence)
+	}
+}

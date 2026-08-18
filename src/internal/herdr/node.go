@@ -473,12 +473,23 @@ func provenance(state fsm.TaskState, artifact fsm.Artifact) string {
 
 // howProven names the check an artifact will face, so the agent knows what it is
 // being held to before it starts rather than after it fails.
+//
+// A declared path is told for the stronger reason: it is not only what the
+// artifact is checked against, it is the one thing the agent has to get right for
+// the check to find anything. An agent that writes the correct content in the
+// wrong directory fails a check it was never shown (ADR-0070).
 func howProven(stage fsm.Stage, artifact fsm.Artifact) string {
-	verifier := fsm.VerifierFor(stage, artifact)
-	if _, runs := verifier.(fsm.Command); !runs {
+	switch verifier := fsm.VerifierFor(stage, artifact).(type) {
+	case fsm.Command:
+		return fmt.Sprintf(" — checked by `%s`", verifier.Describe())
+	case fsm.Existence:
+		if verifier.Path == "" {
+			return ""
+		}
+		return fmt.Sprintf(" — write it under `%s`, which is where it is looked for", verifier.Path)
+	default:
 		return ""
 	}
-	return fmt.Sprintf(" — checked by `%s`", verifier.Describe())
 }
 
 // role resolves the stage's role, refusing rather than falling back.

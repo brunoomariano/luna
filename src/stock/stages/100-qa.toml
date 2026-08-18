@@ -10,3 +10,10 @@ produces_for_human = ["qa_report"]
 sends_back_to = "build"
 # The green attested to code that no longer exists (ADR-0020).
 invalidates   = ["ci_green", "tests_green"]
+
+[verify.qa_report]
+# A report a person reads: what it says is judgement, and only that it exists is
+# checkable. The path is what makes even that much come from git rather than from
+# the agent's own word (ADR-0070).
+kind = "existence"
+path = "reports/"
