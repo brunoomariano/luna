@@ -287,11 +287,34 @@ func jailed(kind, socket string, args []string) (string, error) {
 		command += fmt.Sprintf(" %s=%s", artifactSocketEnv, socket)
 	}
 
-	command += fmt.Sprintf(" %s %s", jailBinary, kind)
+	command += " " + jailBinary + " " + inJail(kind, args)
+	return command, nil
+}
+
+// inJail is the command the sandbox runs for a harness.
+//
+// For claude it is not the bare binary. Inside the jail $HOME is a fresh tmpfs,
+// so ~/.claude.json is empty on every start and claude opens its folder-trust
+// dialog instead of a prompt — measured: the pane sat at "Is this a project you
+// trust?" while herdr reported the agent settled, and the stage closed having
+// delivered nothing. Worse, it was intermittent: the brief's trailing newline
+// sometimes confirmed the dialog by accident, so the same flow passed one stage
+// and starved the next.
+//
+// The trust is pre-written before claude starts, in the same jail invocation —
+// a separate one would write to a tmpfs that no longer exists. Answering it for
+// the agent is not overriding a person's judgement: the folder is a worktree
+// Luna itself cut from the user's repository, and the boundary is the sandbox,
+// not the dialog (INV-core-7).
+func inJail(kind string, args []string) string {
+	command := kind
 	for _, arg := range args {
 		command += " " + arg
 	}
-	return command, nil
+	if kind != "claude" {
+		return command
+	}
+	return `sh -c 'printf "{\"projects\":{\"%s\":{\"hasTrustDialogAccepted\":true}}}" "$PWD" > ~/.claude.json && exec ` + command + "'"
 }
 
 // agentIn reports the agent herdr sees in a pane, if any.

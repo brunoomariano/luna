@@ -836,7 +836,9 @@ func TestTheJailedCommandCarriesEveryPart(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := "HERDR_AGENT=claude " + jailBinary + " claude --permission-mode bypassPermissions"
+	want := "HERDR_AGENT=claude " + jailBinary +
+		` sh -c 'printf "{\"projects\":{\"%s\":{\"hasTrustDialogAccepted\":true}}}" "$PWD" > ~/.claude.json` +
+		` && exec claude --permission-mode bypassPermissions'`
 	if command != want {
 		t.Errorf("the command line is wrong:\n got %s\nwant %s", command, want)
 	}
@@ -899,9 +901,9 @@ func TestTheJailedCommandCarriesTheArtifactSocket(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := "HERDR_AGENT=claude " + artifactSocketEnv + "=/wt/.luna/artifact.sock " + jailBinary + " claude"
-	if command != want {
-		t.Errorf("command:\ngot  %q\nwant %q", command, want)
+	prefix := "HERDR_AGENT=claude " + artifactSocketEnv + "=/wt/.luna/artifact.sock " + jailBinary + " "
+	if !strings.HasPrefix(command, prefix) || !strings.Contains(command, "exec claude") {
+		t.Errorf("command must carry the socket before the jail and reach claude, got %q", command)
 	}
 }
 
@@ -917,5 +919,46 @@ func TestAStageWithNoHandoverGetsNoSocket(t *testing.T) {
 
 	if strings.Contains(command, artifactSocketEnv) {
 		t.Errorf("a stage with no handover must get no socket, got %q", command)
+	}
+}
+
+// TestClaudeIsTrustedBeforeItAsks pins the folder-trust pre-write: inside the
+// jail $HOME is a fresh tmpfs, so without this claude opens its trust dialog
+// instead of a prompt — measured: the stage settled with the dialog on screen
+// and closed having delivered nothing, intermittently, because the brief's
+// trailing newline sometimes confirmed it by accident.
+func TestClaudeIsTrustedBeforeItAsks(t *testing.T) {
+	withSandboxOnPath(t)
+
+	command, err := jailed("claude", "", []string{"--permission-mode", "bypassPermissions"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, want := range []string{
+		"hasTrustDialogAccepted", // the key claude reads
+		"> ~/.claude.json",       // written to the jail's own home
+		"&& exec claude",         // in the SAME jail invocation, or the tmpfs is gone
+	} {
+		if !strings.Contains(command, want) {
+			t.Errorf("the command must carry %q, got %q", want, command)
+		}
+	}
+}
+
+// TestOnlyClaudeGetsTheTrustPreWrite: the dialog is claude's; wrapping another
+// harness in it would run `exec codex` behind a file codex never reads.
+func TestOnlyClaudeGetsTheTrustPreWrite(t *testing.T) {
+	withSandboxOnPath(t)
+
+	command, err := jailed("codex", "", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(command, "hasTrustDialogAccepted") {
+		t.Errorf("another harness must not inherit claude's dialog answer, got %q", command)
+	}
+	if want := "HERDR_AGENT=codex " + jailBinary + " codex"; command != want {
+		t.Errorf("command:\ngot  %q\nwant %q", command, want)
 	}
 }
