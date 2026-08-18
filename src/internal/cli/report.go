@@ -41,6 +41,10 @@ type TaskReport struct {
 	// Absent when nobody described the task, which is the ordinary case.
 	Statement *StatementReport `json:"statement,omitempty"`
 
+	// Loop is where a convergence loop stands, absent when there is none. The
+	// three counters are separate because the ceilings are (ADR-0023).
+	Loop *LoopReport `json:"loop,omitempty"`
+
 	Events   int              `json:"events"`
 	Produced []ArtifactReport `json:"produced,omitempty"`
 
@@ -48,6 +52,18 @@ type TaskReport struct {
 	// longer has. The task still replays — its decisions are in its log — but a
 	// reader should be able to say so (ADR-0026).
 	ProfileDefined bool `json:"profile_defined"`
+}
+
+// LoopReport is a convergence loop's position, for a reader that wants to know
+// how close a task is to a ceiling before it fires.
+type LoopReport struct {
+	Rounds      int `json:"rounds"`
+	NoProgress  int `json:"no_progress"`
+	Oscillation int `json:"oscillation"`
+
+	// Compared is the signal the last round produced, which is what "no progress"
+	// was decided against (PRD node-0002, RF3).
+	Compared string `json:"compared,omitempty"`
 }
 
 // StatementReport is what the task is about, as a reader sees it.
@@ -109,6 +125,15 @@ func taskReport(cfg Config, state fsm.TaskState, events int) TaskReport {
 		Blocked:        state.Blocked,
 		Events:         events,
 		ProfileDefined: defined,
+	}
+
+	if state.Loop.Rounds > 0 {
+		report.Loop = &LoopReport{
+			Rounds:      state.Loop.Rounds,
+			NoProgress:  state.Loop.NoProgress,
+			Oscillation: state.Loop.Oscillation,
+			Compared:    state.Loop.LastProgress,
+		}
 	}
 
 	if state.Statement.Stated() {

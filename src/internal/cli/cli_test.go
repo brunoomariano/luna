@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,6 +88,86 @@ func (h *harness) replay(t *testing.T, id string) fsm.TaskState {
 		t.Fatalf("replaying %s: %v", id, err)
 	}
 	return state
+}
+
+// loop drives a task into a convergence loop by appending the findings that
+// produce one, rather than writing counters into the state.
+//
+// Through the real actions on purpose: the counters are the reducer's, and a test
+// that set them directly would pass against a reducer that stopped counting.
+func (h *harness) loop(t *testing.T, id string, want fsm.LoopCounters) {
+	t.Helper()
+
+	flow := fsm.DefaultFlow()
+	for round := range want.Rounds {
+		// A finding is legal from the stage a review loop returns to, so the task
+		// is walked there before each one.
+		h.walkTo(t, id, "code-review")
+
+		// The same signal every round is what NoProgress counts, and a distinct one
+		// resets it — which is how a count smaller than the round total is made.
+		progress := want.LastProgress
+		if round < want.Rounds-want.NoProgress-1 {
+			progress = fmt.Sprintf("round-%d", round)
+		}
+		state := h.replay(t, id)
+		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.ReviewFinding{
+			Aligned: true, Progress: progress, Flow: flow,
+			GateDecision: fsm.GateDecisionPassed,
+		}); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+	}
+}
+
+// walkTo closes and advances stages until the task is running the named one.
+func (h *harness) walkTo(t *testing.T, id string, stage fsm.StageID) {
+	t.Helper()
+
+	flow := fsm.DefaultFlow()
+	for range 2 * len(flow) {
+		state := h.replay(t, id)
+		if state.Stage == stage && state.Status == fsm.StatusRunning {
+			return
+		}
+
+		if state.Status == fsm.StatusRunning {
+			h.closeStage(t, id, state)
+			continue
+		}
+		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Advance{
+			Flow: flow, GateDecision: fsm.GateDecisionPassed,
+		}); err != nil {
+			t.Fatalf("advancing towards %s: %v", stage, err)
+		}
+	}
+	t.Fatalf("%s never reached %s", id, stage)
+}
+
+// closeStage delivers whatever the running stage's contract asks for.
+func (h *harness) closeStage(t *testing.T, id string, state fsm.TaskState) {
+	t.Helper()
+
+	flow := fsm.DefaultFlow()
+	var stage fsm.Stage
+	for _, s := range flow {
+		if s.ID == state.Stage {
+			stage = s
+		}
+	}
+
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, a := range owed {
+		evidence[a] = fsm.Evidence{Scope: fsm.VerifierFor(stage, a).Proves(), Verdict: fsm.VerdictPassed}
+	}
+	if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Complete{
+		Delivered: owed, Evidence: evidence, Flow: flow,
+		Commit:       "c0ffee" + string(state.Stage),
+		GateDecision: fsm.GateDecisionPassed,
+	}); err != nil {
+		t.Fatalf("closing %s: %v", state.Stage, err)
+	}
 }
 
 // ── task new ─────────────────────────────────────────────────────────────────
@@ -1190,5 +1271,70 @@ func TestAKnownProfileIsNotFlagged(t *testing.T) {
 
 	if strings.Contains(out, "unknown") {
 		t.Errorf("a shipped profile must not be flagged, got %q", out)
+	}
+}
+
+// TestTaskShowReportsWhereTheLoopStands. The three counters existed and were
+// invisible: a task circling without converging counted rounds in silence until a
+// ceiling fired, and the first anyone heard of it was the gate that opened
+// (PRD node-0002).
+func TestTaskShowReportsWhereTheLoopStands(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.loop(t, "LUNA-1", fsm.LoopCounters{Rounds: 3, NoProgress: 2, LastProgress: "abc1234"})
+
+	out := h.mustRun(t, "task", "show", "LUNA-1")
+	loop := h.replay(t, "LUNA-1").Loop
+
+	// Asserted against what the reducer counted rather than against numbers
+	// written here: the point is that the listing reports the counters, and a test
+	// naming its own would drift from them silently.
+	for _, want := range []string{
+		fmt.Sprintf("round %d", loop.Rounds),
+		fmt.Sprintf("%d with no change", loop.NoProgress),
+		"abc1234",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the listing does not carry %q:\n%s", want, out)
+		}
+	}
+	if loop.NoProgress == 0 {
+		t.Fatal("the harness produced no repeated round, so the listing was never tested")
+	}
+}
+
+// TestTaskShowSaysNothingAboutALoopThatIsNotRunning. Most tasks never loop, and a
+// line of zeroes on every one of them is noise that teaches a reader to skip the
+// place the real number will appear.
+func TestTaskShowSaysNothingAboutALoopThatIsNotRunning(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	if out := h.mustRun(t, "task", "show", "LUNA-1"); strings.Contains(out, "loop") {
+		t.Errorf("a task that never looped reports a loop:\n%s", out)
+	}
+}
+
+// TestTheLoopReachesTheStructuredView. `--json` is a contract (ADR-0043), and a
+// program watching for a task about to hit a ceiling reads it there.
+func TestTheLoopReachesTheStructuredView(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.loop(t, "LUNA-1", fsm.LoopCounters{Rounds: 2, NoProgress: 2, LastProgress: "abc1234"})
+
+	var report TaskReport
+	if err := json.Unmarshal([]byte(h.mustRun(t, "task", "show", "LUNA-1", "--json")), &report); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	if report.Loop == nil {
+		t.Fatal("a looping task carries no loop in the structured view")
+	}
+	loop := h.replay(t, "LUNA-1").Loop
+	if report.Loop.Rounds != loop.Rounds || report.Loop.NoProgress != loop.NoProgress {
+		t.Errorf("the counters did not survive:\n got %+v\nwant %+v", report.Loop, loop)
+	}
+	if report.Loop.Compared != "abc1234" {
+		t.Errorf("what was compared did not survive: %q", report.Loop.Compared)
 	}
 }

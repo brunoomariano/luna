@@ -1,24 +1,23 @@
 # PRD node-0002: No-progress detection, and the shape of timeouts
 
-**Status:** NOT IMPLEMENTED
-**Last reviewed:** 2026-08-12
+**Status:** IMPLEMENTED
+**Last reviewed:** 2026-08-18
 **Source issue:** —
 **RFC:** —
 
-> **Half built, so the status stays NOT IMPLEMENTED** — the enum has no partial
-> value, and claiming the whole thing would be the doc overstating the code.
->
-> **The first half is built.** Its blocker was named here — *"nothing emits a
-> `ReviewFinding` today, so there are no rounds to count"* — and that emitter
-> landed with [ADR-0059](../../ADRs/0059-luna-reads-the-review-and-a-spent-ceiling-stops-the-task.md).
+> **What this PRD asked for is built.** Its blocker was named here — *"nothing emits a
+> `ReviewFinding` today, so there are no rounds to count"* — and that emitter landed with
+> [ADR-0059](../../ADRs/0059-luna-reads-the-review-and-a-spent-ceiling-stops-the-task.md).
 > `Loop.NoProgress` is fed and its ceiling fires
-> ([ADR-0061](../../ADRs/0061-the-commit-is-the-progress-signal.md)).
+> ([ADR-0061](../../ADRs/0061-the-commit-is-the-progress-signal.md)). RF1, RF2 and RF3 all
+> hold.
 >
-> **The second half is not, and deliberately.** Luna still has one timer, and the
-> PRD's own argument is that a second question appears in production rather than
-> at the desk. Nothing has asked for it yet. The trap it records — an event
-> timeout rearmed by a keepalive holding a stalled agent alive forever — is worth
-> keeping written down for whoever adds the second one.
+> **The second timer is not built, and that is this PRD's own conclusion rather than
+> an omission.** The argument it makes is that a second question appears in production
+> rather than at the desk, and nothing has asked for it. The trap it records — an event
+> timeout rearmed by a keepalive, holding a stalled agent alive forever — is why the
+> section stays: it is written down for whoever adds the second one, and a document that
+> deleted it would lose the reason more than the plan.
 
 ## Overview
 

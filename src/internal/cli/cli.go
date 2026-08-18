@@ -587,6 +587,36 @@ func knobNote(knob fsm.Knob) string {
 	}
 }
 
+// printLoop reports where a convergence loop stands, and says nothing when there
+// is no loop.
+//
+// The counters existed and were invisible: a task circling without converging
+// counted rounds in silence until a ceiling fired, and the first anyone heard of
+// it was the gate it opened. Three separate ceilings mean three separate
+// pathologies (ADR-0023), so they are named separately rather than summed.
+//
+// `LastProgress` is shown because the audit's question is what was compared — a
+// person told two rounds made no progress wants to see what the machine looked at
+// before believing it (PRD node-0002, RF3).
+func printLoop(env Env, loop fsm.LoopCounters) {
+	if loop.Rounds == 0 {
+		return
+	}
+
+	fmt.Fprintf(env.Out, "  loop     round %d", loop.Rounds)
+	if loop.NoProgress > 0 {
+		fmt.Fprintf(env.Out, ", %d with no change", loop.NoProgress)
+	}
+	if loop.Oscillation > 0 {
+		fmt.Fprintf(env.Out, ", %d back to a stage already visited", loop.Oscillation)
+	}
+	fmt.Fprintln(env.Out)
+
+	if loop.LastProgress != "" {
+		fmt.Fprintf(env.Out, "  compared %s\n", loop.LastProgress)
+	}
+}
+
 // printTask writes the form a person reads.
 //
 // Split from taskShow so the two output shapes stay separable: the structured one
@@ -607,6 +637,7 @@ func printTask(env Env, state fsm.TaskState, events int) {
 		fmt.Fprintf(env.Out, "  blocked  %s\n", state.Blocked)
 	}
 	fmt.Fprintf(env.Out, "  events   %d\n", events)
+	printLoop(env, state.Loop)
 
 	// What the task is about comes out of the log now rather than the registry
 	// (ADR-0067), so the command that shows a task can show it without a second
