@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/brunoomariano/luna/src/internal/cli"
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -45,6 +46,14 @@ func run(args []string) error {
 
 	path, err := storePath(ctx)
 	if err != nil {
+		return err
+	}
+
+	// Refused before anything is opened, because opening is what hides the
+	// problem: a log on a filesystem the caller cannot really reach answers every
+	// read and write and keeps none of them, so the failure has to be caught while
+	// there is still nothing to lose (node.EnsureDurable).
+	if err := node.EnsureDurable(filepath.Dir(path)); err != nil {
 		return err
 	}
 
