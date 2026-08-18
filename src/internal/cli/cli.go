@@ -818,6 +818,15 @@ func gateShow(env Env, state fsm.TaskState, flow []fsm.Stage) error {
 
 	if gate.Kind == fsm.GateReviewArtifact {
 		fmt.Fprintf(env.Out, "\n%s\n%s\n", gate.Artifact, gate.Payload)
+
+		// An artifact handed to Luna is in the store, so the person deciding gets
+		// the thing itself rather than a hash naming it (RFC-0008). Before this,
+		// the answer to "where is what I should be looking at?" was a line of
+		// evidence — measured on a real gate, and it is not something a person can
+		// review.
+		if blob, err := env.Store.LatestBlob(state.ID, "", string(gate.Artifact)); err == nil {
+			fmt.Fprintf(env.Out, "\n%s\n", blob.Body)
+		}
 		return nil
 	}
 

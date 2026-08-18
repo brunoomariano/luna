@@ -7,7 +7,9 @@ import (
 	"testing"
 	"testing/iotest"
 
+	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/node"
+	"github.com/brunoomariano/luna/src/internal/store"
 )
 
 // artifactHarness is a harness with a live artifact socket, which is how the
@@ -232,5 +234,64 @@ func TestPutWithoutANameIsUsage(t *testing.T) {
 	err := Run(h.env, []string{"artifact", "put"})
 	if err == nil || !strings.Contains(err.Error(), "artifact name") {
 		t.Errorf("put with no name names the gap, got %v", err)
+	}
+}
+
+// TestGateShowPrintsAHandedOverArtifact is the sf-51 complaint closing: a person
+// asked to review the contract gets the contract, not a hash naming it.
+//
+// It drives the flow to the spec gate the same way a run does — a handover
+// contract cannot be Complete'd without a blob in the store, so one is put
+// there first, which is exactly what the agent's `luna artifact put` does.
+func TestGateShowPrintsAHandedOverArtifact(t *testing.T) {
+	h := newHarness(t)
+
+	flow := []fsm.Stage{{
+		ID:   "spec",
+		Role: "specifier",
+		Gate: &fsm.GateSpec{
+			Kind: fsm.GateReviewArtifact, Artifact: "contract", Reason: "review the contract",
+		},
+		Produces:  []fsm.Artifact{"contract"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{"contract": fsm.Existence{Handover: true}},
+	}}
+
+	// Opened against this test's own flow, so the replay reads the log under the
+	// fingerprint it was written with (ADR-0046).
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind: fsm.KindFeature, Flow: fsm.Fingerprint(flow),
+	}); err != nil {
+		t.Fatalf("opening the task: %v", err)
+	}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: flow}); err != nil {
+		t.Fatalf("entering the stage: %v", err)
+	}
+	if err := h.env.Store.PutBlob(store.Blob{
+		TaskID: "LUNA-1", Stage: "spec", Artifact: "contract", Seq: 1,
+		Body: []byte("the whole contract, verbatim"),
+	}); err != nil {
+		t.Fatalf("handing the contract over: %v", err)
+	}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Complete{
+		Flow: flow, Delivered: []fsm.Artifact{"contract"},
+		Evidence: map[fsm.Artifact]fsm.Evidence{"contract": {
+			Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed,
+			Detail: "handed over to Luna, abc123", RecordedAt: 1,
+		}},
+	}); err != nil {
+		t.Fatalf("closing the stage: %v", err)
+	}
+
+	// The replay must use the same flow the events were written under.
+	state, err := h.env.Store.Replay("LUNA-1", flow)
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if err := gateShow(h.env, state, flow); err != nil {
+		t.Fatalf("showing the gate: %v", err)
+	}
+
+	if !strings.Contains(h.out.String(), "the whole contract, verbatim") {
+		t.Errorf("the person reviews the artifact, not a hash naming it, got %q", h.out.String())
 	}
 }

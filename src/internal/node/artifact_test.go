@@ -310,3 +310,48 @@ func TestAWorktreeThatCannotHoldTheSocketIsRefused(t *testing.T) {
 		t.Error("a stale path that cannot be cleared must be reported")
 	}
 }
+
+// TestADeeplyNestedWorktreeStillGetsItsSocket is the regression for the first
+// real run: a worktree 140 bytes down died on `bind: invalid argument`, because
+// AF_UNIX caps a socket path at 108 bytes and a worktree can live anywhere.
+//
+// Both directions matter — the server binds and the client connects through the
+// same limit.
+func TestADeeplyNestedWorktreeStillGetsItsSocket(t *testing.T) {
+	deep := filepath.Join(t.TempDir(), strings.Repeat("deep-directory-name/", 6))
+	if err := os.MkdirAll(deep, 0o750); err != nil {
+		t.Fatalf("digging the deep worktree: %v", err)
+	}
+	if len(filepath.Join(deep, node.SocketName)) <= 107 {
+		t.Fatalf("the fixture is not deep enough to exercise the limit")
+	}
+
+	fake := newMemoryArtifacts()
+	server, err := node.ServeArtifacts(deep, "spec", fake)
+	if err != nil {
+		t.Fatalf("a deep worktree must still get its socket, got %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	resp, err := node.CallArtifact(server.Path(), node.Request{
+		Op: "put", Artifact: "contract", Body: []byte("deep content"),
+	})
+	if err != nil || resp.Err != "" {
+		t.Fatalf("putting through a deep socket: %v / %s", err, resp.Err)
+	}
+	if string(fake.saved["spec/contract"]) != "deep content" {
+		t.Errorf("the content must arrive whole, got %q", fake.saved["spec/contract"])
+	}
+}
+
+// TestADeepSocketWhoseDirectoryIsGoneIsReported covers shortEnough's own
+// failure: the path is too long to use directly and its directory cannot be
+// opened to shorten it.
+func TestADeepSocketWhoseDirectoryIsGoneIsReported(t *testing.T) {
+	gone := "/tmp/luna-nowhere/" + strings.Repeat("deep-directory-name/", 6) + "artifact.sock"
+
+	_, err := node.CallArtifact(gone, node.Request{Op: "get", Artifact: "x"})
+	if err == nil || !strings.Contains(err.Error(), "socket's directory") {
+		t.Errorf("an unopenable directory must be reported as itself, got %v", err)
+	}
+}

@@ -55,6 +55,11 @@ type ArtifactServer struct {
 	store    ArtifactStore
 	stage    string
 
+	// path is where the socket really is. The listener may know it by a shorter
+	// alias (see shortEnough), and the alias dies with the file descriptor behind
+	// it — this is the name that stays valid.
+	path string
+
 	wg   sync.WaitGroup
 	once sync.Once
 }
@@ -73,19 +78,25 @@ func ServeArtifacts(worktree, stage string, s ArtifactStore) (*ArtifactServer, e
 		return nil, fmt.Errorf("clearing the artifact socket at %s: %w", path, err)
 	}
 
-	listener, err := net.Listen("unix", path)
+	bindable, done, err := shortEnough(path)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	listener, err := net.Listen("unix", bindable)
 	if err != nil {
 		return nil, fmt.Errorf("opening the artifact socket at %s: %w", path, err)
 	}
 
-	server := &ArtifactServer{listener: listener, store: s, stage: stage}
+	server := &ArtifactServer{listener: listener, store: s, stage: stage, path: path}
 	server.wg.Add(1)
 	go server.accept()
 	return server, nil
 }
 
 // Path is where the socket is, for the brief to name.
-func (s *ArtifactServer) Path() string { return s.listener.Addr().String() }
+func (s *ArtifactServer) Path() string { return s.path }
 
 // Close stops the server and waits for connections in flight.
 func (s *ArtifactServer) Close() error {
@@ -153,7 +164,13 @@ func (s *ArtifactServer) reply(conn net.Conn, r Response) {
 // where it is standing and a client that searches would be a client that can find
 // the wrong stage's socket.
 func CallArtifact(socket string, req Request) (Response, error) {
-	conn, err := net.Dial("unix", socket)
+	dialable, done, err := shortEnough(socket)
+	if err != nil {
+		return Response{}, err
+	}
+	defer done()
+
+	conn, err := net.Dial("unix", dialable)
 	if err != nil {
 		return Response{}, fmt.Errorf("reaching Luna at %s: %w", socket, err)
 	}
@@ -168,4 +185,33 @@ func CallArtifact(socket string, req Request) (Response, error) {
 		return Response{}, fmt.Errorf("reading the answer: %w", err)
 	}
 	return resp, nil
+}
+
+// sunPathLimit is what AF_UNIX gives a socket path: 108 bytes on Linux,
+// including the terminating NUL. A path at or past it fails bind and connect
+// with `invalid argument`, which names neither the path nor the limit.
+const sunPathLimit = 107
+
+// shortEnough returns a name the socket syscalls accept for path, and a cleanup
+// to call once the bind or connect has happened.
+//
+// A worktree can live arbitrarily deep — measured: the first real run put one
+// 140 bytes down and the server died on `bind: invalid argument` before the
+// agent ever started. The socket cannot move (inside the worktree is the one
+// place a contained agent reaches, RFC-0008), so the *name* is shortened
+// instead: the directory is opened, and the path goes through /proc/self/fd,
+// which resolves to the same inode in a handful of bytes. The descriptor only
+// has to outlive the syscall — the socket, once bound, is reached by its real
+// path from then on.
+func shortEnough(path string) (string, func(), error) {
+	if len(path) <= sunPathLimit {
+		return path, func() {}, nil
+	}
+
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return "", nil, fmt.Errorf("opening the socket's directory for %s: %w", path, err)
+	}
+	short := fmt.Sprintf("/proc/self/fd/%d/%s", dir.Fd(), filepath.Base(path))
+	return short, func() { _ = dir.Close() }, nil
 }
