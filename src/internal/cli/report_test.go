@@ -175,6 +175,7 @@ func TestAProfileNoLongerDefinedIsFlaggedInTheStructure(t *testing.T) {
 	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
 		Kind:    fsm.KindFeature,
 		Profile: fsm.Profile("deleted-last-week"),
+		Flow:    fsm.Fingerprint(fsm.DefaultFlow()),
 	}); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}

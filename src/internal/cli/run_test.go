@@ -299,7 +299,7 @@ func blockedStore(t *testing.T, h *harness, id string) {
 	t.Helper()
 
 	for i, action := range []fsm.Action{
-		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly},
+		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(fsm.DefaultFlow())},
 		fsm.Advance{Flow: fsm.DefaultFlow()},  // into discovery, which owes repos
 		fsm.Complete{Flow: fsm.DefaultFlow()}, // delivered nothing
 	} {

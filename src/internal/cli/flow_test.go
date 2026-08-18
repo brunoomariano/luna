@@ -274,7 +274,7 @@ func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
 	}
 
 	// A task whose budget is spent: the next failure is the one that escalates.
-	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
 

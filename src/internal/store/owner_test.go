@@ -20,7 +20,7 @@ func TestOnlyLunaWritesTheLog(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reader.Close() })
 
-	err = reader.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature})
+	err = reader.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())})
 	if !errors.Is(err, ErrNotTheOwner) {
 		t.Fatalf("err = %v, want ErrNotTheOwner", err)
 	}
@@ -69,7 +69,7 @@ func TestReadingNeedsNoOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening for writing: %v", err)
 	}
-	if err := writer.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature}); err != nil {
+	if err := writer.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
 	if err := writer.Close(); err != nil {

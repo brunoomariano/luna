@@ -21,12 +21,6 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// ErrNoSuchBlob is returned when a hash has no content behind it. A handoff
-// pointing at a blob the store does not hold is a broken chain, so this is an
-// error rather than empty bytes — returning nothing would let the next stage
-// start on emptiness.
-var ErrNoSuchBlob = errors.New("no blob for that hash")
-
 // ErrUnknownAction is returned when the log holds an action this build cannot
 // read — a log written by a newer version, most likely. Replay stops rather than
 // guessing, because guessing would rebuild the task into a state it was never in.
@@ -51,13 +45,9 @@ var ErrFlowChanged = errors.New("the flow changed under an open task")
 // repair it, since the store has no UPDATE and no DELETE (INV-core-2).
 var ErrConcurrentWrite = errors.New("the task moved since it was read")
 
-// firstSeq is the sequence of a task's opening event. Sequences start at 1, and
-// TaskCreated is always first — which is what makes the log self-describing.
-const firstSeq = 1
-
 // unconditional is the `after` for an append by a caller that did not read the
-// log first — creating a task, or storing a handoff blob. Negative rather than
-// zero, because zero is a real position: the state of a task whose log is empty.
+// log first — creating a task. Negative rather than zero, because zero is a real
+// position: the state of a task whose log is empty.
 const unconditional = -1
 
 // Event is one recorded transition. Seq orders it within its task.
@@ -65,13 +55,6 @@ type Event struct {
 	Seq     int
 	Action  string
 	Payload string
-
-	// Blob pointed at a handoff snapshot, and nothing writes one now that the
-	// handoff is the commit (ADR-0058). It is still read, because a log written
-	// before that carries values here and the log is the audit trail — dropping
-	// the field would make those events decode into something they were not
-	// (INV-core-2).
-	Blob string
 }
 
 // Waiting is a task suspended at a gate, as `luna gates` would list it
@@ -88,10 +71,11 @@ type Waiting struct {
 
 // Store is the append-only log, in one SQLite file in the main repository.
 //
-// It held a content store too, so an event and the snapshot it pointed at landed
-// in one transaction (ADR-0025). The handoff is the commit now, and git stores
-// content better than a table of blobs — so the snapshots went and the log
-// stayed (ADR-0058).
+// The log is all of it. ADR-0025 put a content-addressed store beside it so a
+// handoff could carry a snapshot of what the previous stage produced; RFC-0002
+// replaced that with the commit, and git stores content better than a table of
+// blobs ever did (ADR-0058). Nothing here holds an artifact — it holds the facts
+// about what happened to them.
 type Store struct {
 	db *sql.DB
 
@@ -133,22 +117,18 @@ CREATE TABLE IF NOT EXISTS events (
     seq      INTEGER NOT NULL,
     action   TEXT    NOT NULL,
     payload  TEXT    NOT NULL DEFAULT '',
-    blob     TEXT    NOT NULL DEFAULT '',
     -- When the row was written, in unix seconds. It is metadata about the log
     -- and never part of the state: Replay does not read it, and the reducer
     -- could not use it without ceasing to be pure (ADR-0024).
     --
     -- It exists for the watchdog, which asks a question no replay can answer —
     -- "how long has this been blocked" — because a rebuilt state carries no
-    -- clock. DEFAULT 0 so a log written before the column existed still reads,
-    -- reporting an age of zero rather than a false one (ADR-0053).
+    -- clock (ADR-0053). DEFAULT 0 so a row written without one reports an age of
+    -- zero rather than one measured from the epoch, which would make the task look
+    -- stuck for decades — and nothing is worse for a watchdog than an alert
+    -- everyone has learned to ignore.
     at       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (task_id, seq)
-);
-
-CREATE TABLE IF NOT EXISTS blobs (
-    sha256   TEXT PRIMARY KEY,
-    content  BLOB NOT NULL
 );
 `
 
@@ -360,8 +340,8 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 	// is an observation about the log; reading it back into a transition would
 	// make a replay depend on when it ran (ADR-0024, ADR-0053).
 	if _, err := tx.Exec(
-		`INSERT INTO events (task_id, seq, action, payload, blob, at) VALUES (?, ?, ?, ?, ?, ?)`,
-		taskID, next, e.Action, e.Payload, e.Blob, s.now().Unix(),
+		`INSERT INTO events (task_id, seq, action, payload, at) VALUES (?, ?, ?, ?, ?)`,
+		taskID, next, e.Action, e.Payload, s.now().Unix(),
 	); err != nil {
 		return fmt.Errorf("appending to %s: %w", taskID, err)
 	}
@@ -376,7 +356,7 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 // events, which is a normal answer rather than an error.
 func (s *Store) Events(taskID string) ([]Event, error) {
 	rows, err := s.db.Query(
-		`SELECT seq, action, payload, blob FROM events WHERE task_id = ? ORDER BY seq`, taskID,
+		`SELECT seq, action, payload FROM events WHERE task_id = ? ORDER BY seq`, taskID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reading the log of %s: %w", taskID, err)
@@ -386,7 +366,7 @@ func (s *Store) Events(taskID string) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.Seq, &e.Action, &e.Payload, &e.Blob); err != nil {
+		if err := rows.Scan(&e.Seq, &e.Action, &e.Payload); err != nil {
 			return nil, fmt.Errorf("reading an event of %s: %w", taskID, err)
 		}
 		events = append(events, e)
@@ -447,7 +427,12 @@ func (s *Store) Replay(taskID string, flow []fsm.Stage) (fsm.TaskState, error) {
 		// under, and the failure is silent: a renamed stage simply becomes the new
 		// name, and a stage inserted mid-flow makes the task re-run work it had
 		// already finished (ADR-0046).
-		if e.Seq == firstSeq && !state.Flow.Matches(flow) {
+		//
+		// Only a `TaskCreated` carries a fingerprint, so only it is compared. A log
+		// that opens with anything else records no flow to disagree with — it is a
+		// malformed log rather than a mismatched one, and reporting it as a changed
+		// flow would name the wrong problem.
+		if _, opening := action.(fsm.TaskCreated); opening && !state.Flow.Matches(flow) {
 			return fsm.TaskState{}, fmt.Errorf(
 				"%w: %s ran under flow %s and this build's flow is %s — "+
 					"the log cannot be read against a flow it was not written under",
@@ -496,15 +481,13 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 	return waiting, nil
 }
 
-// The content store is gone, and the `blobs` table is not.
+// What is not here: a content store.
 //
-// ADR-0025 put a content-addressed store beside the log so a handoff could carry
-// a snapshot of what the previous stage produced. RFC-0002 replaced that: the
-// handoff is the commit, and git already stores content far better than a table
-// of blobs does (ADR-0058). `PutBlob`, `Blob`, `BlobCount` and `AppendWithBlob`
-// went with it — they had no caller outside their own tests.
+// ADR-0025 put one beside the log so a handoff could carry a snapshot of what the
+// previous stage produced, and RFC-0002 replaced it with the commit — git already
+// stores content far better than a table of blobs does (ADR-0058). The API went
+// first, then the empty table and the column it wrote to.
 //
-// The table and the `events.blob` column stay. Dropping them would rewrite logs
-// written before this, and the log is the audit trail (INV-core-2). An empty
-// table costs nothing; a migration that discards history costs the thing the
-// store exists for.
+// The note survives the code because the alternative is a decision, not an
+// omission: a reader who finds ADR-0025 and no blobs should learn that the
+// snapshot moved to git rather than that somebody forgot to build it.

@@ -12,9 +12,10 @@ import (
 // configuration and stays editable — what the log records is enough to notice
 // that the flow a task is being replayed against is not the one it ran under.
 //
-// The empty value means a log written before fingerprints existed, and it
-// matches everything: an old log keeps replaying rather than becoming
-// unreadable because a field was added.
+// The empty value is the fingerprint of a flow with no stages, and nothing more.
+// Every task Luna creates is stamped with the flow it was born under, so a task
+// carrying no fingerprint is one created against no flow — which agrees with
+// nothing a build actually runs.
 type FlowFingerprint string
 
 // Fingerprint reduces a flow to what changes how its history reads.
@@ -175,9 +176,11 @@ func writeArtifacts(b *strings.Builder, artifacts []Artifact) {
 // Matches reports whether a log written under this fingerprint can be replayed
 // against the given flow.
 //
-// An empty fingerprint matches anything: it means the log predates the field, and
-// refusing those would make adding the field a breaking change for every task
-// already in the store.
+// The comparison is plain equality, and the empty value needs no special case:
+// `Fingerprint` answers empty for a flow with no stages, so an empty fingerprint
+// agrees with an empty flow and disagrees with every real one. That is the right
+// answer to both readings — a task created with no flow, and a caller replaying
+// one against nothing.
 func (f FlowFingerprint) Matches(flow []Stage) bool {
-	return f == "" || f == Fingerprint(flow)
+	return f == Fingerprint(flow)
 }

@@ -404,6 +404,7 @@ func TestReplayReadsTheKindFromTheLog(t *testing.T) {
 	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
 		Kind:    fsm.KindBug,
 		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(fsm.DefaultFlow()),
 	}); err != nil {
 		t.Fatalf("appending: %v", err)
 	}
@@ -427,10 +428,10 @@ func TestReplayReadsTheKindFromTheLog(t *testing.T) {
 func TestTasksOfDifferentKindsCoexist(t *testing.T) {
 	s := openTemp(t)
 
-	if err := s.AppendAction("a-bug", fsm.TaskCreated{Kind: fsm.KindBug}); err != nil {
+	if err := s.AppendAction("a-bug", fsm.TaskCreated{Kind: fsm.KindBug, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("appending: %v", err)
 	}
-	if err := s.AppendAction("a-chore", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+	if err := s.AppendAction("a-chore", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("appending: %v", err)
 	}
 
@@ -489,27 +490,26 @@ func TestReplayRefusesALogWrittenUnderAnotherFlow(t *testing.T) {
 	}
 }
 
-// TestALogWithoutAFingerprintStillReplays covers the compatibility rule.
+// TestATaskStampedWithNoFlowDoesNotReplayAgainstOne covers what an unstamped
+// opening event means now.
 //
-// Adding a field to the opening event must not orphan every task already in the
-// store, so a log written before fingerprints existed replays as it always did.
-func TestALogWithoutAFingerprintStillReplays(t *testing.T) {
+// It used to replay against anything, so that a log written before ADR-0046
+// existed kept working. Nothing writes such a log — `luna task new` stamps every
+// task with the flow it was born under — so the permissive reading had no case
+// left to serve except the one it should refuse: a task opened against no flow,
+// replayed against a real one, is the silent mismatch the fingerprint exists to
+// catch.
+func TestATaskStampedWithNoFlowDoesNotReplayAgainstOne(t *testing.T) {
 	s := openTemp(t)
 
-	// No Flow: exactly what a log written before ADR-0046 holds.
 	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
-	if err := s.AppendAction("LUNA-1", fsm.Advance{Flow: fsm.DefaultFlow()}); err != nil {
-		t.Fatalf("advancing: %v", err)
-	}
 
-	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
-	if err != nil {
-		t.Fatalf("an old log must still replay: %v", err)
-	}
-	if state.Stage != "setup" {
-		t.Errorf("want the task where its log left it, got %q", state.Stage)
+	_, err := s.Replay("LUNA-1", fsm.DefaultFlow())
+
+	if !errors.Is(err, ErrFlowChanged) {
+		t.Fatalf("want ErrFlowChanged, got %v", err)
 	}
 }
 
@@ -554,7 +554,7 @@ func TestAnUnreadableTaskDoesNotHideTheOthers(t *testing.T) {
 func TestAConditionalAppendRefusesAStaleDecision(t *testing.T) {
 	s := openTemp(t)
 
-	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
 
@@ -591,7 +591,7 @@ func TestAConditionalAppendRefusesAStaleDecision(t *testing.T) {
 func TestAnAppendAtTheCurrentPositionLands(t *testing.T) {
 	s := openTemp(t)
 
-	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
 
@@ -630,7 +630,7 @@ func TestTheReducersSequenceIsTheLogPosition(t *testing.T) {
 	s := openTemp(t)
 
 	for _, action := range []fsm.Action{
-		fsm.TaskCreated{Kind: fsm.KindChore},
+		fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 	} {
 		if err := s.AppendAction("LUNA-1", action); err != nil {
@@ -691,7 +691,7 @@ func TestConcurrentAppendsAllLand(t *testing.T) {
 				s = second
 			}
 			id := fmt.Sprintf("LUNA-%d", i)
-			if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+			if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 				errs <- err
 			}
 		}(i)

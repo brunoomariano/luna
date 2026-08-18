@@ -140,17 +140,21 @@ func TestFingerprintCoversWhatChangesHistory(t *testing.T) {
 	}
 }
 
-// TestAnEmptyFingerprintMatchesAnything covers the compatibility rule.
+// TestAnEmptyFingerprintMatchesOnlyAnEmptyFlow covers what the empty value means
+// now that nothing writes a log without one.
 //
-// Adding a field to the log's opening event must not make every task already in
-// the store unreadable, so a log that predates the field replays as before.
-func TestAnEmptyFingerprintMatchesAnything(t *testing.T) {
-	var old FlowFingerprint
+// It used to match anything, so that a log predating the field kept replaying.
+// That rule outlived its reason: every task Luna creates is stamped, so the only
+// thing an unstamped task could be is one created against no flow — and letting
+// that replay against the shipped flow is exactly the silent mismatch ADR-0046
+// exists to refuse.
+func TestAnEmptyFingerprintMatchesOnlyAnEmptyFlow(t *testing.T) {
+	var none FlowFingerprint
 
-	if !old.Matches(DefaultFlow()) {
-		t.Error("a log written before the field existed must still replay")
+	if none.Matches(DefaultFlow()) {
+		t.Error("a task stamped with no flow must not replay against the shipped one")
 	}
-	if !old.Matches(nil) {
+	if !none.Matches(nil) {
 		t.Error("no flow and no fingerprint is not a disagreement")
 	}
 }

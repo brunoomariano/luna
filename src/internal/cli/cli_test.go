@@ -797,7 +797,7 @@ func specGateStore(t *testing.T, h *harness, id string) {
 	}
 
 	actions := []fsm.Action{
-		fsm.TaskCreated{Kind: fsm.KindFeature},
+		fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())},
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // setup
 		delivered("worktree"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // intake
@@ -1161,6 +1161,7 @@ func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
 	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
 		Kind:    fsm.KindFeature,
 		Profile: fsm.Profile("paranoid"),
+		Flow:    fsm.Fingerprint(fsm.DefaultFlow()),
 	}); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}

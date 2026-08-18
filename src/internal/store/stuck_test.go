@@ -26,7 +26,7 @@ func clockedStore(t *testing.T) (*Store, *time.Time) {
 func blockedTask(t *testing.T, s *Store, id, reason string) {
 	t.Helper()
 
-	if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly}); err != nil {
+	if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("opening %s: %v", id, err)
 	}
 	if err := s.AppendAction(id, fsm.Block{Reason: reason}); err != nil {
@@ -94,7 +94,7 @@ func TestABlockNobodyAnsweredBecomesStuck(t *testing.T) {
 func TestAGateNobodyAnsweredIsAlsoStuck(t *testing.T) {
 	s, now := clockedStore(t)
 
-	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileInteractive}); err != nil {
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileInteractive, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("opening the task: %v", err)
 	}
 	if err := s.AppendAction("LUNA-1", fsm.Advance{
@@ -131,7 +131,7 @@ func TestAGateNobodyAnsweredIsAlsoStuck(t *testing.T) {
 func TestATaskThatIsMovingIsNeverStuck(t *testing.T) {
 	s, now := clockedStore(t)
 
-	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly}); err != nil {
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("opening the task: %v", err)
 	}
 	*now = now.Add(9 * time.Hour)
@@ -270,7 +270,7 @@ func TestAStoreReopensWithoutLosingItsColumns(t *testing.T) {
 	at := time.Date(2026, 8, 12, 9, 0, 0, 0, time.UTC)
 	first.Now = func() time.Time { return at }
 
-	if err := first.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature}); err != nil {
+	if err := first.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("appending: %v", err)
 	}
 	if err := first.Close(); err != nil {

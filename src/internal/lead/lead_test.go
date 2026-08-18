@@ -106,7 +106,22 @@ func newStore(t *testing.T) *store.Store {
 func nightly(t *testing.T, s *store.Store, id string, kind fsm.TaskKind) {
 	t.Helper()
 
-	if err := s.AppendAction(id, fsm.TaskCreated{Kind: kind, Profile: fsm.ProfileNightly}); err != nil {
+	nightlyUnder(t, s, id, kind, fsm.DefaultFlow())
+}
+
+// nightlyUnder is the same, for a test that drives a flow of its own.
+//
+// A task records the flow it was born under, and a replay refuses a log written
+// against a different one (ADR-0046) — so a test that hands the lead a custom
+// flow has to open its task under that flow rather than the shipped one. The
+// stamp is not incidental to what those tests check: it is the mechanism that
+// makes a flow swapped underneath an open task an error instead of a silent
+// re-run.
+func nightlyUnder(t *testing.T, s *store.Store, id string, kind fsm.TaskKind, flow []fsm.Stage) {
+	t.Helper()
+
+	created := fsm.TaskCreated{Kind: kind, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(flow)}
+	if err := s.AppendAction(id, created); err != nil {
 		t.Fatalf("creating %s: %v", id, err)
 	}
 }
@@ -170,7 +185,7 @@ func TestTheLeadDrivesATaskToTheEnd(t *testing.T) {
 func TestTheLeadStopsAtAGate(t *testing.T) {
 	s := newStore(t)
 	// Interactive: every gate waits.
-	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature}); err != nil {
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
 
@@ -196,7 +211,7 @@ func TestTheLeadStopsAtAGate(t *testing.T) {
 // (INV-core-2).
 func TestTheLeadResumesFromWhereItStopped(t *testing.T) {
 	s := newStore(t)
-	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
 
@@ -540,11 +555,11 @@ func TestABrokenStoreStopsTheLead(t *testing.T) {
 // was given rather than the shipped one.
 func TestACustomFlowIsHonoured(t *testing.T) {
 	s := newStore(t)
-	nightly(t, s, "LUNA-1", fsm.KindChore)
 
 	flow := []fsm.Stage{
 		{ID: "only", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"something"}},
 	}
+	nightlyUnder(t, s, "LUNA-1", fsm.KindChore, flow)
 	l := &Lead{Store: s, Node: &deliveringNode{}, Judge: &alwaysBlocks{}, Flow: flow}
 
 	state, err := l.Run(context.Background(), "LUNA-1")

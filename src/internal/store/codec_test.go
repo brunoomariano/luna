@@ -178,6 +178,7 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 				Kind:      fsm.KindBug,
 				Profile:   fsm.ProfileInteractive,
 				Statement: fsm.Statement{Description: "zsh-only glob", Acceptance: "bash -n exits 0"},
+				Flow:      fsm.Fingerprint(fsm.DefaultFlow()),
 			},
 			verify: func(t *testing.T, got fsm.Action) {
 				a, ok := got.(fsm.TaskCreated)

@@ -22,7 +22,7 @@ func TestAnEditedProfileDoesNotRewriteThePast(t *testing.T) {
 	// A task created as nightly, whose first gate was recorded as passed.
 	appendAll(
 		t, s, "LUNA-1",
-		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly},
+		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(gatedFlow())},
 		fsm.Advance{GateDecision: fsm.GateDecisionPassed},
 	)
 
@@ -39,7 +39,7 @@ func TestAnEditedProfileDoesNotRewriteThePast(t *testing.T) {
 	// log, not the name.
 	appendAll(
 		t, s, "LUNA-2",
-		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly},
+		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(gatedFlow())},
 		fsm.Advance{GateDecision: fsm.GateDecisionWaited},
 	)
 
@@ -62,7 +62,7 @@ func TestALogWithoutDecisionsStillReplays(t *testing.T) {
 
 	appendAll(
 		t, s, "LUNA-1",
-		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileInteractive},
+		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileInteractive, Flow: fsm.Fingerprint(gatedFlow())},
 		fsm.Advance{},
 	)
 
@@ -84,7 +84,7 @@ func TestAProfileNoLongerDefinedStillReplays(t *testing.T) {
 
 	appendAll(
 		t, s, "LUNA-1",
-		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.Profile("deleted-last-week")},
+		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.Profile("deleted-last-week"), Flow: fsm.Fingerprint(gatedFlow())},
 		fsm.Advance{GateDecision: fsm.GateDecisionPassed},
 	)
 

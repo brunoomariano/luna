@@ -76,7 +76,7 @@ func seedLog(b *testing.B, s *Store, id string, events int) {
 	b.Helper()
 
 	flow := fsm.DefaultFlow()
-	if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindFeature}); err != nil {
+	if err := s.AppendAction(id, fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
 		b.Fatalf("creating: %v", err)
 	}
 

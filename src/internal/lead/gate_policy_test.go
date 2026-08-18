@@ -90,7 +90,7 @@ func TestAGatelessStageRecordsNoDecision(t *testing.T) {
 	}
 
 	s := newStore(t)
-	nightly(t, s, "LUNA-1", fsm.KindFeature)
+	nightlyUnder(t, s, "LUNA-1", fsm.KindFeature, gateless)
 
 	l := &Lead{Store: s, Node: &deliveringNode{}, Flow: gateless}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
