@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -106,6 +107,11 @@ type Workspace struct {
 	ID       string
 	RootPane string
 	Path     string
+
+	// ArtifactSocket is where the agent hands artifacts over, when the stage
+	// declares any that are not committed. Empty means the stage owes none, and
+	// the agent gets no writer it has no use for (RFC-0008).
+	ArtifactSocket string
 }
 
 // WorktreeSpec is what a stage needs a checkout to be.
@@ -177,6 +183,25 @@ type Node struct {
 	// commit outlives the tree, and the repository the node was configured with
 	// is what the checkout is cut from (ADR-0035).
 	Prove func(commit string) Prover
+
+	// Artifacts opens the socket a stage's agent hands artifacts over through, for
+	// the artifacts the contract says are not committed (RFC-0008).
+	//
+	// Injected for the same reason as Delivered and Prove: this package talks to
+	// herdr, and the store is somebody else's dependency. Nil means no socket is
+	// opened, which is every stage whose contract declares no handover — and every
+	// caller that has not wired one, where the agent simply has nowhere to put
+	// something it was never asked for.
+	Artifacts func(taskID, worktree, stage string, seq int) (io.Closer, string, error)
+
+	// socket is where the current stage's agent hands artifacts over, remembered
+	// between opening it and telling the agent about it.
+	socket string
+
+	// Stored reports the hash of what a stage handed over, or an error if it
+	// handed over nothing. It is what replaces the agent's word for an artifact
+	// that is not in the commit (RFC-0008).
+	Stored func(taskID, stage, artifact string) (hash string, err error)
 
 	// Warn reports something that went wrong beside the work rather than in it —
 	// a worktree that would not be removed. Nil discards, because a node with no
@@ -260,6 +285,38 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 		return lead.Result{}, err
 	}
 
+	// Opened before the agent starts, so the socket is listening by the time the
+	// first `luna artifact put` runs, and closed with the stage. A stage that
+	// declares no handover opens nothing: there is no reason to expose a writer to
+	// an agent that owes nothing through it.
+	socket, err := n.serveArtifacts(state, ws, stage)
+	if err != nil {
+		return lead.Result{}, err
+	}
+	if socket != nil {
+		defer func() {
+			if err := socket.Close(); err != nil {
+				n.warn("could not close the artifact socket for %s at %s: %v", state.ID, stage.ID, err)
+			}
+		}()
+		ws.ArtifactSocket = n.socket
+	}
+
+	if err := n.runAgent(ctx, ws, state, stage, role); err != nil {
+		return lead.Result{}, err
+	}
+
+	// The agent settled, whatever that means. The status said it stopped; only
+	// the verifier says whether the stage delivered.
+	return n.verify(ctx, ws, state, stage)
+}
+
+// runAgent starts the stage's agent, prompts it, and waits for it to settle.
+//
+// Split from conduct so the worktree's lifetime and the agent's turn read
+// separately — the first is about what survives the stage, the second about what
+// happens inside it.
+func (n *Node) runAgent(ctx context.Context, ws Workspace, state fsm.TaskState, stage fsm.Stage, role fsm.Role) error {
 	// The statement arrives replayed, in the state the caller handed in. It used
 	// to be read fresh from the registry here, so that an edit made mid-run
 	// reached the next stage; now an edit *is* an event, so the replay already has
@@ -271,12 +328,12 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 	// stage instead of running an ungated review (ADR-0041).
 	args, err := gateArgs(role)
 	if err != nil {
-		return lead.Result{}, fmt.Errorf("stage %q: %w", stage.ID, err)
+		return fmt.Errorf("stage %q: %w", stage.ID, err)
 	}
 
 	pane, err := n.Runner.StartAgent(ctx, ws, role.Agent, name, args)
 	if err != nil {
-		return lead.Result{}, err
+		return err
 	}
 
 	// The prompt targets the pane. An agent started through `pane.run` has no
@@ -288,21 +345,18 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 		// herdr's error codes. What crosses the boundary is Luna's vocabulary
 		// (ADR-0030), and the lead decides what a stall means (ADR-0034).
 		if Stalled(err) {
-			return lead.Result{}, fmt.Errorf("%w: the agent did not react in stage %q", lead.ErrStalled, stage.ID)
+			return fmt.Errorf("%w: the agent did not react in stage %q", lead.ErrStalled, stage.ID)
 		}
-		return lead.Result{}, err
+		return err
 	}
 
 	// A blocked agent is asking a person for something the flow did not foresee.
 	// It is reported as an error so the lead escalates it, and the reason names
 	// the pane so someone can find what is asking (ADR-0029).
 	if status == StatusBlocked {
-		return lead.Result{}, fmt.Errorf("the agent in pane %s is asking for input", pane)
+		return fmt.Errorf("the agent in pane %s is asking for input", pane)
 	}
-
-	// Anything else settled means it is worth checking. The status said the agent
-	// stopped; only the verifier says whether the stage delivered.
-	return n.verify(ctx, ws, state, stage)
+	return nil
 }
 
 // verify runs each artifact's verifier and turns the results into evidence.
@@ -320,46 +374,8 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 	// Read before the worktree is closed, because that is the only moment it can
 	// be read: the tree is removed as soon as the stage ends, and what survives is
 	// the commit it is being asked for.
-	if n.Delivered != nil {
-		var message string
-		var err error
-		result.Commit, message, err = n.Delivered(ctx, ws.Path)
-		// A tree that cannot be read stops the stage. Carrying on would record an
-		// empty commit, which reads as "delivered nothing" — the base would not
-		// move and the verification would fall back to the repository's own HEAD,
-		// so the stage would pass having checked somebody else's work.
-		if err != nil {
-			return lead.Result{}, err
-		}
-
-		// What the agent says it produced, rather than what the stage was supposed
-		// to. Without this the exit check compares `owed` against `owed` and always
-		// agrees — measured: `verify` owed `dod_checked`, committed a file called
-		// `verification`, and closed green.
-		//
-		// Only a stage that runs an agent can declare anything, and that condition
-		// is the whole subtlety. A worktree's HEAD is the previous stage's commit,
-		// which already carries somebody else's declaration, so a mechanical stage
-		// reads a message no one wrote for it. Both mechanical stages were measured
-		// doing exactly that: `setup` reported `repos` from `discovery`, and
-		// `commit` reported `review_report` from `code-review`.
-		//
-		// "Did this stage commit?" was the first attempt and is not enough: by
-		// `commit` the base is two stages back, so HEAD differs from it and the
-		// inherited message passes anyway.
-		//
-		// An agent that declared nothing falls back to the assumption, because
-		// every agent that ran before this existed wrote no such line and a stage
-		// must not start failing over the shape of a commit message.
-		// Both conditions, because they catch different halves. The stage must run
-		// an agent, and that agent must have committed something of its own — an
-		// agent that worked and committed nothing leaves HEAD on the base, and the
-		// base's message is the previous stage's declaration.
-		if !stage.Mechanical() && result.Commit != state.Base {
-			if declared := fsm.ReadDelivered(message); len(declared) > 0 {
-				result.Delivered = declared
-			}
-		}
+	if err := n.readHandover(ctx, ws, state, stage, &result); err != nil {
+		return lead.Result{}, err
 	}
 
 	// After result.Commit is read, because that is what gets verified: the commit
@@ -367,13 +383,132 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 	// that is about to be removed.
 	prover := n.prover(result.Commit)
 	for _, artifact := range owed {
-		evidence, err := prover.Prove(ctx, fsm.VerifierFor(stage, artifact), state.Seq)
+		verifier := fsm.VerifierFor(stage, artifact)
+
+		// An artifact handed to Luna is not in the commit, so the commit is the
+		// wrong place to look for it — neither the assumption nor the agent's
+		// `Delivered:` line can vouch for it. The store answers instead, and it
+		// answers with a hash, which is the location INV-core-11 asks the handoff
+		// to carry.
+		if existence, ok := verifier.(fsm.Existence); ok && existence.Handover {
+			evidence, delivered := n.proveHandover(state, stage, artifact)
+			result.Evidence[artifact] = evidence
+			result.Delivered = claimOnly(result.Delivered, artifact, delivered)
+			continue
+		}
+
+		evidence, err := prover.Prove(ctx, verifier, state.Seq)
 		if err != nil {
 			return lead.Result{}, err
 		}
 		result.Evidence[artifact] = evidence
 	}
 	return result, nil
+}
+
+// claimOnly makes an artifact's presence in the delivered list match what the
+// store said, whatever the assumption or the agent's declaration claimed.
+//
+// Both directions matter. The list starts as everything owed, so an artifact
+// nobody handed over arrives already claimed and has to be removed — that was a
+// stage closing on work the store never saw, caught by its own test. And an
+// agent's `Delivered:` line replaces the list wholesale, so an artifact it did
+// hand over may be missing and has to be added back.
+func claimOnly(delivered []fsm.Artifact, artifact fsm.Artifact, wasDelivered bool) []fsm.Artifact {
+	kept := delivered[:0]
+	for _, a := range delivered {
+		if a != artifact {
+			kept = append(kept, a)
+		}
+	}
+	if wasDelivered {
+		kept = append(kept, artifact)
+	}
+	return kept
+}
+
+// proveHandover asks the store whether the agent handed the artifact over.
+//
+// This is the same correction ADR-0070 made for a path, one step further: the
+// agent's word is replaced by a witness. There the witness is git; here it is
+// Luna's own store, which is stronger — Luna wrote the row itself, so there is
+// nothing to take on trust.
+//
+// The evidence carries the content's hash, which is what makes an audit able to
+// say *which* version satisfied the check rather than that something did.
+func (n *Node) proveHandover(state fsm.TaskState, stage fsm.Stage, artifact fsm.Artifact) (fsm.Evidence, bool) {
+	if n.Stored == nil {
+		// Nothing to ask. Recording a pass here would be the self-report ADR-0028
+		// refuses, so it fails and says why.
+		return fsm.Evidence{
+			Scope:      fsm.ScopeExistence,
+			Verdict:    fsm.VerdictFailed,
+			Detail:     fmt.Sprintf("%s is handed over to Luna and no store is configured to receive it", artifact),
+			RecordedAt: state.Seq,
+		}, false
+	}
+
+	hash, err := n.Stored(state.ID, string(stage.ID), string(artifact))
+	if err != nil {
+		return fsm.Evidence{
+			Scope:      fsm.ScopeExistence,
+			Verdict:    fsm.VerdictFailed,
+			Detail:     fmt.Sprintf("%s was not handed over: %v", artifact, err),
+			RecordedAt: state.Seq,
+		}, false
+	}
+
+	return fsm.Evidence{
+		Scope:      fsm.ScopeExistence,
+		Verdict:    fsm.VerdictPassed,
+		Detail:     fmt.Sprintf("handed over to Luna, %s", hash),
+		RecordedAt: state.Seq,
+	}, true
+}
+
+// readHandover reads what the stage committed and what its agent declared.
+//
+// A tree that cannot be read stops the stage. Carrying on would record an empty
+// commit, which reads as "delivered nothing" — the base would not move and the
+// verification would fall back to the repository's own HEAD, so the stage would
+// pass having checked somebody else's work (ADR-0068).
+//
+// The declaration replaces the assumption: without it the exit check compares
+// `owed` against `owed` and always agrees — measured: `verify` owed
+// `dod_checked`, committed a file called `verification`, and closed green.
+//
+// Only a stage that runs an agent can declare anything, and that condition is
+// the whole subtlety. A worktree's HEAD is the previous stage's commit, which
+// already carries somebody else's declaration, so a mechanical stage reads a
+// message no one wrote for it. Both mechanical stages were measured doing
+// exactly that: `setup` reported `repos` from `discovery`, and `commit` reported
+// `review_report` from `code-review`. "Did this stage commit?" was the first
+// attempt and is not enough: by `commit` the base is two stages back, so HEAD
+// differs from it and the inherited message passes anyway. Both conditions,
+// because they catch different halves — an agent that worked and committed
+// nothing leaves HEAD on the base, and the base's message is the previous
+// stage's declaration.
+//
+// An agent that declared nothing falls back to the assumption, because every
+// agent that ran before this existed wrote no such line and a stage must not
+// start failing over the shape of a commit message.
+func (n *Node) readHandover(ctx context.Context, ws Workspace, state fsm.TaskState, stage fsm.Stage, result *lead.Result) error {
+	if n.Delivered == nil {
+		return nil
+	}
+
+	commit, message, err := n.Delivered(ctx, ws.Path)
+	if err != nil {
+		return err
+	}
+	result.Commit = commit
+
+	if !stage.Mechanical() && commit != state.Base {
+		if declared := fsm.ReadDelivered(message); len(declared) > 0 {
+			result.Delivered = declared
+		}
+	}
+	return nil
 }
 
 // prover is what proves this stage's artifacts, defaulting to one that runs
@@ -571,6 +706,18 @@ func writeHandover(b *strings.Builder, stage fsm.Stage) {
 		}
 	}
 
+	// An artifact handed to Luna is not committed, so the instruction that follows
+	// — "commit it or it is not delivered" — is wrong for it and has to be said
+	// separately. An agent told to commit the contract will commit the contract.
+	if handed := handedOverBy(stage); len(handed) > 0 {
+		fmt.Fprintf(b, "\nHand these over to Luna instead of committing them, with `luna artifact put <name> < file`:\n")
+		for _, artifact := range handed {
+			fmt.Fprintf(b, "  - %s\n", artifact)
+		}
+		fmt.Fprintf(b, "Read what an earlier stage handed over with `luna artifact get <name>`. "+
+			"These are working documents, not part of the repository — do not commit them.\n")
+	}
+
 	// The handoff, said out loud. ADR-0055 makes the commit the handoff and
 	// ADR-0058 makes it the snapshot, and neither was ever told to the agent: the
 	// first full run closed six stages across five branches and left the
@@ -585,4 +732,43 @@ func writeHandover(b *strings.Builder, stage fsm.Stage) {
 		fmt.Fprintf(b, "End the commit message with a line naming what you delivered, using the names above:\n")
 		fmt.Fprintf(b, "  Delivered: %s\n", join(owed))
 	}
+}
+
+// serveArtifacts opens the handover socket when the stage's contract asks for one.
+//
+// The condition is the contract rather than configuration: an artifact declared
+// `handover = "store"` is one the agent cannot commit, so the socket is the only
+// way it can deliver at all. A stage with none opens nothing, which keeps the
+// writer out of reach of an agent that owes nothing through it.
+func (n *Node) serveArtifacts(state fsm.TaskState, ws Workspace, stage fsm.Stage) (io.Closer, error) {
+	if n.Artifacts == nil || !handsOver(stage) {
+		return nil, nil //nolint:nilnil // "no socket needed" is not an error
+	}
+
+	closer, path, err := n.Artifacts(state.ID, ws.Path, string(stage.ID), state.Seq)
+	if err != nil {
+		return nil, fmt.Errorf("opening the artifact socket for stage %q: %w", stage.ID, err)
+	}
+	n.socket = path
+	return closer, nil
+}
+
+// handsOver reports whether any artifact the stage owes is handed to Luna rather
+// than committed.
+func handsOver(stage fsm.Stage) bool {
+	return len(handedOverBy(stage)) > 0
+}
+
+// handedOverBy lists the artifacts a stage owes through Luna rather than through
+// the commit, in declaration order.
+func handedOverBy(stage fsm.Stage) []fsm.Artifact {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	var handed []fsm.Artifact
+	for _, artifact := range owed {
+		if existence, ok := fsm.VerifierFor(stage, artifact).(fsm.Existence); ok && existence.Handover {
+			handed = append(handed, artifact)
+		}
+	}
+	return handed
 }

@@ -119,14 +119,20 @@ func ParseStage(content, where string) (Stage, error) {
 // It is collected first and built afterwards because a block's meaning depends
 // on which keys it carries, and TOML delivers them one line at a time.
 type verifierSpec struct {
-	kind  string
-	run   string
-	scope string
-	path  string
+	kind     string
+	run      string
+	scope    string
+	path     string
+	handover string
 }
 
 // build turns the collected keys into a verifier, refusing anything ambiguous.
 func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) {
+	handover, err := s.handedOver(artifact, where)
+	if err != nil {
+		return nil, err
+	}
+
 	switch {
 	case s.path != "" && s.run != "":
 		// A command already says what it proves by running. A path beside it would
@@ -141,21 +147,10 @@ func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) 
 			where, artifact, s.kind)
 
 	case s.run != "":
-		if s.scope == "" {
-			// The scope is what stops a targeted run being read as a full one
-			// later (ADR-0032). A command with no scope has not said what it
-			// proves, and guessing would be the laundering the scopes prevent.
-			return nil, fmt.Errorf("%s: %s runs a command and declares no scope (full, targeted, existence, human)",
-				where, artifact)
-		}
-		scope, err := ParseScope(s.scope)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %s: %w", where, artifact, err)
-		}
-		return Command{Run: s.run, Scope: scope}, nil
+		return s.buildCommand(artifact, where)
 
 	case s.kind == "existence":
-		return Existence{Path: s.path}, nil
+		return Existence{Path: s.path, Handover: handover}, nil
 
 	case s.kind != "":
 		return nil, fmt.Errorf("%s: %s declares kind=%q; the only kind that runs nothing is `existence`",
@@ -163,6 +158,58 @@ func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) 
 
 	default:
 		return nil, fmt.Errorf("%s: %s declares a verifier with neither `run` nor `kind`", where, artifact)
+	}
+}
+
+// buildCommand turns a `run` declaration into a Command verifier.
+func (s *verifierSpec) buildCommand(artifact Artifact, where string) (Verifier, error) {
+	if s.scope == "" {
+		// The scope is what stops a targeted run being read as a full one later
+		// (ADR-0032). A command with no scope has not said what it proves, and
+		// guessing would be the laundering the scopes prevent.
+		return nil, fmt.Errorf("%s: %s runs a command and declares no scope (full, targeted, existence, human)",
+			where, artifact)
+	}
+	scope, err := ParseScope(s.scope)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %s: %w", where, artifact, err)
+	}
+	return Command{Run: s.run, Scope: scope}, nil
+}
+
+// storableAlone refuses the keys that contradict a store handover.
+//
+// An artifact handed to Luna is not in the commit at all, so a command run over
+// the delivery has nothing to run against, and a path — where it lives *in the
+// commit* — describes a place it will never be (RFC-0008). Both are the same
+// mistake as a path beside a command (RFC-0004), one step further out.
+func (s *verifierSpec) storableAlone(artifact Artifact, where string) error {
+	if s.run != "" {
+		return fmt.Errorf("%s: %s runs a command and is handed over to Luna — a command checks the commit, "+
+			"and an artifact handed over is not in it", where, artifact)
+	}
+	if s.path != "" {
+		return fmt.Errorf("%s: %s declares a path and is handed over to Luna — a path is where it lives "+
+			"in the commit, and an artifact handed over is not committed", where, artifact)
+	}
+	return nil
+}
+
+// handedOver reads the `handover` key, which names where an artifact is handed
+// over rather than whether it is checked.
+//
+// Only one destination is accepted. A free-form value would let a typo — `stoer`
+// — parse as "not the store" and silently put the artifact back in the commit,
+// which is the kind of quiet fallback this project refuses everywhere else.
+func (s *verifierSpec) handedOver(artifact Artifact, where string) (bool, error) {
+	switch s.handover {
+	case "":
+		return false, nil
+	case "store":
+		return true, s.storableAlone(artifact, where)
+	default:
+		return false, fmt.Errorf("%s: %s declares handover=%q; the only destination is \"store\"",
+			where, artifact, s.handover)
 	}
 }
 
@@ -359,6 +406,8 @@ func assignVerify(spec *verifierSpec, key, value, at string) error {
 		spec.kind = unquote(value)
 	case "path":
 		spec.path = unquote(value)
+	case "handover":
+		spec.handover = unquote(value)
 	default:
 		return fmt.Errorf("%s: unknown key %q in a verify block", at, key)
 	}

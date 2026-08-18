@@ -19,7 +19,8 @@ scope = "full"
 #
 # This is the artifact RFC-0004 was written about: an agent produced 144 lines of
 # exactly this content, committed them to a file called `verification`, and the
-# stage closed green without `dod_checked` ever appearing. The path is what git
-# answers instead of the agent (ADR-0070).
-kind = "existence"
-path = "reports/"
+# stage closed green without `dod_checked` ever appearing. ADR-0070 answered that
+# with git; RFC-0008 answers it with Luna's own store, which is a stronger witness
+# and keeps a checklist out of the repository's delivered history.
+kind     = "existence"
+handover = "store"

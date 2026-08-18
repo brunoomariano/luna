@@ -9,6 +9,7 @@ produces = ["contract"]
 
 [verify.contract]
 kind = "existence"
+handover = "store"
 
 [gate]
 kind     = "review-artifact"

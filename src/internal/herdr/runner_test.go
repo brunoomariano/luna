@@ -815,7 +815,7 @@ func TestWithoutTheSandboxLunaRefusesToStartAnAgent(t *testing.T) {
 	// this is the same condition as a machine that never installed it.
 	t.Setenv("PATH", "")
 
-	_, err := jailed("claude", nil)
+	_, err := jailed("claude", "", nil)
 
 	if !errors.Is(err, ErrNoSandbox) {
 		t.Fatalf("want ErrNoSandbox, got %v", err)
@@ -831,7 +831,7 @@ func TestWithoutTheSandboxLunaRefusesToStartAnAgent(t *testing.T) {
 // is gone while the permissions stay; no args and the agent stops to ask.
 func TestTheJailedCommandCarriesEveryPart(t *testing.T) {
 	withSandboxOnPath(t)
-	command, err := jailed("claude", []string{"--permission-mode", "bypassPermissions"})
+	command, err := jailed("claude", "", []string{"--permission-mode", "bypassPermissions"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -885,5 +885,37 @@ func TestAnUnreadableAgentListStartsRatherThanFails(t *testing.T) {
 
 	if got := len(server.sent("pane.send_text")); got != 1 {
 		t.Errorf("an unreadable listing stopped the start, got %d runs", got)
+	}
+}
+
+// TestTheJailedCommandCarriesTheArtifactSocket covers the fourth part, added by
+// RFC-0008: an agent that hands artifacts to Luna needs to know where Luna is
+// listening, and the brief alone is prose it may paraphrase.
+func TestTheJailedCommandCarriesTheArtifactSocket(t *testing.T) {
+	withSandboxOnPath(t)
+
+	command, err := jailed("claude", "/wt/.luna/artifact.sock", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := "HERDR_AGENT=claude " + artifactSocketEnv + "=/wt/.luna/artifact.sock " + jailBinary + " claude"
+	if command != want {
+		t.Errorf("command:\ngot  %q\nwant %q", command, want)
+	}
+}
+
+// TestAStageWithNoHandoverGetsNoSocket pins the other side: a stage that owes
+// nothing through Luna does not get a writer it has no use for.
+func TestAStageWithNoHandoverGetsNoSocket(t *testing.T) {
+	withSandboxOnPath(t)
+
+	command, err := jailed("claude", "", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(command, artifactSocketEnv) {
+		t.Errorf("a stage with no handover must get no socket, got %q", command)
 	}
 }

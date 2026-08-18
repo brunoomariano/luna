@@ -103,6 +103,7 @@ func Run(env Env, args []string) error {
 		"lead":     leadCommand,
 		"autonomy": autonomyCommand,
 		"init":     initCommand,
+		"artifact": artifactCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -487,7 +488,31 @@ func taskShow(env Env, args []string) error {
 	}
 
 	printTask(env, state, len(events))
+	printHandedOver(env, id)
 	return nil
+}
+
+// printHandedOver lists what the task's stages handed to Luna rather than to the
+// commit (RFC-0008).
+//
+// This is the listing INV-core-12 asks for: an artifact produced for a person is
+// discoverable by command, without anyone having watched it scroll by. Before it,
+// `qa_report` was verified, had evidence in the log, and appeared nowhere — the
+// produced list above reads Context.Artifacts, which human-facing artifacts never
+// enter by design (ADR-0021).
+func printHandedOver(env Env, id string) {
+	blobs, err := env.Store.Blobs(id)
+	if err != nil || len(blobs) == 0 {
+		// An unreadable store already failed louder above; an empty one is every
+		// task that ran before RFC-0008, and silence is the right shape for it.
+		return
+	}
+
+	fmt.Fprintf(env.Out, "\nhanded over\n")
+	for _, blob := range blobs {
+		fmt.Fprintf(env.Out, "  %s\n", artifactLine(blob))
+	}
+	fmt.Fprintf(env.Out, "  read one with `luna artifact get <name>` inside a stage\n")
 }
 
 // gateChecks declares the commands that answer one of a task's gates.

@@ -16,4 +16,4 @@ invalidates   = ["ci_green", "tests_green"]
 # checkable. The path is what makes even that much come from git rather than from
 # the agent's own word (ADR-0070).
 kind = "existence"
-path = "reports/"
+handover = "store"

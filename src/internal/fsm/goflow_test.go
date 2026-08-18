@@ -27,6 +27,7 @@ func goFlow() []Stage {
 			Requires:         []Artifact{"briefing"},
 			Produces:         []Artifact{"root_cause"},
 			ProducesForHuman: []Artifact{"min_case"},
+			Verifiers:        map[Artifact]Verifier{"min_case": Existence{Handover: true}},
 			When:             IsBug,
 		},
 		{
@@ -35,6 +36,10 @@ func goFlow() []Stage {
 			Gate:     &GateSpec{Kind: GateConfirm, Reason: "approve the plan"},
 			Requires: []Artifact{"briefing", "kind"},
 			Produces: []Artifact{"scenarios", "approach"},
+			Verifiers: map[Artifact]Verifier{
+				"scenarios": Existence{Handover: true},
+				"approach":  Existence{Handover: true},
+			},
 		},
 		{
 			ID:   "spec",
@@ -42,9 +47,10 @@ func goFlow() []Stage {
 			Gate: &GateSpec{
 				Kind: GateReviewArtifact, Artifact: "contract", Reason: "review the contract",
 			},
-			Requires: []Artifact{"approach"},
-			Produces: []Artifact{"contract"},
-			When:     IsFeatureOrBug,
+			Requires:  []Artifact{"approach"},
+			Produces:  []Artifact{"contract"},
+			Verifiers: map[Artifact]Verifier{"contract": Existence{Handover: true}},
+			When:      IsFeatureOrBug,
 		},
 		{
 			ID:   "build",
@@ -94,7 +100,7 @@ func goFlow() []Stage {
 				"ci_green": Command{Run: "make ci", Scope: ScopeFull},
 				// A checklist a person reads. Recording it as a passing check would
 				// be the lie ADR-0032 names.
-				"dod_checked": Existence{},
+				"dod_checked": Existence{Handover: true},
 			},
 		},
 		{
@@ -107,6 +113,7 @@ func goFlow() []Stage {
 			Role:             "qa",
 			Requires:         []Artifact{"ci_green", "briefing"},
 			ProducesForHuman: []Artifact{"qa_report"},
+			Verifiers:        map[Artifact]Verifier{"qa_report": Existence{Handover: true}},
 			When:             NotChore,
 		},
 		{
@@ -119,6 +126,7 @@ func goFlow() []Stage {
 			Role:             "reviewer",
 			Requires:         []Artifact{"code", "ci_green"},
 			ProducesForHuman: []Artifact{"review_report"},
+			Verifiers:        map[Artifact]Verifier{"review_report": Existence{Handover: true}},
 			When:             NotDocs,
 		},
 		{
@@ -131,6 +139,7 @@ func goFlow() []Stage {
 			Role:             "hardener",
 			Requires:         []Artifact{"tests_green", "code"},
 			ProducesForHuman: []Artifact{"mutation_report"},
+			Verifiers:        map[Artifact]Verifier{"mutation_report": Existence{Handover: true}},
 			When:             IsFeatureOrBug,
 		},
 		{
@@ -143,6 +152,7 @@ func goFlow() []Stage {
 			Role:             "architect",
 			Requires:         []Artifact{"code"},
 			ProducesForHuman: []Artifact{"arch_report"},
+			Verifiers:        map[Artifact]Verifier{"arch_report": Existence{Handover: true}},
 			// Unlike the others, this condition is not about the nature of the
 			// task: whether the change touched the structure is only knowable
 			// after looking at what build produced.
@@ -182,7 +192,7 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
-	const shipped = "e29ecd956d3ac836"
+	const shipped = "18464f834de0e0fd"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)

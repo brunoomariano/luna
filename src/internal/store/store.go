@@ -128,6 +128,31 @@ CREATE TABLE IF NOT EXISTS events (
     at       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (task_id, seq)
 );
+
+-- What a stage handed over that does not belong in the repository: the contract,
+-- the scenarios, the audit reports (RFC-0008).
+--
+-- Append-only like the log, and for the same reason (INV-core-2): a revised
+-- artifact is a new row and both versions stay readable. There is no UPDATE and
+-- no DELETE except by task, which is the cleanup a finished task earns.
+--
+-- Keyed by stage as well as artifact because the pair collides in practice:
+-- "build" and "refactor" both produce "code" and "tests_green", a loop revisits a
+-- stage, and a gate replaces an artifact with the human's version. Without the
+-- stage those are one line of history separated only by seq, and INV-core-11 asks
+-- for the location of each artifact *produced* — which a stage declares.
+CREATE TABLE IF NOT EXISTS blobs (
+    task_id  TEXT    NOT NULL,
+    stage    TEXT    NOT NULL,
+    artifact TEXT    NOT NULL,
+    seq      INTEGER NOT NULL,
+    -- The content's sha256, so evidence can name what it saw rather than that it
+    -- saw something.
+    hash     TEXT    NOT NULL,
+    body     BLOB    NOT NULL,
+    at       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (task_id, stage, artifact, seq)
+);
 `
 
 // Open returns a store that may read but not write.

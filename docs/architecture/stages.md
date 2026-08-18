@@ -17,6 +17,15 @@ cosmetic:
   without delivering), but **exempt from the static check** — it is not a defect that nobody
   consumes it.
 
+Orthogonal to that split, an artifact also declares **where it is handed over**. The default is
+the commit — the artifact is a file the repository keeps. An artifact declared
+`handover = "store"` is scaffolding instead: the agent hands it to Luna with
+`luna artifact put`, it lands in the store beside the log, and git never sees it
+([RFC-0008](../RFCs/rfc-0008-a-scratch-artifact-is-handed-over-through-a-socket.md)). In the
+shipped flow every prose artifact between stages — `scenarios`, `approach`, `contract`,
+`min_case` — and every audit report is handed over this way; what stays in the commit is what
+the repository is for: `code`, `tests_green`, `ci_green`.
+
 | # | Stage | Role | Gate | Condition | Requires | Produces for the flow | Produces for human |
 |---|---|---|---|---|---|---|---|
 | 1 | `setup` | — | | | `task_id` | `worktree` | |

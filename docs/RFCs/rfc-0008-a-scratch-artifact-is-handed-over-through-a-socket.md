@@ -216,16 +216,23 @@ Feature flag: no. Phases 1–3 are inert until a contract declares the field, wh
 
 ## Open questions
 
-- [ ] **Per task or per stage?** Per task is simpler and matches "the agents read from there".
-      Per stage is auditable — it says who wrote what. Leaning per task with the producing
-      stage recorded on the row, which gives both.
+- [x] **Per task or per stage? — per stage.** The key collides in practice: `build` and
+      `refactor` both produce `code` and `tests_green`, a loop can revisit a stage up to
+      `MaxRounds` times, a retry re-enters it, and a `review-artifact` gate replaces the
+      payload with the human's version. Keyed by task alone, those all become one line of
+      history separated only by `seq`, and "what did `build` hand over" needs a join against
+      the log. Keyed by stage, authorship is free — and it is what
+      [INV-core-11](../invariants/core.md) asks for, since `produces_for_human` is declared by
+      the stage, not the task. The simplicity of the task key is recovered rather than lost:
+      `luna artifact get contract` with no stage named returns the most recent from any stage.
 - [ ] **Concurrency under load.** The socket makes Luna the only writer, which is SQLite's best
       case, and WAL plus `busy_timeout(5000)` are already set with a single connection
       (`openOwned`). Still to be measured with N agents putting at once.
 - [ ] **Does an artifact in the store need to be reachable after the task is deleted?** The
       cleanup routine is a stated goal; whether anything must outlive it is not decided.
-- [ ] **Does the lead read blobs directly, or always through the CLI?** It runs uncontained, so
-      it *can* — but two paths to the same data is how they drift.
+- [x] **Does the lead read blobs directly, or always through the CLI? — always the CLI.** It
+      runs uncontained and could open the store, which is exactly why the rule is worth
+      stating: two paths to the same data is how they drift.
 
 ## References
 - Issue: —

@@ -73,6 +73,22 @@ type Existence struct {
 	// not whether the stage closed, and freezing every open task to move a
 	// directory would be disproportionate (ADR-0070).
 	Path string
+
+	// Handover says the artifact is handed over through Luna's store rather than
+	// through the commit (RFC-0008).
+	//
+	// The contract, the scenarios and the audit reports are scaffolding: they exist
+	// so the next stage or a person can decide something, and committing them puts
+	// working notes into the delivered history of somebody else's repository. An
+	// artifact declared this way is written with `luna artifact put`, and git never
+	// sees it.
+	//
+	// Unlike Path, this **is** part of the flow fingerprint. A path changes where a
+	// delivery is looked for; this changes what delivering *means* — an artifact
+	// that used to be a file in a commit and is now a row in the store is a
+	// different obligation, and a log written under the old rule cannot be replayed
+	// under the new one (ADR-0046).
+	Handover bool
 }
 
 // Proves reports what an existence check proves, which is that the artifact is
@@ -83,10 +99,14 @@ func (Existence) Proves() Scope { return ScopeExistence }
 // Describe names the check for a human, which is a non-check until a path says
 // otherwise.
 func (e Existence) Describe() string {
-	if e.Path == "" {
+	switch {
+	case e.Handover:
+		return "handed over to Luna"
+	case e.Path != "":
+		return "delivered under " + e.Path
+	default:
 		return "delivered"
 	}
-	return "delivered under " + e.Path
 }
 
 func (Existence) isVerifier() {}

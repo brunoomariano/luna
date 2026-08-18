@@ -138,8 +138,9 @@ func writeReview(b *strings.Builder, review *ReviewSpec) {
 
 // writeProofs renders how much each owed artifact has to be proven.
 //
-// The scope only, never the command: what a past Complete had to satisfy is the
-// requirement, and lowering it is what makes a blocked stage start closing.
+// The scope, never the command, plus where the artifact is handed over when that
+// is not the commit: what a past Complete had to satisfy is the requirement, and
+// lowering it is what makes a blocked stage start closing.
 //
 // It walks the owed artifacts in declaration order rather than ranging over the
 // Verifiers map, because Go randomises map iteration and a fingerprint that
@@ -155,7 +156,18 @@ func writeProofs(b *strings.Builder, stage Stage) {
 		}
 		b.WriteString(string(artifact))
 		b.WriteString(":")
-		b.WriteString(string(VerifierFor(stage, artifact).Proves()))
+		verifier := VerifierFor(stage, artifact)
+		b.WriteString(string(verifier.Proves()))
+
+		// Where the artifact is handed over, when it is not the commit. A path is
+		// deliberately absent from this — it changes where a delivery is looked for
+		// (ADR-0070) — but the store is a different obligation: an artifact that
+		// used to be a file in a commit and is now a row in the store is not the
+		// same thing owed, and a log written under one rule must not replay under
+		// the other (RFC-0008).
+		if existence, ok := verifier.(Existence); ok && existence.Handover {
+			b.WriteString("@store")
+		}
 	}
 }
 

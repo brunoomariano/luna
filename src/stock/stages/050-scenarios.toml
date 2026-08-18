@@ -5,9 +5,11 @@ produces = ["scenarios", "approach"]
 
 [verify.scenarios]
 kind = "existence"
+handover = "store"
 
 [verify.approach]
 kind = "existence"
+handover = "store"
 
 [gate]
 kind   = "confirm"

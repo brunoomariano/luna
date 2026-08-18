@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/herdr"
@@ -172,6 +173,30 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		},
 		// What the stage committed, which is what the next one branches from.
 		Delivered: node.Handover,
+
+		// The socket a contained agent hands artifacts over through. It is opened
+		// inside the stage's worktree, which is the only place the agent can reach
+		// — measured against ai-jail 1.17.0, every other position answers ENOENT
+		// (RFC-0008).
+		Artifacts: func(taskID, worktree, stage string, seq int) (io.Closer, string, error) {
+			server, err := node.ServeArtifacts(worktree, stage,
+				NewTaskArtifacts(env.Store, taskID, seq))
+			if err != nil {
+				return nil, "", err
+			}
+			return server, server.Path(), nil
+		},
+
+		// What answers "was it handed over?" for an artifact that is not in the
+		// commit. The store is the witness, and the hash it returns is what the
+		// evidence carries (INV-core-11).
+		Stored: func(id, stage, artifact string) (string, error) {
+			blob, err := env.Store.LatestBlob(id, stage, artifact)
+			if err != nil {
+				return "", err
+			}
+			return blob.Hash, nil
+		},
 	}
 	return conductor, func() { _ = client.Close() }, nil
 }

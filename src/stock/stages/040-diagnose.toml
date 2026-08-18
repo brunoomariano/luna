@@ -9,3 +9,10 @@ produces_for_human = ["min_case"]
 
 [verify.root_cause]
 kind = "existence"
+
+[verify.min_case]
+# The smallest reproduction, which is a working document rather than something
+# the repository keeps: it exists so whoever fixes the bug can run it, and it is
+# meaningless once the fix lands (RFC-0008).
+kind     = "existence"
+handover = "store"

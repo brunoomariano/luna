@@ -209,7 +209,7 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 		return pane, nil
 	}
 
-	command, err := jailed(kind, args)
+	command, err := jailed(kind, ws.ArtifactSocket, args)
 	if err != nil {
 		return "", fmt.Errorf("starting %q for %s: %w", kind, name, err)
 	}
@@ -261,7 +261,12 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 // into herdr, so there is nowhere to put a wrapper. Measured — a custom kind is
 // refused with `unsupported_agent_kind`, and a new one needs a herdr binary
 // update rather than a local manifest.
-func jailed(kind string, args []string) (string, error) {
+// artifactSocketEnv is the variable `luna artifact` reads to find Luna. It is
+// duplicated from the cli package rather than imported, because the dependency
+// runs that way: the CLI builds this node, not the reverse.
+const artifactSocketEnv = "LUNA_ARTIFACT_SOCKET"
+
+func jailed(kind, socket string, args []string) (string, error) {
 	if _, err := exec.LookPath(jailBinary); err != nil {
 		return "", fmt.Errorf(
 			"%w: %s is not on PATH, and Luna runs every agent inside it — an agent "+
@@ -270,7 +275,19 @@ func jailed(kind string, args []string) (string, error) {
 		)
 	}
 
-	command := fmt.Sprintf("HERDR_AGENT=%s %s %s", kind, jailBinary, kind)
+	command := fmt.Sprintf("HERDR_AGENT=%s", kind)
+
+	// The socket the agent hands artifacts over through, in its environment rather
+	// than only in the brief. The brief is prose an agent may paraphrase; the
+	// variable is what `luna artifact put` actually reads (RFC-0008).
+	//
+	// It is inside the worktree, so it survives the jail — which is the whole
+	// reason the socket is placed there and not beside the log.
+	if socket != "" {
+		command += fmt.Sprintf(" %s=%s", artifactSocketEnv, socket)
+	}
+
+	command += fmt.Sprintf(" %s %s", jailBinary, kind)
 	for _, arg := range args {
 		command += " " + arg
 	}

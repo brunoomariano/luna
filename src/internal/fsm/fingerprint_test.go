@@ -197,10 +197,18 @@ func TestTheShippedFlowMatchesItself(t *testing.T) {
 // with a visible diff, and it is the moment to ask what happens to the tasks
 // already open. Editing the stock without touching it fails here instead.
 func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
-	// The shipped stock as it stands, after `discovery` and `commit` left the
-	// flow (ADR-0062) and criticality was declared on the two gates that remained
-	// (ADR-0063).
-	const pinned FlowFingerprint = "e29ecd956d3ac836"
+	// The shipped stock as it stands, after eight scaffolding artifacts moved out
+	// of the commit and into Luna's store (RFC-0008): the contract, the scenarios,
+	// the approach, the minimal case and the four audit reports.
+	//
+	// That change belongs in the fingerprint where a path does not (ADR-0070). A
+	// path says where a delivery is looked for; this says the artifact is not in
+	// the commit at all, which is a different thing owed — a past Complete that
+	// closed on a committed file cannot be replayed against a store row.
+	//
+	// No open task was stranded: every store carrying the previous fingerprint held
+	// only test tasks, checked before the value moved.
+	const pinned FlowFingerprint = "18464f834de0e0fd"
 
 	if got := Fingerprint(DefaultFlow()); got != pinned {
 		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+
