@@ -38,16 +38,19 @@ from confirming every gate to an overnight run that stops for nothing.
 
 ## State
 
-**Under construction, and honest about it.** A full 12-stage cycle has run zero-touch,
-end to end, delivering a real feature. What is decided but not built is listed at the
-bottom of [`docs/architecture.md`](docs/architecture.md) rather than implied by silence.
+**Under construction, and honest about it.** A full 12-stage cycle ran zero-touch under
+the previous transport, delivering a real feature. The transport was then replaced — the
+terminal driving is gone, agents run headless — and the stages have run individually
+against the new one but a full cycle has not been repeated on it yet. What is decided but
+not built is listed at the bottom of [`docs/architecture.md`](docs/architecture.md) rather
+than implied by silence.
 
 **What it costs is now measured, and the first numbers are not flattering.** A feature
-whose entire content is a `--loud` flag for a two-line shell script spent $1.61 across two
-stages before any code was written — 33 turns in the stage that writes test scenarios. The
-per-stage cost column is in `luna task show`, and the case for the flow has to be made
-against numbers like those rather than against the argument for the design. See
-[`docs/lessons.md`](docs/lessons.md).
+whose entire content is a `--loud` flag for a two-line shell script spent **$3.24 and 2.7
+million tokens across three stages** before any code was written — 47 turns in the stage
+that writes test scenarios alone. The per-stage cost column is in `luna task show`, and
+the case for the flow has to be made against numbers like those rather than against the
+argument for the design. See [`docs/lessons.md`](docs/lessons.md).
 
 ## Installation
 

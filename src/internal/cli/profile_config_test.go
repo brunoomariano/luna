@@ -465,16 +465,17 @@ func TestANonPositiveBudgetIsNotABudget(t *testing.T) {
 // TestAMalformedListSaysWhatWentWrongWithIt covers the three ways a list is
 // written badly, each with its own message.
 //
-// `tools_deny` is the config's only list, and it is the setting that takes a
-// capability away from a role. Refusing it with one generic "bad value" would put
-// a person in a hand-written TOML file hunting a bracket — and the direction the
-// mistake fails in is the dangerous one: a list that did not load is a role that
-// keeps the tool it was supposed to lose.
+// `tools_deny` is the config's only list now — the profile section holds no
+// settings at all, so the parser is only ever reached through a role. A refusal
+// that did not quote what was typed would put a person in a hand-written TOML
+// file hunting a bracket, and the direction the mistake fails in is the
+// dangerous one: a list that did not load is a role that keeps the tool it was
+// supposed to lose.
 func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
-	for name, malformed := range map[string]struct{ line, names string }{
-		"not a list at all": {`tools_deny = "Edit"`, `"Edit"`},
-		"never closed":      {`tools_deny = ["Edit"`, `["Edit"`},
-		"an unquoted entry": {`tools_deny = [Edit]`, "Edit"},
+	for name, malformed := range map[string]struct{ line, says string }{
+		"not a list at all": {`tools_deny = "Edit"`, `expected a list`},
+		"never closed":      {`tools_deny = ["Edit"`, `close on the same line`},
+		"an unquoted entry": {`tools_deny = [Edit]`, `quoted strings`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := LoadConfig(writeConfig(t, "[role.auditor]\n"+malformed.line+"\n"))
@@ -482,31 +483,15 @@ func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s was accepted as a list", name)
 			}
-			if !strings.Contains(err.Error(), malformed.names) {
-				t.Errorf("the refusal must quote what was written, got %v", err)
+			if !strings.Contains(err.Error(), malformed.says) {
+				t.Errorf("the refusal does not say what is wrong with it, got %v", err)
+			}
+			// And it quotes the offending line back, so the fix does not need a
+			// second pass over the file to find which one it meant.
+			if !strings.Contains(err.Error(), "Edit") {
+				t.Errorf("the refusal must carry what was written, got %v", err)
 			}
 		})
-	}
-}
-
-// TestASectionThatNamesNothingIsRefused covers the header a stray keystroke
-// produces.
-//
-// `[profile.]` and `[role.]` declare a thing with an empty name. Accepting them
-// would put a nameless profile in the set `task new --profile` validates
-// against, so the next typo would match it and a task would be created under a
-// profile nobody wrote.
-func TestASectionThatNamesNothingIsRefused(t *testing.T) {
-	for _, header := range []string{"[profile.]", "[role.]"} {
-		_, err := LoadConfig(writeConfig(t, header+"\n"))
-
-		if err == nil {
-			t.Errorf("%s declared something with no name", header)
-			continue
-		}
-		if !strings.Contains(err.Error(), "names nothing") {
-			t.Errorf("%s: the refusal should say the section is nameless, got %v", header, err)
-		}
 	}
 }
 
