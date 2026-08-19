@@ -432,3 +432,53 @@ func TestCanGateAnswersFromTheClosedTable(t *testing.T) {
 		t.Error("an unnamed harness must not be reported as gateable")
 	}
 }
+
+// TestMemoryWrapsTheCallInsideTheSandbox covers the composition order, which is
+// the part that matters: contained first, then remembered. Reversed, a call that
+// must not escape could.
+func TestMemoryWrapsTheCallInsideTheSandbox(t *testing.T) {
+	fake := newFakeHarness(t, success, 0)
+	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+
+	// The wrapper stands in for ai-memory: it records what it was asked to launch
+	// and runs it, which is what the real one does with native arguments.
+	// `ai-memory run <harness> <native args...>`: drop the wrapper's own two
+	// arguments and run the harness with the rest, byte-for-byte.
+	wrapper := filepath.Join(t.TempDir(), "fake-memory")
+	script := "#!/bin/sh\nshift\nharness=$1\nshift\nexec \"" + fake.path() + "\" \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing the fake wrapper: %v", err)
+	}
+	original := memoryWrapper
+	memoryWrapper = wrapper
+	defer func() { memoryWrapper = original }()
+
+	_, err := h.Run(context.Background(), Call{
+		Kind: "claude", Dir: t.TempDir(), Prompt: "go", Memory: MemoryOn,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// The harness's own flags survive the wrapper, which forwards native
+	// arguments byte-for-byte — so the call is still non-interactive.
+	if argv := fake.argv(t); !strings.Contains(argv, "-p") {
+		t.Errorf("the wrapper swallowed the harness's non-interactive flag:\n%s", argv)
+	}
+}
+
+// TestMemoryIsOffUnlessAsked covers the default. A shared project memory that
+// every stage of every task writes to is one that fills with the transient.
+func TestMemoryIsOffUnlessAsked(t *testing.T) {
+	fake := newFakeHarness(t, success, 0)
+	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+
+	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: "go"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if argv := fake.argv(t); strings.Contains(argv, memoryWrapper) {
+		t.Errorf("a call that asked for no memory got the wrapper:\n%s", argv)
+	}
+}

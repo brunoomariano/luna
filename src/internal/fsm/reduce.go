@@ -512,6 +512,12 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	}
 	stage := stageIn(flow, state.Stage)
 
+	// Before any check can send this back: the agent ran and the call was billed,
+	// whatever the check concludes. Recording it only where the stage closes is
+	// how failures come out free, and a flow that fails most reads as the
+	// cheapest one to run.
+	state.Spent = withSpend(state.Spent, state.Stage, a.Spent)
+
 	// The exit check, and the one that catches the most: a stage that promised two
 	// artifacts and delivered one does not close. Both fields count — an audit
 	// report has no consumer downstream, so nothing would ever miss it
@@ -553,7 +559,6 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		state.Context.Artifacts[produced] = true
 	}
 	absorb(state.Evidence, a.Evidence)
-	state.Spent = withSpend(state.Spent, state.Stage, a.Spent)
 
 	// The status says the stage finished, rather than leaving the caller to infer
 	// it from what landed in the context. A closed stage and a stage about to

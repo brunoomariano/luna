@@ -253,6 +253,12 @@ func assignStageField(stage *Stage, key, value, at string) error {
 			return err
 		}
 		stage.Context = context
+	case "memory":
+		memory, err := ParseStageMemory(unquote(value), at)
+		if err != nil {
+			return err
+		}
+		stage.Memory = memory
 	case "requires", "produces", "produces_for_human":
 		return assignArtifactList(stage, key, value, at)
 	default:

@@ -128,3 +128,75 @@ func TestSpendIsRecordedWhenAStageCloses(t *testing.T) {
 // plus 0.05 is 0.15000000000000002. A cent is far below anything worth acting
 // on, so that is the tolerance.
 func nearly(got, want float64) bool { return math.Abs(got-want) < 0.001 }
+
+// TestABlockedStageIsStillBilled is the regression for a bug found by running a
+// real task.
+//
+// The exit checks return early — a stage that owed two artifacts and delivered
+// none is blocked before the closing path — and the spend used to be recorded
+// only on the path where the stage closed. So a failed stage came out free, and
+// the flow that fails most would read as the cheapest one to run.
+func TestABlockedStageIsStillBilled(t *testing.T) {
+	flow := []Stage{{
+		ID: "scenarios", Role: "gherkin",
+		Requires: []Artifact{TaskID},
+		Produces: []Artifact{"scenarios", "approach"},
+	}}
+
+	state := TaskState{
+		ID: "T-1", Status: StatusRunning, Stage: "scenarios",
+		Context:  NewTaskContext(KindFeature),
+		Evidence: map[Artifact]Evidence{},
+	}
+
+	// The agent ran, was billed, and delivered neither artifact.
+	after, err := Reduce(state, Complete{
+		Delivered: nil,
+		Flow:      flow,
+		Spent:     Spend{InputTokens: 5000, CostUSD: 0.12, Context: "fresh"},
+	})
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+
+	if after.Status != StatusBlocked {
+		t.Fatalf("want the stage blocked for an undelivered contract, got %q", after.Status)
+	}
+	if got := after.Spent["scenarios"].CostUSD; got != 0.12 {
+		t.Errorf("a blocked stage lost its bill: want 0.12, got %v", got)
+	}
+}
+
+// TestAStageIsBilledOnceWhenItCloses guards the other direction. Recording the
+// spend before the checks and again at the end would double every stage that
+// worked.
+func TestAStageIsBilledOnceWhenItCloses(t *testing.T) {
+	flow := []Stage{{
+		ID: "build", Role: "implementer",
+		Requires: []Artifact{TaskID},
+		Produces: []Artifact{"code"},
+	}}
+
+	state := TaskState{
+		ID: "T-2", Status: StatusRunning, Stage: "build",
+		Context:  NewTaskContext(KindFeature),
+		Evidence: map[Artifact]Evidence{},
+	}
+
+	after, err := Reduce(state, Complete{
+		Delivered: []Artifact{"code"},
+		Evidence:  map[Artifact]Evidence{"code": {Scope: ScopeExistence, Verdict: VerdictPassed}},
+		Flow:      flow,
+		Spent:     Spend{InputTokens: 100, CostUSD: 0.10},
+	})
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+
+	if after.Status == StatusBlocked {
+		t.Fatalf("the stage should have closed: %s", after.Blocked)
+	}
+	if got := after.Spent["build"].CostUSD; !nearly(got, 0.10) {
+		t.Errorf("want the stage billed once (0.10), got %v", got)
+	}
+}

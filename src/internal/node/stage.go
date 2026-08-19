@@ -140,6 +140,10 @@ func (r *Runner) call(
 		Deny:    denied(role),
 		Budget:  r.Budget,
 		Context: agent.Fresh,
+		Memory:  agent.MemoryOff,
+	}
+	if stage.Memory.Enabled() {
+		call.Memory = agent.MemoryOn
 	}
 	if handsOver {
 		call.Env = append(call.Env, socketEnv+"="+SocketName)

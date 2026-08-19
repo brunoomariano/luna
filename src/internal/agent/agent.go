@@ -120,7 +120,41 @@ type Call struct {
 
 	// Budget bounds the call. Zero means the caller's context decides.
 	Budget time.Duration
+
+	// Memory says whether this call runs inside the project's durable memory.
+	//
+	// It is per call rather than global because the two useful settings differ by
+	// stage: a stage that benefits from knowing what the project already decided
+	// is not always one whose session is worth writing back.
+	Memory Memory
 }
+
+// Memory is how a call relates to the project's durable memory.
+//
+// The wrapper (`ai-memory run`) forwards native arguments byte-for-byte, so it
+// composes with the harness's non-interactive mode rather than replacing it.
+// What it adds is a session imported on exit and consolidated into the project's
+// wiki — the gotchas and decisions a fresh agent would otherwise rediscover.
+type Memory string
+
+const (
+	// MemoryOff runs the harness directly. The default: a stage that needs no
+	// project history should not pay for one, and writing back from every stage
+	// of every task is how a shared memory gets contaminated.
+	MemoryOff Memory = "off"
+
+	// MemoryOn wraps the call so the session lands in the project's memory.
+	MemoryOn Memory = "on"
+)
+
+// memoryWrapper is the command that gives a call the project's durable memory.
+//
+// Not configurable, for the same reason the sandbox is not: it sits between the
+// containment and the agent, and a typo in configuration should not be able to
+// quietly become "no memory" or, worse, "no sandbox". A variable rather than a
+// constant only so a test can point it at a script instead of invoking the real
+// one.
+var memoryWrapper = "ai-memory"
 
 // ErrNoHarness is returned when the named harness is not installed. It is
 // separate from a failed call because it is a setup problem, and retrying a
@@ -191,6 +225,11 @@ func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
 	}
 
 	args := append([]string{binary}, spec.args(call)...)
+	if call.Memory == MemoryOn {
+		// The wrapper goes between the sandbox and the harness: contained first,
+		// then remembered, so a call that must not escape still cannot.
+		args = append([]string{memoryWrapper, "run", call.Kind}, args[1:]...)
+	}
 	started := time.Now()
 
 	// #nosec G204 — running a named binary with built arguments is what this

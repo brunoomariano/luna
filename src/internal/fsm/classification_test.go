@@ -38,6 +38,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Review":           "history", // decides whether a past finding was legal, and where it went
 		"Role":             "policy",  // only internal/node reads it
 		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
+		"Memory":           "policy",  // the same: what the agent knows walking in, not what it owes walking out
 	}
 
 	stage := reflect.TypeOf(Stage{})
