@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/brunoomariano/luna/src/internal/agent"
@@ -51,13 +50,16 @@ func runTaskCommand(env Env, args []string) error {
 	}
 	defer cleanup()
 
+	// The machinery breaking does not surface here, and the absence is the
+	// design rather than an omission: the lead records a block and the run ends
+	// normally, so the task appears in `luna gates` with a reason instead of the
+	// command erroring and leaving nothing behind.
+	//
+	// A branch here that reported ErrInfrastructure was removed as unreachable —
+	// the lead absorbs it, and a message that can never print is one somebody
+	// eventually maintains for nothing.
 	state, err = conductor.Run(context.Background(), id)
 	if err != nil {
-		// The machinery breaking is not a task failure, and the message says
-		// which it was so nobody goes looking for a bug in the flow.
-		if errors.Is(err, lead.ErrInfrastructure) {
-			return fmt.Errorf("the machinery failed while %s was running: %w", id, err)
-		}
 		return err
 	}
 

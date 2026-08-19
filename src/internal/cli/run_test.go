@@ -14,6 +14,7 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
 	"github.com/brunoomariano/luna/src/internal/node"
+	"github.com/brunoomariano/luna/src/internal/store"
 )
 
 // ── parseRunOptions ──────────────────────────────────────────────────────────
@@ -900,5 +901,120 @@ func TestTheConductorCarriesTheMechanicalHalfOfAGate(t *testing.T) {
 	// can name".
 	if conductor.Land == nil {
 		t.Error("the conductor cannot point the task's branch at what it delivered")
+	}
+}
+
+// TestTheHandoverIsProvenByTheStoreNotTheTree covers the closure that answers
+// "was it handed over?" for an artifact that never reaches a commit.
+//
+// A contained agent writes a document through the handover socket, not into the
+// worktree, so a stage that owes one has nothing in its diff to point at. The
+// store is the only witness, and the hash it returns is what the evidence
+// carries — an answer of "yes" with no hash would record a handover nobody could
+// later check against the content.
+//
+// It is asserted against the wiring `luna run` actually builds, because the
+// failure being caught is the seam coming unplugged: the runner would fall back
+// to whatever it does with no `Stored` and stop proving handovers at all, and
+// every stage would still pass.
+func TestTheHandoverIsProvenByTheStoreNotTheTree(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	if err := h.env.Store.PutBlob(store.Blob{
+		TaskID: "LUNA-1", Stage: "spec", Artifact: "contract", Seq: 2, Body: []byte("the contract"),
+	}); err != nil {
+		t.Fatalf("handing over: %v", err)
+	}
+
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	if err != nil {
+		t.Fatalf("building the conductor: %v", err)
+	}
+	defer cleanup()
+
+	runner, ok := conductor.Node.(*node.Runner)
+	if !ok {
+		t.Fatalf("want the stage runner, got %T", conductor.Node)
+	}
+
+	hash, err := runner.Stored("LUNA-1", "spec", "contract")
+	if err != nil {
+		t.Fatalf("an artifact in the store must count as handed over: %v", err)
+	}
+	if hash == "" {
+		t.Error("the handover was confirmed with no hash, so nothing can be checked against it")
+	}
+
+	// And the other direction, which is the one that matters: a stage claiming an
+	// artifact it never handed over must not be able to prove it.
+	if _, err := runner.Stored("LUNA-1", "spec", "never-written"); err == nil {
+		t.Error("an artifact nobody handed over was proven handed over")
+	}
+}
+
+// TestTheHandoverSocketIsOpenedPerTask covers the other half of the same seam.
+//
+// Artifacts is what the socket writes into, and it is built per task id. One
+// store shared across tasks would file LUNA-2's contract under LUNA-1 — and
+// since the log is append-only, that is not a mistake anything can repair.
+func TestTheHandoverSocketIsOpenedPerTask(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-2")
+
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	if err != nil {
+		t.Fatalf("building the conductor: %v", err)
+	}
+	defer cleanup()
+
+	runner, ok := conductor.Node.(*node.Runner)
+	if !ok {
+		t.Fatalf("want the stage runner, got %T", conductor.Node)
+	}
+
+	if err := runner.Artifacts("LUNA-1").PutArtifact("spec", "contract", []byte("for one")); err != nil {
+		t.Fatalf("handing over: %v", err)
+	}
+
+	if _, err := h.env.Store.LatestBlob("LUNA-1", "spec", "contract"); err != nil {
+		t.Errorf("the handover did not land against the task that made it: %v", err)
+	}
+	if _, err := h.env.Store.LatestBlob("LUNA-2", "spec", "contract"); err == nil {
+		t.Error("one task's handover was filed against another's log")
+	}
+}
+
+// TestWhatWentWrongWithoutFailingTheStageReachesTheTerminal covers the warning
+// channel the runner and the lead are both given.
+//
+// A worktree that would not go away does not fail a stage, and neither does a
+// branch that would not move. Both are the kind of thing that costs nothing once
+// and fills a disk after a hundred runs — so the one requirement is that they
+// reach the person's terminal instead of being counted silently. A Warn wired to
+// nothing is indistinguishable from a run where nothing went wrong.
+func TestWhatWentWrongWithoutFailingTheStageReachesTheTerminal(t *testing.T) {
+	h := newHarness(t)
+
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	if err != nil {
+		t.Fatalf("building the conductor: %v", err)
+	}
+	defer cleanup()
+
+	runner, ok := conductor.Node.(*node.Runner)
+	if !ok {
+		t.Fatalf("want the stage runner, got %T", conductor.Node)
+	}
+
+	runner.Warn("the worktree for %s would not go away", "LUNA-1")
+	conductor.Warn("%s finished but its branch was not moved", "LUNA-1")
+
+	got := h.errOut.String()
+	for _, want := range []string{"would not go away", "branch was not moved", "LUNA-1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a warning never reached the terminal: want %q in\n%s", want, got)
+		}
 	}
 }

@@ -151,3 +151,71 @@ func TestContextDoesNotMoveTheFingerprint(t *testing.T) {
 			Fingerprint(fresh), Fingerprint(live))
 	}
 }
+
+// TestMemoryIsOffUnlessAStageSaysOtherwise pins the default, and the reason for
+// it: a shared project memory that every stage of every task writes to fills
+// with the transient, so reading is the cheap half and writing is the part worth
+// declaring.
+func TestMemoryIsOffUnlessAStageSaysOtherwise(t *testing.T) {
+	var unset StageMemory
+	if unset.Enabled() {
+		t.Error("a stage that never mentions memory must not run with it")
+	}
+	if !MemoryOn.Enabled() {
+		t.Error("a stage that asked for memory must get it")
+	}
+	if MemoryOff.Enabled() {
+		t.Error("off must read as off")
+	}
+}
+
+// TestAnUnknownMemoryValueIsRefused covers the typo, for the reason the context
+// key refuses one: silently meaning "off" looks like a setting that was applied,
+// and a stage briefed without the project's history would give no sign of it.
+func TestAnUnknownMemoryValueIsRefused(t *testing.T) {
+	for _, value := range []string{"on ", "yes", "true"} {
+		if _, err := ParseStageMemory(value, "stages/030-intake.toml:5"); err == nil {
+			t.Errorf("ParseStageMemory(%q) was accepted", value)
+		}
+	}
+
+	for _, tc := range []struct {
+		value string
+		want  StageMemory
+	}{{"on", MemoryOn}, {"off", MemoryOff}, {"", MemoryOff}} {
+		got, err := ParseStageMemory(tc.value, "stages/030-intake.toml:5")
+		if err != nil {
+			t.Errorf("ParseStageMemory(%q): %v", tc.value, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("ParseStageMemory(%q) = %q, want %q", tc.value, got, tc.want)
+		}
+	}
+}
+
+// TestAStageFileCanDeclareContextAndMemory covers both keys reaching the stage
+// through the loader, which is the only way a project sets either.
+func TestAStageFileCanDeclareContextAndMemory(t *testing.T) {
+	stage, err := ParseStage(`
+id       = "refactor"
+role     = "implementer"
+requires = ["code"]
+produces = ["clean"]
+context  = "live"
+memory   = "on"
+
+[verify.clean]
+kind = "existence"
+`, "stages/080-refactor.toml")
+	if err != nil {
+		t.Fatalf("ParseStage: %v", err)
+	}
+
+	if stage.Context != ContextLive {
+		t.Errorf("want the declared context, got %q", stage.Context)
+	}
+	if !stage.Memory.Enabled() {
+		t.Errorf("want the declared memory, got %q", stage.Memory)
+	}
+}

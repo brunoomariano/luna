@@ -8,6 +8,7 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/store"
 )
 
 // TestFlowCheckReportsAnOpenTask covers the primary defence of the flow fingerprint.
@@ -463,5 +464,86 @@ func TestFlowGatesSaysSoWhenNothingStops(t *testing.T) {
 
 	if !strings.Contains(h.out.String(), "nothing stops for a person") {
 		t.Errorf("a gateless flow said nothing:\n%s", h.out.String())
+	}
+}
+
+// TestFlowCheckNamesAStageThatWouldInheritTheWrongSession covers the one rule
+// that survived when fresh context stopped being one.
+//
+// A reviewer continuing the implementer's session reads its own reasoning
+// instead of the delivery, and a review that confirms is not a review. The gap
+// is static because the alternative is finding out from a code-review stage that
+// agreed with everything — which reads exactly like a stage that went well, and
+// so is never investigated.
+//
+// Two shapes, and they need different sentences. A stage in the middle names the
+// stage whose session it would inherit and the role that ran it; the first stage
+// has nothing before it at all, and pointing at an absent stage would print an
+// empty name.
+func TestFlowCheckNamesAStageThatWouldInheritTheWrongSession(t *testing.T) {
+	for name, tc := range map[string]struct {
+		flow []fsm.Stage
+		says []string
+	}{
+		"a reviewer continuing the implementer": {
+			flow: []fsm.Stage{
+				{ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"}, Role: "implementer"},
+				{
+					ID: "code-review", Requires: []fsm.Artifact{"code"}, Produces: []fsm.Artifact{"review"},
+					Role: "reviewer", Context: fsm.ContextLive,
+				},
+			},
+			says: []string{"code-review", "build", "implementer"},
+		},
+		"the first stage having nothing to continue": {
+			flow: []fsm.Stage{{
+				ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"},
+				Role: "implementer", Context: fsm.ContextLive,
+			}},
+			says: []string{"build", "there is none to continue"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+
+			reportFlowGaps(h.env, tc.flow)
+
+			out := h.out.String()
+			if strings.Contains(out, "the contract holds") {
+				t.Fatalf("a stage inheriting the wrong session was reported as sound:\n%s", out)
+			}
+			for _, want := range tc.says {
+				if !strings.Contains(out, want) {
+					t.Errorf("the gap does not name %q:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
+// TestFlowCheckStopsOnALogItCannotDecode is the other side of the line this
+// command already draws.
+//
+// A task born under a retired flow is listed by name — that is the whole reason
+// the command exists, and skipping it in the loop is right because it is
+// reported afterwards. A log holding an action this build cannot decode is a
+// different thing: it is not a flow that moved on, it is a log that is damaged.
+// Folding it into the "unreadable" list would tell the person their flow changed
+// when it did not, and send them re-recording a fingerprint that was never the
+// problem.
+func TestFlowCheckStopsOnALogItCannotDecode(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.env.Store.Append("LUNA-1", store.Event{Action: "TimeTravel"}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	err := h.run(t, "flow", "check")
+
+	if err == nil {
+		t.Fatal("a log that cannot be decoded must stop the check rather than be listed as a flow change")
+	}
+	if strings.Contains(h.out.String(), "no longer replay") {
+		t.Errorf("a damaged log was reported as a flow change:\n%s", h.out.String())
 	}
 }

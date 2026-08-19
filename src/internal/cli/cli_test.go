@@ -786,6 +786,15 @@ func TestAdjustWithoutAnEditorSaysSo(t *testing.T) {
 
 // ── dispatch and usage ───────────────────────────────────────────────────────
 
+// TestUsageErrors is the surface of the whole CLI: what happens when the id is
+// missing, the verb is wrong, or an argument arrived where none belongs.
+//
+// The list is worth being exhaustive about because the failure it catches is
+// silent. A command that reads no id and defaults to a zero one does not stop —
+// `luna next` with nothing after it would replay a task called "" and hand out a
+// confident order for it, and `luna trust` with a stray argument would edit the
+// user's credentials file while ignoring whatever they thought they were
+// scoping it to.
 func TestUsageErrors(t *testing.T) {
 	h := newHarness(t)
 
@@ -796,10 +805,19 @@ func TestUsageErrors(t *testing.T) {
 		{"task", "orbit"},
 		{"task", "new"},
 		{"task", "show"},
+		{"task", "abandon"},
+		{"task", "abandon", "LUNA-1"}, // an id with no reason is not a reason
+		{"task", "statement"},
+		{"task", "forget"},
+		{"task", "forget", "LUNA-1", "LUNA-2"}, // one at a time, deliberately
 		{"gates", "extra"},
 		{"gate"},
 		{"gate", "show"},
 		{"gate", "orbit", "LUNA-1"},
+		{"next"},
+		{"done"},
+		{"flow", "check", "LUNA-1"},
+		{"trust", "somewhere"},
 	}
 
 	for _, args := range cases {
@@ -1035,11 +1053,26 @@ func TestCommandsSurfaceAStoreFailure(t *testing.T) {
 		t.Fatalf("closing: %v", err)
 	}
 
+	// Every command that touches the log, including the ones that only read.
+	// The list is the point: a command missing from it is a command that can
+	// answer confidently from a store that told it nothing — `luna next` handing
+	// out an order for a task it could not read, `luna done` reporting a stage
+	// closed that was never recorded.
 	cases := [][]string{
 		{"task", "new", "LUNA-2"},
 		{"task", "show", "LUNA-1"},
+		{"task", "abandon", "LUNA-1", "we changed our minds"},
+		{"task", "statement", "LUNA-1", "--about", "something else"},
+		{"task", "forget", "LUNA-1"},
 		{"gates"},
 		{"gate", "approve", "LUNA-1"},
+		{"gate", "checks", "LUNA-1", "--on", "confirm", "--run", "make ci"},
+		{"next", "LUNA-1"},
+		{"done", "LUNA-1", "--delivered", "code"},
+		{"autonomy", "LUNA-1", "6"},
+		{"stuck"},
+		{"flow", "check"},
+		{"lead", "LUNA-1"},
 	}
 
 	for _, args := range cases {
@@ -1337,4 +1370,55 @@ func TestTheLoopReachesTheStructuredView(t *testing.T) {
 	if report.Loop.Compared != "abc1234" {
 		t.Errorf("what was compared did not survive: %q", report.Loop.Compared)
 	}
+}
+
+// TestPrintingATaskWithNoArtifactsDoesNotAnnounceADelivery covers the shape a
+// state has before anything produced anything.
+//
+// Every task created through `luna task new` carries `task_id` from the start,
+// so this is reached by a state rebuilt from a log that opened differently — and
+// what it must not do is print the "produced" heading over an empty list. That
+// reads as a stage that closed and delivered nothing, which is the exact shape
+// of a real failure the reducer refuses; a healthy task must not look like one.
+func TestPrintingATaskWithNoArtifactsDoesNotAnnounceADelivery(t *testing.T) {
+	h := newHarness(t)
+
+	printTask(h.env, fsm.TaskState{ID: "LUNA-1", Status: fsm.StatusReady}, 0)
+
+	out := h.out.String()
+	if strings.Contains(out, "produced") {
+		t.Errorf("a task that has produced nothing announced a delivery:\n%s", out)
+	}
+	if !strings.Contains(out, "LUNA-1") {
+		t.Errorf("the task was not reported at all:\n%s", out)
+	}
+}
+
+// TestStdinThatCannotBeReadIsReportedRatherThanTakenAsEmpty covers the pipe
+// breaking mid-read.
+//
+// `--stdin` is how a script adjusts an artifact a gate is holding. A read that
+// fails and is treated as "they supplied nothing" would replace the artifact
+// with an empty document and record it as the human's edit — the one shape of
+// data loss this log cannot undo, since there is no UPDATE to put it back.
+func TestStdinThatCannotBeReadIsReportedRatherThanTakenAsEmpty(t *testing.T) {
+	h := newHarness(t)
+	h.env.In = brokenPipe{}
+
+	_, err := readAll(h.env)
+
+	if err == nil {
+		t.Fatal("a broken pipe was read as an empty replacement")
+	}
+	if !strings.Contains(err.Error(), "stdin") {
+		t.Errorf("the error should name where it was reading from, got %v", err)
+	}
+}
+
+// brokenPipe stands in for the writer at the other end going away mid-read: the
+// reader that a closed pipe or a killed process leaves behind.
+type brokenPipe struct{}
+
+func (brokenPipe) Read([]byte) (int, error) {
+	return 0, errors.New("read |0: file already closed")
 }

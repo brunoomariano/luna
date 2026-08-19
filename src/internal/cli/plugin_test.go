@@ -34,17 +34,26 @@ func TestPluginSubcommandsTakeNoArguments(t *testing.T) {
 //
 // The proxy is a convenience, and someone without herdr should hear that `luna
 // chat` works anyway rather than that something is broken.
+//
+// Every subcommand, not only install: the machine that installed the proxy is
+// not necessarily the one uninstalling it, and someone who removed herdr and
+// then ran `luna plugin uninstall` to tidy up would otherwise meet an exec
+// failure about a binary they deliberately deleted.
 func TestWithoutHerdrTheProxyIsReportedAsOptional(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	h := newHarness(t)
+	for _, sub := range []string{"install", "uninstall", "status"} {
+		t.Run(sub, func(t *testing.T) {
+			t.Setenv("PATH", t.TempDir())
+			h := newHarness(t)
 
-	err := h.run(t, "plugin", "install")
+			err := h.run(t, "plugin", sub)
 
-	if err == nil {
-		t.Fatal("with no herdr the install must be reported")
-	}
-	if !strings.Contains(err.Error(), "luna chat") {
-		t.Errorf("the message should name the fallback, got %v", err)
+			if err == nil {
+				t.Fatalf("with no herdr, plugin %s must be reported", sub)
+			}
+			if !strings.Contains(err.Error(), "luna chat") {
+				t.Errorf("the message should name the fallback, got %v", err)
+			}
+		})
 	}
 }
 
@@ -311,5 +320,35 @@ func TestStatusCarriesAFailureFromHerdr(t *testing.T) {
 
 	if err := h.run(t, "plugin", "status"); err == nil {
 		t.Error("a failed list must be reported")
+	}
+}
+
+// TestInstallWithNoManifestStopsBeforeCallingHerdr is the ordering that keeps
+// the failure legible.
+//
+// The manifest is looked up before herdr is asked anything. An install that
+// called `herdr plugin link ""` first would fail in herdr's words about a path
+// nobody typed — and worse, it would leave the person believing herdr is the
+// broken part when what is actually missing is the plugin directory that ships
+// with this repository.
+func TestInstallWithNoManifestStopsBeforeCallingHerdr(t *testing.T) {
+	asked := withFakeHerdr(t, nil, nil)
+	realManifest := manifestDir
+	manifestDir = func() (string, error) {
+		return "", errors.New("cannot find the plugin manifest (looked in /nowhere)")
+	}
+	t.Cleanup(func() { manifestDir = realManifest })
+
+	h := newHarness(t)
+	err := h.run(t, "plugin", "install")
+
+	if err == nil {
+		t.Fatal("installing without a manifest must be reported")
+	}
+	if !strings.Contains(err.Error(), "looked in") {
+		t.Errorf("the failure must carry where it looked, got %v", err)
+	}
+	if len(*asked) != 0 {
+		t.Errorf("herdr was called with nothing to link: %v", *asked)
 	}
 }

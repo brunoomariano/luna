@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -188,13 +189,44 @@ func TestDoneRefusesATaskWithNoRunningStage(t *testing.T) {
 	}
 }
 
+// TestDoneNeedsToBeToldWhatWasDelivered guards the one argument that carries
+// the whole meaning of the command.
+//
+// `done` with no `--delivered` is a caller saying "the stage finished" and
+// nothing else, and there is no safe reading of it: taking the contract's list
+// as implied would let a stage that produced none of it close on the say-so, and
+// taking the empty list literally would block every stage with a message about
+// artifacts nobody mentioned. Refusing at the edge is what makes the delivery
+// the thing being recorded rather than the claim.
+//
+// Driven against a task with a stage actually open, because the earlier guards —
+// no such task, nothing running — would otherwise answer first and this
+// refusal would never be reached.
 func TestDoneNeedsToBeToldWhatWasDelivered(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature")
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+	enterStage(t, h, "LUNA-1")
 
-	err := h.run(t, "done", "LUNA-1")
-	if err == nil {
-		t.Fatal("a stage closed without saying what it produced")
+	for _, args := range [][]string{
+		{"done", "LUNA-1"},
+		{"done", "LUNA-1", "--delivered", ""},
+		{"done", "LUNA-1", "--delivered", "  "},
+	} {
+		err := h.run(t, args...)
+
+		if !errors.Is(err, ErrUsage) {
+			t.Errorf("%v: a stage closed without saying what it produced, got %v", args, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), "--delivered") {
+			t.Errorf("%v: the refusal must name the argument to add, got %v", args, err)
+		}
+	}
+
+	// And nothing was recorded: a refusal that still appended would leave the
+	// stage looking closed on the next replay.
+	if state := mustState(t, h, "LUNA-1"); state.Status != fsm.StatusRunning {
+		t.Errorf("a refused `done` moved the task to %q", state.Status)
 	}
 }
 
