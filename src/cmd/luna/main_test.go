@@ -273,3 +273,30 @@ func TestWithNoEditorConfiguredEditIsAbsent(t *testing.T) {
 			"launch nothing instead of naming what to set")
 	}
 }
+
+// TestArtifactCommandsDoNotNeedTheLog is the regression for a bug a real agent
+// found and diagnosed better than any test had.
+//
+// `luna artifact put` runs inside a stage's sandbox, where the log is
+// deliberately out of reach: the agent hands its work to Luna through a socket
+// and Luna is the only writer. Resolving the store first made every artifact
+// command exit 1 from inside the jail, so a stage produced its contract, could
+// not deliver it, and blocked — with the guard that refused working exactly as
+// designed, aimed at the wrong command.
+//
+// The assertion is that the failure is about the socket rather than about the
+// log: reaching the socket check at all means the store was never consulted.
+func TestArtifactCommandsDoNotNeedTheLog(t *testing.T) {
+	// A directory that is not a repository, so anything touching the store fails.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("LUNA_ARTIFACT_SOCKET", "")
+
+	err := run([]string{"artifact", "put", "contract"})
+	if err == nil {
+		t.Fatal("want a refusal with no socket set, got success")
+	}
+	if !strings.Contains(err.Error(), "LUNA_ARTIFACT_SOCKET") {
+		t.Errorf("want the failure to be about the socket, got %q", err)
+	}
+}

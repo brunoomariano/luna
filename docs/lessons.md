@@ -116,6 +116,21 @@ stage *closed*, and the exit checks return before that — so a blocked stage ca
 and the flow that fails most read as the cheapest. Caught by running a task, not by
 reading the code.
 
+**A guard aimed at the wrong command is indistinguishable from a broken feature.**
+`luna artifact put` runs *inside* a stage's sandbox, where the log is deliberately out of
+reach — the agent hands its work to Luna through a socket and Luna is the only writer. But
+the CLI resolved and validated the store before dispatching any command, so the guard
+protecting against a ghost store refused every artifact command from inside the jail. A
+stage produced its contract, could not deliver it, and blocked.
+
+Two things about how it was found. It survived a full test suite because every test ran
+outside a sandbox, where the store resolves fine. And it was diagnosed by the *agent* —
+which committed a message naming the exact cause ("luna exits 1 on every subcommand
+because the recorded log dir is outside this sandbox mount"), explicitly declined to work
+around the refusal, and left the artifact behind for a human. The adversarial framing has
+a limit: an agent given a clear contract and a hard boundary reported the boundary rather
+than defeating it.
+
 ## About this project's own process
 
 **Recording a decision and recording progress are different things.** Decision records

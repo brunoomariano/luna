@@ -40,30 +40,64 @@ func exitCode(err error, stderr io.Writer) int {
 	return 1
 }
 
-func run(args []string) error {
-	ctx := context.Background()
+// insideAStage reports whether the command is one an agent runs from within a
+// stage's sandbox, where the log is deliberately unreachable.
+//
+// The agent hands its work to Luna through a socket and Luna is the only writer,
+// so these need nothing the sandbox denies them.
+func insideAStage(args []string) bool {
+	return len(args) > 0 && args[0] == "artifact"
+}
 
-	path, err := storePath(ctx)
+// runInsideAStage answers without resolving the store at all, because resolving
+// it is exactly what fails inside the sandbox.
+//
+// Measured: an agent produced its contract, could not deliver it, and reported
+// that `luna` exited 1 on every subcommand because the log directory was outside
+// its mount. The guard doing the refusing was working as designed and aimed at
+// the wrong command.
+func runInsideAStage(args []string) error {
+	return cli.Run(cli.Env{Out: os.Stdout, Err: os.Stderr, In: os.Stdin}, args)
+}
+
+// openStore resolves the log, refuses an unreachable one, reads the config and
+// opens the database — the prologue every command outside a stage shares.
+//
+// Grouped because the order is the meaning: the guard runs before anything is
+// opened, since opening is what hides the problem. A log on a filesystem the
+// caller cannot really reach answers every read and write and keeps none of
+// them, so the failure has to be caught while there is still nothing to lose.
+func openStore(ctx context.Context) (s *store.Store, cfg cli.Config, path string, err error) {
+	path, err = storePath(ctx)
 	if err != nil {
-		return err
+		return nil, cli.Config{}, "", err
 	}
-
-	// Refused before anything is opened, because opening is what hides the
-	// problem: a log on a filesystem the caller cannot really reach answers every
-	// read and write and keeps none of them, so the failure has to be caught while
-	// there is still nothing to lose (node.EnsureDurable).
 	if err := node.EnsureDurable(filepath.Dir(path)); err != nil {
-		return err
+		return nil, cli.Config{}, "", err
 	}
 
 	// The config is read before the store is opened: a malformed config should
 	// report itself rather than being discovered halfway through a command.
-	cfg, err := cli.LoadConfig(cli.ConfigPath(path))
+	cfg, err = cli.LoadConfig(cli.ConfigPath(path))
 	if err != nil {
-		return err
+		return nil, cli.Config{}, "", err
 	}
 
-	s, err := store.OpenAs(path, store.LunaOwnsTheLog)
+	s, err = store.OpenAs(path, store.LunaOwnsTheLog)
+	if err != nil {
+		return nil, cli.Config{}, "", err
+	}
+	return s, cfg, path, nil
+}
+
+func run(args []string) error {
+	ctx := context.Background()
+
+	if insideAStage(args) {
+		return runInsideAStage(args)
+	}
+
+	s, cfg, path, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
