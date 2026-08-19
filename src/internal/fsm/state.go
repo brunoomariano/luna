@@ -286,6 +286,20 @@ type TaskState struct {
 	// worktree branches from whatever the repository already is.
 	Base string
 
+	// Spent is what each stage's agent cost, as its harness reported it.
+	//
+	// Nothing reads it to decide anything — a transition that depended on a price
+	// would replay differently when the price changed. It is here so the question
+	// the whole design rests on has an answer: whether driving work through
+	// stages beats doing it in one session is a measurement, and for a long time
+	// there was no number to measure it with.
+	//
+	// Keyed by stage rather than summed, because the sum cannot answer which
+	// stage is expensive, and that is the part worth acting on. A stage that ran
+	// twice keeps the total of both — a retry is not free, and hiding it would
+	// make the cheapest-looking flow the one that fails most.
+	Spent map[StageID]Spend
+
 	// Statement is what a person said the task is about, rebuilt from the log:
 	// `TaskCreated` carries the first one and `StatementRevised` every edit after
 	// it.

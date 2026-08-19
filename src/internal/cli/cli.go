@@ -491,6 +491,7 @@ func taskShow(env Env, args []string) error {
 	}
 
 	printTask(env, state, len(events))
+	printSpend(env, state)
 	printHandedOver(env, id)
 	return nil
 }
@@ -1040,4 +1041,35 @@ func sortedArtifacts(set map[fsm.Artifact]bool) []fsm.Artifact {
 	}
 	sort.Slice(artifacts, func(i, j int) bool { return artifacts[i] < artifacts[j] })
 	return artifacts
+}
+
+// printSpend reports what a task cost, per stage and in total.
+//
+// It exists because the argument the whole design rests on — that driving work
+// through stages beats doing it in one session — was unmeasurable for as long as
+// nothing recorded the price. The harness reports it in its own answer, so the
+// number costs nothing to keep and everything to be without.
+//
+// Per stage rather than one total, because the total cannot say which stage is
+// expensive and that is the part worth acting on. The context column is here for
+// the same reason: fresh and live differ by an order of magnitude, and a cost
+// nobody can attribute to a setting cannot settle which setting to use.
+func printSpend(env Env, state fsm.TaskState) {
+	if len(state.Spent) == 0 {
+		return
+	}
+
+	fmt.Fprintf(env.Out, "\nspent\n")
+	// Flow order rather than map order, so the column reads like the run.
+	for _, stage := range fsm.DefaultFlow() {
+		spend, ran := state.Spent[stage.ID]
+		if !ran {
+			continue
+		}
+		fmt.Fprintf(env.Out, "  %-14s %8d tokens  $%.4f  %d turns  %s\n",
+			stage.ID, spend.Tokens(), spend.CostUSD, spend.Turns, spend.Context)
+	}
+
+	total := state.TotalSpend()
+	fmt.Fprintf(env.Out, "  %-14s %8d tokens  $%.4f\n", "total", total.Tokens(), total.CostUSD)
 }

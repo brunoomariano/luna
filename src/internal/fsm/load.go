@@ -247,6 +247,12 @@ func assignStageField(stage *Stage, key, value, at string) error {
 			return fmt.Errorf("%s: %w", at, err)
 		}
 		stage.When = condition
+	case "context":
+		context, err := ParseStageContext(unquote(value), at)
+		if err != nil {
+			return err
+		}
+		stage.Context = context
 	case "requires", "produces", "produces_for_human":
 		return assignArtifactList(stage, key, value, at)
 	default:

@@ -37,6 +37,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
 		"Review":           "history", // decides whether a past finding was legal, and where it went
 		"Role":             "policy",  // only internal/herdr reads it
+		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
 	}
 
 	stage := reflect.TypeOf(Stage{})

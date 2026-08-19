@@ -4,6 +4,8 @@
 // docs/architecture.md.
 package fsm
 
+import "fmt"
+
 // Artifact identifies a product of the flow — what a stage requires to start or
 // delivers when it finishes. It is a named string rather than a raw one so the
 // compiler keeps "artifact name" apart from any other text travelling with it.
@@ -130,6 +132,59 @@ type Stage struct {
 	// emit a ReviewFinding, which is whoever-writes-does-not-review in the engine:
 	// an implementer sending its own work back would be reviewing itself.
 	Review *ReviewSpec
+
+	// Context says whether this stage continues the previous stage's session or
+	// starts a clean one. The zero value is ContextFresh.
+	//
+	// Starting fresh everywhere used to be a rule, on the argument that roles
+	// erode in long sessions. The concern is real and the mechanism was wrong:
+	// what protects the flow is the check at the exit, which catches a drifted
+	// agent and a merely bad one alike. So this is a setting, and which value
+	// serves is a measurement rather than a belief — a resumed call costs an
+	// order of magnitude less, and whether it delivers as well is the question.
+	//
+	// It is deliberately NOT part of the flow fingerprint. A fingerprint records
+	// what delivering means, so that a replay against a changed flow is refused;
+	// this changes what a stage costs and how it is briefed, and a task halfway
+	// through should be able to switch without its log becoming unreplayable.
+	// The same reasoning that keeps an artifact's path out of it.
+	Context StageContext
+}
+
+// StageContext is how a stage's agent starts: clean, or continuing.
+type StageContext string
+
+const (
+	// ContextFresh starts a new session. The default, and the only thing the
+	// first stage of a task can do.
+	ContextFresh StageContext = "fresh"
+
+	// ContextLive continues the previous stage's session.
+	//
+	// It is refused across a change of role. A reviewer that inherited the
+	// implementer's session would be reading its own reasoning rather than the
+	// delivery, and independence of review is the one part of the old rule that
+	// verification cannot stand in for.
+	ContextLive StageContext = "live"
+)
+
+// Fresh answers whether this stage starts clean. The zero value reads as fresh,
+// so a flow that never mentions context behaves the way every flow did before
+// the setting existed.
+func (c StageContext) Fresh() bool { return c != ContextLive }
+
+// ParseStageContext reads the `context` key. An unknown value is refused rather
+// than defaulted: a typo silently meaning "fresh" would look like a setting that
+// was applied and cost the measurement it was written for.
+func ParseStageContext(value, at string) (StageContext, error) {
+	switch StageContext(value) {
+	case ContextFresh, ContextLive:
+		return StageContext(value), nil
+	case "":
+		return ContextFresh, nil
+	}
+	return "", fmt.Errorf("%s: context is %q, and the choices are %q and %q",
+		at, value, ContextFresh, ContextLive)
 }
 
 // GateSpec is a gate a stage opens, declared as part of the contract.

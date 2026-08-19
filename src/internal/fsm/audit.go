@@ -123,3 +123,51 @@ func AuditFlowNames(flow []Stage) []NameGap {
 	}
 	return gaps
 }
+
+// ContextGap is a stage asking to continue a session it must not continue.
+type ContextGap struct {
+	Stage StageID
+
+	// From is the stage whose session this one would have inherited, and Role is
+	// what that stage ran as. Both are in the report because the reason is the
+	// pair: continuing is fine, continuing across a change of role is not.
+	From StageID
+	Role string
+}
+
+// AuditContextChain reports every stage declaring `context = "live"` that would
+// inherit a session from a different role.
+//
+// When fresh context stopped being a rule, one part of it did not: a reviewer
+// must not continue the implementer's session. It would be reading its own
+// reasoning instead of the delivery, and that is the one thing verification at
+// the exit cannot stand in for — a review that confirms is not a review.
+//
+// Static for the same reason the contract check is: the alternative is finding
+// out from a review that agreed with everything, which reads exactly like a
+// stage that went well.
+func AuditContextChain(flow []Stage) []ContextGap {
+	if len(flow) == 0 {
+		return nil
+	}
+
+	var gaps []ContextGap
+
+	// The first stage is judged alone: there is nothing before it to continue.
+	if first := flow[0]; !first.Context.Fresh() {
+		// Named as a gap against itself, so the report says what is wrong rather
+		// than pointing at a stage that is absent.
+		gaps = append(gaps, ContextGap{Stage: first.ID, Role: first.Role})
+	}
+
+	// The rest walk as pairs rather than by index, which is what the rule
+	// actually is — a stage and the one whose session it would inherit.
+	for i, stage := range flow[1:] {
+		previous := flow[i]
+		if stage.Context.Fresh() || previous.Role == stage.Role {
+			continue
+		}
+		gaps = append(gaps, ContextGap{Stage: stage.ID, From: previous.ID, Role: previous.Role})
+	}
+	return gaps
+}

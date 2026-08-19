@@ -45,8 +45,9 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 	contract := fsm.AuditContract(flow)
 	roles := fsm.AuditRoles(flow)
 	names := fsm.AuditFlowNames(flow)
+	contexts := fsm.AuditContextChain(flow)
 
-	if len(contract)+len(roles)+len(names) == 0 {
+	if len(contract)+len(roles)+len(names)+len(contexts) == 0 {
 		fmt.Fprintf(env.Out, "the contract holds: every stage's inputs are produced before it\n")
 		return
 	}
@@ -62,6 +63,15 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 	for _, gap := range names {
 		fmt.Fprintf(env.Out, "  %s leaves %d characters for a task id, which is too few for its agent name\n",
 			gap.Stage, gap.Budget)
+	}
+	for _, gap := range contexts {
+		if gap.From == "" {
+			fmt.Fprintf(env.Out, "  %s asks to continue a session and is the first stage — there is none to continue\n",
+				gap.Stage)
+			continue
+		}
+		fmt.Fprintf(env.Out, "  %s asks to continue %s, which ran as %q — a session does not cross a change of role\n",
+			gap.Stage, gap.From, gap.Role)
 	}
 }
 

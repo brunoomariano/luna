@@ -133,6 +133,58 @@ type Complete struct {
 	// the base would send the next stage back to the repository's own HEAD and
 	// silently discard every stage before it.
 	Commit string `json:"commit,omitempty"`
+
+	// Spent is what the stage's agent consumed, as the harness reported it.
+	//
+	// The reducer never reads it — it decides nothing, and a transition that
+	// depended on a price would replay differently when the price changed. It is
+	// recorded because a claim about what orchestration costs is worth nothing
+	// without the number, and because the number arrives free in the harness's
+	// own answer. Absent for a mechanical stage, which runs no agent.
+	//
+	// `omitzero` rather than `omitempty`, and the golden corpus is what caught
+	// the difference: `omitempty` does nothing for a struct, so every log ever
+	// written would have started re-encoding with a `"spent":{}` it never had.
+	Spent Spend `json:"spent,omitzero"`
+}
+
+// Spend is what one stage cost.
+//
+// Every field is reported by the harness rather than counted here. That is the
+// point: an estimate is the part that would have been wrong, and the argument
+// this exists to settle — whether driving a flow through stages beats doing the
+// same work in one session — is only worth having against measured numbers.
+type Spend struct {
+	InputTokens  int     `json:"input_tokens,omitempty"`
+	OutputTokens int     `json:"output_tokens,omitempty"`
+	CacheRead    int     `json:"cache_read,omitempty"`
+	CacheWrite   int     `json:"cache_write,omitempty"`
+	CostUSD      float64 `json:"cost_usd,omitempty"`
+
+	// Model is what answered, when exactly one did.
+	Model string `json:"model,omitempty"`
+
+	// Turns is how many exchanges the stage took. A stage that delivered in
+	// forty turns is worth seeing even though it delivered.
+	Turns int `json:"turns,omitempty"`
+
+	// Context records whether the stage started clean or continued. Without it
+	// the cost column cannot answer the question it was added for.
+	Context string `json:"context,omitempty"`
+}
+
+// Zero reports whether anything was spent. A mechanical stage runs no agent, and
+// printing a row of zeros for it would suggest a measurement that never happened.
+func (s Spend) Zero() bool {
+	return s.InputTokens == 0 && s.OutputTokens == 0 &&
+		s.CacheRead == 0 && s.CacheWrite == 0 && s.CostUSD == 0
+}
+
+// Tokens is everything that crossed the wire, cached or not. Cache reads count
+// because they are billed — leaving them out would make a continued session look
+// free, which is the exact comparison this type exists to keep honest.
+func (s Spend) Tokens() int {
+	return s.InputTokens + s.OutputTokens + s.CacheRead + s.CacheWrite
 }
 
 // Fail reports that the node broke. Retry until the budget is spent, then block
@@ -501,6 +553,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		state.Context.Artifacts[produced] = true
 	}
 	absorb(state.Evidence, a.Evidence)
+	state.Spent = withSpend(state.Spent, state.Stage, a.Spent)
 
 	// The status says the stage finished, rather than leaving the caller to infer
 	// it from what landed in the context. A closed stage and a stage about to
@@ -1026,4 +1079,57 @@ func visitedIn(visited []StageID, id StageID) bool {
 		}
 	}
 	return false
+}
+
+// withSpend records what a stage cost, adding to what it already cost.
+//
+// Adding rather than replacing because a stage can run more than once: a review
+// sends work back, the stage runs again, and both calls were billed. Replacing
+// would report the retry's price as the stage's price and make the flow that
+// fails most look like the cheapest one.
+//
+// Returns the map so the caller assigns it, which is what lets a state with no
+// spending stay nil rather than carrying an empty map through every replay.
+func withSpend(spent map[StageID]Spend, stage StageID, add Spend) map[StageID]Spend {
+	if add.Zero() {
+		return spent
+	}
+	if spent == nil {
+		spent = map[StageID]Spend{}
+	}
+
+	running := spent[stage]
+	running.InputTokens += add.InputTokens
+	running.OutputTokens += add.OutputTokens
+	running.CacheRead += add.CacheRead
+	running.CacheWrite += add.CacheWrite
+	running.CostUSD += add.CostUSD
+	running.Turns += add.Turns
+
+	// The last call's model and context win. Both describe how the stage ran, and
+	// a stage that switched between attempts is better described by what it did
+	// most recently than by a blank.
+	if add.Model != "" {
+		running.Model = add.Model
+	}
+	if add.Context != "" {
+		running.Context = add.Context
+	}
+
+	spent[stage] = running
+	return spent
+}
+
+// TotalSpend is what the whole task cost.
+func (s TaskState) TotalSpend() Spend {
+	var total Spend
+	for _, stage := range s.Spent {
+		total.InputTokens += stage.InputTokens
+		total.OutputTokens += stage.OutputTokens
+		total.CacheRead += stage.CacheRead
+		total.CacheWrite += stage.CacheWrite
+		total.CostUSD += stage.CostUSD
+		total.Turns += stage.Turns
+	}
+	return total
 }
