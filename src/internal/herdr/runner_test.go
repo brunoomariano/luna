@@ -1041,7 +1041,7 @@ func TestTheBriefWaitsForTheInputPrompt(t *testing.T) {
 	server.replyOnce(
 		"pane.read",
 		`{"id":"1","result":{"type":"pane_read","read":{"text":"Welcome to Claude Code"}}}`,
-		`{"id":"1","result":{"type":"pane_read","read":{"text":"❯ Try \"write a test\""}}}`,
+		`{"id":"1","result":{"type":"pane_read","read":{"text":"⏵⏵ bypass permissions on (shift+tab to cycle)"}}}`,
 	)
 
 	runner := fastRunner(t, path)
@@ -1051,6 +1051,35 @@ func TestTheBriefWaitsForTheInputPrompt(t *testing.T) {
 
 	if got := len(server.sent("pane.read")); got < 2 {
 		t.Errorf("the start keeps reading until the input prompt shows, got %d reads", got)
+	}
+}
+
+// TestTheShellPromptDoesNotEndTheWait pins the lesson the first marker taught:
+// "❯" is also the shell prompt the command was typed at, so a wait that accepted
+// it passed before the agent had started — same binary, same flow, one task's
+// stage delivered and the next one's did not. Only claude's own indicator ends
+// the wait.
+func TestTheShellPromptDoesNotEndTheWait(t *testing.T) {
+	withSandboxOnPath(t)
+	server, path := newFakeServer(t)
+	server.replyOnce(
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+	server.replyOnce(
+		"pane.read",
+		`{"id":"1","result":{"type":"pane_read","read":{"text":"❯ HERDR_AGENT=claude ai-jail claude"}}}`,
+		`{"id":"1","result":{"type":"pane_read","read":{"text":"⏵⏵ bypass permissions on"}}}`,
+	)
+
+	runner := fastRunner(t, path)
+	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil); err != nil {
+		t.Fatalf("starting: %v", err)
+	}
+	if got := len(server.sent("pane.read")); got < 2 {
+		t.Errorf("a shell prompt showing the typed command must not end the wait, got %d reads", got)
 	}
 }
 
@@ -1071,5 +1100,26 @@ func TestAScreenWithNoMarkerDoesNotHoldTheStageForever(t *testing.T) {
 	runner := fastRunner(t, path)
 	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "claude", "luna-1", nil); err != nil {
 		t.Fatalf("an unknown screen must not fail the start, got %v", err)
+	}
+}
+
+// TestAHarnessWithNoMarkerSkipsTheWait: there is nothing that would end the wait
+// but the timeout, and paying it on every stage buys nothing.
+func TestAHarnessWithNoMarkerSkipsTheWait(t *testing.T) {
+	withSandboxOnPath(t)
+	server, path := newFakeServer(t)
+	server.replyOnce(
+		"agent.list",
+		`{"id":"1","result":{"type":"agent_list","agents":[]}}`,
+		`{"id":"1","result":{"type":"agent_list","agents":[{"pane_id":"w1:p1"}]}}`,
+	)
+	server.reply("pane.send_text", `{"id":"1","result":{"type":"ok"}}`)
+
+	runner := fastRunner(t, path)
+	if _, err := runner.StartAgent(context.Background(), Workspace{RootPane: "w1:p1"}, "codex", "luna-1", nil); err != nil {
+		t.Fatalf("starting: %v", err)
+	}
+	if got := len(server.sent("pane.read")); got != 0 {
+		t.Errorf("a harness with no marker reads no screens, got %d", got)
 	}
 }

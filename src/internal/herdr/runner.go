@@ -246,7 +246,7 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 	// pane.run returns as soon as the command is sent; the agent is interactive
 	// some seconds later. Waiting here rather than letting the first prompt race
 	// it is the same reason Prompt and its wait are one call.
-	if err := r.awaitAgent(ctx, ws.RootPane); err != nil {
+	if err := r.awaitAgent(ctx, ws.RootPane, kind); err != nil {
 		return "", fmt.Errorf("waiting for %q in %s: %w", kind, ws.RootPane, err)
 	}
 	return ws.RootPane, nil
@@ -369,7 +369,7 @@ func (r *socketRunner) agentIn(pane string) (string, bool) {
 // The settle here is what closes that window. It is a fixed wait rather than a
 // poll because there is nothing to poll for: `interactive_ready` is absent from a
 // `pane.send_text` agent, which is exactly the field that would have said so.
-func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
+func (r *socketRunner) awaitAgent(ctx context.Context, pane, kind string) error {
 	if err := retry(ctx, agentStartAttempts, r.paneWait(), func() error {
 		if _, running := r.agentIn(pane); running {
 			return nil
@@ -410,7 +410,7 @@ func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
 		return ctx.Err()
 	}
 
-	return r.awaitInputReady(ctx, pane)
+	return r.awaitInputReady(ctx, pane, kind)
 }
 
 // awaitInputReady waits until the agent's screen shows an input prompt, because
@@ -426,7 +426,20 @@ func (r *socketRunner) awaitAgent(ctx context.Context, pane string) error {
 // An agent whose screen never shows the marker falls through after the retries
 // and the prompt is attempted anyway: a marker this code does not know must not
 // hard-block a harness that is actually ready.
-func (r *socketRunner) awaitInputReady(ctx context.Context, pane string) error {
+//
+// The marker is per harness, and the first one chosen was measured wrong: "❯"
+// is also the shell prompt the command was typed at, so the wait passed before
+// the agent had started and the race it existed to close was back — one task's
+// scenarios stage delivered and the next one's did not, same binary, same flow.
+// What only a ready claude shows is its permission indicator, which is always
+// rendered because the mode is always passed (ADR-0069). A harness with no
+// marker does not wait: there is nothing that would end the wait but the
+// timeout, and paying it on every stage buys nothing.
+func (r *socketRunner) awaitInputReady(ctx context.Context, pane, kind string) error {
+	marker, ok := readyMarkers[kind]
+	if !ok {
+		return nil
+	}
 	_ = retry(ctx, inputReadyAttempts, r.paneWait(), func() error {
 		var answer struct {
 			Read struct {
@@ -439,7 +452,7 @@ func (r *socketRunner) awaitInputReady(ctx context.Context, pane string) error {
 		}, &answer); err != nil {
 			return nil //nolint:nilerr // an unreadable pane is the prompt's error to report
 		}
-		if strings.Contains(answer.Read.Text, inputMarker) {
+		if strings.Contains(answer.Read.Text, marker) {
 			return nil
 		}
 		return errNotReadyYet
@@ -447,9 +460,13 @@ func (r *socketRunner) awaitInputReady(ctx context.Context, pane string) error {
 	return ctx.Err()
 }
 
-// inputMarker is what claude's screen shows once it accepts input. The booting
-// banner does not contain it; the ready prompt and every menu do.
-const inputMarker = "❯"
+// readyMarkers is what each harness's screen shows once it accepts input, and
+// nothing earlier shows. For claude that is the permission indicator: the shell
+// prompt, the jail banner and the boot banner all lack it, and it is always
+// rendered because the mode is always passed (ADR-0069).
+var readyMarkers = map[string]string{
+	"claude": "bypass permissions on",
+}
 
 var errNotReadyYet = errors.New("the agent screen shows no input prompt yet")
 
