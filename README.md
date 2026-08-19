@@ -47,12 +47,13 @@ been repeated on it yet. What is decided but
 not built is listed at the bottom of [`docs/architecture.md`](docs/architecture.md) rather
 than implied by silence.
 
-**What it costs is now measured, and the first numbers are not flattering.** A feature
-whose entire content is a `--loud` flag for a two-line shell script spent **$3.24 and 2.7
-million tokens across three stages** before any code was written — 47 turns in the stage
-that writes test scenarios alone. The per-stage cost column is in `luna task show`, and
-the case for the flow has to be made against numbers like those rather than against the
-argument for the design. See [`docs/lessons.md`](docs/lessons.md).
+**What it costs is now measured, and the numbers are the open question.** A feature whose
+entire content is a `--loud` flag for a two-line shell script cost **$6.78 and 5.4 million
+tokens across six stages**. The work was good — five tests including a shellcheck pass,
+idempotent repeated flags, exit 2 with a diagnostic on an unknown argument — but a single
+session would have done it for a fraction of that. The per-stage column is in
+`luna task show`, and it says the expense is in the stages *before* the code: scenarios
+and spec are $4.14 of the $6.78, build is $0.64. See [`docs/lessons.md`](docs/lessons.md).
 
 ## Installation
 

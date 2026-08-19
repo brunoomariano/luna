@@ -104,12 +104,24 @@ whose entire content is a `--loud` flag for a two-line shell script:
 |---|---|---|---|
 | intake | 137,601 | $0.31 | 4 |
 | scenarios | 1,912,707 | $2.02 | 47 |
-| spec (two attempts) | 1,154,955 | $1.55 | 29 |
+| spec | 1,554,155 | $2.12 | 41 |
+| build | 467,095 | $0.64 | 12 |
+| refactor | 705,529 | $0.85 | 17 |
+| verify | 592,690 | $0.84 | 14 |
+| **total** | **5,369,777** | **$6.78** | **135** |
 
-Three stages, $3.88, 3.2 million tokens, and no code written yet. Forty-seven turns to
-produce test scenarios for a one-line change. A single session would have done the whole
-feature for a fraction of that, and any claim that the flow is worth its cost has to be
-made against numbers like these rather than against the argument for the design.
+**$6.78 and 5.4 million tokens for a `--loud` flag.** A single session would have done it
+for a fraction of that, and any claim that the flow is worth its cost has to be made
+against numbers like these rather than against the argument for the design.
+
+Two things the same run says in the other direction, which is why the number is a question
+rather than a verdict. The work was **good**: five tests including a shellcheck pass,
+idempotent repeated flags, a stderr diagnostic and exit 2 on an unknown argument — none of
+which the task asked for by name and all of which the contract had made obligations. And
+the expensive stages are the ones *before* code: scenarios and spec together are $4.14 of
+the $6.78, while build is $0.64. Whatever the flow is buying, it is buying it in the
+stages that write prose about the work rather than the ones that do it — which is exactly
+where the case for cutting stages should start looking.
 
 The counter was also wrong in the direction that flatters: spend was recorded only where a
 stage *closed*, and the exit checks return before that — so a blocked stage came out free
