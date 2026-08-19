@@ -220,7 +220,7 @@ profiles: interactive (default), turbo, nightly, plus any the project
 
 func runTask(env Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%w: task needs a subcommand (new, show, statement, abandon)", ErrUsage)
+		return fmt.Errorf("%w: task needs a subcommand (new, show, statement, abandon, forget)", ErrUsage)
 	}
 
 	switch args[0] {
@@ -232,6 +232,8 @@ func runTask(env Env, args []string) error {
 		return taskStatement(env, args[1:])
 	case "abandon":
 		return taskAbandon(env, args[1:])
+	case "forget":
+		return taskForget(env, args[1:])
 	default:
 		return fmt.Errorf("%w: unknown task subcommand %q", ErrUsage, args[0])
 	}

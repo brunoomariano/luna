@@ -1,7 +1,7 @@
 # RFC-0008: a scratch artifact is handed over through a socket
 
-**Status:** DRAFT
-**Last reviewed:** 2026-08-18
+**Status:** DONE
+**Last reviewed:** 2026-08-19
 **Source issue:** —
 **PRD:** —
 
@@ -227,9 +227,11 @@ Feature flag: no. Phases 1–3 are inert until a contract declares the field, wh
       `luna artifact get contract` with no stage named returns the most recent from any stage.
 - [ ] **Concurrency under load.** The socket makes Luna the only writer, which is SQLite's best
       case, and WAL plus `busy_timeout(5000)` are already set with a single connection
-      (`openOwned`). Still to be measured with N agents putting at once.
-- [ ] **Does an artifact in the store need to be reachable after the task is deleted?** The
-      cleanup routine is a stated goal; whether anything must outlive it is not decided.
+      (`openOwned`). Still to be measured with N agents putting at once — the one question
+      this RFC leaves open past DONE.
+- [x] **Does an artifact in the store need to be reachable after the task is deleted? — no.**
+      `luna task forget` removes a task's blobs; the log keeps every hash, so the history of
+      what was produced outlives the content, and nothing else needs to.
 - [x] **Does the lead read blobs directly, or always through the CLI? — always the CLI.** It
       runs uncontained and could open the store, which is exactly why the rule is worth
       stating: two paths to the same data is how they drift.
@@ -237,6 +239,7 @@ Feature flag: no. Phases 1–3 are inert until a contract declares the field, wh
 ## References
 - Issue: —
 - PRD: —
+- Decision record: [ADR-0071](../ADRs/0071-a-scratch-artifact-is-handed-over-through-a-socket.md)
 - Related ADRs: [ADR-0058](../ADRs/0058-what-had-no-caller-is-either-wired-or-gone.md) (deleted
   the content store — the decision this revisits), [ADR-0070](../ADRs/0070-an-artifact-can-declare-where-it-lives.md),
   [ADR-0068](../ADRs/0068-a-worktree-lives-where-the-process-can-reach-it.md),

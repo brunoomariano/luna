@@ -301,8 +301,10 @@ they will never be demanded — no stage downstream asks for them.
 
 **How it is preserved.** The output check considers both fields; the static check,
 only the `produces` (see
-[ADR-0021](../ADRs/0021-produces-for-human-is-a-separate-contract-field.md)). The handoff
-records the path and hash of both, so they can be located later.
+[ADR-0021](../ADRs/0021-produces-for-human-is-a-separate-contract-field.md)). An audit
+artifact is handed over to Luna's store, keyed by the stage that produced it, and its
+evidence carries the content's hash — so it is located by command rather than remembered
+([ADR-0071](../ADRs/0071-a-scratch-artifact-is-handed-over-through-a-socket.md)).
 
 **What would violate it.** A stage closing without the declared report; an audit
 artifact written outside the handoff, with no trace of where it is; treating
@@ -310,10 +312,14 @@ artifact written outside the handoff, with no trace of where it is; treating
 
 **Acceptance criteria** — the code is not considered done without:
 
-- a test that declares `produces_for_human` and verifies that the stage **does not close** without it;
+- a test that declares `produces_for_human` and verifies that the stage **does not close**
+  without it (`TestCompleteRequiresTheHumanReport`);
 - a test that verifies that the static check does **not** complain about
-  `produces_for_human` having no consumer;
-- the handoff carrying the location of each audit artifact produced.
+  `produces_for_human` having no consumer (`TestAuditArtifactDoesNotSatisfyRequirement`: the
+  field never enters the available set, so no consumer is ever demanded for it);
+- the handoff carrying the location of each audit artifact produced
+  (`TestAHandedOverArtifactIsProvenByTheStore`: the evidence carries the content's hash, and
+  the store row carries the producing stage).
 
 ---
 
