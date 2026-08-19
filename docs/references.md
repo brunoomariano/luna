@@ -62,7 +62,7 @@ the flow the same kind of mechanical rejection that there protects only transpor
 
 **What was missing there and became a requirement here:** there is no detection of a
 stuck agent or of a broken chain. A swarm that stops talking stops in silence. Hence the
-inactivity watchdog — see [ADR-0019](ADRs/0019-inactivity-watchdog.md).
+inactivity watchdog — see [decisions.md](decisions.md).
 
 ## Field observations from the same author
 
@@ -105,8 +105,7 @@ LLM steps sprinkled in at just the right points"*.
 
 Graph-based tracker for agents: dependencies, computing what is free to start, atomic
 claiming. **Adopted, then removed** — the record of both is
-[ADR-0054](ADRs/0054-the-registry-is-beads-and-the-flow-is-not.md) and
-[ADR-0067](ADRs/0067-there-is-no-registry-and-a-task-carries-what-it-is-about.md).
+[decisions.md](decisions.md).
 
 What it was used for was never the graph. Luna referenced no dependency, no `blocked_by` and
 no `ready` computation; what it read back was the statement of work an agent is briefed with

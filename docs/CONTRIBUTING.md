@@ -5,17 +5,17 @@ This is the normative home of the **branch, merge, commit and tag** flow. The `R
 
 ## Before opening an issue or PR
 
-Read [`docs/ADRs/`](ADRs/). Every decision is recorded with the alternative that was
+Read [`docs/decisions.md`](decisions.md). Every decision is recorded with the alternative that was
 rejected and the reason. Proposals that reopen a decision without a new argument will be
 closed with a pointer to the corresponding ADR.
 
 If the change touches a permanent rule of the domain, also check
-[`docs/invariants/`](invariants/).
+[`docs/invariants.md`](invariants.md).
 
 ## Project state
 
 Engine under construction. The architecture is settled and recorded in
-[`docs/ADRs/`](ADRs/); the core has the contract's static and entry checks and stage
+[`docs/decisions.md`](decisions.md); the core has the contract's static and entry checks and stage
 selection. Design critique is still the most useful contribution — especially if you
 have operated a fleet of agents and seen a failure mode the design does not cover.
 
@@ -88,7 +88,7 @@ Colour is dropped when stdout is not a terminal, so CI logs stay readable.
 |---|---|
 | `fmt-check` | formatting drift (gofumpt, stricter than gofmt) |
 | `lint` | the linter set in [`.golangci.yaml`](../.golangci.yaml) — correctness, security, complexity, dependency direction |
-| `lint-docs` | the shape of this suite (see [`README.md`](README.md)) |
+| `lint-docs` | the shape of the docs — links and headings, never their truth |
 | `cover` | coverage below **95%** |
 
 **Runs in remote CI, outside the local gate.**
@@ -138,9 +138,24 @@ to ignore the pipeline:
 
 ## Documentation
 
-Documentation is part of the delivery, it does not come afterwards. Before writing any
-document, read the contract in [`docs/README.md`](README.md) to know which layer
-it belongs to. `make lint-docs` validates the form and fails CI like a code lint.
+Documentation is part of the delivery, it does not come afterwards. There are four files
+and each answers one question:
+
+| File | Question |
+|---|---|
+| [`architecture.md`](architecture.md) | how does it work today? |
+| [`invariants.md`](invariants.md) | what always holds? |
+| [`decisions.md`](decisions.md) | what was chosen, and what was rejected? |
+| [`lessons.md`](lessons.md) | what did building it teach? |
+
+Do not add a fifth without a reason that survives the question *"which of the four should
+have held this instead?"* — the previous suite had ten layers and 95,000 words for 14,000
+lines of code, and the shape is what let it drift out of sync with the code while every
+structural check stayed green.
+
+A statement in `architecture.md` that the code contradicts is a **bug**, fixed like one.
+`make lint-docs` checks links and shape; it cannot check truth, so that part is on the
+person changing the code.
 
 ## Conventions
 

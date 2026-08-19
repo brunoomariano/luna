@@ -1,0 +1,235 @@
+# Decisions
+
+What was decided, what was rejected, and what was tried and thrown away. Living document —
+if a decision changes, this file changes with it, and the old wording is in git.
+
+This replaces 73 immutable ADRs. The discipline worth keeping from that format was never
+the immutability — git already preserves history — but **writing down the rejected
+alternative**, so a settled question is not reopened without a new argument. That
+discipline stays. If you are about to propose something listed under "rejected", bring
+something the record does not already answer.
+
+---
+
+## Flow control
+
+**The state machine decides the next stage; the model works inside one.** The premise of
+the project. Everything else is measured against it.
+
+**The lead is hybrid: code on the happy path, a model only when something goes off the
+rails.** Zero token cost when nothing is wrong. The argument for keeping the model in the
+loop at all is a real case: an FSM bug told a lead to re-review a finished document, and
+the lead refused and escalated to the human. The deterministic layer gives the skeleton;
+the judgement layer catches the skeleton's errors.
+
+**The lead is an agent, so the interface is designed for a reader that can disobey.**
+`luna next` returns one closed order and no view of the remaining flow — a lead that could
+see ahead would run two stages and report both, which reads as efficiency rather than
+disobedience. The lead's reply is printed, never parsed: `luna done` moves the task, and
+Luna compares the log position before and after.
+
+> A turn cap was written for this and then removed as unreachable. The did-it-move check
+> is strictly stronger, and a ceiling nothing can reach gets trusted without ever having
+> held.
+
+**Parallelism is between tasks, never inside one.** One worktree, one lead per task.
+
+**A failed node retries at most twice, then blocks with a notice.** "Go back a stage" was
+rejected as a third exit: it duplicates the review rollback while forgetting to invalidate
+the green, and two doors to the same place means one of them forgets.
+
+**Conditional stages resolve against a closed named set, not an expression language.** A
+condition decides which stages a task walked through, which makes it history. An arbitrary
+predicate in a file is a flow whose past cannot be reconstructed once the predicate is
+edited away.
+
+**The flow is data — embedded TOML in `src/stock/`, copied into a project by `luna init`.**
+Order is the filename prefix. Equivalence with the retired Go literals was proven by
+fingerprint, not by reading.
+
+**The core knows no issue tracker.** Tasks enter through `luna task new` or an import
+adapter outside the core. **CLI first. Go, for a static single binary. Defaults plus user
+customization everywhere.**
+
+## State and the log
+
+**The reducer is pure; verification runs outside and the verdict arrives inside the
+action.** The load-bearing shape of the whole engine: it keeps a transition reproducible
+from the log and testable without infrastructure. Cost recorded honestly — nothing in the
+type system stops a caller fabricating a verdict.
+
+**Append-only SQLite, no CGO. State is replayed, never stored.**
+
+**The log lives in the main repository and Luna is its only writer.** Resolved with
+`git rev-parse --git-common-dir`; `--show-toplevel` is the call everyone reaches for, and
+it returns the worktree — the one answer that must not decide where shared state lives.
+
+**`TaskCreated` records a fingerprint of the flow's identity, and replay refuses a
+mismatch.** `luna task abandon` is the escape hatch. Airflow rendered historical runs
+against the current DAG for ten years and paid with four AIPs and a destructive migration.
+The worst case was never the replay that dies — it was the one that passes with an empty
+contract.
+
+**An append declares the position it read from and lands only if the log still ends
+there.** Reproduced with a probe: two processes writing from one state poisoned a log with
+no repair path. The fix had three causes and the third was the one that mattered — a
+deferred `BEGIN`, which SQLite refuses to upgrade without consulting the busy handler. WAL
+and the connection pool alone still lost eight writes in twenty.
+
+**A field the reducer reads is history; a field only the node reads is policy — and grep
+decides, not judgement.** From Camunda: a system validating 1,388 lines of preconditions
+still accepted a migration that hung ~10,000 instances, because the *boundary* was wrong,
+not the volume. Running the rule mechanically found two fields the hand-drawn boundary had
+misclassified.
+
+**Every action names its own JSON fields, and the engine's enums refuse a value they do not
+know.** A renamed field decodes cleanly and blocks the task claiming verification failed.
+A golden corpus re-encodes and compares bytes, because decoding successfully is not enough
+— a field that stops being written decodes fine and comes back missing.
+
+**The log records the gate decision, not the policy that produced it.** Editable policy
+plus recomputed replay would mean editing a profile rewrites how past tasks read.
+
+**The log records when each event was written, and the reducer never reads it.** A state
+carrying a clock makes replay depend on when it ran.
+
+**A task carries its own statement of work in its log.**
+
+## Verification
+
+**Output is validated by running the real tool.** Not format, not exit codes alone.
+
+**A status is a trigger, never a verdict.** All five orchestrators studied recorded the
+model's claim as fact. herdr's own semantics forbid it: `Done` decays to `Idle` when a
+human focuses the tab, and a known agent matching no detection rule falls back to `Idle` —
+so a vendor UI change would read as *finished*.
+
+**Each artifact declares how it is verified, beside the contract that produces it.**
+Evidence carries scope, and scope never upgrades. `existence` is the honest floor.
+
+**Luna runs verification itself, in the worktree, against the delivered commit.** Running
+it through a pane would make the exit code a screen-parsing problem — the appearance of a
+delivery rather than the delivery.
+
+**Luna reads the review report; the agent never emits the transition.** Exactly one
+`[BLOCKING]` sends work back; a pile of `[SHOULD-FIX]` does not, because summing severities
+lets the engine overrule the reviewer by arithmetic. Which report to read comes from the
+stage's `produces_for_human`, not a hardcoded name — a hardcoded one worked for one stage
+and silently skipped three.
+
+**An aligned finding invalidates the green, and what it invalidates is stage-declared.**
+`reviewStages` used to be a hardcoded list of four names, so renaming `code-review` in a
+custom flow removed the write/review separation *silently*, inside the code enforcing it.
+
+**A spent loop ceiling stops the task: a gate where someone waits, a block where nobody
+does.** This is a measured revision of the original ceiling design — wiring the emitter
+produced a task that never terminated (eight rounds against a ceiling of four, oscillation
+seven against a limit of two), because a spent ceiling opened a gate only if the profile
+said someone was waiting.
+
+**The no-progress signal is the delivered commit; nothing is hashed.** A hash over a diff
+carrying a timestamp never matches itself, and a detector that never fires equals no
+detector. A round that observed nothing leaves the streak alone — neither counted nor
+cleared.
+
+**The agent is fallible everywhere and adversarial at the evidence boundary.** Luna
+tolerates an agent that gets the *work* wrong; it does not tolerate one that gets the
+*record* wrong. Measured: a reviewer denied `Edit`/`Write` still writes through `Bash` on
+three of four harnesses. The worst case is not the reviewer editing — it is an agent
+rewriting the `Makefile` the check invokes, producing an `exit 0` that enters the log with
+the credential of truth.
+
+## Agents, roles and the sandbox
+
+**A role per stage.** A role resolves to an agent kind, a brief and a capability list. A
+stage with no role runs mechanically, with no agent — Luna was paying a model to run
+`git commit`.
+
+**Four harnesses, four gating mechanisms; a role declares a capability and Luna
+translates.** The table is closed: an unlisted harness is refused, because guessing fails
+open.
+
+> The prior measurement here was wrong and is recorded as wrong. Grepping four CLIs for
+> `disallowed-tools` found the flag only on claude and concluded the others could not gate.
+> All four can — `--disallowed-tools`, `--exclude-tools`, `-s read-only`, and an agent-file
+> permission. **A capability check that looks for one vendor's spelling finds one vendor.**
+
+**Luna starts every agent inside `ai-jail` and refuses to start one without it.** The bug
+this fixed: Luna chose the permission flag by asking whether *its own process* was
+contained — but the agent is a child of the runner, so `ai-jail luna run` contained Luna
+and handed the agent `bypassPermissions` while the agent ran uncontained. Which sandbox is
+used is deliberately not configurable; making it so would move the security boundary into
+the file where `editor` lives.
+
+**One worktree per task and role, branched from the last delivery.** Reusing a worktree
+per role across tasks was rejected on evidence: role branches that never reset compound
+drift at every hop, and a shared directory lets a reviewer read uncommitted files and
+review something other than what was delivered. A cleanup failure warns; it does not fail
+the stage.
+
+**Luna does not integrate — a task ends on its own branch.** The merge was built and then
+removed. What went unexamined the first time was whether integrating is Luna's job at all:
+nothing consumed the merge commit, no invariant mentions merging, and Luna cannot see what
+a merge sets off.
+
+**A scratch artifact is handed over through a socket inside the worktree, keyed per
+stage.** Measured: under Landlock a socket in `$HOME`, in `/tmp`, or behind a symlink
+answers `ENOENT`; one under the cwd connects. The alternative failed in the worst way
+available — inside the sandbox the store path resolved onto a tmpfs root, so `luna task
+new` printed `created`, exited 0, and the task never existed. Nothing was denied; the write
+and the read agreed with each other and with nobody else.
+
+**What has no caller is either wired or gone.** Twenty-eight dead functions found; the
+beads adapter and the merger had *zero* importers despite having decision records of their
+own. The flow audit was called only from its own tests — Luna's flow was audited in Luna's
+test suite while a project's flow was audited by nothing.
+
+## Gates
+
+**A gate suspends and frees the slot.** With N tasks in parallel, gates that held processes
+would be N stopped processes with aging context.
+
+**A gate carries the artifact, and the human can approve, adjust or reject.** The adjusted
+version is what enters the context downstream.
+
+**A review gate opens on the way *out* of the stage that produced the artifact.** Gates
+used to attach on entry, so the gate opened before the artifact existed and asked a person
+to review nothing. Measured twice: `luna gate show` printed a name and a blank line, and
+the lead correctly refused to judge — a capability that measured 6/6 in isolation had never
+once judged a real artifact.
+
+**A gate waits because its stage declared something to answer it with; the knob decides who
+answers.** A gate with nothing declared never waits. That is a reversal from the original
+design and is stated plainly rather than left to be discovered.
+
+**`produces_for_human` is a contract field of its own** — checked on the way out, exempt
+from the static check, because no stage downstream will ever ask for it.
+
+---
+
+## Rejected and removed
+
+Kept because knowing what failed is worth more than knowing what shipped.
+
+| What | Why it went |
+|---|---|
+| **beads, and any external registry** | data loss under Luna's exact concurrency pattern (`bd close` reporting success and not persisting, seven of eight lost); 95 ms per read against 0.08 ms to replay a whole task, ~1150×; three of the four things it was adopted for were written by nothing |
+| **Profiles as gate-waiting policy** | two of the three profiles had silently collapsed into the same thing — a control whose values are indistinguishable is worse than no control, because it still reads as a choice |
+| **`PreToolUse` hook as *the* gating mechanism** | right principle, wrong mechanism: each harness denies differently |
+| **The merge step** | not just the gate — the step. Nothing consumed it and Luna cannot see its consequences |
+| **Two budgets (idle + tool)** | the selector had no caller and could not have one: telling "thinking" from "compiling" needs a signal the runner does not produce. The idle budget had been silently bounding whole turns including builds |
+| **The watchdog as an interface over state** | a replayed state carries no clock, so nothing but a test fake could implement it. It came back as a *query* (`luna stuck`), because a watchdog that needs a process running cannot catch the stall where everything has stopped |
+| **Event stream from the runner** | the panes are a view; a person tidying their terminal would otherwise block a working task |
+| **Fresh context as an invariant** | the mechanism was wrong, not the concern — see [invariants.md](invariants.md). Now a per-stage setting, to be measured |
+| **Driving the harness's human interface** | pty sizing, trust dialogs, ready-marker parsing — all of it disappeared with headless mode. See [lessons.md](lessons.md) |
+
+---
+
+## Open
+
+- **Conditional `requires`.** `build` should require `contract` only when `spec` ran. The
+  static check does not understand conditional requires, so `contract` stays out of
+  `requires`; the gap is recorded in `070-build.toml` itself.
+- **Notification channels.** The queryable state is the base and does not depend on
+  anything external. Which channel to push through is left open until real use answers it.
+- **Token accounting.** Being added now that the transport reports usage.

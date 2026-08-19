@@ -4,6 +4,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **The documentation suite was reset.** Ten layers, 73 ADRs, 9 RFCs, 3 PRDs and ~95,000
+  words became four living files: `architecture.md` (how it works today), `invariants.md`
+  (the five rules that always hold), `decisions.md` (what was chosen and what was
+  rejected) and `lessons.md` (what building it taught). The previous suite is preserved
+  under the `pre-docs-reset` tag.
+
+  The reason is drift the old shape could not catch: `architecture/overview.md` described
+  a directory as empty that held twelve files and diagrammed a component removed four
+  decisions earlier, while every structural check reported green. Documentation grew to
+  ~7× the size of the code it described, for a tool with no users.
+
+  Two rules changed with it. A decision record is now **living** — a revised decision is
+  an edit, not a new document, because reading a chain of four to find the current answer
+  was the cost that made the old format fail. What survives is the discipline of writing
+  down the **rejected alternative**. And an in-code comment references a measurement or a
+  SHA rather than a document number.
+- **Fresh context per stage is no longer an invariant.** The concern (role erosion in long
+  sessions) was real; the mechanism was wrong. What protects the flow is verification at
+  the exit, not the agent's amnesia — an agent with live context that drifts is caught by
+  the same wall as a fresh agent that is simply bad. Context becomes a per-stage setting,
+  to be measured rather than assumed. The one mandatory part stays: a reviewer never
+  inherits the session of whoever wrote the code.
+- `lint-docs` shrank from 170 lines to the checks that still mean something — links,
+  headings, and the four files existing. ADR numbering and ADR immutability checks went
+  with the format they enforced.
+
 ### Added
 - Architecture design: deterministic FSM with a hybrid lead, stage contract
   (`requires`/`produces`), handoff with a content-addressed snapshot, and roles with

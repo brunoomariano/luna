@@ -1,0 +1,140 @@
+# Invariants
+
+Rules that always hold, regardless of implementation. Violating one is not a bug — it is
+Luna ceasing to be Luna.
+
+There are five. The list is short on purpose: an invariant that forbids what the code
+permits teaches people to stop believing the list.
+
+---
+
+## INV-1 — Delivery is verified by running the tool, over what was delivered
+
+A stage does not close because the agent said it was done. It closes because a command
+returned zero, the blob is in the store with its hash, the commit resolves to exactly one
+object and that object is a commit.
+
+**Why.** Well-formed output can describe something that does not exist. This is the one
+piece that worked without exception in real cycles, and it is what makes the rest
+unnecessary to trust.
+
+The verification runs over **what the stage delivered**, not over whatever was left in the
+working tree. The failure mode it closes is not sabotage — it is incoherence: an
+uncommitted file, a local `.env`, a stale build artifact. A tree that passes and a
+delivery that does not.
+
+**Floor, stated plainly.** Not every artifact is mechanically provable. Evidence carries
+the **scope** of what was proven — `full`, `targeted`, `existence`, `human` — and
+`existence` is the honest floor for prose: the file is there, nothing more is claimed.
+Scope has no upgrade path.
+
+**What violates it.** Accepting a delivery because a field came filled in; validating by
+schema instead of execution; a verdict about a tree that is not the delivery it names.
+
+**What it does not claim.** This is not containment. An agent controls what it commits,
+and therefore what is verified. Confinement is INV-4's job.
+
+**Covered by.** Verifier scope tests in `internal/fsm`; the delivered-tree test in
+`internal/node`.
+
+---
+
+## INV-2 — State is append-only, and the log is the state
+
+No `UPDATE`, no `DELETE`. Every change is a new record. Killing the process and restarting
+rebuilds the exact state, because it was never only in memory.
+
+**Why.** The history *is* the audit, and for unattended operation the evidence is the
+product. A projection can be rebuilt; a discarded fact cannot.
+
+The log records which flow it was written under — a fingerprint of the stage ids, in
+order, with what each requires and produces. Replaying a log against a different flow is
+refused rather than attempted, because a renamed stage used to replay as the new name and
+a stage inserted mid-flow made a task re-run finished work, both in silence.
+
+**What violates it.** Any `UPDATE` on the state table; state kept only in memory between
+transitions; compaction that discards history; a replay that guesses.
+
+**Covered by.** Replay tests in `internal/store`; the fingerprint refusal test.
+
+---
+
+## INV-3 — No stage starts without what it requires, nor closes without what it produces
+
+Every stage declares `requires` and `produces`. Three checks: static (walking the stages in
+order, before anything runs), on entry, and on exit.
+
+**Why.** It distinguishes "the model got it wrong" from "the model did not receive what it
+needed". Without it, the failure surfaces two stages later, when the symptom has already
+moved away from the cause.
+
+This includes `produces_for_human` — the report nobody downstream consumes. If its
+delivery depended on the flow feeling it missing, it would never be demanded.
+
+**What violates it.** A stage with no contract; a `produces` marked delivered without
+verification; a transition that ignores a missing `requires`.
+
+**Covered by.** The static check in `internal/fsm`; entry and exit tests per stage.
+
+---
+
+## INV-4 — Every agent runs inside the sandbox, and hands artifacts over rather than scattering them
+
+Luna starts agents inside `ai-jail`. Scratch artifacts — the ones that exist to cross
+stages or to be read by a human — are handed to Luna's store through a socket opened
+inside the stage's worktree, the only position reachable under Landlock. Luna is the sole
+writer, and the producing stage is recorded by the server, never taken from the agent's
+request.
+
+**Why.** Containment is delegated, not built: reimplementing a sandbox would be a worse
+copy of what the layer below already does. And an artifact that is neither committed nor
+handed over is an artifact nobody can find — which is the same as one that does not exist.
+
+**What violates it.** An agent started outside the sandbox; an artifact written to an
+unrecorded path; the store trusting a stage name that came from the agent.
+
+**Covered by.** The socket boundary tests in `internal/node`; the ghost-store guard.
+
+---
+
+## INV-5 — No failure is silent, and no wait is invisible
+
+Every task ends in a delivery, a gate, or a **notified** block. Retry is bounded — no
+infinite loop that burns tokens without converging. A task waiting for a human is
+discoverable by command (`luna gates`), never only by having watched the terminal.
+
+**Why.** Silent death has two forms: the task that fails without warning, and the one that
+waits forever because nobody knew it was waiting. With gates that free the slot,
+suspension is invisible by construction — the process is not there to remind you.
+
+**What violates it.** Retry with no ceiling; a suspended task that does not appear in the
+listing; an exception swallowed between transitions.
+
+**Known gap, stated rather than hidden.** An agent that is busy and achieving nothing is
+not covered. What exists bounds a turn; a task circling without converging never exceeds
+it. The failure still ends in a block once a budget runs out — just later than it should.
+
+**Covered by.** Retry-exhaustion and stall tests in `internal/herdr`; the gate listing
+test in `internal/cli`.
+
+---
+
+## What is deliberately not an invariant
+
+**Fresh context per stage.** It was INV-core-5 until August 2026. The reasoning was role
+erosion in long sessions — real, and observed. But the mechanism was wrong: what protects
+the flow is INV-1, not the agent's amnesia. An agent with live context that drifts is
+caught by the same wall that catches a fresh agent that is simply bad.
+
+Context is now a per-stage setting (`fresh` or `live`), and the choice is measured rather
+than assumed. One piece of it stays mandatory and lives in INV-3's separation instead: a
+reviewer never inherits the session of whoever wrote the code, because independence of
+review is not substitutable by verification.
+
+**A prose summary never crosses the handoff.** Still true in the code — the payload is
+synthesized by Luna, and the agent fills structured fields. It is a design rule rather
+than an invariant: breaking it degrades quality, it does not make Luna stop being Luna.
+
+**Whoever writes does not review.** Structural in the flow, and it holds. Demoted from the
+invariant list because its enforcement floor is honest but soft: tool gating removes named
+tools, not the shell. The separation is real; the containment behind it is INV-4's.

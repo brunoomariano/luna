@@ -2,189 +2,125 @@
 
 You are working **on Luna's code**, not being orchestrated by it.
 
-## Instruction precedence
-
-- This `AGENTS.md` takes precedence over global instructions inside this repository.
-- Area-specific documentation takes precedence over this file on the same subject.
-  The documentation suite is governed by [`docs/README.md`](docs/README.md).
-- On a genuine conflict between rules, stop and ask before changing code.
-
 ## What this project is
 
-A state machine that drives AI agents through a workflow, taking the flow-control
-decision away from the model and putting it in code. Read
-[`docs/architecture/overview.md`](docs/architecture/overview.md) before proposing any
-structural change.
+A state machine that drives AI agents through a workflow, taking the flow-control decision
+away from the model and putting it in code — and then verifying the result by running a
+tool rather than by believing a claim.
 
-## Current state
+Read [`docs/architecture.md`](docs/architecture.md) before proposing any structural change.
+The five rules that always hold are in [`docs/invariants.md`](docs/invariants.md).
 
-**Engine under construction.** The decisions are settled and recorded in
-[`docs/ADRs/`](docs/ADRs/); the core started with the contract's static check
-(`src/internal/fsm/`).
+## Documentation
 
-The stage contract is the source of truth:
-[`docs/architecture/stages.md`](docs/architecture/stages.md) describes the 14 stages and
-`DefaultFlow()` implements them. A divergence between the two is a bug —
-`TestDefaultFlowMatchesDocumentedStages` exists to catch it.
+Four files, and each answers one question:
 
-The engine is a reducer: `Reduce(state, action) → state`, pure, with no clock, no
-filesystem and no process. Verification runs outside it and its verdict arrives inside
-the action (ADR-0024) — that is what keeps a transition reproducible from the log and
-testable without infrastructure. Running things belongs to `internal/node`.
+| File | Question |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | how does it work today? |
+| [`docs/invariants.md`](docs/invariants.md) | what always holds? |
+| [`docs/decisions.md`](docs/decisions.md) | what was chosen, and what was rejected? |
+| [`docs/lessons.md`](docs/lessons.md) | what did building it teach? |
+
+Three rules about them:
+
+- **A statement the code contradicts is a bug**, fixed like one. `make lint-docs` checks
+  links and shape; it cannot check truth.
+- **`decisions.md` is living.** Revising a decision means editing it, not appending a new
+  record. What it must keep is the **rejected alternative** — that is why the file exists.
+  If you are about to propose something listed as rejected, bring an argument the record
+  does not already answer.
+- **Do not add a fifth file** without an answer to *"which of the four should have held
+  this instead?"* The previous suite had ten layers and 95,000 words for 14,000 lines of
+  code, and went out of sync with the code while every structural check stayed green.
 
 ## Standard workflow
 
 - Read the local context before changing files.
-- Preserve existing changes in the worktree. Do not revert someone else's work without
-  an explicit request.
+- Preserve existing changes in the worktree. Do not revert someone else's work without an
+  explicit request.
 - Make small, cohesive changes, limited to what was asked.
-- Use the Makefile targets as the primary validation interface (`make help` lists them).
-- When done, report which checks you ran and any relevant loose ends.
-
-## Before changing the architecture
-
-[`docs/ADRs/`](docs/ADRs/) records every decision **along with the rejected
-alternative**. If you are about to propose something already rejected, bring a new
-argument — the record exists so discussions are not reopened without one. An ADR is
-**immutable**: a revised decision becomes a new ADR, never an edit to the old one.
-
-The rules that **always** hold, regardless of implementation, live in
-[`docs/invariants/`](docs/invariants/). Violating an invariant is not a code bug — it is
-Luna ceasing to be Luna.
+- Validate through the Makefile (`make help` lists the targets); `make ci` before a PR.
+- When done, report which checks you ran and any loose ends.
 
 ## Layout
 
 ```
-src/                 everything that is application code
+src/
   cmd/luna/          CLI entry point
-  internal/fsm/      the engine: stages, transitions, contract
-  internal/store/    append-only log, replay, and the content store
-  internal/node/     running a node (the agent call)
-  stock/             defaults: stages, roles, profiles, skills
-docs/                the documentation suite — its contract is docs/README.md
-scripts/             development utilities (lint-docs)
-bin/                 built binaries; not versioned beyond .gitkeep
-config/              example user configuration
+  internal/fsm/      the engine: stages, transitions, contract, fingerprint
+  internal/store/    append-only log, replay, blob store
+  internal/node/     running a stage: sandbox, socket, verification
+  internal/cli/      commands
+  internal/lead/     the model that judges a gate when the knob allows
+  stock/             defaults: stages, roles, profiles (embedded TOML)
+docs/                four files, above
+scripts/             lint helpers
 ```
 
-`internal/` is an import barrier enforced by the Go compiler: the engine is not
-importable from outside the module. Do not move anything out of `internal/` without a
-decision recorded in an ADR.
+`internal/` is an import barrier the Go compiler enforces. Do not move anything out of it
+without recording why in `decisions.md`.
 
 ## Code conventions
 
-- **Language — the whole project is in English.** No exceptions, no bilingualism, no
-  "we'll translate later". This covers:
-  - **code** — package, type, function, method, variable, constant, field;
-  - **tests** — test name, helper, fake, failure message;
-  - **comments and doc comments**;
-  - **documentation** — the entire `docs/` suite, `README.md`, this file, and the file
-    name slug (`alerts-0001-suppression.md`);
-  - **messages** — errors, logs, CLI output, help text;
-  - **commit messages** and PR descriptions;
-  - **domain values** that appear in configuration or state (`feature`, `blocked`,
-    `awaiting_gate`).
-
-  The reason is reach: Luna is a distributable product, and a half-Portuguese project is
-  unreadable to half of whoever arrives. Mixed languages also degrade search — `rg
-  "etapa"` and `rg "stage"` find different halves of the same concept.
-
-- **Specific, searchable names.** Prefer the ones that return few hits in `rg`. Avoid
-  generic names like `data`, `handler`, `Manager` when a more precise option exists.
-  Domain terms (`stage`, `role`, `handoff`, `gate`) are the natural name of the concept
-  and should be used as such.
+- **The whole project is in English** — code, tests, comments, docs, errors, CLI output,
+  commit messages, and domain values that appear in config or state (`feature`, `blocked`,
+  `awaiting_gate`). No bilingualism, no "translate later". Mixed languages also break
+  search: `rg "etapa"` and `rg "stage"` find different halves of one concept.
+- **Specific, searchable names.** Prefer the ones with few hits in `rg`. Avoid `data`,
+  `handler`, `Manager` when a precise option exists. Domain terms (`stage`, `role`,
+  `handoff`, `gate`) are the natural name of the concept.
 - **Explicit typing.** No `interface{}`/`any` where a concrete type will do.
-- **Errors carry the invalid value and the expected one.** A message that says neither
-  what arrived nor what was wanted costs a debugging session.
-- **Functions ideally between 4 and 20 lines;** longer is fine when keeping the logic
-  together reads better than splitting it artificially.
-- **Files under 500 lines.** Split by responsibility.
-- **Early returns** instead of nested `if`. At most 2 levels of indentation.
-- **Comments explain why**, not what — the code already shows what. Keep existing
-  comments; do not drop them in refactors. Reference an ADR or a SHA when a line exists
-  because of a decision or an external constraint.
+- **Errors carry the invalid value and the expected one.** A message saying neither costs
+  a debugging session.
+- **Functions ideally 4–20 lines**; longer is fine when splitting would be artificial.
+  **Files under 500 lines.** **Early returns** over nesting; at most 2 levels.
+
+### Comments
+
+Comment to say **why**, and only when the reason is not visible in the code. The bar:
+
+- **Write one** for a constraint the code cannot show — a limit imposed from outside (a
+  108-byte socket path, a harness that only accepts one spelling of a flag), an ordering
+  that looks arbitrary and is not, a line that exists because of a measurement.
+- **Do not write one** that restates the next line, names what a function obviously does,
+  or explains that your change is correct. That last one is you talking to the reviewer,
+  and it is noise the moment the change merges.
+- **Reference a measurement or a SHA**, not a document number. A comment pointing at
+  `ADR-0042` sends the reader to a file that no longer exists; a comment saying *"all four
+  harnesses can gate — the earlier grep looked for one vendor's spelling"* carries the
+  fact itself.
+- **Keep existing comments** through refactors unless they became false.
 
 ## Tests
 
 - Every new function has a test; every bug fix has a regression test.
-- Test **observable behavior**, not the implementation.
-- Fake an external boundary (agent process, filesystem, network) with a named fake, not
-  an inline stub.
-- Run them through the Makefile targets.
+- Test **observable behavior**, not implementation.
+- Fake an external boundary (agent process, filesystem, network) with a named fake, not an
+  inline stub.
+- An invariant in `docs/invariants.md` names the tests that hold it up. **Do not call a
+  piece done while its invariant's coverage is missing** — that is the line between "the
+  code does" and "the code guarantees".
 
-### Invariant acceptance criteria
+## Makefile
 
-Several invariants in [`docs/invariants/`](docs/invariants/) carry an **Acceptance
-criteria** section — the list of tests without which that invariant is not implemented,
-merely described.
+`make help` lists everything. What matters:
 
-**Do not call done a piece of the engine whose corresponding invariant has uncovered
-acceptance criteria.** This is not a recommendation: it is what separates "the code
-does" from "the code guarantees". A `reviewer` that merely *tends not to* edit does not
-satisfy INV-core-7; a watchdog that exists but was never exercised does not satisfy
-INV-core-8.
-
-When implementing, start from the test the criterion describes. When reviewing, check
-the criterion before the diff.
-
-## Makefile interface
-
-`make help` lists every target. The ones that matter:
-
-- `make bootstrap` — prepares the environment (mise + dependencies). Idempotent.
-- `make doctor` — checks the environment without installing anything.
-- `make ci-check` — **verify only**: `fmt-check`, `lint`, `lint-docs`, `cover`. This is
-  what remote CI runs, and it writes nothing.
-- `make ci` — fixes what it can (`fmt`) and then verifies. **Run this before opening a
-  PR.**
-- `make lint-docs` — validates the **shape** of the docs suite; fails CI like a code
-  linter. The contract it enforces is in [`docs/README.md`](docs/README.md).
-- `make race`, `make vuln` — outside the local gate, run by remote CI.
+- `make ci` — fixes what it can (`fmt`), then verifies. **Run before a PR.**
+- `make ci-check` — verify only, writes nothing. This is what remote CI runs.
+- `make race`, `make vuln` — remote CI.
 - `make cyclo`, `make crap`, `make mutation`, `make deadcode` — reported, never gated.
 
-The full pipeline, what each step catches and the two thresholds that matter are in
-[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md). The premise behind it: Luna
-orchestrates agents that write code, so the code Luna is made of has to hold up
-without a human reading every line — the metrics do the reviewing.
-
-The distinction between `ci` and `ci-check` is not cosmetic: a CI step that reformats
-the code hides exactly what it should be failing on.
-
-There is no `up`/`down`/`logs`/`clean_db`: Luna is a CLI with no services and no
-development database. A no-op target would be ceremony.
-
-## Documentation
-
-The suite is governed by [`docs/README.md`](docs/README.md) — the contract stating which
-layers exist, what each one answers, and what shape it follows. **Consult it before
-creating or changing any document**, to know which layer it belongs to.
-
-| Where | What |
-|---|---|
-| [`docs/architecture/`](docs/architecture/) | how the system is put together today |
-| [`docs/glossary/`](docs/glossary/) | what each domain term means |
-| [`docs/invariants/`](docs/invariants/) | rules that always hold |
-| [`docs/ADRs/`](docs/ADRs/) | why we decided this way — immutable |
-| [`docs/PRDs/`](docs/PRDs/) · [`docs/RFCs/`](docs/RFCs/) | expected behavior · technical route |
-| [`docs/references.md`](docs/references.md) | where the idea came from, and what was rejected |
-| [`docs/CHANGELOG/`](docs/CHANGELOG/) | what changed between versions |
-
-The root `README.md` opens with **the problem the project solves**, never with the
-stack. Technical detail goes to `docs/`.
-
-## Commits, PRs and tags
-
-The git flow is normative in [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — and only
-there. In short: Conventional Commits, with a body explaining **why**.
+The split between `ci` and `ci-check` is not cosmetic: a CI step that reformats code hides
+exactly what it should be failing on.
 
 ## What not to do
 
-- **Do not move flow control into the model.** It is the premise of the whole project.
-- **Do not write state with `UPDATE`.** The store is append-only; the history is the
-  audit trail.
-- **Do not create a stage without a contract.** Every stage declares what it requires
-  and what it produces — that is what prevents an incomplete handoff.
-- **Do not edit an accepted ADR.** A revised decision becomes a new ADR; the old one
-  only changes status. `make lint-docs` rejects the edit.
-- **Do not duplicate content across doc layers.** A fact lives in one layer only; if you
-  need to repeat it, link instead.
+- **Do not move flow control into the model.** It is the premise of the project.
+- **Do not write state with `UPDATE`.** The store is append-only; the history is the audit.
+- **Do not create a stage without a contract.** `requires`/`produces` is what prevents an
+  incomplete handoff.
+- **Do not claim more than the check proved.** Evidence carries scope, and scope never
+  upgrades.
+- **Do not add ceremony.** A document, a layer or a stage that nothing executes against is
+  cost without a guarantee — the reason this file is a third of its former length.
