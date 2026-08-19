@@ -45,7 +45,7 @@ const (
 // see three stages ahead can decide to save a round trip by doing two of them,
 // and it will — that is the failure mode the closed order is shaped against.
 // Whoever wants the whole picture asks for it explicitly, which is `luna status`
-// .
+// — a human command, not something an order hands an agent.
 type Order struct {
 	Kind   OrderKind `json:"kind"`
 	TaskID string    `json:"task_id"`

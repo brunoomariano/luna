@@ -49,8 +49,8 @@ func nextCommand(env Env, args []string) error {
 // the commit it produced.
 //
 // The commit is what makes this more than a status update. It becomes the next
-// stage's base, so the handoff is the artifact rather than a description of it
-// . What Luna does with it is verify — the message describes, the
+// stage's base, so the handoff is the artifact rather than a description of it.
+// What Luna does with it is verify — the message describes, the
 // diff decides.
 //
 // Nothing here judges the work. The delivery and its evidence go into the

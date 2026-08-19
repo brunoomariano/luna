@@ -16,8 +16,8 @@ import (
 //
 // Order is significant: AuditContract checks precedence, not existence.
 //
-// It reads the stock embedded in the binary rather than returning Go literals
-// . The files are the source, so the surface a project edits and the
+// It reads the stock embedded in the binary rather than returning Go literals.
+// The files are the source, so the surface a project edits and the
 // flow Luna runs are the same thing rather than two descriptions of it — which
 // is what makes "a project brings its own flow" true rather than aspirational.
 //

@@ -1,6 +1,6 @@
-# Mechanical: a worktree is git, and paying a model to make one buys nothing
-#. It names no role, and the static check allows that because a
-# worktree is not a judgement.
+# Mechanical: a worktree is git, and paying a model to make one buys nothing.
+# It names no role, and the static check allows that because a worktree is not a
+# judgement.
 
 id       = "setup"
 requires = ["task_id"]

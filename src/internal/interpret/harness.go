@@ -4,7 +4,7 @@
 // because it is neither: it is a harness being asked a question. Keeping it here
 // means the CLI depends on an interface it declares rather than on a model, and
 // that swapping the interpreter is a different package rather than an edit
-// .
+// spread across the caller.
 package interpret
 
 import (

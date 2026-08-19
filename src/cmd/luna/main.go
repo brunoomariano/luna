@@ -183,8 +183,8 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 // storePath is where the log lives: LUNA_STORE if set, else `.luna/luna.db` in
 // the **main** repository containing the working directory.
 //
-// The main repository and not the working directory, which is the correction
-// . A stage runs in an ephemeral worktree that is deleted when the
+// The main repository and not the working directory, which is the correction a
+// real run forced. A stage runs in an ephemeral worktree that is deleted when the
 // stage ends, so resolving from the cwd put a second log inside
 // something built to be thrown away — and the task it recorded went with it.
 // That was measured, not theorised: running from a worktree produced two

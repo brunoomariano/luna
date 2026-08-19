@@ -1,7 +1,7 @@
 # The contract belongs in requires, but only when `spec` entered the
 # flow. It stays out until the conditional-requires mechanism is chosen —
 # declaring it without that mechanism would stall every `chore` or `docs` task,
-# since `spec` is skipped in those. See the note in docs/architecture/stages.md.
+# since `spec` is skipped in those.
 
 id       = "build"
 role     = "implementer"

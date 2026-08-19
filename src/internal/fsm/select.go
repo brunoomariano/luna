@@ -54,8 +54,8 @@ func NextStage(flow []Stage, current StageID, ctx TaskContext) (StageID, bool, e
 // They ask different questions: the static one asks whether the flow holds
 // together on paper, this one asks whether this task, right now, can start this
 // stage. A flow can pass the static check and still be short an input at runtime,
-// because a conditional stage was skipped or an artifact was invalidated
-// .
+// because a conditional stage was skipped or an artifact was invalidated by a
+// review sending the task back.
 //
 // Declaration order is preserved: whoever reads the answer compares it against
 // the contract they wrote.

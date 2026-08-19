@@ -173,7 +173,7 @@ func short(sha string) string {
 // The message is the channel because committing is already mandatory — the brief
 // says so — and it needs no new protocol between Luna and the harness. What it
 // is not is proof: the agent is reporting, and the contract check decides
-// .
+// whether the report holds.
 //
 // Empty for both when there is no commit, which is the first stage of the first
 // task and not an error.

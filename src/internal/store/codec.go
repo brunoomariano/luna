@@ -165,8 +165,8 @@ var fromPayload = map[string]func(string) (fsm.Action, error){
 // against.
 //
 // The flow comes from the caller rather than the log: storing it would freeze a
-// task to the flow it started under, and flows are meant to be editable
-// . Both actions that carry one are rebuilt this way, so the rule lives
+// task to the flow it started under, and flows are meant to be editable.
+// Both actions that carry one are rebuilt this way, so the rule lives
 // in one place rather than being repeated per action.
 func decodeWithFlow[T fsm.Action](payload string, flow []fsm.Stage, withFlow func(T) T) (fsm.Action, error) {
 	action, err := decodeJSON[T](payload)

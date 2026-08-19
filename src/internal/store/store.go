@@ -56,8 +56,7 @@ type Event struct {
 	Payload string
 }
 
-// Waiting is a task suspended at a gate, as `luna gates` would list it
-// .
+// Waiting is a task suspended at a gate, as `luna gates` would list it.
 type Waiting struct {
 	TaskID string
 	Stage  fsm.StageID

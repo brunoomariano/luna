@@ -100,8 +100,8 @@ func (c Config) Defines(name fsm.Profile) bool {
 // It takes no profile: the budget is the watchdog's clock and stopped being a
 // property of a profile when profiles stopped deciding anything. A
 // project that sets none gets the shipped default, so there is always a net —
-// the direction that matters, because no budget means a task that hangs forever
-// .
+// the direction that matters, because no budget means a task that hangs forever.
+//
 // Non-positive rather than zero: a budget of zero or less means "call it stuck
 // immediately", which is never what anybody meant to write. ParseBudget refuses
 // what it cannot read; this is the guard on what it can.

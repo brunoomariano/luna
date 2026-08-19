@@ -22,7 +22,6 @@ doctor: ## check the environment without installing anything
 	@printf 'gofumpt        '; command -v gofumpt       >/dev/null && gofumpt --version || echo '— missing'
 	@printf 'govulncheck    '; command -v govulncheck   >/dev/null && echo present || echo '— missing'
 	@printf 'gocyclo        '; command -v gocyclo       >/dev/null && echo present || echo '— missing'
-	@printf 'bd             '; command -v bd            >/dev/null && bd version || echo '— missing (Beads)'
 	@printf 'sqlite3        '; command -v sqlite3       >/dev/null && sqlite3 --version || echo '— missing'
 
 # Hard coverage floor. Luna orchestrates agents that write code, so the metrics
@@ -59,10 +58,6 @@ mod: ## check go.mod/go.sum consistency and module integrity
 
 # ── tests ────────────────────────────────────────────────────────────────────
 # Tests run through the pinned toolchain, not whatever is on the caller's PATH.
-# The registry tests drive the real `bd` and skip without it — so a run that does
-# not see it reports a green suite that never exercised the adapter against the
-# binary it adapts. That is the failure mode this project keeps finding: a test
-# that passes without proving anything.
 GO_TEST = mise exec -- go test
 
 test: ## run the tests

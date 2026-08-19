@@ -18,7 +18,7 @@ type RoleName string
 //
 // It is a declaration, never an execution. Nothing here starts a process or reads
 // a file; the node layer does that, and what comes back arrives inside an action
-// .
+// the reducer folds into state.
 type Role struct {
 	// Agent is the harness kind that runs this role, travelling to the node layer
 	// as agent.Call.Kind. Two roles naming different agents is the cheapest

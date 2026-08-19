@@ -12,13 +12,3 @@ gofumpt = "0.10.0"         # stricter than gofmt
 "go:golang.org/x/tools/cmd/goimports" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:github.com/fzipp/gocyclo/cmd/gocyclo" = "latest"
-
-# Beads governs the order between tasks (see docs/architecture/overview.md).
-# It is a runtime dependency rather than a build one — nothing here compiles
-# against it, and the adapter shells out — but it is pinned all the same, because
-# `bd` is the registry a task lives in from RFC-0002 phase 2 onward. An
-# unpinned tracker is a tracker that changes its answer between two runs.
-#
-# A real deployment installs it the same way: `mise install`, or the project's
-# own provisioning. `make doctor` reports it missing rather than guessing.
-"go:github.com/steveyegge/beads/cmd/bd" = "1.2.1"

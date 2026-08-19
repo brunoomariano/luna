@@ -192,8 +192,8 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 // commit, and the lead gets a verdict rather than a shell.
 //
 // The declaration used to be read from the registry's metadata; it is
-// replayed from the task's own log now, which is what let the registry go
-// . Nothing else about the seam changed — the outcome the lead sees is
+// replayed from the task's own log now, which is what let the registry go.
+// Nothing else about the seam changed — the outcome the lead sees is
 // the same three-way answer it always was.
 func checkGateWith(s *store.Store, repo string) func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 	return func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome {

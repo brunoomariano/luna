@@ -5,8 +5,7 @@ import (
 	"strings"
 )
 
-// Severity is the tag a review finding carries. Exactly one per finding
-// .
+// Severity is the tag a review finding carries. Exactly one per finding.
 type Severity string
 
 const (

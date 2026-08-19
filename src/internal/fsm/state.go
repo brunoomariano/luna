@@ -43,8 +43,7 @@ const (
 
 // Profile names which gates actually wait for a human. It is chosen per task
 // rather than per task type or per repository, because the type does not predict
-// the risk — a critical bug can deserve more gating than a trivial feature
-// .
+// the risk — a critical bug can deserve more gating than a trivial feature.
 //
 // The name is all the engine holds. What the name *means* is configuration, and
 // it is resolved outside the reducer — the decision arrives in the action, the

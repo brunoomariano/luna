@@ -166,8 +166,7 @@ func (s Shell) provePath(ctx context.Context, v fsm.Existence, seq int) (fsm.Evi
 // run executes one command line and reports how it exited.
 //
 // `sh -c` rather than an argv: a contract will want pipes and `&&`, and the
-// command comes from the project's own configuration rather than from a model
-// .
+// command comes from the project's own configuration rather than from a model.
 func (s Shell) runIn(ctx context.Context, dir, command string) (int, string, error) {
 	timeout := s.Timeout
 	if timeout <= 0 {
