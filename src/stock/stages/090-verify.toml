@@ -1,5 +1,5 @@
 # The pipeline is a command and the checklist is a judgement, so this stage has
-# both — and a role, because the artifact that needs one decides (ADR-0040).
+# both — and a role, because the artifact that needs one decides.
 
 id                 = "verify"
 role               = "verifier"
@@ -9,18 +9,18 @@ produces_for_human = ["dod_checked"]
 
 [verify.ci_green]
 # The one artifact in the flow that earns full: `make ci` is the whole gate, and
-# INV-core-4 wants it run rather than claimed.
+# the contract wants it run rather than claimed.
 run   = "make ci"
 scope = "full"
 
 [verify.dod_checked]
 # A checklist a person reads. Recording it as a passing check would be the lie
-# ADR-0032 names — so the check is that it was written, not that it is right.
+# the scopes name — so the check is that it was written, not that it is right.
 #
-# This is the artifact RFC-0004 was written about: an agent produced 144 lines of
+# This is the artifact the whole handover was written about: an agent produced 144 lines of
 # exactly this content, committed them to a file called `verification`, and the
-# stage closed green without `dod_checked` ever appearing. ADR-0070 answered that
-# with git; RFC-0008 answers it with Luna's own store, which is a stronger witness
+# stage closed green without `dod_checked` ever appearing. A declared path answered
+# that with git; the store answers it better, being a stronger witness
 # and keeps a checklist out of the repository's delivered history.
 kind     = "existence"
 handover = "store"

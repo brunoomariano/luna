@@ -15,7 +15,7 @@ handover = "store"
 kind   = "confirm"
 reason = "approve the plan"
 # What this gate is for, in the form the lead is asked and a person reads
-# (ADR-0063). A gate declaring nothing does not wait, so this is also what makes
+# A gate declaring nothing does not wait, so this is also what makes
 # the shipped flow stop here at all.
 criticality = 8
 judge = [

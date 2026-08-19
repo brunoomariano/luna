@@ -1,4 +1,4 @@
-# Skipped on a chore: a one-line change does not earn a QA pass (ADR-0014).
+# Skipped on a chore: a one-line change does not earn a QA pass.
 
 id                 = "qa"
 role               = "qa"
@@ -8,12 +8,12 @@ produces_for_human = ["qa_report"]
 
 [review]
 sends_back_to = "build"
-# The green attested to code that no longer exists (ADR-0020).
+# The green attested to code that no longer exists.
 invalidates   = ["ci_green", "tests_green"]
 
 [verify.qa_report]
 # A report a person reads: what it says is judgement, and only that it exists is
 # checkable. The path is what makes even that much come from git rather than from
-# the agent's own word (ADR-0070).
+# the agent's own word.
 kind = "existence"
 handover = "store"

@@ -1,5 +1,5 @@
 # Mechanical: a worktree is git, and paying a model to make one buys nothing
-# (ADR-0040). It names no role, and the static check allows that because a
+#. It names no role, and the static check allows that because a
 # worktree is not a judgement.
 
 id       = "setup"

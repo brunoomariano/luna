@@ -6,11 +6,11 @@ produces = ["code", "tests_green"]
 [verify.tests_green]
 # The stage rewrites code that was already green, so the green has to be earned
 # again rather than inherited: `tests_green` from `build` attested to code this
-# stage just changed, which is the invalidation ADR-0020 names.
+# stage just changed, which is the invalidation a review finding causes.
 #
 # It produced only `code` until this was noticed, and `code` closes on existence
 # — so a stage whose entire purpose is rewriting working code closed without
-# running anything (INV-core-4).
+# running anything.
 run   = "make test"
 scope = "targeted"
 

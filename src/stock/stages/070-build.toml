@@ -1,4 +1,4 @@
-# ADR-0022 calls for `contract` in requires, needed only when `spec` entered the
+# The contract belongs in requires, but only when `spec` entered the
 # flow. It stays out until the conditional-requires mechanism is chosen —
 # declaring it without that mechanism would stall every `chore` or `docs` task,
 # since `spec` is skipped in those. See the note in docs/architecture/stages.md.
@@ -10,7 +10,7 @@ produces = ["code", "tests_green"]
 
 [verify.tests_green]
 # Targeted rather than full: build runs the tests it touched, and claiming the
-# whole suite here would be the laundering ADR-0028 rejects. `verify` is the
+# whole suite here would be the laundering the scopes reject. `verify` is the
 # stage that earns full.
 run   = "make test"
 scope = "targeted"

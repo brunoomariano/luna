@@ -11,6 +11,6 @@ invalidates   = ["ci_green", "tests_green"]
 [verify.mutation_report]
 # A report a person reads: what it says is judgement, and only that it exists is
 # checkable. The path is what makes even that much come from git rather than from
-# the agent's own word (ADR-0070).
+# the agent's own word.
 kind = "existence"
 handover = "store"

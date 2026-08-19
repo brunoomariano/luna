@@ -14,6 +14,10 @@ type scriptedInterpreter struct {
 	intents []Intent
 	err     error
 
+	// phraseErr fails the second half of a turn rather than the first: the
+	// command already ran, and only the wording of the answer broke.
+	phraseErr error
+
 	saidToInterpret []string
 	stateShown      []string
 	phrased         [][]string
@@ -37,6 +41,9 @@ func (s *scriptedInterpreter) Interpret(said, state string) (Intent, error) {
 
 func (s *scriptedInterpreter) Phrase(_ string, command []string, output string) (string, error) {
 	s.phrased = append(s.phrased, command)
+	if s.phraseErr != nil {
+		return "", s.phraseErr
+	}
 	return "answered: " + strings.TrimSpace(output), nil
 }
 

@@ -2,7 +2,7 @@ agent = "claude"
 brief = "You look for what the tests do not cover. You report; you do not fix."
 
 # The brief says the same thing, and the brief is not what enforces it — a
-# restriction that lives only in the prompt is the violation INV-core-7 names
-# (ADR-0041). Both capabilities go: a role that could still create a file has not
+# restriction that lives only in the prompt is the violation the separation names.
+# Both capabilities go: a role that could still create a file has not
 # been stopped from changing the work it is judging.
 tools_deny = ["Edit", "Write"]

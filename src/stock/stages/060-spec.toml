@@ -1,5 +1,5 @@
 # A contract is worth writing when there is new behaviour or a defect; a chore or
-# a docs change carries its own definition (ADR-0014).
+# a docs change carries its own definition.
 
 id       = "spec"
 role     = "specifier"
@@ -16,7 +16,7 @@ kind     = "review-artifact"
 artifact = "contract"
 reason   = "review the contract"
 # Higher than the plan's: a contract is what every later stage is held to, and a
-# wrong one is discovered at `verify` rather than here (ADR-0063).
+# wrong one is discovered at `verify` rather than here.
 criticality = 9
 judge = [
   "The contract states what is required and what is forbidden, with no suggestions",
