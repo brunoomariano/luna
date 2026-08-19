@@ -36,6 +36,21 @@ for required in architecture.md invariants.md decisions.md lessons.md; do
   [ -f "docs/$required" ] || err "docs/$required" "required document missing"
 done
 
+# --- and no fifth ------------------------------------------------------------
+# The rule in AGENTS.md is "four files"; checking only that the four exist let a
+# fifth ship unnoticed, which is how the suite grew the first time. CHANGELOG and
+# CONTRIBUTING are conventional root-of-docs files, not a layer of the suite.
+for f in $(docs_md); do
+  case "$f" in
+    docs/*/*) continue ;;
+  esac
+  case "$(basename "$f")" in
+    architecture.md|invariants.md|decisions.md|lessons.md) ;;
+    CHANGELOG.md|CONTRIBUTING.md|README.md) ;;
+    *) err "$f" "a fifth document: which of the four should have held this instead?" ;;
+  esac
+done
+
 # --- cross-cutting conventions ------------------------------------------------
 for f in $(docs_md); do
   base=$(basename "$f")

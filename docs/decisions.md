@@ -226,6 +226,88 @@ Kept because knowing what failed is worth more than knowing what shipped.
 
 ---
 
+## Where the ideas came from
+
+Sources studied before building, and what each one settled. Kept here rather than in a
+file of their own because a source only matters for the decision it produced — and a
+rejected borrowing is a rejected alternative like any other.
+
+### SwarmForge — Robert C. Martin
+
+<https://github.com/unclebob/swarm-forge> — agent squads in tmux, worktree per role,
+handoff daemon, Babashka engine.
+
+**Taken:** the payload is synthesized by the system, so an agent fills structured fields
+and cannot inject prose into the chain; the role is re-read at every handoff; delivery is
+validated by running `git` rather than by checking that the text *looks* like a SHA;
+roles specialize by negation, declaring what they do not do; "produced no functional
+change" as a stopping condition rather than a plain iteration count.
+
+**Rejected:** git as the transport channel (it ties transport to version control);
+worktree per agent (here it is per task — parallelism is between tasks); a queue per role
+with outbox/inbox (the FSM is the channel); notification by injecting keystrokes into a
+terminal with hand-tuned pauses.
+
+The reading that closes the study: it has strong enforcement on **transport** and none on
+**flow**. Luna wants the inverse, and the stage contract is where it gets it. What was
+missing there and became a requirement here: nothing detects a stuck agent, so a swarm
+that stops talking stops in silence.
+
+### 12-Factor Agents — HumanLayer
+
+<https://github.com/humanlayer/12-factor-agents>
+
+| Factor | Where it lands |
+|---|---|
+| 5 — unify execution and business state | one store, not four places |
+| 6 — launch/pause/resume with a simple API | the gate suspends and releases the slot |
+| 7 — contact humans with tool calls | the gate is mechanism, not convention |
+| 8 — own your control flow | the FSM decides the next stage |
+| 10 — small, focused agents | one role per responsibility |
+| 12 — make your agent a stateless reducer | the node takes context and returns a result |
+
+The central observation, and the one this project is a bet on: the products that work are
+*"mostly deterministic code, with LLM steps sprinkled in at just the right points"*.
+
+### Beads
+
+<https://github.com/gastownhall/beads> — graph tracker for agents. Adopted, then removed;
+the reasoning is in the table above. Still worth reading for the dependency graph, which
+is the part Luna never used and the part a tracker should be judged on.
+
+### Agent of Empires and herdr
+
+<https://github.com/agent-of-empires/agent-of-empires> ·
+<https://github.com/herdrdev/herdr>
+
+Agent session managers. Luna ran under herdr until August 2026 and no longer does — see
+the table above. `herdr notification show` is still shelled out to when installed, as one
+external notifier among the possible ones. The idea worth keeping: an API the agents
+themselves drive, including waiting until another agent is genuinely blocked. Not needed
+while parallelism is between tasks rather than inside one.
+
+### ai-jail and ai-memory
+
+<https://github.com/akitaonrails/ai-jail> · <https://github.com/akitaonrails/ai-memory>
+
+Filesystem containment and durable project memory. Orthogonal to orchestration and
+already validated in use, so Luna composes with them instead of reimplementing them: the
+sandbox is INV-4, and `memory = "on"` wraps the harness in `ai-memory run`.
+
+### Project practices
+
+<https://akitaonrails.com/2026/05/30/boas-praticas-projetos-codigo-aberto-llm-o-minimo/>
+— a one-command installation surface, automated CI, and documentation that opens with the
+**problem** rather than the stack.
+
+<https://akitaonrails.com/2026/08/18/hot-take-harness-loop-engineering-graph-engineering-sao-bullshit/>
+— the argument that harness and graph engineering are mostly ceremony. It is what
+provoked the August 2026 reset: the documentation suite went from 95,000 words to 10,000,
+the terminal transport was deleted, and the token counter exists because the article's
+sharpest point is that a tool with no measurement is an aesthetic preference.
+
+---
+
 ## Open
 
 - **Conditional `requires`.** `build` should require `contract` only when `spec` ran. The
