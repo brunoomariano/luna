@@ -34,12 +34,13 @@ import (
 var ErrStalled = errors.New("the task stopped making progress")
 
 // ErrInfrastructure is returned when the machinery around the task broke rather
-// than the work in it — herdr went away, a socket died, a worktree vanished.
+// than the work in it — git is not installed, the agent harness is not on the
+// machine, a worktree vanished.
 //
 // It is kept apart from an ordinary failure because the retry budget is for a
 // stage that failed, and infrastructure says nothing about the stage.
-// Retrying it would also be retrying the wrong thing: a herdr that is
-// not running will not be running on the second attempt either.
+// Retrying it would also be retrying the wrong thing: a binary that is not
+// installed will not be installed on the second attempt either.
 //
 // The node layer wraps whatever its own transport reported, so the lead learns the
 // distinction without importing the transport.
@@ -106,7 +107,7 @@ type Judge interface {
 // tasks, not inside them.
 // There is no watchdog field, and the absence is deliberate. The original design
 // imagined one polling the state between transitions; that was replaced with delegation,
-// and delegation is what shipped — herdr bounds the wait and a stall arrives as
+// and delegation is what shipped — the node bounds the wait and a stall arrives as
 // ErrStalled from Node.Run, which the loop below already handles. A second
 // interface asking a replayed TaskState whether it looks stuck could only answer
 // from a clock the state does not carry, which is why nothing but a test fake ever

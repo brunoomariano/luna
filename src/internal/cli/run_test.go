@@ -1,18 +1,19 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/node"
 )
 
 // ── parseRunOptions ──────────────────────────────────────────────────────────
@@ -40,19 +41,15 @@ func TestRunOptionsDefaultToTheCurrentRepoAndTheRolesAgents(t *testing.T) {
 	if opts.Dry {
 		t.Error("a run must be real unless --dry-run was asked for")
 	}
-	if opts.Socket != "" {
-		t.Errorf("an empty socket resolves the usual way, got %q", opts.Socket)
-	}
 }
 
 // TestEachRunFlagSetsItsField covers the flags reaching the field they name.
 //
-// A flag parsed into the wrong field is the kind of mistake that only shows up as
-// herdr dialling the wrong socket, far from the line that caused it.
+// A flag parsed into the wrong field is the kind of mistake that only shows up
+// as a run against the wrong checkout, far from the line that caused it.
 func TestEachRunFlagSetsItsField(t *testing.T) {
 	opts, err := parseRunOptions([]string{
 		"--agent", "codex",
-		"--socket", "/tmp/herdr.sock",
 		"--repo", "/srv/checkout",
 	})
 	if err != nil {
@@ -60,9 +57,6 @@ func TestEachRunFlagSetsItsField(t *testing.T) {
 	}
 	if opts.Agent != "codex" {
 		t.Errorf("want the agent given, got %q", opts.Agent)
-	}
-	if opts.Socket != "/tmp/herdr.sock" {
-		t.Errorf("want the socket given, got %q", opts.Socket)
 	}
 	if opts.Repo != "/srv/checkout" {
 		t.Errorf("want the repo given, got %q", opts.Repo)
@@ -578,115 +572,107 @@ func TestTheWatchdogBudgetIsProjectWide(t *testing.T) {
 	}
 }
 
-// TestConductDialsHerdrForARealRun covers the branch a dry run never reaches.
-//
-// It is where the two systems are wired together: the node that talks
-// to herdr, the verifier that does not, and the agent kind the flags chose. A
-// fake socket is enough to prove the wiring without a running herdr.
-func TestConductDialsHerdrForARealRun(t *testing.T) {
+// TestConductBuildsTheStageRunnerForARealRun covers the branch a dry run never
+// reaches: where the flags, the roles and the sandbox are wired into the thing
+// that actually runs a stage.
+func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 	h := newHarness(t)
-	socket := fakeHerdrSocket(t)
 
 	conductor, cleanup, err := conduct(h.env, runOptions{
-		Agent:  "codex",
-		Socket: socket,
-		Repo:   "/some/repo",
+		Agent: "codex",
+		Repo:  "/some/repo",
 	}, fsm.ProfileNightly)
 	if err != nil {
-		t.Fatalf("dialling a reachable herdr: %v", err)
+		t.Fatalf("building the conductor: %v", err)
 	}
 	defer cleanup()
 
-	node, ok := conductor.Node.(*herdr.Node)
+	runner, ok := conductor.Node.(*node.Runner)
 	if !ok {
-		t.Fatalf("want the herdr node, got %T", conductor.Node)
+		t.Fatalf("want the stage runner, got %T", conductor.Node)
 	}
-	// --agent overrides every role's agent, which is what makes a run reproducible
-	// against one harness while the roles are still being tuned.
-	if node.Roles == nil {
-		t.Fatal("the node needs roles to resolve")
+
+	// --agent overrides every role's agent, which is what makes a run
+	// reproducible against one harness while the roles are still being tuned.
+	if runner.Roles == nil {
+		t.Fatal("the runner needs roles to resolve")
 	}
-	if role, ok := node.Roles("implementer"); !ok || role.Agent != "codex" {
+	if role, ok := runner.Roles("implementer"); !ok || role.Agent != "codex" {
 		t.Errorf("want the override applied to every role, got %+v (found=%v)", role, ok)
 	}
-	if node.Runner == nil {
-		t.Error("the node needs something to drive herdr with")
+	if runner.Repo != "/some/repo" {
+		t.Errorf("want the runner pointed at the repository, got %q", runner.Repo)
 	}
-	// Verification does not go through herdr, so the node must be
-	// given a prover rather than left to invent evidence.
-	if node.Prove == nil {
-		t.Error("the node must carry a verifier")
+	// An artifact handed to Luna is proven by the store rather than by the tree,
+	// so the runner has to be given something to ask.
+	if runner.Stored == nil {
+		t.Error("the runner must carry what answers a handover")
+	}
+	if runner.Artifacts == nil {
+		t.Error("the runner must carry somewhere to receive a handover")
 	}
 }
 
-// TestConductReportsAnAbsentHerdr covers the message someone sees first.
+// TestTheAgentIsNeverStartedOutsideTheSandbox covers the refusal that has to
+// hold before anything else does.
 //
-// A run that cannot reach herdr must say so plainly rather than failing somewhere
-// downstream: it is the most common way this goes wrong, and the fix is to start
-// herdr rather than to debug the flow.
-func TestConductReportsAnAbsentHerdr(t *testing.T) {
+// Containment is the one guarantee Luna does not implement itself, so a missing
+// sandbox is a setup failure reported plainly rather than a run that quietly
+// proceeds without one.
+func TestTheAgentIsNeverStartedOutsideTheSandbox(t *testing.T) {
 	h := newHarness(t)
 
-	_, _, err := conduct(h.env, runOptions{
-		Socket: filepath.Join(t.TempDir(), "nothing.sock"),
-	}, fsm.ProfileNightly)
-
-	if err == nil {
-		t.Fatal("an unreachable herdr must stop the run")
-	}
-	if !strings.Contains(err.Error(), "herdr running") {
-		t.Errorf("the error should say what to do about it, got %v", err)
-	}
-}
-
-// fakeHerdrSocket answers a ping and nothing else, which is all conduct needs to
-// prove it dialled.
-func fakeHerdrSocket(t *testing.T) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "h.sock")
-	listener, err := net.Listen("unix", path)
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
 	if err != nil {
-		t.Fatalf("listening: %v", err)
+		t.Fatalf("building the conductor: %v", err)
 	}
-	t.Cleanup(func() { _ = listener.Close() })
+	defer cleanup()
 
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			if _, err := bufio.NewReader(conn).ReadBytes('\n'); err == nil {
-				_, _ = conn.Write([]byte(`{"id":"1","result":{"type":"pong"}}` + "\n"))
-			}
-			_ = conn.Close()
-		}
-	}()
-
-	return path
+	runner, ok := conductor.Node.(*node.Runner)
+	if !ok {
+		t.Fatalf("want the stage runner, got %T", conductor.Node)
+	}
+	harness, ok := runner.Agent.(agent.Harness)
+	if !ok {
+		t.Fatalf("want a real harness, got %T", runner.Agent)
+	}
+	if harness.Sandbox != node.Sandbox {
+		t.Errorf("want every agent started inside %q, got %q", node.Sandbox, harness.Sandbox)
+	}
 }
 
-// TestALostHerdrBlocksTheTaskRatherThanFailingTheRun covers losing the runner end to end.
+// TestAMissingSandboxBlocksTheTaskRatherThanFailingTheRun covers the machinery
+// breaking rather than the stage failing.
 //
-// A herdr that goes away mid-stage is infrastructure, not a task failure. The lead
-// records a block and the run ends normally, so the task is visible in `luna gates`
-// with a reason — rather than the command erroring and leaving nothing behind.
-func TestALostHerdrBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
+// A sandbox that is not installed is infrastructure: the lead records a block
+// and the run ends normally, so the task shows up in `luna gates` with a reason
+// — rather than the command erroring and leaving nothing behind. The retry
+// budget stays untouched, because retrying a missing binary only spends it.
+func TestAMissingSandboxBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
-	// A socket that answers the dial and then refuses everything, which is what a
-	// herdr exiting between the connection and the first stage looks like.
-	out := h.mustRun(t, "run", "LUNA-1", "--socket", deadHerdrSocket(t))
+	// A PATH with git but no sandbox, which is what a machine that never
+	// installed one looks like. Emptying PATH outright would take git with it and
+	// prove something else — the first version of this test did exactly that.
+	bin := t.TempDir()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed, and this test is about the sandbox")
+	}
+	if err := os.Symlink(git, filepath.Join(bin, "git")); err != nil {
+		t.Fatalf("linking git into the test PATH: %v", err)
+	}
+	t.Setenv("PATH", bin)
+
+	out := h.mustRun(t, "run", "LUNA-1", "--repo", repoWithCommit(t))
 
 	if !strings.Contains(out, "blocked") {
 		t.Errorf("want the task reported as blocked, got %q", out)
 	}
 
-	// And the reason is in the log, so the block is not a mystery later.
 	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
@@ -694,45 +680,9 @@ func TestALostHerdrBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	if state.Status != fsm.StatusBlocked {
 		t.Fatalf("want the task blocked, got %q", state.Status)
 	}
-	if !strings.Contains(state.Blocked, "herdr") {
-		t.Errorf("the reason must name what went away, got %q", state.Blocked)
-	}
-	// A stall is not a stage failure: the retry budget stays untouched.
 	if state.Retry.Attempts != 0 {
-		t.Errorf("infrastructure must not spend the retry budget, got %d", state.Retry.Attempts)
+		t.Errorf("infrastructure must not spend the retry budget, got %d (reason: %s)", state.Retry.Attempts, state.Blocked)
 	}
-}
-
-// deadHerdrSocket answers the dial's ping and then hangs up on everything after,
-// imitating a herdr that exits mid-run.
-func deadHerdrSocket(t *testing.T) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "dead.sock")
-	listener, err := net.Listen("unix", path)
-	if err != nil {
-		t.Fatalf("listening: %v", err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-
-	go func() {
-		first := true
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			if first {
-				if _, err := bufio.NewReader(conn).ReadBytes('\n'); err == nil {
-					_, _ = conn.Write([]byte(`{"id":"1","result":{"type":"pong"}}` + "\n"))
-				}
-				first = false
-			}
-			_ = conn.Close()
-		}
-	}()
-
-	return path
 }
 
 // TestRunRefusesToStartWhenTheStoreCannotAnswer covers the guard before anything
@@ -881,4 +831,28 @@ func TestStatusIsSilentAboutTheBranchUntilATaskEnds(t *testing.T) {
 	if strings.Contains(out, "branch") {
 		t.Errorf("status named a branch for a task that has not finished:\n%s", out)
 	}
+}
+
+// repoWithCommit is a real repository with one commit, because a run opens a
+// worktree and a fake git would only test the fake.
+func repoWithCommit(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	for _, args := range [][]string{
+		{"init", "--initial-branch=main"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+		// The machine running the tests may sign commits by default, and a test
+		// repository has no key.
+		{"config", "commit.gpgsign", "false"},
+		{"commit", "--allow-empty", "-m", "root"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	return dir
 }

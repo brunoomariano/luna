@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/herdr"
 	"github.com/brunoomariano/luna/src/internal/lead"
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
@@ -54,10 +53,10 @@ func runTaskCommand(env Env, args []string) error {
 
 	state, err = conductor.Run(context.Background(), id)
 	if err != nil {
-		// Losing herdr is not a task failure, and the message says which it was
-		// so nobody goes looking for a bug in the flow.
-		if errors.Is(err, herdr.ErrGone) {
-			return fmt.Errorf("herdr went away while %s was running: %w", id, err)
+		// The machinery breaking is not a task failure, and the message says
+		// which it was so nobody goes looking for a bug in the flow.
+		if errors.Is(err, lead.ErrInfrastructure) {
+			return fmt.Errorf("the machinery failed while %s was running: %w", id, err)
 		}
 		return err
 	}
@@ -70,9 +69,6 @@ type runOptions struct {
 	// Agent overrides every role's agent. Empty means each role decides, which is
 	// the ordinary case.
 	Agent string
-
-	// Socket overrides where herdr listens; empty resolves the usual way.
-	Socket string
 
 	// Repo is the checkout worktrees are cut from.
 	Repo string
@@ -96,8 +92,6 @@ func parseRunOptions(args []string) (runOptions, error) {
 		switch name {
 		case "agent":
 			opts.Agent = value
-		case "socket":
-			opts.Socket = value
 		case "repo":
 			opts.Repo = value
 		case "dry-run":
@@ -144,46 +138,28 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		return conductor, func() {}, nil
 	}
 
-	client, err := herdr.Dial(opts.Socket)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w — is herdr running?", err)
-	}
-
-	conductor.Node = &herdr.Node{
-		Runner: herdr.NewRunner(client, opts.Repo, cfg.Turn()),
-		// The stage's role decides which agent runs it. --agent
-		// overrides every role, which is what makes a run reproducible against one
-		// harness while the roles are still being tuned.
-		Roles: rolesFor(cfg, opts.Agent),
-		Prove: func(commit string) herdr.Prover {
-			// Cut from the repository at the delivered commit, executed by Luna
-			// rather than through a pane.
-			//
-			// The repository and not the stage's worktree: the tree is removed when
-			// the stage ends, so a retry verified against a directory
-			// nobody had. This is the same `Dir: repo` the gate checks below already
-			// use — the two halves now agree about what outlives a stage.
-			return node.Shell{Dir: opts.Repo, Commit: commit}
+	// The agent runs as a subprocess in its own worktree. There is no server to
+	// dial and no session to keep alive: a stage that dies leaves nothing behind
+	// to reap, which is most of what the previous transport needed a connection
+	// for.
+	conductor.Node = &node.Runner{
+		Repo: opts.Repo,
+		Agent: agent.Harness{
+			// Which sandbox is deliberately not configurable: making it so would
+			// move the containment boundary into the file where `editor` lives.
+			Sandbox: node.Sandbox,
 		},
-		// A worktree that would not go away does not fail the stage, but it does
-		// accumulate: a checkout left behind on every run eventually fills a disk,
-		// and the first anyone would hear of it is that.
-		Warn: func(format string, args ...any) {
-			fmt.Fprintf(env.Err, format+"\n", args...)
-		},
-		// What the stage committed, which is what the next one branches from.
-		Delivered: node.Handover,
+		// The stage's role decides which agent runs it. --agent overrides every
+		// role, which is what makes a run reproducible against one harness while
+		// the roles are still being tuned.
+		Roles:  rolesFor(cfg, opts.Agent),
+		Budget: cfg.Turn(),
 
-		// The socket a contained agent hands artifacts over through. It is opened
-		// inside the stage's worktree, which is the only place the agent can reach
-		// — measured against ai-jail 1.17.0, every other position answers ENOENT.
-		Artifacts: func(taskID, worktree, stage string, seq int) (io.Closer, string, error) {
-			server, err := node.ServeArtifacts(worktree, stage,
-				NewTaskArtifacts(env.Store, taskID, seq))
-			if err != nil {
-				return nil, "", err
-			}
-			return server, server.Path(), nil
+		// The socket a contained agent hands artifacts over through, opened inside
+		// the stage's worktree — the only place the agent can reach, measured
+		// against ai-jail 1.17.0, where every other position answers ENOENT.
+		Artifacts: func(taskID string) node.ArtifactStore {
+			return NewTaskArtifacts(env.Store, taskID, 0)
 		},
 
 		// What answers "was it handed over?" for an artifact that is not in the
@@ -196,8 +172,15 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 			}
 			return blob.Hash, nil
 		},
+
+		// A worktree that would not go away does not fail the stage, but it does
+		// accumulate: a checkout left behind on every run eventually fills a disk,
+		// and the first anyone would hear of it is that.
+		Warn: func(format string, args ...any) {
+			fmt.Fprintf(env.Err, format+"\n", args...)
+		},
 	}
-	return conductor, func() { _ = client.Close() }, nil
+	return conductor, func() {}, nil
 }
 
 // checkGateWith runs the commands a task declared for one gate, over what it

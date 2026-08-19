@@ -2,12 +2,13 @@ package fsm
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // TestValidateTaskIDRefusesWhatBreaksDownstream is the point of the check: the id
-// is not only a key, it becomes a path and an agent name.
+// is not only a key, it becomes a directory name and a branch name.
 func TestValidateTaskIDRefusesWhatBreaksDownstream(t *testing.T) {
 	refused := []struct {
 		id  string
@@ -18,10 +19,10 @@ func TestValidateTaskIDRefusesWhatBreaksDownstream(t *testing.T) {
 		{"..", "the same, at its shortest"},
 		{"a/b", "a separator makes the id a path of its own"},
 		{"a\\b", "the same on the other separator"},
-		{"LUNA 1", "a space breaks the agent name and quotes the directory"},
-		{"task#1", "punctuation herdr's name pattern does not accept"},
-		{"café", "outside the ASCII range the agent name allows"},
-		{strings.Repeat("a", MaxTaskIDLen+1), "one character past what fits in an agent name"},
+		{"LUNA 1", "a space quotes the directory and the branch"},
+		{"task#1", "punctuation a branch name and a path do not want"},
+		{"café", "outside the ASCII range the names are built from"},
+		{strings.Repeat("a", MaxTaskIDLen+1), "one character past the limit"},
 	}
 
 	for _, c := range refused {
@@ -60,7 +61,9 @@ func TestTheRefusalSaysWhat(t *testing.T) {
 	if err == nil {
 		t.Fatal("setup: this id is over the limit")
 	}
-	for _, want := range []string{"14", "agent name"} {
+	// The limit itself, derived rather than typed: a message that says "too long"
+	// without the number makes the person guess how much to cut.
+	for _, want := range []string{strconv.Itoa(MaxTaskIDLen), "branch name"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal should mention %q, got %q", want, err)
 		}
@@ -75,12 +78,12 @@ func TestTheRefusalSaysWhat(t *testing.T) {
 	}
 }
 
-// TestTheShippedFlowLeavesRoomForATaskID ties the limit to the flow it was
-// derived from.
+// TestTheShippedFlowLeavesRoomForATaskID ties the limit to the flow it is read
+// beside.
 //
-// MaxTaskIDLen is arithmetic over the longest shipped stage name. If a stage is
-// renamed to something longer, the constant silently stops being true — and the
-// symptom is two stages of one task producing the same truncated agent name.
+// A stage id and a task id share the room the names built from them have. If a
+// stage is renamed to something long enough to eat that room, the limit stops
+// being true and nothing else would say so.
 func TestTheShippedFlowLeavesRoomForATaskID(t *testing.T) {
 	if gaps := AuditFlowNames(DefaultFlow()); len(gaps) > 0 {
 		for _, gap := range gaps {
@@ -93,16 +96,20 @@ func TestTheShippedFlowLeavesRoomForATaskID(t *testing.T) {
 // TestAFlowWithLongStageNamesIsReported covers the custom-flow case a project
 // bringing its own flow allows and the arithmetic cannot know about.
 func TestAFlowWithLongStageNamesIsReported(t *testing.T) {
+	// Long enough to leave less than MaxTaskIDLen behind, which is the condition
+	// being tested rather than any particular number of characters.
+	tooLong := StageID(strings.Repeat("a-stage-name-nobody-should-write-", 3))
+
 	flow := []Stage{
 		{ID: "short", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}},
-		{ID: "a-stage-name-nobody-should-write", Requires: []Artifact{"a"}, Produces: []Artifact{"b"}},
+		{ID: tooLong, Requires: []Artifact{"a"}, Produces: []Artifact{"b"}},
 	}
 
 	gaps := AuditFlowNames(flow)
 	if len(gaps) != 1 {
 		t.Fatalf("want the long stage reported, got %+v", gaps)
 	}
-	if gaps[0].Stage != "a-stage-name-nobody-should-write" {
+	if gaps[0].Stage != tooLong {
 		t.Errorf("the wrong stage was reported: %+v", gaps[0])
 	}
 	if gaps[0].Budget >= MaxTaskIDLen {

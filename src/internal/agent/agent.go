@@ -279,6 +279,17 @@ var harnesses = map[string]harness{
 	},
 }
 
+// CanGate reports whether Luna can start this harness without the capabilities a
+// role withholds.
+//
+// The table is closed, so an unlisted harness answers false rather than being
+// guessed at: a flag another harness silently ignores produces an ungated agent
+// and a report that it was gated.
+func CanGate(kind string) bool {
+	_, ok := harnesses[kind]
+	return ok
+}
+
 func known() []string {
 	names := make([]string, 0, len(harnesses))
 	for name := range harnesses {

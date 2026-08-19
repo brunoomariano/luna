@@ -153,11 +153,15 @@ func TestFlowRefusesAnUnknownSubcommand(t *testing.T) {
 // TestTaskNewRefusesAnIdThatBreaksDownstream guards the only door an id comes
 // through.
 //
-// Everything after this treats the id as safe: it becomes `wt-<repo>-<id>` on
-// disk and part of an agent name in herdr, and neither checked. The convention named
-// the path risk and left the guard for later; this is later.
+// Everything after this treats the id as safe: it becomes a directory name and a
+// branch name, and neither checked. The path risk was named in the convention and
+// the guard left for later; this is later.
+//
+// The length case is one character past MaxTaskIDLen rather than a round number,
+// so the test fails if the limit moves and nobody revisits the boundary.
 func TestTaskNewRefusesAnIdThatBreaksDownstream(t *testing.T) {
-	for _, id := range []string{"../../etc", "a/b", "LUNA 1", strings.Repeat("x", 40)} {
+	tooLong := strings.Repeat("x", fsm.MaxTaskIDLen+1)
+	for _, id := range []string{"../../etc", "a/b", "LUNA 1", tooLong} {
 		h := newHarness(t)
 		if err := h.run(t, "task", "new", id); err == nil {
 			t.Errorf("%q should not open a log", id)

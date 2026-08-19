@@ -102,13 +102,18 @@ func worktreePath(repo, taskID, role string) (string, error) {
 // same role continue on one branch, which is what makes a base handed forward
 // mean the same thing whether or not the role changed.
 //
-// A mechanical stage has no role, and `luna/<task>/` with nothing after the
-// slash is not a valid ref — git refuses it, which turned every mechanical stage
-// into a failure to open a worktree rather than into work. It lands on the
-// task's own branch instead, which is what a stage with no role is doing anyway.
+// A mechanical stage has no role, and it gets a named one rather than the task's
+// own branch. Two bugs sit behind that, both found by running it:
+//
+// `luna/<task>/` with nothing after the slash is not a valid ref at all. And
+// `luna/<task>` *is* valid, which is worse — git stores refs as directories, so
+// a task whose mechanical stage took `luna/T-1` could no longer create
+// `luna/T-1/analyst`: "cannot lock ref … 'refs/heads/luna/T-1' exists". The
+// first stage of every task is mechanical, so that broke every task with a role
+// after it.
 func stageBranch(taskID, role string) string {
 	if role == "" {
-		return fmt.Sprintf("luna/%s", taskID)
+		role = "mechanical"
 	}
 	return fmt.Sprintf("luna/%s/%s", taskID, strings.ToLower(role))
 }

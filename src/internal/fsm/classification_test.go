@@ -36,7 +36,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Verifiers":        "history", // partly: the scope it declares, never its command
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
 		"Review":           "history", // decides whether a past finding was legal, and where it went
-		"Role":             "policy",  // only internal/herdr reads it
+		"Role":             "policy",  // only internal/node reads it
 		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
 	}
 
@@ -112,7 +112,7 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 	// And what is deliberately excluded must not move it, or every reworded prompt
 	// and renamed Makefile target becomes a refused replay.
 	unmoved := map[string]func(*Stage){
-		"Role, which only internal/herdr reads": func(s *Stage) {
+		"Role, which only internal/node reads": func(s *Stage) {
 			s.Role = "somebody-else"
 		},
 		"a gate's reason, which is prose a person reads at the moment they are asked": func(s *Stage) {

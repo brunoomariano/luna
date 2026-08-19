@@ -9,17 +9,19 @@ import (
 //
 // They are declarations, not timers. The engine holds them because they belong to
 // the profile — the same place that decides which gates wait — but nothing here
-// measures anything: the node layer reads them, herdr does the waiting, and a
-// stall arrives as a fact inside an action.
+// measures anything: the node layer reads them and bounds the agent call with
+// them, and what came of it arrives as a fact inside an action.
 type Budgets struct {
 	// Turn is how long one prompt may take, from sending it to the agent settling,
-	// including any tool it runs on the way.
+	// including any tool it runs on the way. It is the deadline the node puts on
+	// the agent subprocess.
 	//
 	// One budget rather than two. An earlier design split this into an idle window
 	// and a larger one for a tool in flight, which needs Luna to know a tool is
-	// running — and nothing tells it. herdr reports `working`, which covers an
-	// agent thinking and an agent compiling alike, so the distinction was never
-	// expressible and the idle window was silently bounding whole turns.
+	// running — and nothing tells it. What Luna observes is a subprocess that has
+	// not returned, which covers an agent thinking and an agent compiling alike,
+	// so the distinction was never expressible and the idle window was silently
+	// bounding whole turns.
 	Turn time.Duration
 }
 

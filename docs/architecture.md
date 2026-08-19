@@ -28,12 +28,13 @@ one task, one worktree, one lead — parallelism is BETWEEN tasks, never inside 
 for each stage in the flow:
    1. requires satisfied?          ── no → the agent is never called
    2. worktree ready, branched from the last delivery
-   3. agent starts INSIDE the sandbox, briefed by Luna
+   3. agent runs as a subprocess INSIDE the sandbox, briefed by Luna:
+      prompt on stdin, answer and usage back on stdout
    4. agent works; code goes in a commit, scratch artifacts go to
       the store through a socket (`luna artifact put`)
    5. exit check RUNS the real tool — `make ci` returns 0, the blob
       has its hash, the commit resolves
-   6. handoff appended to the log; transition
+   6. handoff appended to the log, with what the stage cost; transition
    7. gate declared? the task suspends and frees the slot
    │
    ▼
@@ -86,6 +87,36 @@ no upgrade path — a stage cannot launder `existence` into `full`.
 
 `handover = "store"` means the artifact is handed to Luna instead of committed. It changes
 what delivering *means*, so it is part of the flow fingerprint; `path` is not.
+
+## How an agent is run
+
+One subprocess per stage, through the harness's non-interactive mode
+(`claude -p --output-format json`). The prompt goes in on stdin, and what comes back is
+the answer, the session id, and what the call cost — reported by the harness rather than
+counted by Luna.
+
+Luna used to drive the harness's terminal instead, and the reason it stopped is in
+[lessons.md](lessons.md): everything that path required — pty sizing, a folder-trust
+dialog, an input-ready marker, hand-tuned settles — was engineering against the wrong
+interface, and none of it was about the model.
+
+Three things follow from the transport:
+
+- **Gating is real.** A denied tool is removed from the request, so it is absent from the
+  agent's tool list rather than discouraged in its brief.
+- **Cost is recorded.** Tokens, cache and price land in the log per stage, so what
+  orchestration costs is a measurement instead of an argument.
+- **A stage can continue.** `context = "live"` resumes the previous session for the same
+  role, which is roughly an order of magnitude cheaper than starting cold. It is refused
+  across a change of role: a reviewer inheriting the implementer's session would read its
+  own reasoning instead of the delivery, and `luna flow check` says so before anything
+  runs.
+
+  **No shipped stage uses it yet, and that is a finding rather than an omission.** The
+  twelve stages hand off between twelve different roles, so every one of them starts cold
+  by construction — the setting has nowhere to apply until a flow puts two stages of the
+  same role back to back. Whether the flow *should* do that (a `build`→`refactor` pair
+  under one implementer, say) is exactly what the cost column now makes answerable.
 
 ## Roles
 
@@ -206,11 +237,12 @@ remembered:
 Three things read as gaps and are not:
 
 - **The watchdog is a query, not a loop.** `luna stuck` plus `Store.Stalled` finds tasks
-  stopped longer than a patience window; the runner bounds each turn and a stall arrives
+  stopped longer than a patience window; each agent call is bounded by a budget that
+  kills the process group, and a stall arrives
   as an error. There is deliberately no in-process ticker — a watchdog that needs a
   process running cannot catch the stall where everything has stopped.
 - **The profile files are empty on purpose.** A profile carries only its name; every
   setting that used to live inside one was retired, and the parser actively refuses them.
-- **Notification exists** — it shells out to the runner's notifier on every block path.
+- **Notification exists** — it shells out to an external notifier on every block path.
   What is left open is which *additional* channels (webhook, Telegram) to support, and
   that stays open until real use answers it.

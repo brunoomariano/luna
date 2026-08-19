@@ -92,37 +92,42 @@ func AuditRoles(flow []Stage) []RoleGap {
 	return gaps
 }
 
-// NameGap is a stage whose id leaves no room for a task id inside an agent name.
+// NameGap is a stage whose id is too long for the names built around it.
 type NameGap struct {
 	Stage StageID
 
-	// Budget is how many characters a task id could have if this stage were the
-	// longest. Zero or less means the stage name alone does not fit.
+	// Budget is how many characters a task id could have alongside this stage id
+	// before the name they share stops fitting. Zero or less means the stage name
+	// alone does not fit.
 	Budget int
 }
 
-// AuditFlowNames reports stages whose ids squeeze the task id past its limit.
+// AuditFlowNames reports stages whose ids leave no room for a task id.
 //
-// herdr caps an agent name at 32 characters and Luna builds that name
-// as `luna-<id>-<stage>`, so a long stage name and a long task id cannot both fit.
-// MaxTaskIDLen is derived from the longest stage in the *shipped* flow, and a
-// custom flow can break that arithmetic.
+// A stage id travels into the same names a task id does — it is written into the
+// order and the log beside it, and a flow is read by whoever has to find those.
+// The ceiling is the one MaxTaskIDLen documents: a path component, 255 bytes,
+// shared between the fixed parts and whatever varies.
 //
-// It is a static check for the same reason AuditContract is one: the alternative
-// is discovering it when two stages of one task produce the same truncated agent
-// name and prompt each other's pane.
+// It is a static check for the same reason AuditContract is one: a custom flow
+// can bring a stage id nobody sized, and the alternative to saying so here is
+// finding out from a name that was silently cut.
 func AuditFlowNames(flow []Stage) []NameGap {
 	var gaps []NameGap
 
 	for _, stage := range flow {
-		// "luna-" + id + "-" + stage, within 32.
-		budget := agentNameLimit - len("luna-") - len("-") - len(stage.ID)
+		budget := nameComponentLimit - len(stage.ID)
 		if budget < MaxTaskIDLen {
 			gaps = append(gaps, NameGap{Stage: stage.ID, Budget: budget})
 		}
 	}
 	return gaps
 }
+
+// nameComponentLimit is the room a stage id and a task id share. It is the same
+// budget MaxTaskIDLen is cut from — one path component, with a margin for the
+// repository and role names that vary per project.
+const nameComponentLimit = 128
 
 // ContextGap is a stage asking to continue a session it must not continue.
 type ContextGap struct {

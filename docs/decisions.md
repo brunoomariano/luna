@@ -100,16 +100,17 @@ carrying a clock makes replay depend on when it ran.
 **Output is validated by running the real tool.** Not format, not exit codes alone.
 
 **A status is a trigger, never a verdict.** All five orchestrators studied recorded the
-model's claim as fact. herdr's own semantics forbid it: `Done` decays to `Idle` when a
-human focuses the tab, and a known agent matching no detection rule falls back to `Idle` —
-so a vendor UI change would read as *finished*.
+model's claim as fact. The multiplexer Luna used to run under made the point for us: its
+`Done` decayed to `Idle` when a human focused the tab, and an agent matching no detection
+rule fell back to `Idle` — so a vendor UI change read as *finished*. A status is a trigger
+for verification; only the verification is a verdict.
 
 **Each artifact declares how it is verified, beside the contract that produces it.**
 Evidence carries scope, and scope never upgrades. `existence` is the honest floor.
 
 **Luna runs verification itself, in the worktree, against the delivered commit.** Running
-it through a pane would make the exit code a screen-parsing problem — the appearance of a
-delivery rather than the delivery.
+it through the agent's own terminal would make the exit code a screen-parsing problem —
+the appearance of a delivery rather than the delivery.
 
 **Luna reads the review report; the agent never emits the transition.** Exactly one
 `[BLOCKING]` sends work back; a pile of `[SHOULD-FIX]` does not, because summing severities
@@ -219,7 +220,7 @@ Kept because knowing what failed is worth more than knowing what shipped.
 | **The merge step** | not just the gate — the step. Nothing consumed it and Luna cannot see its consequences |
 | **Two budgets (idle + tool)** | the selector had no caller and could not have one: telling "thinking" from "compiling" needs a signal the runner does not produce. The idle budget had been silently bounding whole turns including builds |
 | **The watchdog as an interface over state** | a replayed state carries no clock, so nothing but a test fake could implement it. It came back as a *query* (`luna stuck`), because a watchdog that needs a process running cannot catch the stall where everything has stopped |
-| **Event stream from the runner** | the panes are a view; a person tidying their terminal would otherwise block a working task |
+| **Reacting to the agent's terminal** | it is a view, not a signal; a person tidying their terminal would otherwise block a working task. It went entirely when the transport did |
 | **Fresh context as an invariant** | the mechanism was wrong, not the concern — see [invariants.md](invariants.md). Now a per-stage setting, to be measured |
 | **Driving the harness's human interface** | pty sizing, trust dialogs, ready-marker parsing — all of it disappeared with headless mode. See [lessons.md](lessons.md) |
 

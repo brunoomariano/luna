@@ -1,4 +1,4 @@
-package herdr
+package node
 
 import (
 	"context"

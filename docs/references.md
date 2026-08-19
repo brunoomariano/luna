@@ -126,11 +126,16 @@ part a tracker should be judged on.
 <https://github.com/agent-of-empires/agent-of-empires> ·
 <https://github.com/herdrdev/herdr>
 
-Agent session managers. They are not part of the current design, but they solve the
-problem of **running and observing** agent processes — which is still an open decision.
+Agent session managers. Luna ran under herdr until August 2026, driving agents through
+their terminal UI, and then stopped: a harness with a non-interactive mode answers on
+stdout, and everything the terminal transport needed — pty sizing, a trust dialog, an
+input-ready marker, hand-tuned boot settles — was engineering against the wrong
+interface. Neither is a dependency now. `herdr notification show` is still shelled out
+to when it is installed, as one external notifier among the possible ones.
 
-From herdr, the most interesting idea: an API that the agents themselves drive,
-including waiting until another agent is genuinely blocked.
+The idea worth keeping from herdr: an API the agents themselves drive, including waiting
+until another agent is genuinely blocked. Luna does not need it while parallelism is
+between tasks rather than inside one.
 
 ## ai-jail and ai-memory
 

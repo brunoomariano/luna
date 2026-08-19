@@ -5,38 +5,32 @@ import (
 	"strings"
 )
 
-// MaxTaskIDLen is how long a task id may be, and the number is not arbitrary.
+// MaxTaskIDLen is how long a task id may be.
 //
-// The id ends up inside an agent name, which herdr constrains to
-// `[a-z][a-z0-9_-]{0,31}` — 32 characters, verified against a running server
-// . Luna builds that name as `luna-<id>-<stage>`, so the budget is:
+// The id is a component of two names, and the shorter of the two decides:
 //
-//	32 - len("luna-") - len("-") - len(longest stage) = 32 - 5 - 1 - 12 = 14
+//   - a directory, `wt-<repo>-<id>-<role>`, a sibling of the repository
+//     (node.OpenWorktree). One path component, so the filesystem's own 255-byte
+//     limit applies to the whole of it — repository name and role included.
+//   - a git branch, `luna/<task>/<role>` (node.stageBranch), stored as a path
+//     under `.git/refs/heads/`, so the same component limit applies again.
 //
-// The longest shipped stage is `architecture`. A flow with a longer stage name
-// would shrink this, which is why AuditFlowNames exists to say so rather than
-// letting the truncation happen quietly.
-const MaxTaskIDLen = agentNameLimit - len("luna-") - len("-") - longestShippedStage
-
-// agentNameLimit is herdr's cap on an agent name: `[a-z][a-z0-9_-]{0,31}`, so 32
-// characters including the first.
-const agentNameLimit = 32
-
-// longestShippedStage is len("architecture"), the longest stage id in
-// DefaultFlow(). A flow that brings a longer one shrinks the room left for a task
-// id, which is what AuditFlowNames reports rather than letting it truncate.
-const longestShippedStage = 12
+// 64 is what is left over once the parts around the id are accounted for and a
+// margin is kept for the repository and role names, which vary per project and
+// which nothing here can measure. It is not a computed ceiling — it is a limit
+// low enough that neither name can reach 255 and high enough that no tracker id
+// anyone types comes close.
+const MaxTaskIDLen = 64
 
 // ErrInvalidTaskID is returned for an id Luna cannot carry through the system.
 var ErrInvalidTaskID = fmt.Errorf("invalid task id")
 
 // ValidateTaskID refuses an id that cannot survive what is done with it.
 //
-// A task id is not only a key. It becomes a directory name — `wt-<repo>-<id>`,
-// joined onto a path — and part of an agent name in herdr. Both have
+// A task id is not only a key. It becomes a directory name — `wt-<repo>-<id>-<role>`,
+// joined onto a path — and a git branch, `luna/<task>/<role>`. Both have
 // requirements, and neither validated them: an id containing `..` composed a path
-// somewhere else entirely, and a long one was silently truncated until two stages
-// of the same task produced the same agent name and prompted each other's pane.
+// somewhere else entirely.
 //
 // The rule is the intersection of what both accept, which is narrow on purpose:
 // an id is a short identifier a person types, and a project that wants prose has
@@ -47,14 +41,14 @@ func ValidateTaskID(id string) error {
 	}
 	if len(id) > MaxTaskIDLen {
 		return fmt.Errorf("%w: %q is %d characters and the limit is %d — "+
-			"the id has to fit inside an agent name (%s)",
-			ErrInvalidTaskID, id, len(id), MaxTaskIDLen, agentNameBudget)
+			"the id has to fit inside a directory name and a branch name (%s)",
+			ErrInvalidTaskID, id, len(id), MaxTaskIDLen, taskIDBudget)
 	}
 
 	for _, r := range id {
 		if !idRune(r) {
 			return fmt.Errorf("%w: %q contains %q — only letters, digits, %q and %q are allowed, "+
-				"because the id becomes a directory name and part of an agent name",
+				"because the id becomes a directory name and part of a branch name",
 				ErrInvalidTaskID, id, r, '-', '_')
 		}
 	}
@@ -68,15 +62,15 @@ func ValidateTaskID(id string) error {
 	return nil
 }
 
-// agentNameBudget explains the limit in the error rather than making the reader
+// taskIDBudget explains the limit in the error rather than making the reader
 // find this file.
-const agentNameBudget = "luna- + id + - + stage, within herdr's 32-character limit"
+const taskIDBudget = "wt-<repo>-<id>-<role> and luna/<id>/<role>, each one path component"
 
 // idRune reports whether a character may appear in a task id.
 //
 // Letters keep both cases: `LUNA-1` is what a tracker gives you, and refusing it
-// would push every user into transcribing ids by hand. The agent name lowercases
-// what it needs; the log keeps what was typed.
+// would push every user into transcribing ids by hand. The log keeps what was
+// typed, and the names built from it carry the same case.
 func idRune(r rune) bool {
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':

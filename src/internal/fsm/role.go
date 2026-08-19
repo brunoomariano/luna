@@ -20,9 +20,9 @@ type RoleName string
 // a file; the node layer does that, and what comes back arrives inside an action
 // .
 type Role struct {
-	// Agent is the harness kind that runs this role — one of the 21 herdr knows.
-	// Two roles naming different agents is the cheapest independence
-	// available before real tool gating exists.
+	// Agent is the harness kind that runs this role, travelling to the node layer
+	// as agent.Call.Kind. Two roles naming different agents is the cheapest
+	// independence available before real tool gating exists.
 	Agent string
 
 	// Brief is what the agent is told about being this role. It is instruction,

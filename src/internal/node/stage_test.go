@@ -47,6 +47,9 @@ func repoWithCommit(t *testing.T) string {
 		{"init", "--initial-branch=main"},
 		{"config", "user.email", "test@example.com"},
 		{"config", "user.name", "Test"},
+		// The machine running the tests may sign commits by default, and a test
+		// repository has no key.
+		{"config", "commit.gpgsign", "false"},
 		{"commit", "--allow-empty", "-m", "root"},
 	} {
 		cmd := exec.Command("git", args...)
@@ -76,7 +79,7 @@ func TestTheStageRunsInItsOwnWorktree(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude", Brief: "You build."}},
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude", Brief: "You build."}}),
 	}
 
 	stage := fsm.Stage{ID: "build", Role: "implementer"}
@@ -103,7 +106,7 @@ func TestTheWorktreeIsRemovedWhenTheStageEnds(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}},
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	stage := fsm.Stage{ID: "build", Role: "implementer"}
@@ -156,7 +159,7 @@ func TestTheStageRecordsWhatItCost(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}},
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	result, err := r.Run(context.Background(), runningState("T-4"), fsm.Stage{ID: "build", Role: "implementer"})
@@ -187,7 +190,7 @@ func TestALiveStageContinuesItsRolesSession(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}},
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-5")
@@ -220,7 +223,7 @@ func TestAFreshStageStartsCleanEvenWithASessionAvailable(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}},
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-6")
@@ -247,11 +250,11 @@ func TestARoleStartsWithoutWhatItIsDenied(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"reviewer": {
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"reviewer": {
 			Agent:     "claude",
 			Brief:     "You review. You do not edit.",
 			ToolsDeny: []fsm.Capability{fsm.CapEdit, fsm.CapWrite},
-		}},
+		}}),
 	}
 
 	stage := fsm.Stage{ID: "code-review", Role: "reviewer"}
@@ -275,7 +278,7 @@ func TestAnUnknownRoleStopsTheStage(t *testing.T) {
 	repo := repoWithCommit(t)
 	fake := &recordingAgent{result: agent.Result{Text: "done"}}
 
-	r := &Runner{Repo: repo, Agent: fake, Roles: map[fsm.RoleName]fsm.Role{}}
+	r := &Runner{Repo: repo, Agent: fake, Roles: roleLookup(map[fsm.RoleName]fsm.Role{})}
 
 	_, err := r.Run(context.Background(), runningState("T-8"), fsm.Stage{ID: "build", Role: "implementer"})
 	if err == nil {
@@ -298,7 +301,7 @@ func TestAMissingHarnessIsInfrastructure(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}},
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	_, err := r.Run(context.Background(), runningState("T-9"), fsm.Stage{ID: "build", Role: "implementer"})
@@ -318,8 +321,8 @@ func TestAHandedOverArtifactIsProvenByTheStore(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}},
-		Artifacts: &memoryArtifacts{},
+		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
+		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
 		Stored: func(_, stage, artifact string) (string, error) {
 			asked = stage + "/" + artifact
 			return "abc123", nil
@@ -360,8 +363,8 @@ func TestAMissingHandoverFailsRatherThanPasses(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}},
-		Artifacts: &memoryArtifacts{},
+		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
+		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
 		Stored: func(_, _, _ string) (string, error) {
 			return "", errors.New("no such artifact")
 		},
@@ -436,4 +439,13 @@ func (m *memoryArtifacts) GetArtifact(stage, artifact string) ([]byte, error) {
 		return nil, errors.New("no such artifact")
 	}
 	return body, nil
+}
+
+// roleLookup adapts a plain map to the lookup the runner takes, so a test can
+// declare its roles as data.
+func roleLookup(roles map[fsm.RoleName]fsm.Role) func(fsm.RoleName) (fsm.Role, bool) {
+	return func(name fsm.RoleName) (fsm.Role, bool) {
+		role, ok := roles[name]
+		return role, ok
+	}
 }

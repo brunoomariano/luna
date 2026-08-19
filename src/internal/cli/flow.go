@@ -61,7 +61,7 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 			gap.Stage, gap.Produces)
 	}
 	for _, gap := range names {
-		fmt.Fprintf(env.Out, "  %s leaves %d characters for a task id, which is too few for its agent name\n",
+		fmt.Fprintf(env.Out, "  %s is long enough that it leaves only %d characters for a task id\n",
 			gap.Stage, gap.Budget)
 	}
 	for _, gap := range contexts {

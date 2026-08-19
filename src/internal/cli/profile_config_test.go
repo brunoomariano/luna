@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/herdr"
 )
 
 // TestAnUnknownSettingInsideAProfileIsAnError covers the section's key list.
@@ -379,7 +379,7 @@ func TestEveryGatedRoleShipsOnAHarnessThatCanGateIt(t *testing.T) {
 		if !role.Gated() {
 			continue
 		}
-		if _, ok := herdr.HarnessFor(role.Agent); !ok {
+		if !agent.CanGate(role.Agent) {
 			t.Errorf("role %q denies tools on %q, which Luna cannot gate", name, role.Agent)
 		}
 	}

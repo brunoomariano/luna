@@ -114,7 +114,7 @@ listing; an exception swallowed between transitions.
 not covered. What exists bounds a turn; a task circling without converging never exceeds
 it. The failure still ends in a block once a budget runs out — just later than it should.
 
-**Covered by.** Retry-exhaustion and stall tests in `internal/herdr`; the gate listing
+**Covered by.** Retry-exhaustion and budget tests in `internal/agent`; the gate listing
 test in `internal/cli`.
 
 ---

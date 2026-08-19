@@ -1,4 +1,4 @@
-package herdr
+package node
 
 import (
 	"context"
@@ -19,10 +19,11 @@ const notifyTimeout = 10 * time.Second
 // the notification was the missing third: a block printed to stdout at 3am is a
 // block nobody sees, which is the silent failure the invariant names.
 //
-// It delegates rather than implements. herdr already owns a notification layer and
-// is already the process a person is looking at, so Luna asking it to draw a
-// banner is a line of code where a mail transport or a webhook would be a
-// subsystem.
+// It delegates rather than implements. A terminal multiplexer already owns a
+// notification layer and is already the process a person is looking at, so
+// asking it to draw a banner is a line of code where a mail transport or a
+// webhook would be a subsystem. Which channel to add beyond it stays open until
+// real use says which one serves.
 type Notifier struct {
 	// Run sends the notification. A variable so a test can observe the call
 	// without a herdr on the machine.
@@ -31,9 +32,12 @@ type Notifier struct {
 
 // NewNotifier returns one that shells out to herdr.
 //
-// `herdr notification show` rather than the socket: the CLI is the documented
-// surface for this and the arguments were checked against the binary, which is the
+// `herdr notification show` rather than a library: the CLI is the documented
+// surface for this, and the arguments were checked against the binary — the
 // discipline adopted after ten protocol facts turned out to be wrong.
+//
+// A machine without it is not an error worth failing a run over. The block is
+// the fact worth keeping; the banner is only how it was announced.
 func NewNotifier() Notifier {
 	return Notifier{Run: func(ctx context.Context, title, body string) error {
 		ctx, cancel := context.WithTimeout(ctx, notifyTimeout)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -29,11 +30,18 @@ type Runner struct {
 
 	// Roles resolves a stage's role to the agent that runs it, the brief that
 	// opens its context and what it is denied.
-	Roles map[fsm.RoleName]fsm.Role
+	//
+	// A lookup rather than a map because an override (`--agent`) applies at the
+	// point of use: rebuilding a map to carry one would put the same rule in two
+	// places.
+	Roles func(fsm.RoleName) (fsm.Role, bool)
 
-	// Artifacts is where a handed-over artifact is written. Nil means no stage
+	// Artifacts opens the store a stage's handover is written to.
+	//
+	// A factory rather than an instance because the store is scoped to one task,
+	// and the runner learns which task only when a stage runs. Nil means no stage
 	// may declare a handover, which is refused rather than silently ignored.
-	Artifacts ArtifactStore
+	Artifacts func(taskID string) ArtifactStore
 
 	// Stored answers whether an artifact reached the store, with the hash of what
 	// did. Separate from Artifacts because that interface is the socket's
@@ -69,6 +77,11 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 
 	wt, err := OpenWorktree(ctx, r.Repo, state.ID, stage.Role, state.Base)
 	if err != nil {
+		// A missing git is the machinery breaking rather than the stage failing,
+		// and it is not a thing a retry can fix.
+		if errors.Is(err, exec.ErrNotFound) {
+			return lead.Result{}, fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
+		}
 		return lead.Result{}, err
 	}
 	// The worktree lasts exactly as long as the stage. A failure to remove it
@@ -88,7 +101,7 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 		return r.verify(ctx, state, stage, wt, fsm.Spend{})
 	}
 
-	socket, handsOver, err := r.serveArtifacts(stage, wt)
+	socket, handsOver, err := r.serveArtifacts(state.ID, stage, wt)
 	if err != nil {
 		return lead.Result{}, err
 	}
@@ -247,11 +260,18 @@ func (r *Runner) proveHandover(state fsm.TaskState, stage fsm.Stage, artifact fs
 // the same name from its own side of the boundary.
 const socketEnv = "LUNA_ARTIFACT_SOCKET"
 
+// Sandbox is what every agent is started inside.
+//
+// Deliberately a constant and not configuration: making it a setting would move
+// the containment boundary into the same file as `editor`, where a typo turns
+// into an uncontained agent that reports success.
+const Sandbox = "ai-jail"
+
 // serveArtifacts opens the handover socket when the stage declares one.
 //
 // A stage that declares no handover opens nothing: there is no reason to expose
 // a writer to an agent that owes nothing through it.
-func (r *Runner) serveArtifacts(stage fsm.Stage, wt Worktree) (server *ArtifactServer, opened bool, err error) {
+func (r *Runner) serveArtifacts(taskID string, stage fsm.Stage, wt Worktree) (server *ArtifactServer, opened bool, err error) {
 	if !handsOver(stage) {
 		return nil, false, nil
 	}
@@ -259,7 +279,7 @@ func (r *Runner) serveArtifacts(stage fsm.Stage, wt Worktree) (server *ArtifactS
 		return nil, false, fmt.Errorf("stage %q hands an artifact to Luna and no store is configured", stage.ID)
 	}
 
-	server, err = ServeArtifacts(wt.Path, string(stage.ID), r.Artifacts)
+	server, err = ServeArtifacts(wt.Path, string(stage.ID), r.Artifacts(taskID))
 	if err != nil {
 		return nil, false, err
 	}
@@ -283,7 +303,10 @@ func (r *Runner) roleFor(stage fsm.Stage) (fsm.Role, error) {
 	if stage.Mechanical() {
 		return fsm.Role{}, nil
 	}
-	role, ok := r.Roles[fsm.RoleName(stage.Role)]
+	if r.Roles == nil {
+		return fsm.Role{}, fmt.Errorf("stage %q names the role %q and no roles are configured", stage.ID, stage.Role)
+	}
+	role, ok := r.Roles(fsm.RoleName(stage.Role))
 	if !ok {
 		return fsm.Role{}, fmt.Errorf("stage %q names the role %q, which is not configured", stage.ID, stage.Role)
 	}
