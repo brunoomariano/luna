@@ -95,15 +95,15 @@ func TestLandingRefusesACommitThatDoesNotResolve(t *testing.T) {
 	}
 }
 
-// TestTheTaskBranchIsTheNameSetupMade keeps the two halves agreeing.
+// TestTheTaskBranchIsTheNameReportedToThePerson keeps the two halves agreeing.
 //
-// `setup` creates `luna/<task>` through herdr, and this points it. If the two
-// ever disagreed on the name, landing would create a second branch and leave the
-// first stranded — which is the bug this whole file exists to close, arriving by
-// a different door.
-func TestTheTaskBranchIsTheNameSetupMade(t *testing.T) {
+// Landing writes this ref and the order reports it as where the work is. If the
+// two ever disagreed on the name, someone would be sent to a branch that does
+// not exist while the work sat on one nothing named — which is the bug this
+// whole file exists to close, arriving by a different door.
+func TestTheTaskBranchIsTheNameReportedToThePerson(t *testing.T) {
 	if got := TaskBranch("LUNA-1"); got != "luna/LUNA-1" {
-		t.Errorf("the task branch is %q, and herdr.WorktreeSpec.Branch makes luna/LUNA-1", got)
+		t.Errorf("the task branch is %q, and everything that reports one expects luna/LUNA-1", got)
 	}
 }
 

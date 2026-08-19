@@ -30,7 +30,8 @@ func TestABlockedTaskIsAnnouncedWithItsReason(t *testing.T) {
 	}
 }
 
-// TestANotifierWithNothingBehindItIsSilent covers a machine with no herdr.
+// TestANotifierWithNothingBehindItIsSilent covers a machine with no external
+// notifier installed.
 //
 // Returning an error would make every blocked task on such a machine report a
 // second failure that is not about the task.
@@ -68,9 +69,9 @@ func TestTheShippedNotifierCallsHerdr(t *testing.T) {
 		t.Fatal("the shipped notifier has to do something")
 	}
 
-	// Calling it needs a herdr on the machine, which CI has no reason to have. What
-	// is worth pinning here is that a notifier exists and that a failure to reach
-	// herdr comes back as an error rather than a panic.
+	// Calling it needs the external notifier on the machine, which CI has no reason
+	// to have. What is worth pinning here is that a notifier exists and that a
+	// failure to reach it comes back as an error rather than a panic.
 	err := NewNotifier().Run(context.Background(), "LUNA-1", "why")
 	if err != nil && !strings.Contains(err.Error(), "herdr notification show") {
 		t.Errorf("a failure must name the command it tried, got %q", err)

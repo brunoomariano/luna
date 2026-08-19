@@ -77,8 +77,8 @@ func (j *alwaysBlocks) OnFailure(context.Context, fsm.TaskState, string) Decisio
 	return DecideBlock
 }
 
-// stallingNode reports the stall the node layer observes — what herdr answers as
-// `agent_prompt_stalled`. Named rather than inline because it stands in for a
+// stallingNode reports the stall the node layer observes — an agent that is alive
+// and producing nothing. Named rather than inline because it stands in for a
 // real external condition.
 //
 // This is the only way a stall reaches the lead. There is no watchdog interface
@@ -464,7 +464,7 @@ func TestAStallDoesNotSpendTheRetryBudget(t *testing.T) {
 }
 
 // TestAStalledNodeBlocksToo covers the stall reported by the node rather than by
-// the watchdog — the path herdr's `agent_prompt_stalled` takes.
+// the watchdog — the only path a stall reaches the lead by.
 func TestAStalledNodeBlocksToo(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
@@ -657,8 +657,8 @@ func TestTheJudgeReadsTheBudgetFromTheState(t *testing.T) {
 // TestInfrastructureBlocksWithoutSpendingTheBudget covers losing the runner through the
 // path that now exists.
 //
-// A herdr that went away is not a stage that failed, and it will not be back on
-// the second attempt. Wiring the judge is what made this visible: with the lead
+// A harness that is not installed is not a stage that failed, and it will not be
+// installed on the second attempt. Wiring the judge is what made this visible: with the lead
 // blocking on everything, nothing distinguished the two.
 func TestInfrastructureBlocksWithoutSpendingTheBudget(t *testing.T) {
 	s := newStore(t)
@@ -679,7 +679,7 @@ func TestInfrastructureBlocksWithoutSpendingTheBudget(t *testing.T) {
 		t.Errorf("infrastructure costs no retries, got %d spent", state.Retry.Attempts)
 	}
 	if judge.asked != 0 {
-		t.Errorf("there is nothing to judge about a herdr that is gone, got %d calls", judge.asked)
+		t.Errorf("there is nothing to judge about a binary that is missing, got %d calls", judge.asked)
 	}
 }
 
@@ -687,7 +687,7 @@ func TestInfrastructureBlocksWithoutSpendingTheBudget(t *testing.T) {
 type brokenMachineryNode struct{}
 
 func (brokenMachineryNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, error) {
-	return Result{}, fmt.Errorf("%w: herdr is not reachable", ErrInfrastructure)
+	return Result{}, fmt.Errorf("%w: the agent harness is not installed", ErrInfrastructure)
 }
 
 // countingJudge records whether it was consulted at all.

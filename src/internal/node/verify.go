@@ -1,9 +1,8 @@
 // Package node runs the checks that prove a stage delivered.
 //
-// It is separate from the package that talks to herdr on purpose:
-// verification is not a herdr operation. herdr creates the worktree and hosts the
-// agent; the check runs here, against a real exit code, so the evidence is the
-// tool's answer rather than something recovered from a screen.
+// Verification is deliberately not the agent's business: the agent is asked to
+// deliver, and the check runs here, against a real exit code, so the evidence is
+// the tool's answer rather than something the agent reported about itself.
 //
 // Nothing in here decides a transition. It observes, and the verdict travels
 // inward inside an action.
@@ -23,8 +22,8 @@ import (
 
 // DefaultTimeout bounds a single verification command.
 //
-// Every external process gets a deadline. The study found herdr bounding its
-// agent calls and forgetting its own git subprocesses, where one hang wedges a
+// Every external process gets a deadline. The study found a tool that bounded its
+// agent calls and forgot its own git subprocesses, where one hang wedges a
 // path permanently — the same mistake is available here, and this is the guard
 // against it.
 const DefaultTimeout = 10 * time.Minute

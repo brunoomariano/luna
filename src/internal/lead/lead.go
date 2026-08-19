@@ -241,7 +241,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 			return l.stall(taskID, err.Error())
 		}
 		// Infrastructure blocks without consulting anyone and without spending the
-		// budget: there is no judgement to make about a herdr that went away, and
+		// budget: there is no judgement to make about a binary that is missing, and
 		// the budget belongs to the stage.
 		if errors.Is(err, ErrInfrastructure) {
 			return l.record(taskID, fsm.Block{Reason: err.Error()})

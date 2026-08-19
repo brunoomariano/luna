@@ -14,9 +14,9 @@ import (
 // gates has to be reviewable afterwards, and a value that moved with no record
 // makes "why was nobody asked here?" unanswerable.
 //
-// It is also the surface a herdr plugin pane drives. The pane shows the current
-// value and can change it, and the change it makes is this command writing this
-// event — a proxy over the log, never a path around it.
+// It is also the surface anything outside Luna drives the knob through, `luna
+// chat` included. Whatever changes the value changes it by running this command
+// and writing this event — a proxy over the log, never a path around it.
 func autonomyCommand(env Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: autonomy needs a task id", ErrUsage)

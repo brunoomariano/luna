@@ -17,9 +17,9 @@ var ErrNoClaudeConfig = errors.New("no claude configuration to add trust to")
 // It exists because of what happens without it: inside the sandbox, claude opens
 // its folder-trust dialog for every worktree — each one is a path the
 // configuration has never seen — and an agent sitting at a dialog is a stage
-// that closes having delivered nothing. The Enter nudge (see the herdr runner)
-// answers the dialog when it appears; this removes the reason it appears, once,
-// by an explicit act of the person whose configuration it is.
+// that closes having delivered nothing. This removes the reason the dialog
+// appears, once, by an explicit act of the person whose configuration it is —
+// and it is the only defence, since nothing answers a dialog after the fact.
 //
 // Three rules, each learned the hard way:
 //

@@ -96,12 +96,12 @@ func TestRunRejectsAnUnknownFlag(t *testing.T) {
 // ── luna run, dry ────────────────────────────────────────────────────────────
 
 // TestADryRunDrivesAnAutonomousTaskToTheEnd is the engine end to end with no
-// herdr.
+// agent.
 //
 // One command takes a task from an empty log to done, exercising everything that
 // is not the integration: the flow's ordering, every stage's contract check, the
 // append-only log and the replay that rebuilds the state from it. It is what
-// tells a broken flow apart from a broken herdr, which is why --dry-run exists.
+// tells a broken flow apart from a broken integration, which is why --dry-run exists.
 //
 // The knob is what makes it unattended now rather than a profile: gates wait
 // because the shipped stages declare criteria, and 10 is what lets
@@ -222,8 +222,8 @@ func TestRunNeedsATaskID(t *testing.T) {
 // TestRunSurfacesAMistypedFlagBeforeTouchingTheStore covers the order of checks.
 //
 // Parsing before conducting is what keeps a typo a usage error. Reaching the store
-// first would report a task problem for a command-line problem, and dialling herdr
-// first would fail on the integration for a mistyped flag.
+// first would report a task problem for a command-line problem, and starting an
+// agent first would fail on the integration for a mistyped flag.
 func TestRunSurfacesAMistypedFlagBeforeTouchingTheStore(t *testing.T) {
 	h := newHarness(t)
 
@@ -338,7 +338,7 @@ func TestRunReportsABlockedTaskAndHowToClearIt(t *testing.T) {
 
 // TestUnblockClearsABlockAndSaysWhatIsNext covers the path every block ends on.
 //
-// A stall, a lost herdr, a stage whose verification failed — they all arrive here,
+// A stall, broken machinery, a stage whose verification failed — they all arrive here,
 // and a person deciding the situation is dealt with is the only way out. The block is
 // cleared by appending, never by editing what was written: the history is the audit
 // trail, and a block that was retracted from the log is a block nobody
@@ -509,17 +509,17 @@ func TestReportRunOnAGateWithNoDetail(t *testing.T) {
 
 // dryNode must satisfy the interface the lead declares, or --dry-run would not
 // compile into a conductor at all. Asserting it here documents that the dry branch
-// and the herdr branch are interchangeable at exactly one point: the Node field.
+// and the real one are interchangeable at exactly one point: the Node field.
 var _ lead.Node = dryNode{}
 
-// TestConductBuildsADryConductorWithoutTouchingHerdr covers the branch that makes
-// --dry-run possible.
+// TestConductBuildsADryConductorWithoutTouchingTheOutside covers the branch that
+// makes --dry-run possible.
 //
-// The node is chosen in conduct and nowhere else. The dry branch must
-// return before dialling, because a rehearsal that needed herdr running could not
-// tell a broken flow from a broken integration — which is the one question it exists
-// to answer.
-func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
+// The node is chosen in conduct and nowhere else. The dry branch must return
+// before it reaches for anything external, because a rehearsal that needed an
+// agent installed could not tell a broken flow from a broken integration — which
+// is the one question it exists to answer.
+func TestConductBuildsADryConductorWithoutTouchingTheOutside(t *testing.T) {
 	h := newHarness(t)
 
 	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileNightly)

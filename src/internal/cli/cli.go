@@ -143,7 +143,7 @@ luna — deterministic orchestration for AI agents
 
   luna run <id> [--agent <kind>] [--dry-run]
         drive the task until it needs a person or finishes.
-        --dry-run exercises the flow with no herdr and no agent.
+        --dry-run exercises the flow with no agent and no worktree.
 
   luna lead <id> [--autonomy 0-10]
         hand the task to the lead agent: Luna gives it one order at a

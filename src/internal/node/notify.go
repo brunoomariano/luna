@@ -26,11 +26,13 @@ const notifyTimeout = 10 * time.Second
 // real use says which one serves.
 type Notifier struct {
 	// Run sends the notification. A variable so a test can observe the call
-	// without a herdr on the machine.
+	// without the external notifier on the machine.
 	Run func(ctx context.Context, title, body string) error
 }
 
-// NewNotifier returns one that shells out to herdr.
+// NewNotifier returns one that shells out to `herdr`, an external terminal
+// multiplexer Luna does not depend on for anything else — this is a banner, not
+// a transport the engine runs through.
 //
 // `herdr notification show` rather than a library: the CLI is the documented
 // surface for this, and the arguments were checked against the binary — the

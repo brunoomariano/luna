@@ -14,8 +14,8 @@ import (
 
 // runTask drives a task until it needs a person or reaches the end.
 //
-// This is where the two systems meet: herdr hosts the agent, Luna decides and
-// verifies. Everything it assembles is an implementation of an
+// This is where the two halves meet: the node runs the agent and verifies, the
+// engine decides. Everything it assembles is an implementation of an
 // interface the lead already declared, so none of the wiring reaches the engine.
 func runTaskCommand(env Env, args []string) error {
 	if len(args) == 0 {
@@ -73,7 +73,7 @@ type runOptions struct {
 	// Repo is the checkout worktrees are cut from.
 	Repo string
 
-	// Dry runs with no herdr and no agent: the engine, the log and the gates
+	// Dry runs with no agent and no worktree: the engine, the log and the gates
 	// exercised end to end. It is what tells a broken flow apart from a broken
 	// integration.
 	Dry bool
@@ -105,7 +105,7 @@ func parseRunOptions(args []string) (runOptions, error) {
 
 // conduct assembles the lead for this run.
 //
-// The node is chosen here and nowhere else: swapping herdr for something else is
+// The node is chosen here and nowhere else: swapping how a stage is run is
 // one more branch in this function, not a change to the lead or the engine
 // .
 func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(), error) {
@@ -310,7 +310,7 @@ func notifyBlocked(env Env, id, reason string) {
 
 // unblockCommand clears a block so the task can be run again.
 //
-// Every path into a block ends here: a stall, a lost herdr, a stage whose
+// Every path into a block ends here: a stall, broken machinery, a stage whose
 // verification failed. The person decides the situation is dealt with, and the
 // retry budget resets because the block was the escalation.
 func unblockCommand(env Env, args []string) error {

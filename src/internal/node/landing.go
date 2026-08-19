@@ -7,10 +7,9 @@ import (
 
 // TaskBranch is the ref a task ends on: `luna/<task>`.
 //
-// It is created by `setup` and, until a task finishes, points at whatever the
-// repository was when the task opened. Pointing it at the last stage's commit is
-// what turns it from a stranded name into the answer to "where is the work"
-// .
+// Land creates it, and until a task finishes there is nothing under the name at
+// all — the stages work on `luna/<task>/<role>`. Pointing it at the last stage's
+// commit is what turns it into the answer to "where is the work".
 func TaskBranch(taskID string) string { return "luna/" + taskID }
 
 // Land points a task's branch at the commit its last stage delivered.

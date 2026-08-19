@@ -23,7 +23,7 @@ const defaultPatience = time.Hour
 // out loud.
 //
 // This is the watchdog, and it is a command rather than a loop on purpose.
-// Whatever polls — a cron, herdr, the lead — decides how often to ask; keeping
+// Whatever polls — a cron, the lead, a person — decides how often to ask; keeping
 // the schedule outside means the clock is read in exactly one place and nothing
 // in Luna has to stay running to notice a stall.
 func stuckCommand(env Env, args []string) error {

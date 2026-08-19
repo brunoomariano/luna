@@ -138,9 +138,10 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 		// `luna lead` conducts with and what judges a gate the knob reached.
 		Lead: harness.Ask,
 
-		// A block is only a block once someone knows. herdr already owns a
-		// notification layer and is already what a person is looking at, so this
-		// delegates rather than growing a transport of its own.
+		// A block is only a block once someone knows. An external terminal
+		// multiplexer already owns a notification layer and is already what a
+		// person is looking at, so this delegates rather than growing a transport
+		// of its own.
 		Notify: node.NewNotifier().Blocked,
 	}
 }
