@@ -40,8 +40,10 @@ from confirming every gate to an overnight run that stops for nothing.
 
 **Under construction, and honest about it.** A full 12-stage cycle ran zero-touch under
 the previous transport, delivering a real feature. The transport was then replaced — the
-terminal driving is gone, agents run headless — and the stages have run individually
-against the new one but a full cycle has not been repeated on it yet. What is decided but
+terminal driving is gone, agents run headless — and on the new one the flow has been
+driven as far as the contract review gate: agents run sandboxed, hand artifacts to the
+store through the socket, and a gate opens showing the real content. A full cycle has not
+been repeated on it yet. What is decided but
 not built is listed at the bottom of [`docs/architecture.md`](docs/architecture.md) rather
 than implied by silence.
 

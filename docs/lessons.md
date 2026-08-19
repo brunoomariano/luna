@@ -104,9 +104,9 @@ whose entire content is a `--loud` flag for a two-line shell script:
 |---|---|---|---|
 | intake | 137,601 | $0.31 | 4 |
 | scenarios | 1,912,707 | $2.02 | 47 |
-| spec | 713,232 | $0.92 | 16 |
+| spec (two attempts) | 1,154,955 | $1.55 | 29 |
 
-Three stages, $3.24, 2.7 million tokens, and no code written yet. Forty-seven turns to
+Three stages, $3.88, 3.2 million tokens, and no code written yet. Forty-seven turns to
 produce test scenarios for a one-line change. A single session would have done the whole
 feature for a fraction of that, and any claim that the flow is worth its cost has to be
 made against numbers like these rather than against the argument for the design.
