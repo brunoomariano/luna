@@ -97,6 +97,24 @@ what it cost in tokens against doing the same work in one session. Any claim abo
 value of orchestration that is not measured is an aesthetic preference. The harness reports
 usage for free; there was never a reason not to record it.
 
+**And the first numbers were worse than expected.** The first measured run, on a feature
+whose entire content is a `--loud` flag for a two-line shell script:
+
+| stage | tokens | cost | turns |
+|---|---|---|---|
+| intake | 137,601 | $0.31 | 4 |
+| scenarios | 1,340,655 | $1.30 | 33 |
+
+Two stages, $1.61, and no code written yet. Thirty-three turns to produce test scenarios
+for a one-line change. A single session would have done the whole feature for a fraction
+of that, and any claim that the flow is worth its cost has to be made against numbers like
+these rather than against the argument for the design.
+
+The counter was also wrong in the direction that flatters: spend was recorded only where a
+stage *closed*, and the exit checks return before that — so a blocked stage came out free
+and the flow that fails most read as the cheapest. Caught by running a task, not by
+reading the code.
+
 ## About this project's own process
 
 **Recording a decision and recording progress are different things.** Decision records

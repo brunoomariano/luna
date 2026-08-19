@@ -42,8 +42,12 @@ from confirming every gate to an overnight run that stops for nothing.
 end to end, delivering a real feature. What is decided but not built is listed at the
 bottom of [`docs/architecture.md`](docs/architecture.md) rather than implied by silence.
 
-Not yet measured: what this costs in tokens against doing the same work in a single
-session. That measurement is the next thing, and it decides how much of the flow survives.
+**What it costs is now measured, and the first numbers are not flattering.** A feature
+whose entire content is a `--loud` flag for a two-line shell script spent $1.61 across two
+stages before any code was written — 33 turns in the stage that writes test scenarios. The
+per-stage cost column is in `luna task show`, and the case for the flow has to be made
+against numbers like those rather than against the argument for the design. See
+[`docs/lessons.md`](docs/lessons.md).
 
 ## Installation
 

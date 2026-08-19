@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -612,5 +613,136 @@ func TestAStageProvesEveryArtifactItOwes(t *testing.T) {
 		if _, ok := result.Evidence[owed]; !ok {
 			t.Errorf("no evidence recorded for %q, which the stage owes", owed)
 		}
+	}
+}
+
+// TestTheBriefCanBeReplacedWithoutTouchingTheRunner covers the seam a test uses
+// to drive a stage with a known instruction, and that a project would use to say
+// something the shipped brief does not.
+func TestTheBriefCanBeReplacedWithoutTouchingTheRunner(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+		Brief: func(fsm.TaskState, fsm.Stage, fsm.Role) string {
+			return "do exactly this and nothing else"
+		},
+	}
+
+	if _, err := r.Run(context.Background(), runningState("T-40"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got := fake.last(t).Prompt; got != "do exactly this and nothing else" {
+		t.Errorf("the replaced brief did not reach the agent, got %q", got)
+	}
+}
+
+// TestAStageRunsWithTheProjectsMemoryWhenItAsks covers the setting reaching the
+// call. A stage declaring memory and not getting it would start an agent blind
+// to what the project already decided, and nothing about the run would say so.
+func TestAStageRunsWithTheProjectsMemoryWhenItAsks(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
+	}
+
+	stage := fsm.Stage{ID: "intake", Role: "analyst", Memory: fsm.MemoryOn}
+	if _, err := r.Run(context.Background(), runningState("T-41"), stage); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := fake.last(t).Memory; got != agent.MemoryOn {
+		t.Errorf("want the stage's memory setting carried to the call, got %q", got)
+	}
+
+	// And the default stays off: a shared memory every stage writes to fills with
+	// the transient.
+	plain := fsm.Stage{ID: "build", Role: "analyst"}
+	if _, err := r.Run(context.Background(), runningState("T-41"), plain); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := fake.last(t).Memory; got != agent.MemoryOff {
+		t.Errorf("want memory off by default, got %q", got)
+	}
+}
+
+// TestTheSocketIsOpenedOnlyForAStageThatHandsSomethingOver covers the reason it
+// is conditional: there is no reason to expose a writer to an agent that owes
+// nothing through it.
+func TestTheSocketIsOpenedOnlyForAStageThatHandsSomethingOver(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
+	}
+
+	// A stage that commits everything it owes gets no socket in its environment.
+	plain := fsm.Stage{ID: "build", Role: "implementer", Produces: []fsm.Artifact{"code"}}
+	if _, err := r.Run(context.Background(), runningState("T-42"), plain); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, env := range fake.last(t).Env {
+		if strings.Contains(env, "ARTIFACT_SOCKET") {
+			t.Errorf("a stage that hands nothing over was given a writer: %q", env)
+		}
+	}
+}
+
+// TestAMissingGitIsInfrastructureRatherThanAFailedStage keeps the lead from
+// spending its retry budget on a machine that will keep not having git.
+//
+// A tool that is not installed is the machinery breaking, and the second attempt
+// will find it just as absent as the first.
+func TestAMissingGitIsInfrastructureRatherThanAFailedStage(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+	}
+
+	// A PATH with nothing on it, so opening the worktree cannot find git.
+	t.Setenv("PATH", t.TempDir())
+
+	_, err := r.Run(context.Background(), runningState("T-50"), fsm.Stage{ID: "build", Role: "implementer"})
+	if !errors.Is(err, lead.ErrInfrastructure) {
+		t.Fatalf("want a missing git classified as infrastructure, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Error("the agent ran despite there being no worktree to run in")
+	}
+}
+
+// TestAStageOnAMissingRepositoryFailsWithoutClassifyingIt covers the other side
+// of that branch: git is present and the repository is not, which is an ordinary
+// failure rather than the machinery breaking.
+func TestAStageOnAMissingRepositoryFailsWithoutClassifyingIt(t *testing.T) {
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  filepath.Join(t.TempDir(), "not-a-repository"),
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+	}
+
+	_, err := r.Run(context.Background(), runningState("T-51"), fsm.Stage{ID: "build", Role: "implementer"})
+	if err == nil {
+		t.Fatal("want an error for a repository that is not there, got a run")
+	}
+	if errors.Is(err, lead.ErrInfrastructure) {
+		t.Errorf("a missing repository is not the machinery breaking: %v", err)
 	}
 }
