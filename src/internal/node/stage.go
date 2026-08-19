@@ -322,6 +322,18 @@ func (r *Runner) roleFor(stage fsm.Stage) (fsm.Role, error) {
 	if !ok {
 		return fsm.Role{}, fmt.Errorf("stage %q names the role %q, which is not configured", stage.ID, stage.Role)
 	}
+
+	// A role that withholds capabilities on a harness Luna cannot gate stops the
+	// stage rather than running ungated. The alternative is a reviewer that keeps
+	// every tool it was supposed to lose, with nothing saying so — and a review
+	// written by something that could edit the work is the one failure the flow
+	// cannot catch downstream.
+	if role.Gated() && !agent.CanGate(role.Agent) {
+		return fsm.Role{}, fmt.Errorf(
+			"stage %q runs %q on %q, which denies %v — and Luna cannot withhold a capability on that harness",
+			stage.ID, stage.Role, role.Agent, role.ToolsDeny,
+		)
+	}
 	return role, nil
 }
 

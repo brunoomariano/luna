@@ -746,3 +746,54 @@ func TestAStageOnAMissingRepositoryFailsWithoutClassifyingIt(t *testing.T) {
 		t.Errorf("a missing repository is not the machinery breaking: %v", err)
 	}
 }
+
+// TestAGatedRoleOnAnUngateableHarnessStopsTheStage covers the refusal that keeps
+// a review honest.
+//
+// A role that withholds Edit and Write on a harness Luna cannot gate would run
+// with every tool it was supposed to lose, and nothing about the run would say
+// so. A review written by something that could edit the work is the one failure
+// the flow cannot catch downstream — the next stage reads the review, not the
+// reviewer's permissions.
+func TestAGatedRoleOnAnUngateableHarnessStopsTheStage(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "reviewed"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"reviewer": {
+			Agent:     "some-unknown-harness",
+			ToolsDeny: []fsm.Capability{fsm.CapEdit, fsm.CapWrite},
+		}}),
+	}
+
+	_, err := r.Run(context.Background(), runningState("T-60"), fsm.Stage{ID: "code-review", Role: "reviewer"})
+	if err == nil {
+		t.Fatal("want a refusal for a gated role on an ungateable harness, got a run")
+	}
+	if !strings.Contains(err.Error(), "some-unknown-harness") {
+		t.Errorf("want the refusal to name the harness, got %q", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Error("an ungated reviewer was started")
+	}
+}
+
+// TestAnUngatedRoleRunsOnAnyHarness is the other side: the refusal is about
+// withheld capabilities, not about the harness itself. A role that denies
+// nothing has nothing that could fail to be denied.
+func TestAnUngatedRoleRunsOnAnyHarness(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "some-unknown-harness"}}),
+	}
+
+	if _, err := r.Run(context.Background(), runningState("T-61"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+		t.Fatalf("an ungated role was refused: %v", err)
+	}
+}
