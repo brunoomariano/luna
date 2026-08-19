@@ -1,6 +1,6 @@
 package fsm
 
-// Verifier declares how one artifact is proven (ADR-0032).
+// Verifier declares how one artifact is proven.
 //
 // It is a declaration, never an execution. The engine holds it so the contract is
 // the complete definition of done for a stage — the answer hermes-agent could not
@@ -8,13 +8,14 @@ package fsm
 // project and a project that declares it up front can.
 //
 // Running it belongs to the node layer, and the verdict comes back inside the
-// action (ADR-0024). Nothing here executes, opens a file, or reads a clock.
+// action. Nothing here executes, opens a file, or reads a clock.
 //
 // It is an interface rather than a command string because several artifacts have
 // no command that could check them, and because a third kind — a reviewing model
 // judging prose — is foreseeable without being wanted yet. Adding one needs its
-// own ADR: a model's verdict is the self-reported completion ADR-0028 rejects,
-// and the argument for a reviewer being different is real but unmade.
+// own decision recorded: a model's verdict is the self-reported completion a
+// status-is-never-a-verdict rule rejects, and the argument for a reviewer being
+// different is real but unmade.
 type Verifier interface {
 	// Proves is the scope a successful run of this verifier establishes.
 	Proves() Scope
@@ -37,8 +38,8 @@ type Command struct {
 
 // Proves reports the scope a passing run establishes, defaulting to targeted.
 //
-// The cautious direction: an unstated scope claiming the full suite would be the
-// laundering ADR-0028 exists to prevent, and under-claiming only costs a stage
+// The cautious direction: an unstated scope claiming the full suite would be a
+// targeted run laundered into a full one, and under-claiming only costs a stage
 // that has to prove more.
 func (c Command) Proves() Scope {
 	if c.Scope == "" {
@@ -55,14 +56,14 @@ func (Command) isVerifier()        {}
 //
 // It is the honest floor for prose — a briefing, a set of scenarios, a diagnosis.
 // Recording those as a passing check would be a lie the log tells forever, so
-// they carry ScopeExistence and say exactly what happened (ADR-0032).
+// they carry ScopeExistence and say exactly what happened.
 type Existence struct {
 	// Path is where the artifact lives, as a directory inside the repository.
 	//
 	// Declared, the delivery is checked against the commit: `git ls-tree <sha>
 	// <path>` either finds a file there or does not, and the answer comes from git
 	// rather than from the agent. Undeclared, nothing is checked and the agent's
-	// word is the whole record — which is every artifact today (RFC-0004).
+	// word is the whole record — which is every artifact today.
 	//
 	// A directory rather than a filename: the agent names the file, which is what
 	// swarm-forge's `features/` does and what keeps a contract from having to
@@ -71,11 +72,11 @@ type Existence struct {
 	//
 	// Deliberately not part of the flow fingerprint: where an artifact lives is
 	// not whether the stage closed, and freezing every open task to move a
-	// directory would be disproportionate (ADR-0070).
+	// directory would be disproportionate.
 	Path string
 
 	// Handover says the artifact is handed over through Luna's store rather than
-	// through the commit (RFC-0008).
+	// through the commit.
 	//
 	// The contract, the scenarios and the audit reports are scaffolding: they exist
 	// so the next stage or a person can decide something, and committing them puts
@@ -87,13 +88,13 @@ type Existence struct {
 	// delivery is looked for; this changes what delivering *means* — an artifact
 	// that used to be a file in a commit and is now a row in the store is a
 	// different obligation, and a log written under the old rule cannot be replayed
-	// under the new one (ADR-0046).
+	// under the new one.
 	Handover bool
 }
 
 // Proves reports what an existence check proves, which is that the artifact is
 // there and nothing more. A declared path does not raise it: a file in the right
-// directory is still just a file (ADR-0032).
+// directory is still just a file.
 func (Existence) Proves() Scope { return ScopeExistence }
 
 // Describe names the check for a human, which is a non-check until a path says

@@ -8,11 +8,11 @@ import (
 
 // taskForget removes the content a finished task's stages handed over.
 //
-// This is the cleanup RFC-0008 promised: blobs are the one part of the store
+// This is the cleanup the store handover promised: blobs are the one part of the store
 // that grows with content rather than with facts, and a task that ended does not
 // need its working documents any more. The log is untouched — every event stays,
 // including each artifact's hash, so the history of what was produced outlives
-// the content (INV-core-2).
+// the content.
 //
 // Only a terminal task may be forgotten. A running one is still handing
 // artifacts to the stages ahead of it, and forgetting those mid-flight would

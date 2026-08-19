@@ -8,9 +8,9 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// The seam between the two halves of RFC-0006: what a task declared runs, and the
+// The seam between the two halves of the gate contract: what a task declared runs, and the
 // lead judges the rest. The declaration used to live in beads' metadata and is
-// replayed from the task's own log now (ADR-0067) — these are the same guarantees
+// replayed from the task's own log now — these are the same guarantees
 // asserted against the new source.
 
 // declaring opens a task and declares the checks that answer one of its gates,

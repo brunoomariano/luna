@@ -22,11 +22,11 @@ type TaskCreated struct {
 	Kind    TaskKind `json:"kind"`
 	Profile Profile  `json:"profile,omitempty"`
 
-	// Flow identifies the flow this task was born under (ADR-0046).
+	// Flow identifies the flow this task was born under.
 	//
 	// It is recorded, unlike Advance.Flow, and the difference is the same one
-	// ADR-0026 draws for gates: which flow a task ran under is history, while the
-	// flow's content is configuration. Storing the identity keeps the flow
+	// drawn for gates: which flow a task ran under is history, while the flow's
+	// content is configuration. Storing the identity keeps the flow
 	// editable and still lets a replay notice it is reading a log against a
 	// contract that is not the one it was written under.
 	//
@@ -35,7 +35,7 @@ type TaskCreated struct {
 	Flow FlowFingerprint `json:"flow,omitempty"`
 
 	// Statement is what a person said the task is about, recorded with the task
-	// rather than read from a registry (ADR-0067).
+	// rather than read from a registry.
 	//
 	// It used to live in beads, and the argument for keeping it there was that a
 	// copy frozen into the log would go stale while still looking authoritative.
@@ -53,7 +53,7 @@ type TaskCreated struct {
 //
 // A separate action rather than a mutable field, for the reason the whole store
 // is append-only: the previous statement stays readable, and a replay can show
-// when the goal moved (INV-core-2). The last one wins, which is what a replay
+// when the goal moved (INV-2). The last one wins, which is what a replay
 // already does with everything else.
 type StatementRevised struct {
 	Statement Statement `json:"statement"`
@@ -65,7 +65,7 @@ type StatementRevised struct {
 // (`bd update --metadata`), which is why almost no task ever declared any. They
 // are a property of the task rather than of the flow — one task wants the whole
 // suite at a gate and another wants something narrower — so they belong in its
-// log (ADR-0067).
+// log.
 //
 // Declaring an empty list is meaningful and not the same as declaring nothing: it
 // is a person saying this gate has no mechanical answer, so it goes to judgement
@@ -80,16 +80,16 @@ type GateChecksDeclared struct {
 // check on the way in.
 //
 // The two fields are recorded on opposite rules, and the difference is the whole
-// point of ADR-0026:
+// point of recording the decision rather than the policy that produced it:
 //
 //   - Flow is configuration, so it is not recorded. Storing it would freeze a task
-//     to the flow it started under, and flows are meant to be editable (ADR-0017).
+//     to the flow it started under, and flows are meant to be editable.
 //   - GateDecision is history, so it is recorded. The profile that produced it is
 //     configuration too — and if replay re-derived the decision from it, editing a
 //     profile would rewrite how past tasks replay.
 //
 // Both come from outside the reducer, which reads a profile no more than it reads
-// a clock (ADR-0024).
+// a clock.
 type Advance struct {
 	Flow []Stage `json:"-"`
 
@@ -102,11 +102,11 @@ type Advance struct {
 // Complete closes the running stage.
 //
 // Delivered and Evidence come from outside: the lead runs the real tool and hands
-// the verdict in (ADR-0024). The reducer decides what it means, it does not go
+// the verdict in. The reducer decides what it means, it does not go
 // looking.
 //
 // Flow is carried for the same reason Advance carries it: a task may run a flow
-// other than the shipped one (ADR-0017), and the exit check has to compare the
+// other than the shipped one, and the exit check has to compare the
 // delivery against the contract that task is actually running. It defaults to the
 // shipped flow when empty, which is what a caller driving the shipped one has.
 type Complete struct {
@@ -118,14 +118,14 @@ type Complete struct {
 	// opens, or empty when the stage opens none.
 	//
 	// It is here for the same reason Advance carries one: a review gate opens on
-	// the way *out* of the stage that produced its artifact (ADR-0064), so this
+	// the way *out* of the stage that produced its artifact, so this
 	// is the action that reaches it, and the decision is history while the policy
-	// behind it is not (ADR-0026).
+	// behind it is not.
 	GateDecision GateWaited `json:"gate_decision,omitempty"`
 
 	// Commit is what the stage delivered, as a git object. It becomes the next
 	// stage's base, which is what makes the handoff the artifact itself rather
-	// than a description of it (INV-core-6, RFC-0002).
+	// than a description of it.
 	//
 	// Optional, and the omission is deliberate: a mechanical stage may produce no
 	// commit at all. An empty commit leaves the base where it was rather than
@@ -136,7 +136,7 @@ type Complete struct {
 }
 
 // Fail reports that the node broke. Retry until the budget is spent, then block
-// and notify (ADR-0011).
+// and notify.
 type Fail struct {
 	Reason string `json:"reason"`
 }
@@ -145,7 +145,7 @@ type Fail struct {
 type GateApprove struct{}
 
 // GateAdjust accepts a human-edited version. The replacement is what carries on,
-// and the edit is recorded (ADR-0022).
+// and the edit is recorded.
 type GateAdjust struct {
 	Payload string `json:"payload"`
 }
@@ -168,12 +168,12 @@ type ReviewFinding struct {
 	// Flow is carried for the same reason Advance and Complete carry it: the
 	// stage's own declaration says where a finding sends the work back and what
 	// stops being true when it does, and a task may run a flow other than the
-	// shipped one (ADR-0017, ADR-0049).
+	// shipped one.
 	Flow []Stage `json:"-"`
 
 	// GateDecision is what the profile decided about the loop-ceiling gate, for
 	// the same reason Advance carries one: the decision is history and the policy
-	// behind it is not (ADR-0026). It is consulted only when a ceiling is actually
+	// behind it is not. It is consulted only when a ceiling is actually
 	// reached, so an ordinary round leaves it empty.
 	GateDecision GateWaited `json:"gate_decision,omitempty"`
 
@@ -183,7 +183,7 @@ type ReviewFinding struct {
 	//
 	// It arrives in the action rather than being computed here, like every other
 	// observation about the world: the reducer decides what it means, it does not
-	// go looking (ADR-0024, RNF1).
+	// go looking.
 	//
 	// Empty means the round did not say — the first round, or a node that could
 	// not compute it. Both are treated as "no comparison available" rather than
@@ -196,7 +196,7 @@ type ReviewFinding struct {
 //
 // It exists because the lead used to reach a block by recording Fail until the
 // retry budget ran out, which left three failures in the log where there had been
-// one decision to escalate. The history is the audit trail (INV-core-2), and an
+// one decision to escalate. The history is the audit trail (INV-2), and an
 // audit that shows retries that never happened is a worse kind of wrong than a
 // second path into the same state.
 type Block struct {
@@ -206,12 +206,12 @@ type Block struct {
 // Unblock is a human clearing a block.
 type Unblock struct{}
 
-// Abandon ends a task by human decision, without it having finished (ADR-0046).
+// Abandon ends a task by human decision, without it having finished.
 //
 // It is the answer to a task that will not be completed and has no way out
 // otherwise: one whose flow changed under it and no longer replays, or one that
 // was simply superseded. Without it, such a task stays open forever — the store
-// has no UPDATE and no DELETE (INV-core-2), so nothing else could end it.
+// has no UPDATE and no DELETE (INV-2), so nothing else could end it.
 //
 // It is deliberately not a delete. The log keeps every event, and abandoning adds
 // one more fact rather than removing any: the audit should show that a person
@@ -229,12 +229,12 @@ type Abandon struct {
 // difference is the audit. A run where the lead judged three gates has to be
 // reviewable afterwards, and a setting that changed with no record turns "why
 // was nobody asked here?" into a question the log cannot answer. The change is
-// itself a decision, so it is history (ADR-0048).
+// itself a decision, so it is history.
 //
 // Changing it does not disturb a gate that is already open: that gate was
 // answered — or is waiting to be — under whatever held when it opened, and taking
 // a decision away from someone already looking at it would be worse than asking
-// them once more (RFC-0006).
+// them once more.
 type SetKnob struct {
 	Knob Knob `json:"knob"`
 
@@ -261,7 +261,7 @@ func (Abandon) isAction()            {}
 // Reduce applies an action to a task and returns the resulting state.
 //
 // It is pure: no clock, no filesystem, no process. Everything it needs to decide
-// arrives in the action (ADR-0024), which is what makes a transition reproducible
+// arrives in the action, which is what makes a transition reproducible
 // from the append-only log and testable without infrastructure.
 //
 // An error means the action was illegal for this state. A task that stops for a
@@ -271,8 +271,8 @@ func (Abandon) isAction()            {}
 func Reduce(state TaskState, action Action) (TaskState, error) {
 	// Every applied action advances the log position. It is incremented before
 	// the transition so anything recorded during it carries the sequence of the
-	// event that produced it, which is what the staleness rule compares against
-	// (ADR-0032). A refused action returns the state untouched, sequence
+	// event that produced it, which is what the staleness rule compares against.
+	// A refused action returns the state untouched, sequence
 	// included — it never entered the log.
 	state.Seq++
 
@@ -358,7 +358,7 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 	// Carried into the state so a replay can compare it against the flow it was
 	// handed. The reducer records it and never checks it: comparing is the store's
 	// job, because the reducer sees one action at a time and the mismatch is a
-	// property of the whole replay (ADR-0046).
+	// property of the whole replay.
 	state.Flow = a.Flow
 	state.Statement = a.Statement
 	return state, nil
@@ -421,7 +421,7 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 
 	// The contract's entry check: the FSM does not call an agent for a stage whose
 	// inputs are not there. Without it the agent would start blind, and the
-	// failure would look like the model being dumb (INV-core-3).
+	// failure would look like the model being dumb (INV-3).
 	if missing := MissingFor(stage, state.Context); len(missing) > 0 {
 		state.Status = StatusBlocked
 		state.Blocked = fmt.Sprintf("stage %q requires %v, which the context does not hold", next, missing)
@@ -434,10 +434,10 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	// Only the gates that ask about work not yet done open here. A `confirm`
 	// before a stage runs is a question about that stage; a `review-artifact`
 	// asks about something the stage has to produce first, so it opens when the
-	// stage closes (ADR-0064).
+	// stage closes.
 	//
 	// The decision arrived in the action, and a gate that resolves on its own
-	// still happened — it is just that nobody was asked (ADR-0026).
+	// still happened — it is just that nobody was asked.
 	if gate := gateFor(stage); asksAboutWorkAhead(gate) &&
 		gateWaits(a.GateDecision) {
 		state.Status = StatusAwaitingGate
@@ -463,7 +463,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// The exit check, and the one that catches the most: a stage that promised two
 	// artifacts and delivered one does not close. Both fields count — an audit
 	// report has no consumer downstream, so nothing would ever miss it
-	// (INV-core-11).
+	// (INV-3).
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	if missing := missingFromList(owed, a.Delivered); len(missing) > 0 {
 		state.Status = StatusBlocked
@@ -473,7 +473,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 
 	// The verdict decides, not the delivery. A stage that produced an artifact
 	// whose check failed does not close: the node ran the real tool and it said
-	// no, and closing anyway is the self-reported completion ADR-0028 rejects.
+	// no, and closing anyway is the self-reported completion Luna rejects.
 	if failed := notPassing(owed, a.Evidence); len(failed) > 0 {
 		state.Status = StatusBlocked
 		state.Blocked = fmt.Sprintf("stage %q delivered %v but its verification did not pass", state.Stage, failed)
@@ -486,7 +486,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// Passing is not enough — it has to be the check the contract asked for. An
 	// artifact declared with a command that comes back proven by existence alone
 	// has not been verified, it has been delivered, and closing on that is the
-	// laundering the scopes exist to prevent (INV-core-4).
+	// laundering the scopes exist to prevent (INV-1).
 	if weak := underProven(stage, owed, a.Evidence); len(weak) > 0 {
 		state.Status = StatusBlocked
 		state.Blocked = fmt.Sprintf("stage %q proved %v with a weaker check than its contract declared", state.Stage, weak)
@@ -495,8 +495,8 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	}
 
 	// Only flow products enter the context. Letting an audit report in would make
-	// it satisfy some stage's requires, which is what ADR-0021 separates the two
-	// fields to prevent.
+	// it satisfy some stage's requires, which is what separating `Produces` from
+	// `ProducesForHuman` prevents.
 	for _, produced := range stage.Produces {
 		state.Context.Artifacts[produced] = true
 	}
@@ -519,7 +519,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	}
 
 	// The review gate opens here rather than on entry to the next stage, because
-	// this is the first moment its artifact exists (ADR-0064). The evidence was
+	// this is the first moment its artifact exists. The evidence was
 	// absorbed above, so the payload is a read of something real instead of the
 	// blank line `luna gate show` used to print.
 	//
@@ -559,7 +559,7 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 	// Where the task resumes depends on which side of the stage the gate was on.
 	// A gate that opened on the way *in* leaves a stage to run; one that opened
 	// on the way *out* leaves a stage already closed, and saying `running` would
-	// ask the node to run it a second time (ADR-0064).
+	// ask the node to run it a second time.
 	state.Status = StatusRunning
 	if asksAboutWorkDone(gate) {
 		state.Status = StatusStageDone
@@ -579,7 +579,7 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 		state.Evidence[gate.Artifact] = Approved(a.Payload, state.Seq)
 	case GateReject:
 		// The artifact leaves the context. A review gate now opens on the way out
-		// of the stage that produced it (ADR-0064), so by the time a person can
+		// of the stage that produced it, so by the time a person can
 		// reject it the exit check has already let it in — where the old timing
 		// asked before it existed and there was nothing to take back.
 		//
@@ -590,7 +590,7 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 		delete(state.Evidence, gate.Artifact)
 
 		// Back to the stage that produced it — which is this gate's own stage now,
-		// and is the sentence ADR-0022 wrote. It *runs again*, so the status is
+		// and is the sentence a rejection passes. It *runs again*, so the status is
 		// `running` even though the gate opened on the way out: `stage_done` is
 		// what the other two answers resume to, and it would carry a rejected
 		// stage forward as though it had closed.
@@ -608,8 +608,9 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 		flow = DefaultFlow()
 	}
 
-	// Only a review stage may send work back. This is INV-core-7 inside the
-	// engine: an implementer returning its own work would be reviewing itself, and
+	// Only a review stage may send work back. This is whoever-writes-does-not-review
+	// inside the engine: an implementer returning its own work would be reviewing
+	// itself, and
 	// the refusal has to come from the stage's own declaration rather than a list
 	// of names the engine keeps, or a renamed stage loses the protection silently.
 	stage := stageIn(flow, state.Stage)
@@ -638,26 +639,25 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	state.Loop = countProgress(state.Loop, a.Progress)
 
 	// Going back invalidates what the work had proven: the green attested to code
-	// that no longer exists (ADR-0020). Which artifacts those are is the stage's
+	// that no longer exists. Which artifacts those are is the stage's
 	// to declare — a flow whose green is called something else keeps the behaviour.
 	//
 	// Only the flow's own products leave the context. An artifact a stage produces
 	// for a human to read was never an input, so removing it would be removing
-	// something that is not there (INV-core-11).
+	// something that is not there (INV-3).
 	for _, artifact := range stage.Review.Invalidates {
 		delete(state.Context.Artifacts, artifact)
 	}
 
 	// The evidence for it does not disappear, it goes stale. Dropping the record
 	// would leave an audit that cannot tell "never checked" from "checked, then
-	// invalidated" — and the second is the interesting one (ADR-0032).
+	// invalidated" — and the second is the interesting one.
 	stale(state.Evidence, stage.Review.Invalidates, state.Seq)
 	state.Stage = stage.Review.SendsBackTo
 	state.Status = StatusRunning
 
 	// A spent ceiling opens a gate rather than blocking. Not converging is a
-	// decision to make with the history in view, not an anomaly of the node
-	// (ADR-0023).
+	// decision to make with the history in view, not an anomaly of the node.
 	if reason := ceilingHit(state.Loop, limits); reason != "" {
 		if gateWaits(a.GateDecision) {
 			state.Status = StatusAwaitingGate
@@ -666,20 +666,20 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 		}
 
 		// Nobody is waiting — and a ceiling that nobody answers must not simply
-		// resolve. That is the infinite loop INV-core-8 names in as many words:
+		// resolve. That is the infinite loop INV-5 names in as many words:
 		// *"no infinite retry, which is the loop that does not converge and burns
 		// tokens"*.
 		//
-		// So the run blocks instead, which is the ending that notifies. ADR-0023
-		// preferred a gate to a block because a loop that stopped converging
-		// leaves a decision worth taking with the history in view — that
-		// reasoning holds wherever there is somebody to take it, and where there
-		// is not, the choice is between blocking and looping forever (ADR-0059).
+		// So the run blocks instead, which is the ending that notifies. The
+		// original ceiling design preferred a gate to a block because a loop that
+		// stopped converging leaves a decision worth taking with the history in
+		// view — that reasoning holds wherever there is somebody to take it, and
+		// where there is not, the choice is between blocking and looping forever.
 		//
 		// Which of the two this is, is the lead's call now rather than a
 		// profile's: it reads the history and decides whether a spent ceiling is
-		// a block or a question, and the answer arrives here in the action
-		// (ADR-0063). With no lead, the decision is absent and this is what
+		// a block or a question, and the answer arrives here in the action.
+		// With no lead, the decision is absent and this is what
 		// absent means.
 		//
 		// This was unreachable until a review could send work back: the ceilings
@@ -698,7 +698,7 @@ func block(state TaskState, a Block) (TaskState, error) {
 		return state, fmt.Errorf("%w: the task is already %s", ErrIllegalTransition, state.Status)
 	}
 	if a.Reason == "" {
-		// A block that does not say why is the silent failure INV-core-8 forbids,
+		// A block that does not say why is the silent failure INV-5 forbids,
 		// so the reason is required rather than defaulted.
 		return state, fmt.Errorf("%w: a block must carry a reason", ErrIllegalTransition)
 	}
@@ -709,7 +709,7 @@ func block(state TaskState, a Block) (TaskState, error) {
 	return state, nil
 }
 
-// abandon ends a task a person decided not to finish (ADR-0046).
+// abandon ends a task a person decided not to finish.
 //
 // It accepts any state that is not already terminal, which is wider than the
 // other human actions on purpose: the cases it exists for are the ones nobody
@@ -724,7 +724,7 @@ func block(state TaskState, a Block) (TaskState, error) {
 // The pending gate is deliberately untouched. A gate that opened needing a person
 // keeps needing one: it was already put in front of somebody, and having a
 // setting move it out from under them is worse than the cost of being asked once
-// more. Only gates that open after this see the new value (RFC-0006).
+// more. Only gates that open after this see the new value.
 func setKnob(state TaskState, a SetKnob) (TaskState, error) {
 	if state.IsTerminal() {
 		return state, fmt.Errorf("%w: the task already ended as %q", ErrIllegalTransition, state.Status)
@@ -752,7 +752,7 @@ func abandon(state TaskState, a Abandon) (TaskState, error) {
 	state.Blocked = a.Reason
 	// The gate goes with it. A gate left pending on an ended task would keep it in
 	// `luna gates`, waiting for a decision that no longer means anything
-	// (INV-core-12).
+	// (INV-5).
 	state.Gate = nil
 	return state, nil
 }
@@ -774,7 +774,8 @@ func unblock(state TaskState) (TaskState, error) {
 //
 // A round whose signal equals the last one produced the same thing twice: the
 // reviewer is sending back work that is not changing, which is the loop that
-// burns tokens without converging and which nothing detected until ADR-0061.
+// burns tokens without converging and which nothing detected until the
+// no-progress signal was wired to the delivered commit.
 //
 // A round that says nothing leaves the streak alone — it neither extends nor
 // clears it. Silence is "no comparison available", and both alternatives are
@@ -813,7 +814,7 @@ func ceilingHit(loop LoopCounters, limits LoopLimits) string {
 //
 // The mirror of GateAhead, for the kind that asks about work already done: a
 // `review-artifact` gate opens on the way out of the stage that produced its
-// artifact (ADR-0064), so the caller that records the closing is the one that has
+// artifact, so the caller that records the closing is the one that has
 // to decide it.
 //
 // It answers for the stage that is running rather than the next one, and it does
@@ -836,7 +837,7 @@ func GateClosing(state TaskState, flow []Stage) *PendingGate {
 //
 // It exists so the caller can ask the profile about that gate *before* recording
 // the action, which is what lets the decision be written into the log instead of
-// recomputed at replay (ADR-0026). It walks the same path advance does and
+// recomputed at replay. It walks the same path advance does and
 // changes nothing, so asking is free of consequences.
 func GateAhead(state TaskState, flow []Stage) *PendingGate {
 	if err := canAdvance(state); err != nil {
@@ -863,12 +864,12 @@ func GateAhead(state TaskState, flow []Stage) *PendingGate {
 // An unrecorded decision means the gate waits, which is the same choice `KnobAsk`
 // makes and for the same reason: no missing value may quietly turn a supervised
 // run into an unattended one. The alternative was to re-derive the decision from
-// the task's profile, which is what ADR-0026 rules out — a policy consulted at
+// the task's profile, which recording the decision rules out — a policy consulted at
 // replay time means editing a profile rewrites how past tasks read.
 //
 // The loop ceiling reads the same answer, and what it does with a `false` is what
 // differs: every other gate carries on, while a ceiling nobody is waiting on
-// blocks rather than loops (ADR-0059). That is the caller's decision, not this
+// blocks rather than loops. That is the caller's decision, not this
 // one's.
 func gateWaits(decision GateWaited) bool {
 	waited, recorded := decision.Waits()
@@ -894,7 +895,7 @@ func gateFor(stage Stage) *PendingGate {
 // A `confirm` asks about work not yet done, so it opens before the stage runs. A
 // `review-artifact` asks about something the stage has to produce first, so it
 // opens when the stage closes — opening it on entry was asking a person to review
-// a file that did not exist yet (ADR-0064).
+// a file that did not exist yet.
 //
 // A nil gate is not a gate, which is the ordinary case for most stages.
 func asksAboutWorkAhead(gate *PendingGate) bool {
@@ -909,15 +910,15 @@ func asksAboutWorkDone(gate *PendingGate) bool {
 // withPayload fills a review gate with the artifact the human is being asked to
 // read, when there is one to fill it with.
 //
-// INV-core-12 requires the gate's artifact to be retrievable by command, and
+// INV-5 requires the gate's artifact to be retrievable by command, and
 // until this existed `luna gate show` printed the artifact's name and a blank
 // line — the payload was declared, documented, and written by nothing.
 //
 // It fills from the evidence because that is where the delivered content lives.
 // A gate whose artifact has not been produced yet keeps an empty payload rather
 // than inventing one: the gate for `spec` opens on entry, before `spec` has
-// written the contract, which is a timing bug of its own and is recorded in
-// RFC-0001 rather than papered over here.
+// written the contract, which is a timing bug of its own and is recorded
+// elsewhere rather than papered over here.
 func withPayload(gate *PendingGate, evidence map[Artifact]Evidence) *PendingGate {
 	if gate.Kind != GateReviewArtifact || gate.Payload != "" {
 		return gate
@@ -942,7 +943,7 @@ func stageIn(flow []Stage, id StageID) Stage {
 //
 // Missing evidence counts as not passing: a delivery the node said nothing about
 // is not proof, and treating silence as success is exactly how a status becomes a
-// verdict (ADR-0028).
+// verdict.
 func notPassing(owed []Artifact, evidence map[Artifact]Evidence) []Artifact {
 	var failed []Artifact
 	for _, artifact := range owed {
@@ -960,7 +961,7 @@ func notPassing(owed []Artifact, evidence map[Artifact]Evidence) []Artifact {
 // decoration: evidence that only proves the file is on disk would close a stage
 // whose contract declared a command, and the log would carry `existence` under a
 // stage that promised the suite. Scope.Satisfies is one-directional precisely so
-// that gap cannot be closed by reading the record generously (ADR-0032).
+// that gap cannot be closed by reading the record generously.
 //
 // It runs after notPassing, so everything here already passed — the question is
 // no longer whether the check succeeded but whether it was the right check.
@@ -985,7 +986,7 @@ func absorb(into, from map[Artifact]Evidence) {
 // stale marks evidence that stopped being true because the work moved under it.
 //
 // One comparison of two sequence numbers is the whole mechanism that stops "I
-// tested it" from surviving a later change (ADR-0032). It is a pure function of
+// tested it" from surviving a later change. It is a pure function of
 // the log, which is why it belongs here and not in the node layer.
 //
 // The comparison is `>` rather than `>=`: evidence recorded at the very event

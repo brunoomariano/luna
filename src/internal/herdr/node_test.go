@@ -52,17 +52,18 @@ type fakeHerdr struct {
 	started  string
 
 	// startArgs is what was passed through to the agent, which is how a denied
-	// capability reaches it (ADR-0042).
+	// capability reaches it.
 	startArgs []string
 
 	// opened and closed record the worktree lifecycle, which is what the
-	// per-role topology is asserted on (ADR-0055).
+	// per-role topology is asserted on.
 	opened   []WorktreeSpec
 	closed   []string
 	closeErr error
 
 	// openErr is how a test makes herdr go away mid-stage, which is the failure
-	// ADR-0033 turns into a block rather than a failed stage.
+	// classified as infrastructure and turned into a block rather than a failed
+	// stage.
 	openErr error
 }
 
@@ -163,8 +164,8 @@ func stageWithTests() fsm.Stage {
 	}
 }
 
-// TestAPassingCommandBecomesPassingEvidence is the happy path of ADR-0028: the
-// agent settled, the real tool ran, and the verdict is what closes the stage.
+// TestAPassingCommandBecomesPassingEvidence is the happy path of verification:
+// the agent settled, the real tool ran, and the verdict is what closes the stage.
 func TestAPassingCommandBecomesPassingEvidence(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
@@ -192,7 +193,7 @@ func TestAPassingCommandBecomesPassingEvidence(t *testing.T) {
 // TestIdleDoesNotCloseAStageOnItsOwn is the finding the whole study turns on.
 //
 // herdr says the agent stopped moving and the command says the tests failed. The
-// command wins: `Idle` means "prompt visible", never "it worked" (ADR-0028).
+// command wins: `Idle` means "prompt visible", never "it worked".
 func TestIdleDoesNotCloseAStageOnItsOwn(t *testing.T) {
 	herdr := &fakeHerdr{
 		settlesAt: StatusIdle,
@@ -260,7 +261,7 @@ func TestUnknownStillVerifies(t *testing.T) {
 	}
 }
 
-// TestABlockedAgentIsReportedForEscalation covers ADR-0029.
+// TestABlockedAgentIsReportedForEscalation covers escalation.
 //
 // The agent is asking a person for something the flow did not foresee. That is
 // not a verification outcome, so it comes back as an error for the lead to
@@ -282,8 +283,8 @@ func TestABlockedAgentIsReportedForEscalation(t *testing.T) {
 	}
 }
 
-// TestAnArtifactWithNoVerifierClosesOnExistence covers the honest floor of
-// ADR-0032: prose has no exit code, and saying so beats inventing a check.
+// TestAnArtifactWithNoVerifierClosesOnExistence covers the honest floor:
+// prose has no exit code, and saying so beats inventing a check.
 func TestAnArtifactWithNoVerifierClosesOnExistence(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
@@ -327,7 +328,7 @@ func TestAnUnrunnableCheckIsNotAFailedCheck(t *testing.T) {
 	}
 }
 
-// TestTheHumanReportIsVerifiedToo covers INV-core-11 at this layer: an audit
+// TestTheHumanReportIsVerifiedToo covers INV-3 at this layer: an audit
 // report has no consumer downstream, so nothing would ever miss it if the node
 // quietly skipped it.
 func TestTheHumanReportIsVerifiedToo(t *testing.T) {
@@ -352,8 +353,8 @@ func TestTheHumanReportIsVerifiedToo(t *testing.T) {
 	}
 }
 
-// TestTheAgentKindIsWhatWasConfigured covers ADR-0031: the kind comes from
-// herdr's allowlist, and the node passes through what it was given.
+// TestTheAgentKindIsWhatWasConfigured covers where the kind comes from: herdr's
+// allowlist, with the node passing through what it was given.
 func TestTheAgentKindIsWhatWasConfigured(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{Runner: herdr, Roles: fixedRole("codex")}
@@ -383,7 +384,8 @@ func TestSettledNamesTheStatusesWorthCheckingOn(t *testing.T) {
 	}
 }
 
-// TestNodeSatisfiesTheLeadBoundary is the compile-time check that ADR-0030 holds.
+// TestNodeSatisfiesTheLeadBoundary is the compile-time check that the lead
+// boundary holds.
 //
 // If this stops compiling, herdr has stopped being replaceable by another
 // implementation, and that is a design regression rather than a build error.
@@ -486,11 +488,11 @@ func TestTheDefaultPromptNamesTheTaskAndStage(t *testing.T) {
 	}
 }
 
-// TestAStallIsTranslatedIntoLunasVocabulary covers ADR-0034's boundary rule.
+// TestAStallIsTranslatedIntoLunasVocabulary covers the boundary rule.
 //
 // herdr answers `agent_prompt_stalled`. Nothing above this package should have to
 // know that code, so it comes out as lead.ErrStalled — and the lead turns it into
-// a block without asking a model (ADR-0030).
+// a block without asking a model.
 func TestAStallIsTranslatedIntoLunasVocabulary(t *testing.T) {
 	runner := &failingRunner{
 		failAt: "prompt",
@@ -584,8 +586,8 @@ func TestTheAgentNameFitsHerdrsRules(t *testing.T) {
 		t.Error("two tasks must not share an agent name")
 	}
 
-	// Nor may two stages of the same task. An agent is born for its stage now
-	// (ADR-0039), and herdr refusing a repeated name is what makes a collision
+	// Nor may two stages of the same task. An agent is born for its stage now,
+	// and herdr refusing a repeated name is what makes a collision
 	// loud instead of silently reusing the previous stage's agent.
 	if agentName("LUNA-1", "build") == agentName("LUNA-1", "code-review") {
 		t.Error("two stages must not share an agent name")
@@ -614,7 +616,7 @@ func TestTheAgentNameFitsHerdrsRules(t *testing.T) {
 	}
 }
 
-// TestAMechanicalStageStartsNoAgent is the point of ADR-0040.
+// TestAMechanicalStageStartsNoAgent is the point of a mechanical stage.
 //
 // `setup` is a worktree and `commit` is git. Starting a model to run those pays
 // tokens for something deterministic and lets it fail creatively at something
@@ -645,7 +647,7 @@ func TestAMechanicalStageStartsNoAgent(t *testing.T) {
 // TestAMechanicalStageStillRunsItsVerifier covers the half that is easy to lose.
 //
 // `verify` running the pipeline is mechanical and is exactly where the evidence
-// has to come from a real exit code (INV-core-4).
+// has to come from a real exit code.
 func TestAMechanicalStageStillRunsItsVerifier(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
@@ -725,7 +727,7 @@ func TestARoleThatResolvesToNothingStopsTheStage(t *testing.T) {
 //
 // The agent is new: it did not run the previous stage. What crosses is the
 // contract and pointers, generated by Luna — never a prose summary of what
-// happened, which would degrade at every hop (INV-core-6).
+// happened, which would degrade at every hop.
 func TestThePromptCarriesTheHandoff(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{
@@ -775,7 +777,7 @@ func TestThePromptCarriesTheHandoff(t *testing.T) {
 // agent from over-trusting its input.
 //
 // Reading an artifact proven by a full suite and one that merely exists are
-// different situations, and the scope is what says which (ADR-0032).
+// different situations, and the scope is what says which.
 func TestThePromptNamesTheScopeOfWhatItInherits(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
@@ -819,7 +821,7 @@ func TestTheTaskBranchAgreesWithWhatLandsOnIt(t *testing.T) {
 // bench asked for.
 //
 // The verification used to be handed the stage's worktree, and a stage that
-// stalled had that tree removed with it (ADR-0055). Every retry then failed on
+// stalled had that tree removed with it. Every retry then failed on
 // `chdir ...: no such file` rather than on the work — measured on a delivery
 // that was itself green.
 //
@@ -845,10 +847,10 @@ func TestVerificationIsPointedAtTheDeliveredCommit(t *testing.T) {
 	}
 }
 
-// TestHerdrGoingAwayIsInfrastructureNotAFailedStage is the classification
-// ADR-0033 depends on: a stage that could not run because herdr vanished must
-// reach the lead as infrastructure, so it retries and blocks with a reason a
-// person can act on — rather than being recorded as work that failed.
+// TestHerdrGoingAwayIsInfrastructureNotAFailedStage is the classification the
+// retry-and-block path depends on: a stage that could not run because herdr
+// vanished must reach the lead as infrastructure, so it retries and blocks with a
+// reason a person can act on — rather than being recorded as work that failed.
 func TestHerdrGoingAwayIsInfrastructureNotAFailedStage(t *testing.T) {
 	fake := &fakeHerdr{settlesAt: StatusIdle, openErr: fmt.Errorf("dialing: %w", ErrGone)}
 	node := &Node{Runner: fake, Prove: fake.proving(), Roles: fixedRole("claude")}

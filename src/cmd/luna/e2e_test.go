@@ -15,7 +15,7 @@ import (
 // Every other test calls cli.Run in-process, which is the right default: it is
 // fast and it isolates. What it cannot cover is the wiring in main — where the
 // store lives, how the config is read, what an exit code means — and the flow
-// fingerprint of ADR-0046 lives exactly there, because a task's flow is recorded
+// flow fingerprint lives exactly there, because a task's flow is recorded
 // at creation by the command and checked at replay by the store.
 //
 // This drives the real binary against a real SQLite file, so a mistake in that
@@ -46,7 +46,7 @@ func luna(t *testing.T) func(args ...string) (string, error) {
 	}
 }
 
-// TestE2EATaskRecordsTheFlowItWasBornUnder is ADR-0046 through the real binary.
+// TestE2EATaskRecordsTheFlowItWasBornUnder is the flow fingerprint through the real binary.
 //
 // The fingerprint has to survive the whole round trip — written by `task new`,
 // serialised into SQLite, read back by replay — and the only way to know the
@@ -82,7 +82,7 @@ func TestE2EATaskRecordsTheFlowItWasBornUnder(t *testing.T) {
 }
 
 // TestE2EAbandonEndsATaskAndClearsTheWay covers the full operational loop of
-// ADR-0046: a task that will not be finished stops counting as open.
+// A task that will not be finished stops counting as open.
 func TestE2EAbandonEndsATaskAndClearsTheWay(t *testing.T) {
 	run := luna(t)
 
@@ -112,7 +112,7 @@ func TestE2EAbandonEndsATaskAndClearsTheWay(t *testing.T) {
 	}
 
 	// The log keeps it, with the reason: abandoning adds a fact, it does not
-	// remove any (INV-core-2).
+	// remove any.
 	shown, err := run("task", "show", "LUNA-1")
 	if err != nil {
 		t.Fatalf("showing an abandoned task: %v\n%s", err, shown)
@@ -162,7 +162,7 @@ func field(out, name string) string {
 	return strings.TrimRight(strings.Fields(rest)[0], ")\n")
 }
 
-// TestE2ETwoProcessesCannotCorruptOneLog is ADR-0047 through two real processes.
+// TestE2ETwoProcessesCannotCorruptOneLog is the position-declaring append through two real processes.
 //
 // The in-package test uses two store handles, which is close but not the thing:
 // this is what actually happens when someone approves a gate in one terminal

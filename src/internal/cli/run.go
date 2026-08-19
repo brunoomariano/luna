@@ -16,7 +16,7 @@ import (
 // runTask drives a task until it needs a person or reaches the end.
 //
 // This is where the two systems meet: herdr hosts the agent, Luna decides and
-// verifies (ADR-0027). Everything it assembles is an implementation of an
+// verifies. Everything it assembles is an implementation of an
 // interface the lead already declared, so none of the wiring reaches the engine.
 func runTaskCommand(env Env, args []string) error {
 	if len(args) == 0 {
@@ -40,7 +40,7 @@ func runTaskCommand(env Env, args []string) error {
 	// The budget comes from the profile this task was created under, read from
 	// its own log. Taking it from a fixed profile would give a nightly run the
 	// supervised timeout — backwards, since the run with nobody watching is the
-	// one whose watchdog is its only net (ADR-0034).
+	// one whose watchdog is its only net.
 	state, err := env.Store.Replay(id, fsm.DefaultFlow())
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func runTaskCommand(env Env, args []string) error {
 	state, err = conductor.Run(context.Background(), id)
 	if err != nil {
 		// Losing herdr is not a task failure, and the message says which it was
-		// so nobody goes looking for a bug in the flow (ADR-0033).
+		// so nobody goes looking for a bug in the flow.
 		if errors.Is(err, herdr.ErrGone) {
 			return fmt.Errorf("herdr went away while %s was running: %w", id, err)
 		}
@@ -68,7 +68,7 @@ func runTaskCommand(env Env, args []string) error {
 // runOptions is how this run is driven.
 type runOptions struct {
 	// Agent overrides every role's agent. Empty means each role decides, which is
-	// the ordinary case (ADR-0040).
+	// the ordinary case.
 	Agent string
 
 	// Socket overrides where herdr listens; empty resolves the usual way.
@@ -113,24 +113,24 @@ func parseRunOptions(args []string) (runOptions, error) {
 //
 // The node is chosen here and nowhere else: swapping herdr for something else is
 // one more branch in this function, not a change to the lead or the engine
-// (ADR-0030).
+// .
 func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(), error) {
 	cfg := env.profiles()
 	// The judge is what makes the retry budget real: without one the lead blocks on
-	// the first failure and ADR-0011's budget is never spent (ADR-0051). This one
+	// the first failure and the retry budget is never spent. This one
 	// carries no model — it reads the budget the task already has.
 	conductor := &lead.Lead{
 		Store: env.Store, Judge: lead.BudgetJudge{},
 		// The mechanical half of a gate: what the task declared, run over what it
-		// delivered (RFC-0006).
+		// delivered.
 		CheckGate: checkGateWith(env.Store, opts.Repo),
 		// The judgement half, when the knob reaches a gate and a model is wired
 		// in. Nil is the ordinary case for `luna run` — and then a gate the knob
 		// reached still goes to a person, because authority to judge is not a
-		// judgement (ADR-0043).
+		// judgement.
 		Ask: env.Lead,
 		// `done` means ready to integrate, and this is what makes it true: the
-		// task's own branch is pointed at what it delivered (ADR-0062).
+		// task's own branch is pointed at what it delivered.
 		Land: func(ctx context.Context, taskID, commit string) error {
 			return node.Land(ctx, opts.Repo, taskID, commit)
 		},
@@ -151,16 +151,16 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 
 	conductor.Node = &herdr.Node{
 		Runner: herdr.NewRunner(client, opts.Repo, cfg.Turn()),
-		// The stage's role decides which agent runs it (ADR-0040). --agent
+		// The stage's role decides which agent runs it. --agent
 		// overrides every role, which is what makes a run reproducible against one
 		// harness while the roles are still being tuned.
 		Roles: rolesFor(cfg, opts.Agent),
 		Prove: func(commit string) herdr.Prover {
 			// Cut from the repository at the delivered commit, executed by Luna
-			// rather than through a pane (ADR-0035).
+			// rather than through a pane.
 			//
 			// The repository and not the stage's worktree: the tree is removed when
-			// the stage ends (ADR-0055), so a retry verified against a directory
+			// the stage ends, so a retry verified against a directory
 			// nobody had. This is the same `Dir: repo` the gate checks below already
 			// use — the two halves now agree about what outlives a stage.
 			return node.Shell{Dir: opts.Repo, Commit: commit}
@@ -176,8 +176,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 
 		// The socket a contained agent hands artifacts over through. It is opened
 		// inside the stage's worktree, which is the only place the agent can reach
-		// — measured against ai-jail 1.17.0, every other position answers ENOENT
-		// (RFC-0008).
+		// — measured against ai-jail 1.17.0, every other position answers ENOENT.
 		Artifacts: func(taskID, worktree, stage string, seq int) (io.Closer, string, error) {
 			server, err := node.ServeArtifacts(worktree, stage,
 				NewTaskArtifacts(env.Store, taskID, seq))
@@ -189,7 +188,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 
 		// What answers "was it handed over?" for an artifact that is not in the
 		// commit. The store is the witness, and the hash it returns is what the
-		// evidence carries (INV-core-11).
+		// evidence carries.
 		Stored: func(id, stage, artifact string) (string, error) {
 			blob, err := env.Store.LatestBlob(id, stage, artifact)
 			if err != nil {
@@ -204,13 +203,13 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 // checkGateWith runs the commands a task declared for one gate, over what it
 // delivered.
 //
-// This is the seam between the two halves of RFC-0006: the task's log says which
+// This is the seam between the two halves of the gate contract: the task's log says which
 // commands answer a gate, the node layer runs them in a checkout of the delivered
 // commit, and the lead gets a verdict rather than a shell.
 //
-// The declaration used to be read from the registry's metadata (ADR-0054); it is
+// The declaration used to be read from the registry's metadata; it is
 // replayed from the task's own log now, which is what let the registry go
-// (ADR-0067). Nothing else about the seam changed — the outcome the lead sees is
+// . Nothing else about the seam changed — the outcome the lead sees is
 // the same three-way answer it always was.
 func checkGateWith(s *store.Store, repo string) func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 	return func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome {
@@ -265,7 +264,7 @@ func rolesFor(cfg Config, override string) func(fsm.RoleName) (fsm.Role, bool) {
 // would be honest but would stop every stage whose contract declares a command,
 // which is exactly the machinery a dry run exists to exercise. Nothing outside
 // `--dry` may construct evidence this way — a node that cannot prove something
-// says so and lets the stage block (ADR-0028).
+// says so and lets the stage block.
 type dryNode struct{}
 
 func (dryNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
@@ -307,7 +306,7 @@ func reportRun(env Env, id string, state fsm.TaskState) error {
 	return nil
 }
 
-// notifyBlocked tells a person a task stopped, which is what INV-core-8 means by
+// notifyBlocked tells a person a task stopped, which is what INV-5 means by
 // a block being *notified*.
 //
 // Printing to stdout is not notifying: the run that most needs it is the
@@ -359,7 +358,7 @@ func unblockCommand(env Env, args []string) error {
 	// Conditional on the log not having moved since the status was read: whoever
 	// clears a block is rarely the process that set it, so the check that the task
 	// is still blocked has to hold at the moment of writing, not only at the moment
-	// of asking (ADR-0047).
+	// of asking.
 	if err := env.Store.AppendActionAt(id, state.Seq, fsm.Unblock{}); err != nil {
 		return err
 	}

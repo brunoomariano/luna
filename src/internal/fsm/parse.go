@@ -9,7 +9,7 @@ import (
 // know.
 //
 // The refusal matters more than it looks. A scope is what separates a green
-// suite from a file that exists (ADR-0032), so a typo that fell through to some
+// suite from a file that exists, so a typo that fell through to some
 // default would be the laundering the scopes were introduced to prevent — and it
 // would do it silently, in a file nobody re-reads.
 func ParseScope(name string) (Scope, error) {
@@ -34,11 +34,11 @@ func ParseGateKind(name string) (GateKind, error) {
 //
 // Deliberately a closed set rather than an expression language. A condition
 // decides which stages a task should have walked through, which makes it history
-// (ADR-0048) — and an arbitrary predicate in a file is a flow whose past cannot
+// — and an arbitrary predicate in a file is a flow whose past cannot
 // be reconstructed, because the predicate that produced it may no longer exist.
 //
 // A flow that needs a condition this build has never heard of needs a build that
-// has, which is the same trade the harness table makes (ADR-0042).
+// has, which is the same trade the harness table makes.
 func ShippedConditions() []Condition {
 	return []Condition{IsBug, IsFeatureOrBug, NotChore, NotDocs, TouchedStructure}
 }

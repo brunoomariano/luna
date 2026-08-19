@@ -4,7 +4,7 @@
 // because it is neither: it is a harness being asked a question. Keeping it here
 // means the CLI depends on an interface it declares rather than on a model, and
 // that swapping the interpreter is a different package rather than an edit
-// (ADR-0044).
+// .
 package interpret
 
 import (
@@ -28,7 +28,7 @@ const Timeout = 2 * time.Minute
 
 // Harness interprets by running one of the official agents non-interactively.
 //
-// Luna hosts no model (ADR-0044). It spawns `claude --print`, `pi --print`,
+// Luna hosts no model. It spawns `claude --print`, `pi --print`,
 // `codex exec` or `opencode --print` with what the person said and what Luna
 // reports, and reads back the command to run. That brings no API key, no HTTP
 // client and no SDK into a project whose external dependency count is one.
@@ -57,7 +57,7 @@ var nonInteractive = map[string][]string{
 }
 
 // DefaultInterpreter is the harness asked when none is configured, from the house
-// preference order (ADR-0042).
+// preference order.
 const DefaultInterpreter = "claude"
 
 // Interpret turns what a person said into the command Luna should run.
@@ -105,9 +105,9 @@ func (h Harness) agent() string {
 
 // Ask puts one question to the harness and returns what it said.
 //
-// It is what the lead judges a gate with (RFC-0006), and it is the same boundary
+// It is what the lead judges a gate with, and it is the same boundary
 // the interpreter uses: Luna hosts no model of its own, so both go out to an
-// official harness run non-interactively (ADR-0043, ADR-0044).
+// official harness run non-interactively.
 //
 // The caller's context bounds it as well as the harness's own deadline, because
 // a person who cancels a run should not wait out a model's timeout.
@@ -179,7 +179,7 @@ func silence(agent string, answer string) error {
 //
 // The instruction is explicit about what the model may not decide, because the
 // boundary is not enforced here — it is enforced by the command being one a
-// person could have typed (ADR-0038). This is the part that shapes the answer;
+// person could have typed. This is the part that shapes the answer;
 // the CLI is what bounds the consequences.
 func interpretPrompt(said, state string) string {
 	return fmt.Sprintf(`You translate a person's request into one Luna command.

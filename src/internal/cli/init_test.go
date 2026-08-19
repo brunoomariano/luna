@@ -18,7 +18,7 @@ func initHarness(t *testing.T) *harness {
 	return h
 }
 
-// TestInitWritesTheWholeStock is what turns ADR-0017's replaceable flow into
+// TestInitWritesTheWholeStock is what turns the replaceable flow into
 // something a person can replace.
 func TestInitWritesTheWholeStock(t *testing.T) {
 	h := initHarness(t)
@@ -263,7 +263,7 @@ func TestAProfileFileThatCannotBeReadIsReported(t *testing.T) {
 // kept running a stage Luna had removed — silently, because the leftover file is
 // a valid stage and the loader reads whatever is in the directory.
 //
-// Measured after ADR-0062 removed two stages: `luna flow check` still reported 14.
+// Measured after two stages were removed: `luna flow check` still reported 14.
 func TestForceReplacesRatherThanOverwrites(t *testing.T) {
 	h := newHarness(t)
 	h.env.Stock = t.TempDir()

@@ -23,7 +23,7 @@ func runFlow(env Env, args []string) error {
 	}
 }
 
-// flowCheck reports whether the flow can be changed safely (ADR-0046).
+// flowCheck reports whether the flow can be changed safely.
 //
 // Changing the flow while a task is open rewrites how that task's history reads,
 // so the rule is to stop first and confirm nothing is in flight. This is the
@@ -40,7 +40,7 @@ func runFlow(env Env, args []string) error {
 // tests — the flow was audited in the test suite and never by the command whose
 // name says it checks the flow. Wiring them here is what makes the contract's
 // paper check something a project can run against its own flow, rather than
-// something Luna checks about Luna (ADR-0058).
+// something Luna checks about Luna.
 func reportFlowGaps(env Env, flow []fsm.Stage) {
 	contract := fsm.AuditContract(flow)
 	roles := fsm.AuditRoles(flow)
@@ -122,7 +122,7 @@ func flowCheck(env Env, args []string) error {
 	// the second: a flow can have every task finished and still be broken —
 	// a stage requiring an artifact nothing produces, a stage that needs
 	// judgement and names no role, a stage id long enough to truncate a task's
-	// agent name (ADR-0058).
+	// agent name.
 	//
 	// It reports rather than refuses, like the rest of this command. Whoever
 	// typed it is the one who knows whether a gap matters.

@@ -16,7 +16,7 @@ import (
 
 // withSandboxOnPath puts a stub `ai-jail` where `jailed` will find it.
 //
-// Luna refuses to start an agent without a sandbox (ADR-0069), so every test that
+// Luna refuses to start an agent without a sandbox, so every test that
 // starts one needs the binary to exist. Taking it from the machine's own PATH is
 // what these tests did implicitly, and it made them pass on a developer's machine
 // — where mise installs ai-jail — and fail on CI, where nothing does. Neither
@@ -256,7 +256,7 @@ func TestOpenWorktreeSendsTheRepository(t *testing.T) {
 // `luna run` defaults the repository to ".", which is what a CLI run from inside
 // the checkout naturally holds. Every other test here passes "/repo" — already
 // absolute — so the whole suite was green while the real command could not open a
-// single worktree. Measured against a live server (ADR-0036): an absolute `path`
+// single worktree. Measured against a live server: an absolute `path`
 // with a relative `cwd` is refused, and absolutising `cwd` is what fixes it.
 func TestOpenWorktreeSendsAnAbsoluteRepository(t *testing.T) {
 	server, path := newFakeServer(t)
@@ -309,7 +309,7 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 	// `open` takes **exactly one** of path or branch, where `create` takes both.
 	// Passing create's parameters straight through is refused with
 	// `invalid_request`, and a live herdr is the only thing that said so — this
-	// test passed for weeks without looking at what it sent (ADR-0036).
+	// test passed for weeks without looking at what it sent.
 	params, err := json.Marshal(opened[0].Params)
 	if err != nil {
 		t.Fatalf("re-encoding the params: %v", err)
@@ -324,7 +324,7 @@ func TestAnExistingWorktreeIsReopened(t *testing.T) {
 }
 
 // An agent starts inside the sandbox, through `pane.run` rather than
-// `agent.start` (ADR-0069). `agent.start` takes a `kind` from a closed set
+// `agent.start`. `agent.start` takes a `kind` from a closed set
 // compiled into herdr, so there is nowhere to put a wrapper — measured: a custom
 // kind is refused with `unsupported_agent_kind`.
 
@@ -482,7 +482,7 @@ func TestPromptWaitsForTheAgentToBecomeReady(t *testing.T) {
 // TestAPromptWithNoStatusIsUnknown covers herdr answering without naming a state.
 //
 // Unknown is the honest reading, and it still triggers verification — it just
-// claims nothing about the outcome (ADR-0028).
+// claims nothing about the outcome.
 func TestAPromptWithNoStatusIsUnknown(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","result":{"type":"agent_prompted"}}`)
@@ -591,7 +591,7 @@ func TestRetryGivesUpAndReportsTheLastRefusal(t *testing.T) {
 //
 // `agent_not_ready` is a startup race worth retrying; `agent_prompt_stalled` is
 // the agent having been given the prompt and not reacting, which is a fact for
-// the lead to act on (ADR-0034).
+// the lead to act on.
 func TestPromptReportsAStallRatherThanRetryingIt(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","error":{"code":"agent_prompt_stalled","message":"no observed state change"}}`)
@@ -637,7 +637,7 @@ func TestAWorktreeThatCannotBeMadeIsReported(t *testing.T) {
 // TestTheCheckoutPathFallsBackToThePanesDirectory covers the reply that names one
 // and not the other.
 //
-// The path is where verification runs (ADR-0035), so an empty one would run the
+// The path is where verification runs, so an empty one would run the
 // checks in the wrong directory rather than failing outright — the worst shape a
 // bug can take.
 func TestTheCheckoutPathFallsBackToThePanesDirectory(t *testing.T) {
@@ -678,7 +678,7 @@ func TestAPromptFailureThatIsNotARaceIsReported(t *testing.T) {
 // TestAPromptWithNoBudgetStillHasADeadline covers the zero value.
 //
 // A runner built without a budget must not wait forever: an unbounded wait is the
-// silent stall INV-core-8 forbids.
+// silent stall INV-5 forbids.
 func TestAPromptWithNoBudgetStillHasADeadline(t *testing.T) {
 	server, path := newFakeServer(t)
 	server.reply("agent.prompt", `{"id":"1","result":{"type":"agent_prompted","agent":{"agent_status":"idle"}}}`)
@@ -755,7 +755,7 @@ func TestARelativeRepositoryStillResolves(t *testing.T) {
 // TestHerdrsAnswerWinsOverTheRequestedPath covers reopening.
 //
 // A worktree made before this convention existed lives somewhere else, and the
-// verification has to run where the checkout actually is (ADR-0035) rather than
+// verification has to run where the checkout actually is rather than
 // where it would be created today.
 func TestHerdrsAnswerWinsOverTheRequestedPath(t *testing.T) {
 	server, path := newFakeServer(t)
@@ -809,7 +809,7 @@ func TestOpenWorktreeRefusesAnUnusableRepository(t *testing.T) {
 // The alternative is a fallback to an uncontained agent, which is what shipped
 // before and is worse than a refusal: the agent runs holding the permissions this
 // passes it — `bypassPermissions`, every check off — on the strength of a sandbox
-// that is not there, and nothing on screen says so (INV-core-7, ADR-0069).
+// that is not there, and nothing on screen says so.
 func TestWithoutTheSandboxLunaRefusesToStartAnAgent(t *testing.T) {
 	// An empty PATH is how the sandbox is made absent: `jailed` looks it up, so
 	// this is the same condition as a machine that never installed it.
@@ -891,8 +891,8 @@ func TestAnUnreadableAgentListStartsRatherThanFails(t *testing.T) {
 }
 
 // TestTheJailedCommandCarriesTheArtifactSocket covers the fourth part, added by
-// RFC-0008: an agent that hands artifacts to Luna needs to know where Luna is
-// listening, and the brief alone is prose it may paraphrase.
+// the socket handover: an agent that hands artifacts to Luna needs to know where
+// Luna is listening, and the brief alone is prose it may paraphrase.
 func TestTheJailedCommandCarriesTheArtifactSocket(t *testing.T) {
 	withSandboxOnPath(t)
 

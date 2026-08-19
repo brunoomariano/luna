@@ -18,9 +18,9 @@ func StockDir(storePath string) string {
 
 // initCommand writes the shipped stock into the project.
 //
-// This is what turns ADR-0017's replaceable flow into something a person can
+// This is what turns the replaceable flow into something a person can
 // actually replace: the stages, roles and profiles Luna ships with, as files to
-// edit (RFC-0003). Until a project runs it, the embedded copy is what runs — so
+// edit. Until a project runs it, the embedded copy is what runs — so
 // a repository that never wants to customise anything never has to.
 //
 // The copy is complete rather than partial. A directory holding three of the
@@ -48,7 +48,7 @@ func initCommand(env Env, args []string) error {
 
 	// Replace means replace. Overwriting file by file leaves behind anything the
 	// shipped flow no longer carries — and a leftover stage is a valid stage, so
-	// the loader keeps running it and nothing says why. Measured after ADR-0062
+	// the loader keeps running it and nothing says why. Measured after
 	// removed two stages: `luna flow check` still reported fourteen.
 	if force {
 		if err := clearStock(env.Stock); err != nil {

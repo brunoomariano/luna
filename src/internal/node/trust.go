@@ -98,7 +98,7 @@ func withTrustedParent(raw []byte, parent, configPath string) (out []byte, chang
 }
 
 // worktreeParent is the directory a repository's worktrees are created in: its
-// own parent, per checkoutPath's sibling rule (ADR-0055).
+// own parent, per checkoutPath's sibling rule.
 func worktreeParent(repo string) (string, error) {
 	absolute, err := filepath.Abs(repo)
 	if err != nil {

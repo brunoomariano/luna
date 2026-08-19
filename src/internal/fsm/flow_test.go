@@ -20,7 +20,7 @@ func TestDefaultFlowHasNoContractGap(t *testing.T) {
 	}
 }
 
-// TestDefaultFlowMatchesDocumentedStages guards the table in docs/architecture/stages.md.
+// TestDefaultFlowMatchesDocumentedStages guards the table in docs/architecture.md.
 //
 // This is not counting for counting's sake: a stage that disappears from
 // DefaultFlow without disappearing from the documentation leaves the two out of
@@ -35,7 +35,7 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 
 	// The empty role is how the table writes "—": setup is the only mechanical
 	// stage, and any second one would be a change to the contract. `commit` was
-	// the other until ADR-0062 removed integration from Luna's scope.
+	// the other until integration left Luna's scope.
 	want := []struct {
 		ID   StageID
 		Role string
@@ -55,7 +55,7 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	}
 
 	if len(flow) != len(want) {
-		t.Errorf("want %d stages per docs/architecture/stages.md, got %d", len(want), len(flow))
+		t.Errorf("want %d stages per docs/architecture.md, got %d", len(want), len(flow))
 	}
 
 	for i, documented := range want {
@@ -72,12 +72,12 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	}
 }
 
-// TestAuditReportsAreNotFlowProducts covers INV-core-11 on the real flow.
+// TestAuditReportsAreNotFlowProducts covers INV-3 on the real flow.
 //
 // The assessments from qa, code-review, harden and architecture exist for a
 // person to read. If one of them became a Produces, it would start satisfying
-// another stage's Requires and the distinction in ADR-0021 would lose its meaning
-// in the flow that matters most.
+// another stage's Requires, and the distinction between a flow product and a
+// human-read report would lose its meaning in the flow that matters most.
 func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 	reports := map[StageID]Artifact{
 		"qa":           "qa_report",
@@ -104,9 +104,10 @@ func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 
 // TestDefaultFlowConditionalStages guards the "Condition" column of the table.
 //
-// Running a mutation test on a one-line chore is the ceremony ADR-0014 exists to
-// cut. If a condition gets lost, the flow starts running an expensive stage where
-// it does not pay off — and nobody notices, because the result stays correct.
+// Running a mutation test on a one-line chore is the ceremony conditional stages
+// exist to cut. If a condition gets lost, the flow starts running an expensive
+// stage where it does not pay off — and nobody notices, because the result stays
+// correct.
 func TestDefaultFlowConditionalStages(t *testing.T) {
 	cases := []struct {
 		stage   StageID
@@ -143,7 +144,8 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 	}
 }
 
-// TestTheEngineDoesNotDependOnTheShippedFlow is ADR-0017 as a test.
+// TestTheEngineDoesNotDependOnTheShippedFlow is "a project brings its own flow"
+// as a test.
 //
 // The promise is that a project can bring its own flow. Every other test in this
 // package drives DefaultFlow(), so an assumption about the shipped fourteen
@@ -220,7 +222,7 @@ func TestTheEngineDoesNotDependOnTheShippedFlow(t *testing.T) {
 	}
 }
 
-// TestACustomFlowCanOpenItsOwnGates is what ADR-0049 bought.
+// TestACustomFlowCanOpenItsOwnGates is what a stage declaring its own gate bought.
 //
 // Gates used to be a switch over the shipped stage ids, so a project bringing its
 // own flow got no gates at all — and the same for where a review sends work back
@@ -245,7 +247,7 @@ func TestACustomFlowCanOpenItsOwnGates(t *testing.T) {
 	}
 
 	// The gate opens when `draft` closes, because that is the first moment `text`
-	// exists to be reviewed (ADR-0064).
+	// exists to be reviewed.
 	state, err = Reduce(state, Complete{
 		Delivered: []Artifact{"text"},
 		Evidence: map[Artifact]Evidence{
@@ -305,7 +307,8 @@ func TestACustomReviewSendsWorkWhereItSays(t *testing.T) {
 	}
 }
 
-// TestAStageThatDoesNotReviewCannotSendWorkBack is INV-core-7 inside the engine.
+// TestAStageThatDoesNotReviewCannotSendWorkBack is whoever-writes-does-not-review
+// inside the engine.
 //
 // It used to be a hardcoded set of four stage ids, so renaming `code-review` in a
 // custom flow lost the protection silently. Now the refusal comes from the stage's

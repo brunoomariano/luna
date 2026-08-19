@@ -14,7 +14,7 @@ import (
 
 // artifactHarness is a harness with a live artifact socket, which is how the
 // command runs for real: Luna listening on one side, the CLI dialing from the
-// other (RFC-0008).
+// other.
 func artifactHarness(t *testing.T, stage string) (*harness, string) {
 	t.Helper()
 	h := newHarness(t)
@@ -140,7 +140,7 @@ func TestArtifactUsageErrors(t *testing.T) {
 	}
 }
 
-// TestTaskShowListsWhatWasHandedOver is INV-core-12's gap closing: an artifact a
+// TestTaskShowListsWhatWasHandedOver is INV-5's gap closing: an artifact a
 // person is meant to read is discoverable by command.
 func TestTaskShowListsWhatWasHandedOver(t *testing.T) {
 	h, _ := artifactHarness(t, "qa")
@@ -158,7 +158,7 @@ func TestTaskShowListsWhatWasHandedOver(t *testing.T) {
 	}
 }
 
-// TestTaskShowIsQuietWithNothingHandedOver pins that every pre-RFC-0008 task
+// TestTaskShowIsQuietWithNothingHandedOver pins that every task predating the handover
 // reads exactly as before.
 func TestTaskShowIsQuietWithNothingHandedOver(t *testing.T) {
 	h := newHarness(t)
@@ -257,7 +257,7 @@ func TestGateShowPrintsAHandedOverArtifact(t *testing.T) {
 	}}
 
 	// Opened against this test's own flow, so the replay reads the log under the
-	// fingerprint it was written with (ADR-0046).
+	// fingerprint it was written with.
 	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
 		Kind: fsm.KindFeature, Flow: fsm.Fingerprint(flow),
 	}); err != nil {

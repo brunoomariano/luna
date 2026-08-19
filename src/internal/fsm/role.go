@@ -9,7 +9,7 @@ import (
 //
 // The engine holds the name and nothing else. What the name *means* — which agent
 // runs it, what it is told, what it can do — is configuration, resolved outside
-// the reducer the same way a profile is (ADR-0040). That is what lets a project
+// the reducer the same way a profile is. That is what lets a project
 // put a different model behind `reviewer` than behind `implementer` without the
 // engine growing a list of agents.
 type RoleName string
@@ -18,17 +18,17 @@ type RoleName string
 //
 // It is a declaration, never an execution. Nothing here starts a process or reads
 // a file; the node layer does that, and what comes back arrives inside an action
-// (ADR-0024).
+// .
 type Role struct {
-	// Agent is the harness kind that runs this role — one of the 21 herdr knows
-	// (ADR-0031). Two roles naming different agents is the cheapest independence
+	// Agent is the harness kind that runs this role — one of the 21 herdr knows.
+	// Two roles naming different agents is the cheapest independence
 	// available before real tool gating exists.
 	Agent string
 
 	// Brief is what the agent is told about being this role. It is instruction,
-	// not enforcement: a restriction that lives only here is the violation
-	// INV-core-7 names, and closing that gap needs tool denial the harness
-	// applies before the agent starts.
+	// not enforcement: a restriction that lives only here is the violation INV-4
+	// names, and closing that gap needs tool denial the harness applies before the
+	// agent starts.
 	Brief string
 
 	// Skills are the capability bundles this role loads.
@@ -41,7 +41,7 @@ type Role struct {
 	// a sandbox mode. Keeping the vocabulary out of here is what lets a project
 	// move `reviewer` from one agent to another without rewriting the role, and
 	// what stops a role from silently ceasing to deny anything when its agent
-	// changes (ADR-0042).
+	// changes.
 	ToolsDeny []Capability
 }
 
@@ -49,7 +49,7 @@ type Role struct {
 //
 // A closed set rather than free strings: a typo in a denial fails open — the role
 // runs with the tool it was supposed to lose, and nothing says so. That is the
-// direction INV-core-7 cares about most.
+// direction the containment INV-4 requires cares about most.
 type Capability string
 
 const (
@@ -69,7 +69,7 @@ func KnownCapabilities() []Capability { return []Capability{CapEdit, CapWrite} }
 // rather than leaving as an accident of the list. Denying a shell would make a
 // reviewer useless — it could not run the tests it is reviewing — and denying
 // `Edit` and `Write` while leaving it open does not prevent writing, only make it
-// inconvenient. That floor is declared in INV-core-7.
+// inconvenient. Real confinement is the sandbox INV-4 requires.
 //
 // The reason it is named here at all: `tools_deny = ["Bash"]` is a reasonable
 // thing for someone to write, and the refusal should say why rather than
@@ -91,7 +91,7 @@ func ParseCapability(name string) (Capability, error) {
 	if Capability(name) == CapBash {
 		return "", fmt.Errorf("%q cannot be denied: a role with no shell cannot run the tests "+
 			"it is reviewing, and denying Edit and Write with a shell open does not stop "+
-			"writing (see INV-core-7). Confining what a process may touch belongs to a sandbox",
+			"writing (see INV-4). Confining what a process may touch belongs to a sandbox",
 			name)
 	}
 	return "", fmt.Errorf("unknown capability %q (%s)", name, capabilityList())
@@ -105,7 +105,7 @@ func (r Role) Gated() bool { return len(r.ToolsDeny) > 0 }
 // It is the question the coarse harnesses can actually answer: codex denies
 // writing wholesale with a sandbox mode and takes no tool names, so a role that
 // denies both Edit and Write maps onto it exactly, and one that denies only Edit
-// does not (ADR-0042).
+// does not.
 func (r Role) DeniesWriting() bool {
 	denied := map[Capability]bool{}
 	for _, capability := range r.ToolsDeny {
@@ -125,9 +125,9 @@ func capabilityList() string {
 // Mechanical reports whether a stage runs without an agent at all.
 //
 // `setup` is a worktree, `verify` is the pipeline, `commit` is git. Luna already
-// runs commands with a real exit code (ADR-0035), so those stages produce their
+// runs commands with a real exit code, so those stages produce their
 // artifact and their evidence with no model in the loop — the project's premise
-// applied to the stages where it is easiest to forget (ADR-0040).
+// applied to the stages where it is easiest to forget.
 func (s Stage) Mechanical() bool { return s.Role == "" }
 
 // NeedsRole reports a stage that produces something only judgement can produce and

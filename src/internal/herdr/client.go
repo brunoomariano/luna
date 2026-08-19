@@ -3,10 +3,10 @@
 // It is the only place in Luna that knows what a pane is. Everything above it
 // speaks stages, artifacts and evidence; the translation happens here and nowhere
 // else, which is what keeps leaving herdr a matter of writing another Node rather
-// than a refactor (ADR-0030).
+// than a refactor.
 //
-// The division it implements: Luna decides and verifies, herdr executes and shows
-// (ADR-0027). Nothing here decides a transition. What comes back from the socket
+// The division it implements: Luna decides and verifies, herdr executes and
+// shows. Nothing here decides a transition. What comes back from the socket
 // is observed fact, and turning fact into action is the lead's job.
 package herdr
 
@@ -25,7 +25,7 @@ import (
 // ErrGone reports that herdr is not reachable, or stopped being reachable.
 //
 // It is a named error because losing herdr mid-stage is not a stage failure: the
-// task blocks and a person decides what to do with the worktree (ADR-0033).
+// task blocks and a person decides what to do with the worktree.
 // Collapsing it into a generic I/O error would let the lead spend the retry
 // budget on an infrastructure event.
 var ErrGone = errors.New("herdr is not reachable")
@@ -119,7 +119,7 @@ func SocketPath() (string, error) {
 //
 // A closed or broken connection comes back wrapped in ErrGone, so the caller can
 // tell "herdr went away" from "herdr said no" — two situations that warrant
-// different transitions (ADR-0033).
+// different transitions.
 func (c *Client) Call(method string, params, out any) error {
 	c.mu.Lock()
 	c.seq++

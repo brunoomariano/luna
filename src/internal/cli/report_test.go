@@ -12,7 +12,7 @@ import (
 // reads.
 //
 // Without it the layer parses output written for people, and every reworded
-// message becomes a silent breakage (ADR-0043).
+// message becomes a silent breakage.
 func TestTaskShowAnswersStructure(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "bug", "--profile", "nightly")
@@ -36,7 +36,7 @@ func TestTaskShowAnswersStructure(t *testing.T) {
 // TestTheStructuredViewCarriesTheScope is the field that matters most.
 //
 // A reader that cannot tell a green suite from a file that merely exists would
-// report the two the same way, which is the laundering ADR-0028 exists to
+// report the two the same way, which is the laundering the scope rule exists to
 // prevent.
 func TestTheStructuredViewCarriesTheScope(t *testing.T) {
 	h := newHarness(t)
@@ -169,7 +169,7 @@ func TestAnUnknownFlagOnAReadingCommandIsRefused(t *testing.T) {
 }
 
 // TestAProfileNoLongerDefinedIsFlaggedInTheStructure covers the machine-readable
-// half of the warning the text form already carries (ADR-0026).
+// half of the warning the text form already carries.
 func TestAProfileNoLongerDefinedIsFlaggedInTheStructure(t *testing.T) {
 	h := newHarness(t)
 	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{

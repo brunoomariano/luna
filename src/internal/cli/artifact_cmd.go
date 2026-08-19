@@ -22,7 +22,7 @@ const SocketEnv = "LUNA_ARTIFACT_SOCKET"
 //
 // It talks to the socket, never to the store. That is the whole design: the agent
 // runs contained, the store is outside its reach, and Luna is the only writer
-// (RFC-0008). Measured: a CLI that opened the database from inside `ai-jail`
+// . Measured: a CLI that opened the database from inside `ai-jail`
 // reported `created` with exit 0 and lost every write to a tmpfs.
 //
 // It is also the only path the lead uses. The lead runs uncontained and *could*

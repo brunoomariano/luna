@@ -6,7 +6,8 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// TestAnEditedProfileDoesNotRewriteThePast is the guarantee ADR-0026 exists for.
+// TestAnEditedProfileDoesNotRewriteThePast is the guarantee recording the gate
+// decision, rather than the policy that produced it, exists for.
 //
 // A task ran overnight and walked past its gates. Someone later tightens what
 // that profile means. Replaying the task must still show a run that walked past
@@ -113,8 +114,9 @@ func appendAll(t *testing.T, s *Store, taskID string, actions ...fsm.Action) {
 // gatedFlow is a one-stage flow whose stage opens a confirm.
 //
 // These tests are about what a recorded decision does on replay, not about the
-// shipped flow's shape — which changed when ADR-0062 removed `commit` and
-// `discovery` went with it, leaving the mechanical `setup` first and gateless.
+// shipped flow's shape — which changed when integration left Luna's scope,
+// removing `commit`, and `discovery` went with it, leaving the mechanical
+// `setup` first and gateless.
 func gatedFlow() []fsm.Stage {
 	return []fsm.Stage{{
 		ID: "gated", Role: "someone", Requires: []fsm.Artifact{fsm.TaskID},

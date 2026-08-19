@@ -10,10 +10,10 @@ import (
 // TestHandoverChangesTheFingerprint is the difference between this and a path,
 // and the reason it is worth a test of its own.
 //
-// A path changes where a delivery is looked for, so ADR-0070 kept it out. Handing
-// an artifact to the store changes what delivering *means* — the artifact is no
-// longer in the commit at all — so a log written under one rule must not replay
-// under the other.
+// A path changes where a delivery is looked for, so it stays out of the
+// fingerprint. Handing an artifact to the store changes what delivering *means*
+// — the artifact is no longer in the commit at all — so a log written under one
+// rule must not replay under the other.
 func TestHandoverChangesTheFingerprint(t *testing.T) {
 	committed := []fsm.Stage{{
 		ID: "spec", Produces: []fsm.Artifact{"contract"},
@@ -42,7 +42,7 @@ func TestAPathStillDoesNotChangeTheFingerprint(t *testing.T) {
 	}}
 
 	if fsm.Fingerprint(bare) != fsm.Fingerprint(withPath) {
-		t.Error("a path says where a delivery is looked for, not what is owed (ADR-0070)")
+		t.Error("a path says where a delivery is looked for, not what is owed")
 	}
 }
 

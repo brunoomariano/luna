@@ -2,7 +2,7 @@ package fsm
 
 import "testing"
 
-// TestFingerprintCoversWhatChangesHistory is the decision of ADR-0046 as a test.
+// TestFingerprintCoversWhatChangesHistory is the flow fingerprint as a test.
 //
 // The fingerprint covers what decides whether a past event still means what it
 // meant: stage identity, order, and the artifacts a stage requires and produces.
@@ -146,8 +146,8 @@ func TestFingerprintCoversWhatChangesHistory(t *testing.T) {
 // It used to match anything, so that a log predating the field kept replaying.
 // That rule outlived its reason: every task Luna creates is stamped, so the only
 // thing an unstamped task could be is one created against no flow — and letting
-// that replay against the shipped flow is exactly the silent mismatch ADR-0046
-// exists to refuse.
+// that replay against the shipped flow is exactly the silent mismatch the
+// fingerprint exists to refuse.
 func TestAnEmptyFingerprintMatchesOnlyAnEmptyFlow(t *testing.T) {
 	var none FlowFingerprint
 
@@ -184,7 +184,7 @@ func TestTheShippedFlowMatchesItself(t *testing.T) {
 // only one whose absence could strand every open task in silence.
 //
 // The fingerprint is a task's contract with the flow it was born under: a log
-// whose fingerprint no longer matches refuses to replay (ADR-0046), and the
+// whose fingerprint no longer matches refuses to replay, and the
 // person is told to abandon the task. That is correct when someone changed the
 // flow on purpose, and a disaster when a stage file was edited by accident —
 // a reordered `requires`, a renamed artifact, a stage inserted.
@@ -198,10 +198,10 @@ func TestTheShippedFlowMatchesItself(t *testing.T) {
 // already open. Editing the stock without touching it fails here instead.
 func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
 	// The shipped stock as it stands, after eight scaffolding artifacts moved out
-	// of the commit and into Luna's store (RFC-0008): the contract, the scenarios,
+	// of the commit and into Luna's store: the contract, the scenarios,
 	// the approach, the minimal case and the four audit reports.
 	//
-	// That change belongs in the fingerprint where a path does not (ADR-0070). A
+	// That change belongs in the fingerprint where a path does not. A
 	// path says where a delivery is looked for; this says the artifact is not in
 	// the commit at all, which is a different thing owed — a past Complete that
 	// closed on a committed file cannot be replayed against a store row.
@@ -214,7 +214,7 @@ func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
 		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+
 			"If the stock was changed on purpose, update the constant — and say in the "+
 			"commit what happens to tasks already open, because every one of them stops "+
-			"replaying (ADR-0046).\n\n"+
+			"replaying.\n\n"+
 			"If it was not, something edited a stage file by accident and this is the "+
 			"only thing that would have noticed.", got, pinned)
 	}
@@ -240,13 +240,13 @@ func TestEveryShippedStageIsCoveredByTheFingerprint(t *testing.T) {
 	}
 }
 
-// TestAPathDoesNotChangeTheFingerprint is the decision RFC-0004 turned on.
+// TestAPathDoesNotChangeTheFingerprint is the decision a declared path turned on.
 //
 // Where an artifact lives is not whether the stage closed. Putting it in the
 // fingerprint would freeze every open task to move a directory — disproportionate
 // for a field that changes what is checked, not what the stage owed. What the
 // fingerprint protects is the requirement, and `Proves()` is unchanged by a path:
-// a file in the right directory is still just a file (ADR-0070).
+// a file in the right directory is still just a file.
 func TestAPathDoesNotChangeTheFingerprint(t *testing.T) {
 	bare := []Stage{{
 		ID: "x", Produces: []Artifact{"a"},

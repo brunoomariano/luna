@@ -2,8 +2,8 @@ package fsm
 
 import "testing"
 
-// TestABlockingFindingIsRead is the shape ADR-0041 specifies, in the form a
-// reviewer actually writes it.
+// TestABlockingFindingIsRead is the shape the review report specifies, in the
+// form a reviewer actually writes it.
 func TestABlockingFindingIsRead(t *testing.T) {
 	report := `
 # Review of LUNA-1
@@ -45,7 +45,7 @@ func TestAReportWithNothingBlockingLetsTheFlowCarryOn(t *testing.T) {
 }
 
 // TestUncertainDoesNotBlock. `[UNCERTAIN]` is a statement about confidence, not
-// a severity between two others (ADR-0041). A reviewer that is unsure has not
+// a severity between two others. A reviewer that is unsure has not
 // found a defect, and blocking on doubt would fire the loop ceilings on it.
 func TestUncertainDoesNotBlock(t *testing.T) {
 	findings := ReadReport("- [UNCERTAIN] U1: this may leak under load; a soak test would confirm")
@@ -116,7 +116,7 @@ func TestAReportWithNoFindingsIsNotAnError(t *testing.T) {
 }
 
 // TestAFindingKeepsItsHandle. The id is what the conversation afterwards refers
-// to, so it has to survive the parse (ADR-0041).
+// to, so it has to survive the parse.
 func TestAFindingKeepsItsHandle(t *testing.T) {
 	findings := ReadReport("- [BLOCKING] B7: the emitter is missing")
 
@@ -150,7 +150,7 @@ func TestAFindingWithNoIdStillCounts(t *testing.T) {
 
 // TestTheReportIsFoundFromTheStagesOwnDeclaration. The four shipped review
 // stages produce four differently named reports, so a hardcoded name would work
-// for one and silently skip the rest (ADR-0049).
+// for one and silently skip the rest.
 func TestTheReportIsFoundFromTheStagesOwnDeclaration(t *testing.T) {
 	for _, id := range []StageID{"qa", "code-review", "harden", "architecture"} {
 		stage := stageIn(DefaultFlow(), id)
@@ -167,7 +167,7 @@ func TestTheReportIsFoundFromTheStagesOwnDeclaration(t *testing.T) {
 }
 
 // TestAStageThatReviewsNothingHasNoReport. Only a review stage may send work
-// back, so only a review stage has a report to read (INV-core-7).
+// back, so only a review stage has a report to read.
 func TestAStageThatReviewsNothingHasNoReport(t *testing.T) {
 	build := stageIn(DefaultFlow(), "build")
 

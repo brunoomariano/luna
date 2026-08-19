@@ -33,7 +33,7 @@ func repo(t *testing.T) string {
 	return dir
 }
 
-// TestVerificationDoesNotSeeUncommittedWork is INV-core-4's acceptance criterion.
+// TestVerificationDoesNotSeeUncommittedWork is INV-1's acceptance criterion.
 //
 // A file left in the working tree and never delivered must not reach the check.
 // This is the dominant way a green verdict turns out to be wrong — not sabotage
@@ -305,7 +305,7 @@ func TestTheThrowawayCheckoutDoesNotRunAProjectsHooks(t *testing.T) {
 // It is worse one layer down: an empty commit makes `CheckoutAt` verify `HEAD`,
 // so the stage is checked against the repository's own head rather than against
 // what it delivered — and passes. A silent failure that also launders the
-// evidence (INV-core-8).
+// evidence.
 func TestHandoverOnAnUnreadableWorktreeIsAnError(t *testing.T) {
 	// A directory that is not a repository stands in for one the process cannot
 	// see: both make git fail, which is the condition being asserted on.

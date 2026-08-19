@@ -1,7 +1,7 @@
 package fsm
 
 // Condition decides whether a stage enters the flow, and carries a name so the
-// decision can be identified rather than only executed (ADR-0048).
+// decision can be identified rather than only executed.
 //
 // The name is the point. A bare `func(TaskContext) bool` is history — it decides
 // which stages a task should have walked through — and a function has no identity
@@ -12,8 +12,8 @@ package fsm
 // buys is a stable handle a person chose deliberately: renaming the condition is
 // how you say "this rule is not the rule it was", and the discipline that makes
 // that reliable is the same one the log's action names already rely on — they are
-// hand-written string constants for exactly this reason (ADR-0046, and the note
-// in the codec that the log outlives the code).
+// hand-written string constants for exactly this reason (see the note in the
+// codec that the log outlives the code).
 type Condition struct {
 	// Name identifies the rule. Two conditions with the same name are the same
 	// rule as far as a replay is concerned.

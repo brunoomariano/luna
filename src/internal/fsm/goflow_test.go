@@ -2,7 +2,7 @@ package fsm
 
 import "testing"
 
-// goFlow was the flow before RFC-0003 moved it into files.
+// goFlow was the flow before it moved into files.
 //
 // It is kept as the fixture that proves the move changed nothing: a test
 // compares its fingerprint against the parsed stock's, so a stage file that
@@ -55,17 +55,17 @@ func goFlow() []Stage {
 		{
 			ID:   "build",
 			Role: "implementer",
-			// ADR-0022 calls for `contract` here, required only when `spec` entered
-			// the flow. It stays out until the conditional-requires mechanism is
+			// The contract belongs here, required only when `spec` entered the
+			// flow. It stays out until the conditional-requires mechanism is
 			// chosen — declaring it without that mechanism would stall every
 			// `chore` or `docs` task, since `spec` is skipped in those.
-			// See the note in docs/architecture/stages.md.
+			// See the note in docs/architecture.md.
 			Requires: []Artifact{"scenarios", "approach", "worktree"},
 			Produces: []Artifact{"code", "tests_green"},
 			Verifiers: map[Artifact]Verifier{
 				// Targeted rather than full: build runs the tests it touched, and
-				// claiming the whole suite here would be the laundering ADR-0028
-				// rejects. `verify` is the stage that earns ScopeFull.
+				// claiming the whole suite here would launder a targeted run into
+				// a full one. `verify` is the stage that earns ScopeFull.
 				"tests_green": Command{Run: "make test", Scope: ScopeTargeted},
 				// `code` has no command that proves it — the compiler is part of
 				// `make test`, and "the diff is non-empty" proves nothing about it.
@@ -80,7 +80,7 @@ func goFlow() []Stage {
 			Produces: []Artifact{"code", "tests_green"},
 			Verifiers: map[Artifact]Verifier{
 				// The stage rewrites code that was already green, so the green is
-				// earned again rather than inherited (ADR-0020, INV-core-4).
+				// earned again rather than inherited (INV-1).
 				"tests_green": Command{Run: "make test", Scope: ScopeTargeted},
 				"code":        Existence{},
 			},
@@ -89,17 +89,17 @@ func goFlow() []Stage {
 			ID: "verify",
 			// The pipeline is a command and the checklist is a judgement, so this
 			// stage has both — and a role, because the artifact that needs one
-			// decides (ADR-0040).
+			// decides.
 			Role:             "verifier",
 			Requires:         []Artifact{"code", "scenarios"},
 			Produces:         []Artifact{"ci_green"},
 			ProducesForHuman: []Artifact{"dod_checked"},
 			Verifiers: map[Artifact]Verifier{
 				// The one artifact in the flow that earns ScopeFull: `make ci` is
-				// the whole gate, and INV-core-4 wants it run rather than claimed.
+				// the whole gate, and INV-1 wants it run rather than claimed.
 				"ci_green": Command{Run: "make ci", Scope: ScopeFull},
 				// A checklist a person reads. Recording it as a passing check would
-				// be the lie ADR-0032 names.
+				// be a lie about what ran.
 				"dod_checked": Existence{Handover: true},
 			},
 		},
@@ -107,7 +107,7 @@ func goFlow() []Stage {
 			ID: "qa",
 			Review: &ReviewSpec{
 				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
+				// The green attested to code that no longer exists.
 				Invalidates: []Artifact{"ci_green", "tests_green"},
 			},
 			Role:             "qa",
@@ -120,7 +120,7 @@ func goFlow() []Stage {
 			ID: "code-review",
 			Review: &ReviewSpec{
 				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
+				// The green attested to code that no longer exists.
 				Invalidates: []Artifact{"ci_green", "tests_green"},
 			},
 			Role:             "reviewer",
@@ -133,7 +133,7 @@ func goFlow() []Stage {
 			ID: "harden",
 			Review: &ReviewSpec{
 				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
+				// The green attested to code that no longer exists.
 				Invalidates: []Artifact{"ci_green", "tests_green"},
 			},
 			Role:             "hardener",
@@ -146,7 +146,7 @@ func goFlow() []Stage {
 			ID: "architecture",
 			Review: &ReviewSpec{
 				SendsBackTo: "build",
-				// The green attested to code that no longer exists (ADR-0020).
+				// The green attested to code that no longer exists.
 				Invalidates: []Artifact{"ci_green", "tests_green"},
 			},
 			Role:             "architect",
@@ -162,11 +162,11 @@ func goFlow() []Stage {
 }
 
 // TestTheStockIsTheFlowTheEngineShipped is the acceptance criterion for moving
-// the flow out of Go (RFC-0003).
+// the flow out of Go.
 //
 // The fingerprint covers everything that decides how a past event reads — stage
 // ids and order, the artifacts required and produced, the condition's name, the
-// gate, the review, and the scope each artifact must be proven to (ADR-0046). If
+// gate, the review, and the scope each artifact must be proven to. If
 // the parsed stock and the Go literals agree on it, the move changed nothing
 // that could refuse a replay, which is the only guarantee that matters to a task
 // already open.
@@ -183,12 +183,12 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	// And the recorded value, so a change to *both* is still caught. Two things
 	// drifting together is exactly what a comparison between them cannot see.
 	//
-	// It has moved twice, both deliberately. ADR-0062 removed `commit` (Luna does
-	// not integrate) and `discovery` went with it (a task is always about the
+	// It has moved twice, both deliberately. Integration left Luna's scope, so
+	// `commit` went, and `discovery` went with it (a task is always about the
 	// current repository). Then `refactor` gained `tests_green`: it rewrites code
 	// that was already green, so the green is earned again rather than inherited,
 	// and until then a stage whose whole purpose is rewriting working code closed
-	// without running anything (INV-core-4, ADR-0020).
+	// without running anything (INV-1).
 	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
@@ -216,8 +216,9 @@ func TestTheStockHasEveryStage(t *testing.T) {
 	}
 }
 
-// TestAProjectsFlowReplacesTheShippedOne is what makes ADR-0017 real: the stock
-// a project edited is what Luna runs, not the one it was built with.
+// TestAProjectsFlowReplacesTheShippedOne is what makes "a project brings its own
+// flow" real: the stock a project edited is what Luna runs, not the one it was
+// built with.
 //
 // UseFlow is a package-level value set once at startup, which is a trade worth
 // testing rather than trusting — the alternative was threading the flow through

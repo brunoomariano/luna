@@ -1,7 +1,7 @@
 // Package store persists a task's history and replays it back into state.
 //
 // The current state is not stored — it is derived by replaying the event log
-// through the reducer (ADR-0010, INV-core-2). That is what makes killing the
+// through the reducer. That is what makes killing the
 // process and starting it again rebuild the exact state: it was never only in
 // memory. It also means the log can never be rewritten, so this package offers
 // no way to update or delete an event.
@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "modernc.org/sqlite" // pure-Go driver, no CGO — see ADR-0025
+	_ "modernc.org/sqlite" // pure-Go driver, no CGO
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
@@ -26,7 +26,7 @@ import (
 var ErrUnknownAction = errors.New("unknown action in the log")
 
 // ErrFlowChanged is returned when a log was written under a different flow than
-// the one it is being replayed against (ADR-0046).
+// the one it is being replayed against.
 //
 // The same refusal as ErrUnknownAction and for the same reason, except that this
 // one used to be silent: a renamed stage replayed as the new name with no error
@@ -36,12 +36,12 @@ var ErrUnknownAction = errors.New("unknown action in the log")
 var ErrFlowChanged = errors.New("the flow changed under an open task")
 
 // ErrConcurrentWrite is returned when an append was conditional on the log ending
-// somewhere and it does not (ADR-0047).
+// somewhere and it does not.
 //
 // It means two writers decided from the same state. Refusing the second is the
 // point: letting it land would put two decisions taken from one state into the
 // log, and replaying that yields ErrIllegalTransition forever with no way to
-// repair it, since the store has no UPDATE and no DELETE (INV-core-2).
+// repair it, since the store has no UPDATE and no DELETE.
 var ErrConcurrentWrite = errors.New("the task moved since it was read")
 
 // unconditional is the `after` for an append by a caller that did not read the
@@ -57,7 +57,7 @@ type Event struct {
 }
 
 // Waiting is a task suspended at a gate, as `luna gates` would list it
-// (INV-core-12).
+// .
 type Waiting struct {
 	TaskID string
 	Stage  fsm.StageID
@@ -70,10 +70,10 @@ type Waiting struct {
 
 // Store is the append-only log, in one SQLite file in the main repository.
 //
-// The log is all of it. ADR-0025 put a content-addressed store beside it so a
-// handoff could carry a snapshot of what the previous stage produced; RFC-0002
-// replaced that with the commit, and git stores content better than a table of
-// blobs ever did (ADR-0058). Nothing here holds an artifact — it holds the facts
+// The log is all of it. A content-addressed store once sat beside it so a
+// handoff could carry a snapshot of what the previous stage produced; the commit
+// replaced that, and git stores content better than a table of
+// blobs ever did. Nothing here holds an artifact — it holds the facts
 // about what happened to them.
 type Store struct {
 	db *sql.DB
@@ -81,14 +81,13 @@ type Store struct {
 	// Now is the clock the log is stamped with. It is a field so a test can
 	// place events in time without sleeping, and it is on the store rather than
 	// anywhere nearer the engine because this is the only layer allowed to read
-	// a clock at all (ADR-0024).
+	// a clock at all.
 	Now func() time.Time
 
 	// As is who this store writes on behalf of. It has to be LunaOwnsTheLog, and
 	// the field exists precisely so that it cannot default to it — a zero value
 	// meaning "Luna" would make the ownership rule true by accident, and a rule
-	// that holds by accident is one a refactor removes without a test noticing
-	// (ADR-0057).
+	// that holds by accident is one a refactor removes without a test noticing.
 	//
 	// Reading does not require it. Anyone may replay a task; only Luna appends.
 	As Owner
@@ -118,11 +117,11 @@ CREATE TABLE IF NOT EXISTS events (
     payload  TEXT    NOT NULL DEFAULT '',
     -- When the row was written, in unix seconds. It is metadata about the log
     -- and never part of the state: Replay does not read it, and the reducer
-    -- could not use it without ceasing to be pure (ADR-0024).
+    -- could not use it without ceasing to be pure.
     --
     -- It exists for the watchdog, which asks a question no replay can answer —
     -- "how long has this been blocked" — because a rebuilt state carries no
-    -- clock (ADR-0053). Every insert writes it; the default is what an aggregate
+    -- clock. Every insert writes it; the default is what an aggregate
     -- over no rows returns, which the watchdog reads as "no age" rather than as a
     -- time in 1970.
     at       INTEGER NOT NULL DEFAULT 0,
@@ -130,16 +129,16 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 -- What a stage handed over that does not belong in the repository: the contract,
--- the scenarios, the audit reports (RFC-0008).
+-- the scenarios, the audit reports.
 --
--- Append-only like the log, and for the same reason (INV-core-2): a revised
+-- Append-only like the log, and for the same reason (INV-2): a revised
 -- artifact is a new row and both versions stay readable. There is no UPDATE and
 -- no DELETE except by task, which is the cleanup a finished task earns.
 --
 -- Keyed by stage as well as artifact because the pair collides in practice:
 -- "build" and "refactor" both produce "code" and "tests_green", a loop revisits a
 -- stage, and a gate replaces an artifact with the human's version. Without the
--- stage those are one line of history separated only by seq, and INV-core-11 asks
+-- stage those are one line of history separated only by seq, and INV-3 asks
 -- for the location of each artifact *produced* — which a stage declares.
 CREATE TABLE IF NOT EXISTS blobs (
     task_id  TEXT    NOT NULL,
@@ -159,7 +158,7 @@ CREATE TABLE IF NOT EXISTS blobs (
 //
 // Reading is the safe half and needs no ceremony: replaying a task, listing what
 // is blocked, checking a flow. Appending is what has an owner, and OpenAs is how
-// it is claimed (ADR-0057).
+// it is claimed.
 //
 // Nothing in Luna's own binary calls this today, and that is honest rather than
 // an oversight: `luna` is the owner, so it opens for writing and the read
@@ -177,7 +176,7 @@ func Open(path string) (*Store, error) {
 // Only LunaOwnsTheLog may append, and the value has to be passed rather than
 // defaulted. That is the whole mechanism: a caller who wants to write says so at
 // the point of opening, in code, where it is visible in review — the same shape
-// as `Merger.As` for the shared git (ADR-0053).
+// as `Merger.As` for the shared git.
 func OpenAs(path string, owner Owner) (*Store, error) {
 	return openOwned(path, owner)
 }
@@ -247,7 +246,7 @@ func (s *Store) beginImmediate() (*sql.Tx, error) {
 // Append records an event at the end of a task's log.
 //
 // There is no counterpart that replaces or removes one: the history is the audit
-// trail, and a store that could rewrite it would not be one (INV-core-2).
+// trail, and a store that could rewrite it would not be one.
 func (s *Store) Append(taskID string, e Event) error {
 	return s.appendTx(taskID, e, unconditional)
 }
@@ -263,7 +262,7 @@ func (s *Store) AppendAction(taskID string, action fsm.Action) error {
 }
 
 // AppendActionAt records an action only if the log is still where the caller last
-// read it (ADR-0047).
+// read it.
 //
 // `after` is the sequence the caller's state was replayed from — the append lands
 // at `after + 1` or not at all. Anyone who decided from a state and then writes
@@ -334,7 +333,7 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 
 	// The clock is read here and nowhere the reducer can reach. Writing the time
 	// is an observation about the log; reading it back into a transition would
-	// make a replay depend on when it ran (ADR-0024, ADR-0053).
+	// make a replay depend on when it ran.
 	if _, err := tx.Exec(
 		`INSERT INTO events (task_id, seq, action, payload, at) VALUES (?, ?, ?, ?, ?)`,
 		taskID, next, e.Action, e.Payload, s.now().Unix(),
@@ -392,7 +391,7 @@ func (s *Store) Tasks() ([]string, error) {
 // Replay rebuilds a task's state by feeding its log through the reducer.
 //
 // This is the whole point of an append-only store: the state is not kept, it is
-// derived. It works because the reducer is pure (ADR-0024) — a transition that
+// derived. It works because the reducer is pure — a transition that
 // could run a test suite would try to run it again on every replay.
 //
 // The kind and the profile are not parameters: they arrive in the log's opening
@@ -422,7 +421,7 @@ func (s *Store) Replay(taskID string, flow []fsm.Stage) (fsm.TaskState, error) {
 		// Reading further would rebuild the task against a contract it never ran
 		// under, and the failure is silent: a renamed stage simply becomes the new
 		// name, and a stage inserted mid-flow makes the task re-run work it had
-		// already finished (ADR-0046).
+		// already finished.
 		//
 		// Only a `TaskCreated` carries a fingerprint, so only it is compared. A log
 		// that opens with anything else records no flow to disagree with — it is a
@@ -443,7 +442,7 @@ func (s *Store) Replay(taskID string, flow []fsm.Stage) (fsm.TaskState, error) {
 //
 // A suspended task released its slot, so no live process is left to remind anyone
 // it exists. Without a query like this it would wait forever — the second form of
-// silent failure (INV-core-12).
+// silent failure.
 func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 	ids, err := s.Tasks()
 	if err != nil {
@@ -454,8 +453,8 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 	for _, id := range ids {
 		state, err := s.Replay(id, flow)
 		// A task written under a different flow is skipped rather than fatal. It
-		// cannot be read, but the listing exists so nothing waits forever unseen
-		// (INV-core-12), and returning an error here would let one unreadable task
+		// cannot be read, but the listing exists so nothing waits forever unseen,
+		// and returning an error here would let one unreadable task
 		// hide every other task waiting on a person. `luna flow check` is where
 		// those surface, by name.
 		if errors.Is(err, ErrFlowChanged) {
@@ -479,11 +478,11 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 
 // What is not here: a content store.
 //
-// ADR-0025 put one beside the log so a handoff could carry a snapshot of what the
-// previous stage produced, and RFC-0002 replaced it with the commit — git already
-// stores content far better than a table of blobs does (ADR-0058). The API went
-// first, then the empty table and the column it wrote to.
+// One sat beside the log so a handoff could carry a snapshot of what the
+// previous stage produced, and the commit replaced it — git already stores
+// content far better than a table of blobs does. The API went first, then the
+// empty table and the column it wrote to.
 //
 // The note survives the code because the alternative is a decision, not an
-// omission: a reader who finds ADR-0025 and no blobs should learn that the
-// snapshot moved to git rather than that somebody forgot to build it.
+// omission: a reader who finds the decision recorded and no blobs should learn
+// that the snapshot moved to git rather than that somebody forgot to build it.

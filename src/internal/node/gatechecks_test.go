@@ -54,7 +54,7 @@ func TestAFailingCheckRejectsAndStops(t *testing.T) {
 	}
 }
 
-// TestChecksRunOverWhatWasDelivered is INV-core-4 at the gate.
+// TestChecksRunOverWhatWasDelivered is INV-1 at the gate.
 //
 // The gate answers for a commit that will be merged, so a check that passed only
 // because of an uncommitted file would approve work nobody has. This is the same

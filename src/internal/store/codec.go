@@ -52,8 +52,8 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 	switch a := action.(type) {
 	case fsm.Advance:
 		// Flow is tagged json:"-" and stays out; the gate decision goes in. That
-		// split is the point of ADR-0026 — the flow is configuration and may change,
-		// the decision is history and may not.
+		// split is the whole point — the flow is configuration and may change, the
+		// decision is history and may not.
 		return withPayload(actionAdvance, a)
 	case fsm.TaskCreated:
 		return withPayload(actionTaskCreated, a)
@@ -79,7 +79,7 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 //
 // Split from the switch above for the complexity gate, along a seam the domain
 // already has: a statement and a set of gate checks are both a person describing
-// their own task, and neither moves it (ADR-0067).
+// their own task, and neither moves it.
 func encodeDeclaration(action fsm.Action) (name, payload string, err error) {
 	switch a := action.(type) {
 	case fsm.StatementRevised:
@@ -119,7 +119,7 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 	}
 
 	// The two that need the flow injected back, which is what keeps them out of
-	// the table below: half of each is recorded and half is supplied (ADR-0026).
+	// the table below: half of each is recorded and half is supplied.
 	switch e.Action {
 	case actionAdvance:
 		return decodeWithFlow(e.Payload, flow, func(a fsm.Advance) fsm.Advance {
@@ -166,7 +166,7 @@ var fromPayload = map[string]func(string) (fsm.Action, error){
 //
 // The flow comes from the caller rather than the log: storing it would freeze a
 // task to the flow it started under, and flows are meant to be editable
-// (ADR-0017). Both actions that carry one are rebuilt this way, so the rule lives
+// . Both actions that carry one are rebuilt this way, so the rule lives
 // in one place rather than being repeated per action.
 func decodeWithFlow[T fsm.Action](payload string, flow []fsm.Stage, withFlow func(T) T) (fsm.Action, error) {
 	action, err := decodeJSON[T](payload)

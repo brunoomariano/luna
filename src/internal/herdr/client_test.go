@@ -132,7 +132,7 @@ func TestTheRequestCarriesIDAndMethod(t *testing.T) {
 // TestAnErrorReplyComesBackAsAnError covers herdr saying no.
 //
 // It must stay distinguishable from herdr going away: one is an answer, the other
-// is the absence of one, and they lead to different transitions (ADR-0033).
+// is the absence of one, and they lead to different transitions.
 func TestAnErrorReplyComesBackAsAnError(t *testing.T) {
 	path := serveOnce(t, `{"id":"1","error":{"code":"target_busy","message":"the pane is occupied"}}`)
 
@@ -155,7 +155,8 @@ func TestAnErrorReplyComesBackAsAnError(t *testing.T) {
 	}
 }
 
-// TestAMissingSocketIsErrGone covers the case ADR-0033 turns into a block.
+// TestAMissingSocketIsErrGone covers the case that turns into a block: herdr
+// going away is the absence of an answer, not an answer.
 func TestAMissingSocketIsErrGone(t *testing.T) {
 	_, err := Dial(filepath.Join(t.TempDir(), "nothing-here.sock"))
 

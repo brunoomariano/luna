@@ -132,7 +132,7 @@ func TestEveryInterpreterHasANonInteractiveMode(t *testing.T) {
 // TestTheTurnIsBounded covers the deadline.
 //
 // A person is waiting, so a model that has not answered is not about to — and an
-// unbounded wait is the silent stall INV-core-8 forbids.
+// unbounded wait is the silent stall INV-5 forbids.
 func TestTheTurnIsBounded(t *testing.T) {
 	if Timeout <= 0 {
 		t.Error("a turn must have a deadline")
@@ -150,13 +150,13 @@ func TestTheTurnIsBounded(t *testing.T) {
 // the answer.
 //
 // It is not what enforces the boundary — the command being one a person could
-// have typed is (ADR-0038) — but a prompt that did not say so would invite the
+// have typed is — but a prompt that did not say so would invite the
 // model to try.
 func TestThePromptNamesWhatTheModelMayNotDecide(t *testing.T) {
 	prompt := interpretPrompt("approve it", `{"waiting":[]}`)
 
 	for _, want := range []string{
-		"which stage runs",   // INV-core-1
+		"which stage runs",   // flow control stays out of the model
 		"Never guess a task", // an approval on the wrong task is the worst misread
 		"gate approve",       // the commands it may choose from
 	} {

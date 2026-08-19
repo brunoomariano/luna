@@ -52,9 +52,9 @@ func newHarness(t *testing.T) *harness {
 			return h.edited, nil
 		},
 		// A lead that approves whatever it is asked. It exists because gates now
-		// wait when a stage declared criteria (ADR-0063), so an unattended run
-		// needs somebody to answer them — and a harness with none would test the
-		// no-model path in every test rather than the one that is about it.
+		// wait when a stage declared criteria, so an unattended run needs somebody
+		// to answer them — and a harness with none would test the no-model path in
+		// every test rather than the one that is about it.
 		//
 		// Tests that are about a run with no model clear this field.
 		Lead: func(context.Context, string) (string, error) {
@@ -216,9 +216,9 @@ func TestTaskNewDefaultsToFeatureAndInteractive(t *testing.T) {
 // agents inferred the goal from the id string, and `spec` stopped to ask — six
 // times out of six.
 //
-// The statement of work rides in the log with the task (ADR-0067). It used to go
-// to beads, and moving it here is what lets a task be created in a repository
-// that has no registry and no `bd` on the path.
+// The statement of work rides in the log with the task. It used to go to beads,
+// and moving it here is what lets a task be created in a repository that has no
+// registry and no `bd` on the path.
 func TestTaskNewRecordsWhatTheTaskIsAbout(t *testing.T) {
 	h := newHarness(t)
 
@@ -431,7 +431,7 @@ func TestTaskShowReportsTheState(t *testing.T) {
 	out := h.mustRun(t, "task", "show", "LUNA-1")
 
 	// The autonomy knob rather than the profile: the knob is what bounds who
-	// answers a gate, and it is what moves through the log (ADR-0063).
+	// answers a gate, and it is what moves through the log.
 	for _, want := range []string{"LUNA-1", "ready", "chore", "autonomy 0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("want %q in the output, got %q", want, out)
@@ -440,7 +440,7 @@ func TestTaskShowReportsTheState(t *testing.T) {
 }
 
 // TestTaskShowPrintsWhatTheTaskIsAbout. The statement replays with the task now
-// (ADR-0067), so the command that shows a task is where a person checks what the
+// , so the command that shows a task is where a person checks what the
 // agents were actually told.
 func TestTaskShowPrintsWhatTheTaskIsAbout(t *testing.T) {
 	h := newHarness(t)
@@ -459,7 +459,7 @@ func TestTaskShowPrintsWhatTheTaskIsAbout(t *testing.T) {
 }
 
 // TestTaskShowReportsTheStatementAsJSON. The structured output is a contract
-// (ADR-0043), and the statement is the field another program most wants: it is
+// , and the statement is the field another program most wants: it is
 // what the task is for.
 func TestTaskShowReportsTheStatementAsJSON(t *testing.T) {
 	h := newHarness(t)
@@ -541,7 +541,7 @@ func TestTaskShowListsWhatWasProducedWithItsEvidence(t *testing.T) {
 		t.Errorf("want the produced artifact listed, got %q", out)
 	}
 	// Evidence is what separates knowing a stage closed from knowing on what
-	// grounds it closed (ADR-0024).
+	// grounds it closed.
 	if !strings.Contains(out, "git worktree add") {
 		t.Errorf("want the evidence shown, got %q", out)
 	}
@@ -559,7 +559,7 @@ func TestTaskShowOnAnUnknownTask(t *testing.T) {
 
 // ── gates ────────────────────────────────────────────────────────────────────
 
-// TestGatesListsWhatIsWaiting covers INV-core-12 at the surface.
+// TestGatesListsWhatIsWaiting covers INV-5 at the surface.
 //
 // A suspended task released its slot, so nothing is running to remind anyone it
 // exists. This listing is the only thing standing between that and a task waiting
@@ -856,7 +856,7 @@ func specGateStore(t *testing.T, h *harness, id string) {
 	t.Helper()
 
 	// Each stage closes on existence evidence: a stage now blocks unless every
-	// artifact it owed carries a passing verdict (ADR-0028), and what these tests
+	// artifact it owed carries a passing verdict, and what these tests
 	// are about is the gate, not what was checked along the way.
 	delivered := func(artifacts ...fsm.Artifact) fsm.Complete {
 		evidence := map[fsm.Artifact]fsm.Evidence{}
@@ -867,7 +867,7 @@ func specGateStore(t *testing.T, h *harness, id string) {
 	}
 
 	// Same, with content on the artifact, so the gate that opens has something to
-	// carry — which is the whole point of a review gate (ADR-0022, ADR-0064).
+	// carry — which is the whole point of a review gate.
 	deliveredWithPayload := func(artifact fsm.Artifact, payload string) fsm.Action {
 		return fsm.Complete{
 			Delivered: []fsm.Artifact{artifact},
@@ -888,7 +888,7 @@ func specGateStore(t *testing.T, h *harness, id string) {
 		delivered("scenarios", "approach"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // spec
 		// The review gate opens when `spec` closes, because that is the first
-		// moment the contract exists to be reviewed (ADR-0064).
+		// moment the contract exists to be reviewed.
 		deliveredWithPayload("contract", "the contract the stage wrote"),
 	}
 
@@ -922,7 +922,7 @@ func TestGateShowDisplaysTheArtifactUnderReview(t *testing.T) {
 	}
 }
 
-// TestGateAdjustAppliesAnEditedContract covers the path ADR-0022 exists for.
+// TestGateAdjustAppliesAnEditedContract covers the path an adjustable gate artifact exists for.
 //
 // The human edits, and the edited version is what carries on — recorded, so the
 // handoff describes what the next stage actually received.
@@ -942,7 +942,7 @@ func TestGateAdjustAppliesAnEditedContract(t *testing.T) {
 		t.Fatalf("replaying: %v", err)
 	}
 	// A person's edit is recorded as human-scoped evidence, and the edited text is
-	// what it carries (ADR-0022).
+	// what it carries.
 	if state.Evidence["contract"].Detail != "the contract a human fixed" {
 		t.Errorf("the edited version must be what was recorded, got %q", state.Evidence["contract"].Detail)
 	}
@@ -950,7 +950,7 @@ func TestGateAdjustAppliesAnEditedContract(t *testing.T) {
 		t.Errorf("want the adjustment scoped to the human who made it, got %q", state.Evidence["contract"].Scope)
 	}
 	// The stage that produced the contract has already closed — its gate opened on
-	// the way out (ADR-0064) — so answering resumes at `stage_done`. `running`
+	// the way out — so answering resumes at `stage_done`. `running`
 	// would ask the node to run that stage a second time.
 	if state.Status != fsm.StatusStageDone {
 		t.Errorf("want the task carrying on from the closed stage, got %q", state.Status)
@@ -1014,7 +1014,7 @@ func TestAnswerRefusesWhatTheReducerWouldReject(t *testing.T) {
 		t.Fatalf("the log must still replay after a refused command: %v", err2)
 	}
 	// Where it was is where the first approval left it: the gate opened on the way
-	// out of `spec`, so answering it resumes at `stage_done` (ADR-0064). The
+	// out of `spec`, so answering it resumes at `stage_done`. The
 	// second command was refused and moved nothing.
 	if state.Status != fsm.StatusStageDone {
 		t.Errorf("the refused answer left the task where it was, got %q", state.Status)
@@ -1052,7 +1052,7 @@ func TestCommandsSurfaceAStoreFailure(t *testing.T) {
 // TestTaskShowOnABlockedTask covers the blocked-reason branch.
 //
 // A task that stopped has to say why when someone asks. The reason is the whole
-// value of the block — INV-core-8 is about not failing silently, and a status
+// value of the block — INV-5 is about not failing silently, and a status
 // with no explanation is a quieter kind of silence.
 func TestTaskShowOnABlockedTask(t *testing.T) {
 	h := newHarness(t)
@@ -1232,7 +1232,7 @@ func TestAdjustWithNoEditorAndNoFlagSaysWhatToDo(t *testing.T) {
 //
 // A task can name a profile the configuration no longer defines — deleted or
 // renamed after it started. It replays exactly as it ran, because every gate
-// decision it took is in its log (ADR-0026), but its remaining gates fall back to
+// decision it took is in its log, but its remaining gates fall back to
 // the cautious policy. Without a word about it someone would watch their nightly
 // run start stopping at every gate and have nothing to go on.
 func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
@@ -1254,7 +1254,7 @@ func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
 	}
 
 	// `task show` no longer carries the profile at all: it decides nothing since
-	// ADR-0063 and is kept only so old logs replay. Showing it there implied it
+	// retired with the profiles and is kept only so old logs replay. Showing it there implied it
 	// still governed the run. The listing is where an undefined one still
 	// surfaces, because that is where a person is choosing what to answer.
 	if out := h.mustRun(t, "task", "show", "LUNA-1"); strings.Contains(out, "paranoid") {
@@ -1315,7 +1315,7 @@ func TestTaskShowSaysNothingAboutALoopThatIsNotRunning(t *testing.T) {
 	}
 }
 
-// TestTheLoopReachesTheStructuredView. `--json` is a contract (ADR-0043), and a
+// TestTheLoopReachesTheStructuredView. `--json` is a contract, and a
 // program watching for a task about to hit a ceiling reads it there.
 func TestTheLoopReachesTheStructuredView(t *testing.T) {
 	h := newHarness(t)

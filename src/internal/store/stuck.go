@@ -13,7 +13,7 @@ import (
 // It is the watchdog's subject, and the reason the watchdog can exist at all. An
 // earlier design had it inspect a replayed TaskState and ask whether the task
 // looked stalled — which nothing but a test fake could ever implement, because a
-// state rebuilt from the log carries no clock (ADR-0051).
+// state rebuilt from the log carries no clock.
 //
 // This asks a question the log can answer: the last event has a timestamp, and
 // the difference between then and now is a fact rather than a judgement.
@@ -50,7 +50,7 @@ func (s Stuck) String() string {
 //
 // This is the watchdog's whole mechanism. It is a query, not a loop — whatever
 // wants to poll decides how often, and a query keeps the clock in exactly one
-// place (ADR-0053).
+// place.
 func (s *Store) Stalled(flow []fsm.Stage, patience time.Duration) ([]Stuck, error) {
 	ids, err := s.Tasks()
 	if err != nil {

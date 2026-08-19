@@ -15,7 +15,7 @@ var ErrUnknownStage = errors.New("stage is not part of the flow")
 // NextStage answers which stage comes after current, skipping the ones whose
 // condition does not hold in this context.
 //
-// The FSM decides this — never the model (INV-core-1). The three return values
+// The FSM decides this — never the model. The three return values
 // separate three different outcomes that callers must not conflate:
 //
 //   - (stage, true, nil)    — the next stage to run;
@@ -25,7 +25,7 @@ var ErrUnknownStage = errors.New("stage is not part of the flow")
 // Pass the zero StageID as current to get the flow's entry stage.
 //
 // A skipped stage is not an error and not a gap: on a chore, qa simply does not
-// exist in that flow (ADR-0014). Conditions are evaluated against the context as
+// exist in that flow. Conditions are evaluated against the context as
 // it is now, so a stage gated on a fact discovered mid-run — architecture on
 // TouchesStructure — enters as soon as the fact appears.
 func NextStage(flow []Stage, current StageID, ctx TaskContext) (StageID, bool, error) {
@@ -50,12 +50,12 @@ func NextStage(flow []Stage, current StageID, ctx TaskContext) (StageID, bool, e
 
 // MissingFor lists the artifacts a stage requires that are not in the context.
 //
-// This is the contract's entry check (INV-core-3) — the sibling of AuditContract.
+// This is the contract's entry check (INV-3) — the sibling of AuditContract.
 // They ask different questions: the static one asks whether the flow holds
 // together on paper, this one asks whether this task, right now, can start this
 // stage. A flow can pass the static check and still be short an input at runtime,
 // because a conditional stage was skipped or an artifact was invalidated
-// (ADR-0020).
+// .
 //
 // Declaration order is preserved: whoever reads the answer compares it against
 // the contract they wrote.

@@ -25,7 +25,7 @@ import (
 // "finish" having proven nothing.
 //
 // The agent defaults to empty on purpose: each stage's role decides which agent
-// runs it (ADR-0040), and a default here would silently override all of them.
+// runs it, and a default here would silently override all of them.
 func TestRunOptionsDefaultToTheCurrentRepoAndTheRolesAgents(t *testing.T) {
 	opts, err := parseRunOptions(nil)
 	if err != nil {
@@ -110,7 +110,7 @@ func TestRunRejectsAnUnknownFlag(t *testing.T) {
 // tells a broken flow apart from a broken herdr, which is why --dry-run exists.
 //
 // The knob is what makes it unattended now rather than a profile: gates wait
-// because the shipped stages declare criteria (ADR-0063), and 10 is what lets
+// because the shipped stages declare criteria, and 10 is what lets
 // the lead answer them instead of a person.
 func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 	h := newHarness(t)
@@ -143,13 +143,13 @@ func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 // The dry node hands back every artifact the contract asked for, which is what lets
 // the flow run to the end. What it must not do is dress that up as verification: no
 // test was run, no file was checked, and the evidence says `existence` because that
-// is the truth about what was proven (ADR-0032). A dry run that recorded a full
+// is the truth about what was proven. A dry run that recorded a full
 // verdict would leave a log claiming the work was checked, and the log is the audit
-// trail (INV-core-2).
+// trail.
 func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	// Unattended is the knob now, not a profile (ADR-0063).
+	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
@@ -177,7 +177,7 @@ func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	// Unattended is the knob now, not a profile (ADR-0063).
+	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
@@ -251,7 +251,7 @@ func TestRunSurfacesAMistypedFlagBeforeTouchingTheStore(t *testing.T) {
 // deciding on the person's behalf. The output carries the command that answers it
 // because a suspended task released its slot: nothing is running to remind anyone it
 // exists, and this line is what stands between that and a task waiting forever
-// (INV-core-12).
+// .
 func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1") // interactive by default
@@ -292,7 +292,7 @@ func TestAnsweringAGateLetsTheRunCarryOn(t *testing.T) {
 // blockedStore stages a task stopped by a stage that did not deliver.
 //
 // It is the cheapest honest route to a block: a stage declares what it produces, and
-// the reducer refuses to close one that came back empty (ADR-0028). Reaching a block
+// the reducer refuses to close one that came back empty. Reaching a block
 // through a failing node would need a node that fails, and what these tests are about
 // is what the CLI does once a task is blocked, not how it got there.
 func blockedStore(t *testing.T, h *harness, id string) {
@@ -320,7 +320,7 @@ func blockedStore(t *testing.T, h *harness, id string) {
 // TestRunReportsABlockedTaskAndHowToClearIt covers the blocked branch of reportRun.
 //
 // A block is waiting on a person, so the run ends rather than pushing past it. The
-// reason is printed because the reason is the whole value of the block — INV-core-8
+// reason is printed because the reason is the whole value of the block — INV-5
 // is about not failing silently, and a status with no explanation is a quieter kind
 // of silence.
 func TestRunReportsABlockedTaskAndHowToClearIt(t *testing.T) {
@@ -347,7 +347,7 @@ func TestRunReportsABlockedTaskAndHowToClearIt(t *testing.T) {
 // A stall, a lost herdr, a stage whose verification failed — they all arrive here,
 // and a person deciding the situation is dealt with is the only way out. The block is
 // cleared by appending, never by editing what was written: the history is the audit
-// trail (INV-core-2), and a block that was retracted from the log is a block nobody
+// trail, and a block that was retracted from the log is a block nobody
 // can learn from.
 func TestUnblockClearsABlockAndSaysWhatIsNext(t *testing.T) {
 	h := newHarness(t)
@@ -392,7 +392,7 @@ func TestAnUnblockedTaskRunsAgain(t *testing.T) {
 	h := newHarness(t)
 	blockedStore(t, h, "LUNA-1")
 	h.mustRun(t, "unblock", "LUNA-1")
-	// Unattended is the knob now, not a profile (ADR-0063).
+	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
@@ -411,7 +411,7 @@ func TestAnUnblockedTaskRunsAgain(t *testing.T) {
 func TestUnblockRefusesATaskThatIsNotBlocked(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	// Unattended is the knob now, not a profile (ADR-0063).
+	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run") // runs to done
 
@@ -521,7 +521,7 @@ var _ lead.Node = dryNode{}
 // TestConductBuildsADryConductorWithoutTouchingHerdr covers the branch that makes
 // --dry-run possible.
 //
-// The node is chosen in conduct and nowhere else (ADR-0030). The dry branch must
+// The node is chosen in conduct and nowhere else. The dry branch must
 // return before dialling, because a rehearsal that needed herdr running could not
 // tell a broken flow from a broken integration — which is the one question it exists
 // to answer.
@@ -542,14 +542,13 @@ func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
 	}
 	// The judgement half has to be carried, or a knob raised past a gate's
 	// criticality reaches a lead that is not there and the gate quietly goes to a
-	// person instead — a feature off on every machine, saying nothing about it
-	// (ADR-0063, RFC-0006).
+	// person instead — a feature off on every machine, saying nothing about it.
 	if conductor.Ask == nil {
 		t.Error("the conductor has no model to judge a gate the knob reached")
 	}
 
 	// The mechanical half is always carried now that the declaration is replayed
-	// from the task's own log rather than read from a registry (ADR-0067): every
+	// from the task's own log rather than read from a registry: every
 	// run can answer a gate the task declared checks for. What a task declared
 	// nothing about still reaches judgement — TestTheSeamIsSilentAboutAGateNobody-
 	// Declared is where that is covered.
@@ -561,7 +560,7 @@ func TestConductBuildsADryConductorWithoutTouchingHerdr(t *testing.T) {
 // TestTheWatchdogBudgetIsProjectWide covers where the budget is read from.
 //
 // It used to be the profile the task was created under, and that went with
-// ADR-0063: profiles stopped deciding anything, and the watchdog's clock never
+// Profiles stopped deciding anything, and the watchdog's clock never
 // had to do with who answers a gate. How long a suite takes is a fact about the
 // repository — one takes twenty minutes and another takes two.
 func TestTheWatchdogBudgetIsProjectWide(t *testing.T) {
@@ -573,7 +572,7 @@ func TestTheWatchdogBudgetIsProjectWide(t *testing.T) {
 	}
 
 	// A project that set none still gets a net rather than no limit: the direction
-	// that matters, because no budget is a task that hangs forever (ADR-0034).
+	// that matters, because no budget is a task that hangs forever.
 	if got := (Config{}).Turn(); got != fsm.DefaultBudgets().Turn {
 		t.Errorf("an unset budget falls back to the shipped one, got %s", got)
 	}
@@ -581,7 +580,7 @@ func TestTheWatchdogBudgetIsProjectWide(t *testing.T) {
 
 // TestConductDialsHerdrForARealRun covers the branch a dry run never reaches.
 //
-// It is where the two systems are wired together (ADR-0027): the node that talks
+// It is where the two systems are wired together: the node that talks
 // to herdr, the verifier that does not, and the agent kind the flags chose. A
 // fake socket is enough to prove the wiring without a running herdr.
 func TestConductDialsHerdrForARealRun(t *testing.T) {
@@ -603,7 +602,7 @@ func TestConductDialsHerdrForARealRun(t *testing.T) {
 		t.Fatalf("want the herdr node, got %T", conductor.Node)
 	}
 	// --agent overrides every role's agent, which is what makes a run reproducible
-	// against one harness while the roles are still being tuned (ADR-0040).
+	// against one harness while the roles are still being tuned.
 	if node.Roles == nil {
 		t.Fatal("the node needs roles to resolve")
 	}
@@ -613,7 +612,7 @@ func TestConductDialsHerdrForARealRun(t *testing.T) {
 	if node.Runner == nil {
 		t.Error("the node needs something to drive herdr with")
 	}
-	// Verification does not go through herdr (ADR-0035), so the node must be
+	// Verification does not go through herdr, so the node must be
 	// given a prover rather than left to invent evidence.
 	if node.Prove == nil {
 		t.Error("the node must carry a verifier")
@@ -624,7 +623,7 @@ func TestConductDialsHerdrForARealRun(t *testing.T) {
 //
 // A run that cannot reach herdr must say so plainly rather than failing somewhere
 // downstream: it is the most common way this goes wrong, and the fix is to start
-// herdr rather than to debug the flow (ADR-0033).
+// herdr rather than to debug the flow.
 func TestConductReportsAnAbsentHerdr(t *testing.T) {
 	h := newHarness(t)
 
@@ -668,7 +667,7 @@ func fakeHerdrSocket(t *testing.T) string {
 	return path
 }
 
-// TestALostHerdrBlocksTheTaskRatherThanFailingTheRun covers ADR-0033 end to end.
+// TestALostHerdrBlocksTheTaskRatherThanFailingTheRun covers losing the runner end to end.
 //
 // A herdr that goes away mid-stage is infrastructure, not a task failure. The lead
 // records a block and the run ends normally, so the task is visible in `luna gates`
@@ -676,7 +675,7 @@ func fakeHerdrSocket(t *testing.T) string {
 func TestALostHerdrBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	// Unattended is the knob now, not a profile (ADR-0063).
+	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	// A socket that answers the dial and then refuses everything, which is what a
@@ -698,7 +697,7 @@ func TestALostHerdrBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	if !strings.Contains(state.Blocked, "herdr") {
 		t.Errorf("the reason must name what went away, got %q", state.Blocked)
 	}
-	// A stall is not a stage failure: the retry budget stays untouched (ADR-0011).
+	// A stall is not a stage failure: the retry budget stays untouched.
 	if state.Retry.Attempts != 0 {
 		t.Errorf("infrastructure must not spend the retry budget, got %d", state.Retry.Attempts)
 	}
@@ -771,7 +770,7 @@ func TestUnblockRefusesWhenTheStoreCannotAnswer(t *testing.T) {
 	}
 }
 
-// TestAFinishedTaskLandsOnItsOwnBranch is the promise ADR-0062 makes, asserted
+// TestAFinishedTaskLandsOnItsOwnBranch is the promise not integrating makes, asserted
 // where a person would see it.
 //
 // The swarm bench found it unkept: a task ran every stage, recorded the right
@@ -845,7 +844,7 @@ func TestATaskThatIsNotDoneDoesNotLand(t *testing.T) {
 	}
 }
 
-// TestStatusNamesTheBranchAFinishedTaskLandedOn is the half of ADR-0062 a person
+// TestStatusNamesTheBranchAFinishedTaskLandedOn is the half of not integrating a person
 // actually reads.
 //
 // `done` means ready to integrate, and integrating is a manual act — so status

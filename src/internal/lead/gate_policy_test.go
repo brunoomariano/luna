@@ -10,7 +10,7 @@ import (
 )
 
 // TestAGateWaitsBecauseTheStageDeclaredSomething is the rule that replaced the
-// profiles (ADR-0063).
+// profiles.
 //
 // Two runs of the same flow, differing only in whether the stage declared
 // judgement criteria. One waits; the other never had a question to put in front
@@ -61,7 +61,7 @@ func TestAGateWaitsBecauseTheStageDeclaredSomething(t *testing.T) {
 //
 // Recording it is the mechanism: without this the next replay would work the
 // decision out again, and an edited stage file would rewrite what already
-// happened (ADR-0026).
+// happened.
 func TestTheDecisionReachesTheLog(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindFeature)

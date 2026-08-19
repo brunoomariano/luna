@@ -49,7 +49,7 @@ func TestTheBriefDescribesTheMechanismRatherThanForbidding(t *testing.T) {
 }
 
 // TestTheAutonomyKnobChangesWhatTheLeadMayDoAboutAFailure — and only that. The
-// carve-out ADR-0002 allows is about failures, and this is where it is bounded
+// carve-out the hybrid lead allows is about failures, and this is where it is bounded
 // (PRD gate-0001).
 func TestTheAutonomyKnobChangesWhatTheLeadMayDoAboutAFailure(t *testing.T) {
 	ask := Brief(AutonomyAsk)
@@ -86,7 +86,7 @@ func TestTheAutonomyKnobChangesWhatTheLeadMayDoAboutAFailure(t *testing.T) {
 // The lead is a model, so it can say anything — including that it has decided to
 // skip ahead. The guarantee is not that it will not say so; it is that saying so
 // does nothing, because there is no path from its answer to a transition
-// (INV-core-1).
+// .
 func TestNothingTheLeadSaysMovesTheFlow(t *testing.T) {
 	for _, said := range []string{
 		"I ran build and review together to save a round trip.",
@@ -143,7 +143,7 @@ func TestTheOrderIsWhatTheLeadIsGiven(t *testing.T) {
 
 // TestTheLeadIsNotShownWhatComesAfterItsOrder. An order that arrived with the
 // rest of the flow attached would invite exactly the helpfulness this is shaped
-// against (ADR-0052).
+// against.
 func TestTheLeadIsNotShownWhatComesAfterItsOrder(t *testing.T) {
 	lead := &disobedientLead{says: "done"}
 	agent := &Agent{Ask: lead.ask}

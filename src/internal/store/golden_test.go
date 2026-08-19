@@ -117,11 +117,11 @@ func TestGoldenLogsReplayToTheSameState(t *testing.T) {
 	state, err := s.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
 		// The flow's fingerprint is part of the recorded log, so this fires when
-		// the shipped flow changed — which is ADR-0046 working, and the corpus
-		// showing what it costs.
+		// the shipped flow changed — which is the fingerprint working, and the
+		// corpus showing what it costs.
 		if errors.Is(err, ErrFlowChanged) {
 			t.Fatalf("the shipped flow changed, so a log written under the old one no longer "+
-				"replays: %v\nThat is ADR-0046 doing its job. Re-record with -update once "+
+				"replays: %v\nThat is the flow fingerprint doing its job. Re-record with -update once "+
 				"the change is deliberate.", err)
 		}
 		t.Fatalf("a recorded log must still replay: %v", err)
@@ -203,8 +203,8 @@ func writeReplayCorpus(t *testing.T, path string) {
 		},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			// `setup` is the first stage since ADR-0062 removed `commit` and
-			// `discovery` went with it.
+			// `setup` is the first stage since integration left Luna's scope,
+			// removing `commit`, and `discovery` went with it.
 			Delivered: []fsm.Artifact{"worktree"},
 			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(2)},
 			Flow:      fsm.DefaultFlow(),

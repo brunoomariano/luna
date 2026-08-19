@@ -33,10 +33,10 @@ const anchorName = ".luna-anchor"
 // **The command reported success and the task never existed.** Nothing was
 // denied: the write went to a filesystem that evaporates, and the read that
 // followed it came back from the same place, so the two agreed with each other
-// and with nobody else. That is the shape [ADR-0068](../../../docs/ADRs/0068-a-worktree-lives-where-the-process-can-reach-it.md)
-// found in `Handover` — two realities, one answer — with the exit code saying 0
-// this time, which is worse: there is no ambiguous value left for a caller to
-// distrust.
+// and with nobody else. That is the same shape — a worktree living where the
+// process cannot reach it — found in `Handover`: two realities, one answer, with
+// the exit code saying 0 this time, which is worse: there is no ambiguous value
+// left for a caller to distrust.
 //
 // The signal is deliberately not "is this tmpfs". A tmpfs log is legitimate — a
 // scratch directory, a test, a CI runner with the workspace in RAM — and this

@@ -90,8 +90,8 @@ func TestTheShippedFlowLeavesRoomForATaskID(t *testing.T) {
 	}
 }
 
-// TestAFlowWithLongStageNamesIsReported covers the custom-flow case ADR-0017
-// allows and the arithmetic cannot know about.
+// TestAFlowWithLongStageNamesIsReported covers the custom-flow case a project
+// bringing its own flow allows and the arithmetic cannot know about.
 func TestAFlowWithLongStageNamesIsReported(t *testing.T) {
 	flow := []Stage{
 		{ID: "short", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}},

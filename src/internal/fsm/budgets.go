@@ -10,24 +10,24 @@ import (
 // They are declarations, not timers. The engine holds them because they belong to
 // the profile — the same place that decides which gates wait — but nothing here
 // measures anything: the node layer reads them, herdr does the waiting, and a
-// stall arrives as a fact inside an action (ADR-0024, ADR-0034).
+// stall arrives as a fact inside an action.
 type Budgets struct {
 	// Turn is how long one prompt may take, from sending it to the agent settling,
-	// including any tool it runs on the way (ADR-0051).
+	// including any tool it runs on the way.
 	//
-	// One budget rather than two. ADR-0034 split this into an idle window and a
-	// larger one for a tool in flight, which needs Luna to know a tool is running —
-	// and nothing tells it. herdr reports `working`, which covers an agent thinking
-	// and an agent compiling alike, so the distinction was never expressible and
-	// the idle window was silently bounding whole turns.
+	// One budget rather than two. An earlier design split this into an idle window
+	// and a larger one for a tool in flight, which needs Luna to know a tool is
+	// running — and nothing tells it. herdr reports `working`, which covers an
+	// agent thinking and an agent compiling alike, so the distinction was never
+	// expressible and the idle window was silently bounding whole turns.
 	Turn time.Duration
 }
 
 // DefaultBudgets are the values the study settled on, from the one project that
 // had been burned by getting them wrong.
 //
-// Two hours because a turn may contain a build, which is the case ADR-0034 chose
-// that number for. Thirty minutes was the old idle value and was wrong for what it
+// Two hours because a turn may contain a build, which is the case that number was
+// chosen for. Thirty minutes was the old idle value and was wrong for what it
 // actually bounded.
 //
 // Deliberately absent: a wall-clock cap on the task. multica removed theirs after

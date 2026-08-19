@@ -15,7 +15,7 @@ import (
 // `020-setup.toml`. Order is significant: `AuditContract` checks precedence
 // rather than existence, so which stage comes first is part of the contract. A
 // numeric prefix makes inserting a stage an edit to one filename instead of a
-// renumbering (RFC-0003).
+// renumbering.
 //
 // It takes an fs.FS rather than a path because the shipped flow is embedded in
 // the binary and a project's copy is on disk, and neither should have to know
@@ -137,8 +137,8 @@ func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) 
 	case s.path != "" && s.run != "":
 		// A command already says what it proves by running. A path beside it would
 		// be a second, weaker check on the same artifact, and the question "which
-		// one decided?" has no good answer (RFC-0004: the path is for the artifacts
-		// nothing runs against).
+		// one decided?" has no good answer — the path is for the artifacts nothing
+		// runs against.
 		return nil, fmt.Errorf("%s: %s runs a command and declares a path — a command proves what a path would",
 			where, artifact)
 
@@ -164,8 +164,8 @@ func (s *verifierSpec) build(artifact Artifact, where string) (Verifier, error) 
 // buildCommand turns a `run` declaration into a Command verifier.
 func (s *verifierSpec) buildCommand(artifact Artifact, where string) (Verifier, error) {
 	if s.scope == "" {
-		// The scope is what stops a targeted run being read as a full one later
-		// (ADR-0032). A command with no scope has not said what it proves, and
+		// The scope is what stops a targeted run being read as a full one later.
+		// A command with no scope has not said what it proves, and
 		// guessing would be the laundering the scopes prevent.
 		return nil, fmt.Errorf("%s: %s runs a command and declares no scope (full, targeted, existence, human)",
 			where, artifact)
@@ -181,8 +181,8 @@ func (s *verifierSpec) buildCommand(artifact Artifact, where string) (Verifier, 
 //
 // An artifact handed to Luna is not in the commit at all, so a command run over
 // the delivery has nothing to run against, and a path — where it lives *in the
-// commit* — describes a place it will never be (RFC-0008). Both are the same
-// mistake as a path beside a command (RFC-0004), one step further out.
+// commit* — describes a place it will never be. Both are the same
+// mistake as a path beside a command, one step further out.
 func (s *verifierSpec) storableAlone(artifact Artifact, where string) error {
 	if s.run != "" {
 		return fmt.Errorf("%s: %s runs a command and is handed over to Luna — a command checks the commit, "+
@@ -430,9 +430,9 @@ func finish(stage Stage, gate GateSpec, review ReviewSpec, verify map[Artifact]V
 	}
 
 	// Every artifact the flow consumes declares how it is proven. `Existence` is
-	// still available and is now a choice someone wrote down, which is what
-	// ADR-0032 asked for and what a default nobody noticed could never be
-	// (RFC-0003).
+	// still available and is now a choice someone wrote down, which is what an
+	// artifact declaring its own verification asks for and what a default nobody
+	// noticed could never be.
 	//
 	// ProducesForHuman is exempt: it is read by a person, and requiring a
 	// verifier for a report would be requiring a machine check on prose.

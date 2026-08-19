@@ -6,7 +6,7 @@ import (
 )
 
 // The statement used to be read from beads on every stage and deliberately left
-// out of the log. These tests are what let it move in (ADR-0067): the log has to
+// out of the log. These tests are what let it move in: the log has to
 // carry what a person said, survive their editing it, and keep every stage
 // running for a task nobody described.
 
@@ -120,7 +120,7 @@ func createdTask(t *testing.T, stated Statement) TaskState {
 
 // The gate checks moved into the log for the same reason the statement did: they
 // were a person's declaration about their own task, kept in a place that needed a
-// second tool to write (ADR-0067).
+// second tool to write.
 
 func TestATaskDeclaresWhatAnswersAGate(t *testing.T) {
 	state := createdTask(t, Statement{})
@@ -177,7 +177,7 @@ func TestDeclaringNoChecksIsNotTheSameAsDeclaringNothing(t *testing.T) {
 
 // A reduce that wrote through the previous state's map would make replaying the
 // same log twice land somewhere different — which is the property the whole
-// engine rests on (ADR-0024).
+// engine rests on.
 func TestDeclaringDoesNotMutateThePreviousState(t *testing.T) {
 	before := createdTask(t, Statement{})
 	before, err := Reduce(before, GateChecksDeclared{Gate: GateConfirm, Checks: []string{"make fmt"}})

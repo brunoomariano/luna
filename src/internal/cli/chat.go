@@ -14,7 +14,7 @@ import (
 // picks a command, it reads state and phrases it. It never chooses a stage, never
 // answers a gate, never declares a stage complete, and never writes to the log —
 // every transition still goes through the reducer, which refuses an illegal one
-// whoever proposed it (ADR-0038).
+// whoever proposed it.
 //
 // An interface rather than a call to a model so the loop can be tested without
 // one, and so a project can put its own interpreter behind it.
@@ -43,8 +43,7 @@ type Intent struct {
 // `gate approve` is not a command that happens to write: it is the statement "a
 // human looked", and the log records it indistinguishably from the person having
 // read the artifact. A layer approving on its own reading is a model saying a
-// human approved — the forgery agent-of-empires designed nonces against
-// (ADR-0043).
+// human approved — the forgery agent-of-empires designed nonces against.
 //
 // Everything else writes freely. The log is append-only, a misread intent costs a
 // wasted run, and confirming everything turns a conversation into a form.
@@ -135,7 +134,7 @@ func turn(env Env, interpreter Interpreter, confirm func(*bufio.Scanner, string)
 //
 // The layer reads what a person at a terminal would read — it has no other view
 // of the task, and giving it one would break the boundary that makes its
-// authority checkable (ADR-0043).
+// authority checkable.
 func capture(env Env, command []string) (string, error) {
 	var out strings.Builder
 

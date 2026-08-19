@@ -6,7 +6,7 @@ import (
 )
 
 // Knob is how much of the flow runs without a person: the criticality up to
-// which the lead may answer a gate on its own (RFC-0006).
+// which the lead may answer a gate on its own.
 //
 // One setting on the task, never per gate. What differs between gates is not the
 // setting but the criticality they declare, and a per-gate knob would be a second
@@ -56,7 +56,7 @@ func (k Knob) Judges(criticality int) bool { return int(k) >= criticality }
 // Derived rather than configured: two controls both called autonomy — one an enum
 // over failures, one a scale over gates — is a worse product than one, and an
 // alias mapping the old names onto knob values would hide the gate consequences
-// of the value it set (RFC-0006).
+// of the value it set.
 //
 // Retrying once comes first at every setting, including zero. It is the recovery
 // whose bound is already in the state, it needs no judgement to be safe, and
@@ -73,7 +73,7 @@ func (k Knob) Autonomy() string {
 // GateAnswer is who answers a gate that is opening now.
 //
 // It is resolved outside the reducer and travels inward inside the action, the
-// same way a verification verdict does (ADR-0024) — which is what keeps the
+// same way a verification verdict does — which is what keeps the
 // transition reproducible from the log and testable without a model.
 type GateAnswer int
 
@@ -96,8 +96,8 @@ const (
 
 // ResolveGate decides who answers a gate, given what ran and what is declared.
 //
-// This is RFC-0006's decision flow, in one place and with no side effects, so the
-// order it applies in is testable rather than emergent:
+// This is the gate-answering decision flow, in one place and with no side
+// effects, so the order it applies in is testable rather than emergent:
 //
 //	MECHANICAL — the checks declared for this gate, from the registry
 //	   ├── none declared       → nothing to run; straight to judgement

@@ -6,7 +6,7 @@ import "fmt"
 //
 // It exists because "one test passed" and "the suite is green" are different
 // claims, and a log that cannot tell them apart lets the first quietly become the
-// second (ADR-0028). The study found that laundering in every system that
+// second. The study found that laundering in every system that
 // recorded evidence at all, and the one project that refused it said so in its
 // own source: it "never upgrades targeted checks into repo green".
 type Scope string
@@ -21,13 +21,12 @@ const (
 	ScopeTargeted Scope = "targeted"
 
 	// ScopeExistence is the honest floor: the artifact was delivered and is in
-	// the store, and nothing was verified about it. Prose has no exit code
-	// (ADR-0032), and recording that as a passing check would be a lie the log
-	// tells forever.
+	// the store, and nothing was verified about it. Prose has no exit code, and
+	// recording that as a passing check would be a lie the log tells forever.
 	ScopeExistence Scope = "existence"
 
 	// ScopeJudged is the lead's judgement at a gate, against criteria declared in
-	// advance (RFC-0006).
+	// advance.
 	//
 	// It sits between `existence` and `targeted`, and the placement is the whole
 	// point. It outranks `existence` because something was actually weighed
@@ -38,8 +37,8 @@ const (
 	//
 	// Recording it as ScopeHuman was the tempting shortcut and is the one thing
 	// this must never be: it would make the audit say a person looked when none
-	// did — the falsification ADR-0043 refuses for the conversation layer,
-	// arriving by another door.
+	// did — the falsification refused at the evidence boundary, arriving by
+	// another door.
 	ScopeJudged Scope = "judged"
 
 	// ScopeHuman is a person's judgement, from a gate. It outranks any command
@@ -60,7 +59,7 @@ const (
 // The ordering is human > full > targeted > judged > existence. `human` outranks
 // a command because a person looked; `existence` is the floor because it verified
 // nothing. `judged` sits just above the floor: a model weighed declared criteria,
-// which is more than nothing and less than a command that ran (RFC-0006).
+// which is more than nothing and less than a command that ran.
 // An unknown scope on either side refuses: evidence this build cannot rank
 // proves nothing, and a requirement it cannot rank cannot be shown to be met.
 // That is the same refusal the store makes for an unknown action — a log written
@@ -107,7 +106,7 @@ const (
 	VerdictFailed Verdict = "failed"
 
 	// VerdictStale is a check that passed and was then invalidated by a later
-	// edit to what it covered (ADR-0032).
+	// edit to what it covered.
 	//
 	// It is a status rather than a deletion because the audit should show that
 	// the check ran and stopped counting, not that it never happened.
@@ -116,7 +115,7 @@ const (
 
 // Evidence is what was observed about one delivered artifact.
 //
-// It is the verdict that arrives inside the action (ADR-0024): the node layer
+// It is the verdict that arrives inside the action: the node layer
 // runs the real tool and reports, and the reducer decides what it means without
 // running anything itself.
 type Evidence struct {
@@ -141,7 +140,7 @@ type Evidence struct {
 
 	// RecordedAt is a monotonic sequence, not a clock — the position in the log
 	// at which this was observed. It is what makes the staleness rule a pure
-	// comparison rather than a call to time.Now (ADR-0024).
+	// comparison rather than a call to time.Now.
 	RecordedAt int `json:"recorded_at"`
 }
 

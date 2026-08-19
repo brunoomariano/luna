@@ -11,7 +11,7 @@ import (
 //
 // The seq is captured when the stage starts rather than read per write, because
 // it is what orders two versions of the same artifact and the reducer is the only
-// thing that moves it (ADR-0024). A writer that asked the store for "now" would be
+// thing that moves it. A writer that asked the store for "now" would be
 // reading a clock by another name.
 type taskArtifacts struct {
 	store  *store.Store

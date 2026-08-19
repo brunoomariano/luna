@@ -22,18 +22,18 @@ const (
 	StatusStageDone Status = "stage_done"
 
 	// StatusAwaitingGate is a planned pause. The stage declared it, and the slot
-	// is released while it waits (INV-core-10) — this is not a failure, and it
+	// is released while it waits — this is not a failure, and it
 	// must not be reported as one.
 	StatusAwaitingGate Status = "awaiting_gate"
 
 	// StatusBlocked is an anomaly: something failed or stalled and a human has to
-	// look. Always notifies (INV-core-8).
+	// look. Always notifies (INV-5).
 	StatusBlocked Status = "blocked"
 
 	// StatusDone is a task that reached the end of its flow.
 	StatusDone Status = "done"
 
-	// StatusAbandoned is a task a person ended before it finished (ADR-0046).
+	// StatusAbandoned is a task a person ended before it finished.
 	//
 	// Terminal like done, and deliberately not the same word: an audit that could
 	// not tell a task that delivered from one that was called off would be missing
@@ -44,16 +44,16 @@ const (
 // Profile names which gates actually wait for a human. It is chosen per task
 // rather than per task type or per repository, because the type does not predict
 // the risk — a critical bug can deserve more gating than a trivial feature
-// (ADR-0013).
+// .
 //
 // The name is all the engine holds. What the name *means* is configuration, and
 // it is resolved outside the reducer — the decision arrives in the action, the
-// same way a verification verdict does (ADR-0024, ADR-0026). That is what lets a
+// same way a verification verdict does. That is what lets a
 // project define its own profiles without the engine growing a list of them.
 type Profile string
 
 // The three shipped names. They no longer decide which gates wait — that is the
-// stage's declaration and the knob (ADR-0063) — and what they still carry is the
+// stage's declaration and the knob — and what they still carry is the
 // watchdog budget.
 //
 // A task records the profile it ran under, so the name stays part of the log's
@@ -65,7 +65,7 @@ const (
 )
 
 // GateWaited is whether a gate stopped the task, decided before the action was
-// recorded and never recomputed at replay (ADR-0026).
+// recorded and never recomputed at replay.
 //
 // It is a tri-state rather than a bool because the log has to distinguish "it was
 // decided that nobody would be asked" from "nothing was decided here". A bool
@@ -83,17 +83,17 @@ const (
 	GateDecisionWaited GateWaited = "waited"
 
 	// GateDecisionPassed means the gate was reached and let through. It still
-	// happened — nobody was asked (ADR-0013).
+	// happened — nobody was asked.
 	GateDecisionPassed GateWaited = "passed"
 
 	// GateDecisionChecked means the commands declared for this gate ran over the
 	// delivered commit and all exited 0. Nobody was asked, and the reason is a
 	// verdict rather than a policy: someone declared that those commands answer
-	// this gate (RFC-0006).
+	// this gate.
 	GateDecisionChecked GateWaited = "checked"
 
 	// GateDecisionJudged means the lead judged the gate against criteria declared
-	// in advance, because the knob reached the gate's criticality (RFC-0006).
+	// in advance, because the knob reached the gate's criticality.
 	//
 	// It is separate from GateDecisionPassed for the reason the whole tri-state
 	// exists: "nobody was asked because nothing was declared to ask about" and
@@ -142,7 +142,7 @@ func (d GateWaited) AnsweredBy() string {
 }
 
 // GateKind names why a gate stopped the task, which decides what the human is
-// being asked for (ADR-0022).
+// being asked for.
 type GateKind string
 
 const (
@@ -154,7 +154,7 @@ const (
 	// stage consumes.
 	GateReviewArtifact GateKind = "review-artifact"
 
-	// GateLoopCeiling is a loop that hit one of its ceilings (ADR-0023). Not
+	// GateLoopCeiling is a loop that hit one of its ceilings. Not
 	// converging is a decision to make, not a node failure — hence a gate rather
 	// than a block.
 	GateLoopCeiling GateKind = "loop-ceiling"
@@ -162,7 +162,7 @@ const (
 
 // PendingGate is what a suspended task is waiting on. It is what `luna gates`
 // lists, so a suspension is discoverable without anyone having watched it happen
-// (INV-core-12).
+// (INV-5).
 type PendingGate struct {
 	Kind   GateKind
 	Stage  StageID
@@ -175,7 +175,7 @@ type PendingGate struct {
 	Payload  string
 }
 
-// LoopCounters tracks the three ceilings separately (ADR-0023). One counter would
+// LoopCounters tracks the three ceilings separately. One counter would
 // force a single limit to arbitrate three different pathologies: a loop that
 // never ends, one that spins without producing, and one that undoes what it just
 // did.
@@ -216,7 +216,7 @@ func DefaultLoopLimits() LoopLimits {
 }
 
 // Retry counts attempts at the current stage after a node failure. Kept apart
-// from LoopCounters on purpose (ADR-0011): a transient failure must not eat the
+// from LoopCounters on purpose: a transient failure must not eat the
 // convergence budget, and a loop that is not converging is not a failure.
 type Retry struct {
 	Attempts int
@@ -250,7 +250,7 @@ func (s Statement) Stated() bool {
 
 // TaskState is everything the engine knows about one task. It is rebuilt by
 // replaying the append-only log, so it holds no pointer to anything live
-// (INV-core-2).
+// (INV-2).
 type TaskState struct {
 	ID      string
 	Status  Status
@@ -265,13 +265,13 @@ type TaskState struct {
 	// Knob is how far the lead may judge on its own, as it stands now. It moves
 	// only through SetKnob, so replaying the log reproduces every value it held
 	// and when — which is the whole reason the change is an action rather than
-	// configuration re-read at each step (RFC-0006).
+	// configuration re-read at each step.
 	//
 	// The zero value is KnobAsk, so a task that never set one judges nothing.
 	Knob Knob
 
-	// Flow identifies the flow this task was born under, from its opening event
-	// (ADR-0046). It is here for the same reason as Profile: a replay has to know
+	// Flow identifies the flow this task was born under, from its opening event.
+	// It is here for the same reason as Profile: a replay has to know
 	// which contract the history was written against, and asking the caller for
 	// what the log already holds would let the two disagree.
 	//
@@ -280,7 +280,7 @@ type TaskState struct {
 
 	// Base is the commit the last closed stage delivered, and the one the next
 	// stage branches from. It is the handoff: the next agent starts from the
-	// artifact rather than from a description of it (INV-core-6, RFC-0002).
+	// artifact rather than from a description of it.
 	//
 	// Empty on a task that has not closed a stage yet, which means the next
 	// worktree branches from whatever the repository already is.
@@ -288,7 +288,7 @@ type TaskState struct {
 
 	// Statement is what a person said the task is about, rebuilt from the log:
 	// `TaskCreated` carries the first one and `StatementRevised` every edit after
-	// it (ADR-0067).
+	// it.
 	//
 	// It used to be read from beads and deliberately left unrecorded, on the
 	// argument that a frozen copy would go stale while still looking
@@ -299,7 +299,7 @@ type TaskState struct {
 	Statement Statement
 
 	// GateChecks are the commands this task declared as the mechanical answer to
-	// each gate, keyed by gate kind (ADR-0067).
+	// each gate, keyed by gate kind.
 	//
 	// A gate absent from the map declared nothing and goes to judgement. A gate
 	// present with an empty slice is a person saying it has no mechanical answer,
@@ -314,16 +314,16 @@ type TaskState struct {
 
 	// Blocked is why the task stopped, and it is never empty while the status is
 	// blocked: a task that halts without saying why is the silent failure
-	// INV-core-8 forbids.
+	// INV-5 forbids.
 	Blocked string
 
 	// Seq counts transitions applied. It is the log position, and it is what lets
 	// the staleness rule compare "when was this proven" against "when was this
-	// touched" without a clock ever entering the reducer (ADR-0024, ADR-0032).
+	// touched" without a clock ever entering the reducer.
 	Seq int
 
-	// Evidence records what the tool reported for each delivered artifact
-	// (ADR-0024). An audit that says a stage closed but not on what grounds
+	// Evidence records what the tool reported for each delivered artifact.
+	// An audit that says a stage closed but not on what grounds
 	// answers half the question.
 	Evidence map[Artifact]Evidence
 }
@@ -345,7 +345,7 @@ func NewTaskState(id string, kind TaskKind) TaskState {
 //
 // Blocked is deliberately absent: it is an anomaly a person clears with Unblock,
 // and counting it as an ending would erase the difference between "this failed
-// and someone should look" and "this is over" (ADR-0046).
+// and someone should look" and "this is over".
 func (s TaskState) IsTerminal() bool {
 	return s.Status == StatusDone || s.Status == StatusAbandoned
 }
@@ -359,8 +359,8 @@ func (s TaskState) NeedsHuman() bool {
 // ShippedProfiles are the three names Luna comes with.
 //
 // It is no longer where the defaults come from — those are files now
-// (ADR-0060) — and it is not a list the engine validates against: a name it has
-// never heard of is a profile someone defined, not an error (ADR-0026).
+// — and it is not a list the engine validates against: a name it has
+// never heard of is a profile someone defined, not an error.
 //
 // What it still is: the list that has to match `src/stock/profiles/`, so that a
 // name shipped in Go and a name shipped as a file cannot drift apart. A test

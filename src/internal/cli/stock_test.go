@@ -9,7 +9,7 @@ import (
 )
 
 // TestTheStockRolesAreTheRolesTheEngineShipped is the acceptance criterion for
-// moving the roles out of Go (RFC-0003).
+// moving the roles out of Go.
 //
 // The Go map is gone, so the comparison is against what it produced, written
 // here. That is weaker than the flow's fingerprint check and it is the honest
@@ -19,7 +19,7 @@ func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
 	roles := ShippedRoles()
 
 	// The twelve the shipped flow names. A flow whose role does not resolve stops
-	// loudly (ADR-0040), so a missing file here is a stage that cannot run.
+	// loudly, so a missing file here is a stage that cannot run.
 	for _, name := range []fsm.RoleName{
 		"scout", "analyst", "investigator", "gherkin", "specifier", "implementer",
 		"cleaner", "verifier", "qa", "reviewer", "hardener", "architect",
@@ -42,7 +42,7 @@ func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
 	}
 }
 
-// TestTheReviewRolesStillCannotWrite is INV-core-7 surviving the move.
+// TestTheReviewRolesStillCannotWrite is the write/review separation surviving the move.
 //
 // The denial used to be a Go value beside the brief; it is now a line in a file.
 // A file that lost it would leave the reviewer able to edit the work it judges,
@@ -69,7 +69,7 @@ func TestTheReviewRolesStillCannotWrite(t *testing.T) {
 // replays old logs.
 //
 // `fsm.ShippedPolicy` stays in Go on purpose: it is what an event recorded before
-// gate decisions existed replays as (ADR-0026), so it is frozen history rather
+// gate decisions existed replays as, so it is frozen history rather
 // than configuration. The files are the *defaults a project inherits*, and the
 // two must agree — a profile whose file said something else would make a replay
 // and a fresh run disagree about the same name.
@@ -146,7 +146,7 @@ func TestAnEmptyStockIsRefused(t *testing.T) {
 }
 
 // TestAProfileFileWithNothingInItIsStillAProfile. A profile decides nothing now
-// (ADR-0063) — the stage declares whether a gate waits and the knob decides who
+// — the stage declares whether a gate waits and the knob decides who
 // answers — so the shipped files carry only comments. The name still has to
 // exist, because `task new --profile` validates against this set and a task's
 // log carries the name as history.
@@ -166,7 +166,7 @@ func TestAProfileFileWithNothingInItIsStillAProfile(t *testing.T) {
 }
 
 // TestASettingInAStockProfileIsRefused. A profile file declares a name and
-// nothing else since ADR-0063; loading a setting silently would leave a project
+// nothing else since profiles stopped governing gates; loading a setting silently would leave a project
 // believing a per-profile watchdog still applies.
 func TestASettingInAStockProfileIsRefused(t *testing.T) {
 	files := fstest.MapFS{

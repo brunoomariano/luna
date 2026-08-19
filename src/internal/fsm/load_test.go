@@ -62,7 +62,7 @@ invalidates   = ["ci_green"]
 
 // TestAnArtifactWithNoVerifierIsRefused is the decision this format exists for.
 //
-// ADR-0032 says the contract declares how each artifact is verified, and until
+// The contract declares how each artifact is verified, and until
 // now the floor was a default nobody noticed — `VerifierFor` returns `Existence`
 // for anything undeclared, so a stage closed on nothing having run. In a file
 // the choice has to be written down.
@@ -111,7 +111,7 @@ kind = "existence"
 
 // TestAHumanFacingArtifactNeedsNoVerifier. A report is read by a person, and
 // requiring a machine check on prose would be requiring the wrong thing
-// (INV-core-11).
+// (INV-3).
 func TestAHumanFacingArtifactNeedsNoVerifier(t *testing.T) {
 	_, err := ParseStage(`
 id                 = "qa"
@@ -125,7 +125,7 @@ produces_for_human = ["qa_report"]
 }
 
 // TestACommandWithNoScopeIsRefused. The scope is what stops a targeted run from
-// being read as a full one later (ADR-0032); a command that has not said what it
+// being read as a full one later; a command that has not said what it
 // proves has not been declared.
 func TestACommandWithNoScopeIsRefused(t *testing.T) {
 	_, err := ParseStage(`
@@ -324,7 +324,7 @@ nonsense = true`)},
 // TestTheShippedConditionsAreNamedAndClosed. A stage file names a condition; it
 // does not describe one. A predicate written in a file is a flow whose past
 // cannot be reconstructed, because the predicate that produced it may be gone
-// (ADR-0048).
+// .
 func TestTheShippedConditionsAreNamedAndClosed(t *testing.T) {
 	for _, condition := range ShippedConditions() {
 		got, err := ParseCondition(condition.Name)

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// FlowFingerprint identifies the flow a task was born under (ADR-0046).
+// FlowFingerprint identifies the flow a task was born under.
 //
 // It is the flow's *identity*, never its content. The flow itself stays in
 // configuration and stays editable — what the log records is enough to notice
@@ -23,7 +23,7 @@ type FlowFingerprint string
 // The rule for what belongs, from the field's own behaviour rather than from
 // taste: a field read *inside the reducer* decides what a past event means, so it
 // is history; a field only the node layer reads decides what happens next, so it
-// is policy (ADR-0048).
+// is policy.
 //
 // Covered:
 //
@@ -42,7 +42,7 @@ type FlowFingerprint string
 //   - Role, which only internal/herdr reads. Verified by grep, not by assumption.
 //   - The verifier's command. `make test` becoming `go test ./...` changes how an
 //     artifact is proven, not how much was proven, and evidence records what
-//     actually ran (ADR-0024). Including it would refuse a replay because someone
+//     actually ran. Including it would refuse a replay because someone
 //     renamed a Makefile target, and a check that fires on changes that do not
 //     matter is one people learn to route around.
 //   - The body of a condition, which no fingerprint can see. The name is the
@@ -73,7 +73,7 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 		writeArtifacts(&b, stage.Produces)
 		// Kept apart from Produces rather than concatenated: moving an artifact
 		// between the two changes whether the static check demands a consumer for
-		// it (ADR-0021), and that is a different flow.
+		// it, and that is a different flow.
 		b.WriteString("+")
 		writeArtifacts(&b, stage.ProducesForHuman)
 		b.WriteString("|")
@@ -96,21 +96,21 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 // The kind and the artifact only. The reason is prose a person reads at the
 // moment they are asked — rewording "confirm the repositories" cannot change
 // whether a past Advance suspended, and refusing a replay over it would be the
-// noise ADR-0048 keeps out.
+// noise the history-versus-policy rule keeps out.
 //
 // `criticality` and `judge` are out for the same reason, and it is worth stating
 // because the intuition runs the other way. They decide *who is asked* at a gate
 // that is opening now; they cannot change whether a past Advance suspended,
 // because what the reducer replays is the recorded GateDecision and not the
-// policy that produced it (ADR-0026). A gate answered by the lead last week
+// policy that produced it. A gate answered by the lead last week
 // replays as `judged` whatever the stage file says today.
 //
-// This is the ADR-0048 rule applied literally — a field the reducer reads is
-// history, a field only the layer above reads is policy — and it lands opposite
-// to what RFC-0006 assumed. The RFC expected populating the stock to stop every
-// open task replaying, and planned around that; measured against the rule, the
-// two fields are policy, so a project can declare criticality on a running flow
-// without stranding a single task.
+// This is the rule applied literally — a field the reducer reads is history, a
+// field only the layer above reads is policy — and it lands opposite to what the
+// gate-knob design assumed. That design expected populating the stock to stop
+// every open task replaying, and planned around it; measured against the rule,
+// the two fields are policy, so a project can declare criticality on a running
+// flow without stranding a single task.
 func writeGate(b *strings.Builder, gate *GateSpec) {
 	if gate == nil {
 		return
@@ -161,10 +161,10 @@ func writeProofs(b *strings.Builder, stage Stage) {
 
 		// Where the artifact is handed over, when it is not the commit. A path is
 		// deliberately absent from this — it changes where a delivery is looked for
-		// (ADR-0070) — but the store is a different obligation: an artifact that
+		// — but the store is a different obligation: an artifact that
 		// used to be a file in a commit and is now a row in the store is not the
 		// same thing owed, and a log written under one rule must not replay under
-		// the other (RFC-0008).
+		// the other.
 		if existence, ok := verifier.(Existence); ok && existence.Handover {
 			b.WriteString("@store")
 		}

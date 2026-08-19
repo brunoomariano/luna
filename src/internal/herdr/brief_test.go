@@ -14,7 +14,7 @@ import (
 
 // TestTheBriefSaysToCommit is the handoff made explicit.
 //
-// ADR-0055 makes the commit the handoff and ADR-0058 makes it the snapshot, so
+// The commit is the handoff and the snapshot, so
 // every stage after the first reads what the previous one committed. Nothing said
 // so to the agent: six stages closed green across five role branches and `git log
 // --all` showed only the repository's original commit.
@@ -84,7 +84,7 @@ func TestTheBriefCarriesWhatTheTaskIsAbout(t *testing.T) {
 // that exists and is never called is the failure this project has met twice.
 //
 // The statement now arrives in the replayed state rather than from a registry
-// call at stage start (ADR-0067), so this is what proves the node still puts it
+// call at stage start, so this is what proves the node still puts it
 // in front of the agent.
 func TestTheStatementReachesTheAgent(t *testing.T) {
 	fake := &fakeHerdr{settlesAt: StatusIdle}
@@ -259,7 +259,7 @@ func TestAMechanicalStageDeclaresNothingAndStillCloses(t *testing.T) {
 	state := fsm.NewTaskState("LUNA-1", "")
 	state.Base = "c0ffee1"
 
-	// No role: `setup` and `commit` are mechanical (ADR-0040).
+	// No role: `setup` and `commit` are mechanical.
 	stage := fsm.Stage{ID: "setup", Produces: []fsm.Artifact{"worktree"}}
 	result, err := node.Run(context.Background(), state, stage)
 	if err != nil {
@@ -345,7 +345,7 @@ func TestAMechanicalStageAfterAnAgentStageDeclaresNothing(t *testing.T) {
 
 // TestTheBriefNamesWhereAnArtifactGoes. A declared path is checked against the
 // commit, so an agent that writes the right content in the wrong directory fails
-// a check nobody showed it (ADR-0070).
+// a check nobody showed it.
 func TestTheBriefNamesWhereAnArtifactGoes(t *testing.T) {
 	stage := fsm.Stage{
 		ID:       "verify",

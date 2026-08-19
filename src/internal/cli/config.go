@@ -23,14 +23,14 @@ type Config struct {
 	Editor string
 
 	// Interpreter is which official harness `luna chat` asks to understand what a
-	// person said. Empty means the house default (ADR-0044).
+	// person said. Empty means the house default.
 	Interpreter string
 
 	// TurnBudget bounds how long the node waits on an agent that is not reacting.
 	//
 	// Ordinary project configuration rather than a property of a profile, which is
-	// what ADR-0063 decided when profiles stopped governing gates: this is the
-	// watchdog's clock (ADR-0034, ADR-0051) and has nothing to do with who answers
+	// what was decided when profiles stopped governing gates: this is the
+	// watchdog's clock and has nothing to do with who answers
 	// a gate. One repository's suite takes twenty minutes and another's takes two,
 	// and that is a fact about the repository.
 	//
@@ -42,7 +42,7 @@ type Config struct {
 	// error, because there is nothing left in a profile to conflict.
 	//
 	// A set rather than a map to settings: a profile decides nothing since
-	// ADR-0063, and what the name is still for is validation — `task new
+	// retired with them, and what the name is still for is validation — `task new
 	// --profile` refuses one nobody defined — and history, since a task records
 	// the profile it ran under.
 	Profiles map[fsm.Profile]bool
@@ -50,7 +50,7 @@ type Config struct {
 	// Roles are what each role name resolves to: the agent that runs it, what it
 	// is told, and the skills it loads. A project that names none inherits the
 	// shipped set; naming one replaces just that one, because a flow names roles
-	// the config never mentions (ADR-0040).
+	// the config never mentions.
 	Roles map[fsm.RoleName]fsm.Role
 }
 
@@ -70,7 +70,7 @@ type sectionRef struct {
 }
 
 // ShippedProfiles are the names the shipped stock defines, expressed the same way
-// a configured one is. They are defaults, not special cases (ADR-0026).
+// a configured one is. They are defaults, not special cases.
 func ShippedProfiles() map[fsm.Profile]bool {
 	profiles, err := shippedProfiles()
 	if err != nil {
@@ -87,7 +87,7 @@ func ShippedProfiles() map[fsm.Profile]bool {
 // Defines reports whether this project names the profile.
 //
 // A question rather than a lookup, because there is nothing to look up: a profile
-// holds only its name (ADR-0063). The answer separates two situations the callers
+// holds only its name. The answer separates two situations the callers
 // must tell apart — creating a task under an unknown profile is a mistake worth
 // refusing, while replaying a task whose profile was since deleted is ordinary
 // and must still work, flagged rather than blocked.
@@ -98,10 +98,10 @@ func (c Config) Defines(name fsm.Profile) bool {
 // Turn is how long the node waits on an agent that is not reacting.
 //
 // It takes no profile: the budget is the watchdog's clock and stopped being a
-// property of a profile when profiles stopped deciding anything (ADR-0063). A
+// property of a profile when profiles stopped deciding anything. A
 // project that sets none gets the shipped default, so there is always a net —
 // the direction that matters, because no budget means a task that hangs forever
-// (ADR-0034).
+// .
 // Non-positive rather than zero: a budget of zero or less means "call it stuck
 // immediately", which is never what anybody meant to write. ParseBudget refuses
 // what it cannot read; this is the guard on what it can.
@@ -270,7 +270,7 @@ func assignRole(cfg *Config, name, key, value, where string) error {
 // parseCapabilities reads `tools_deny`, refusing a name Luna does not know.
 //
 // A typo here fails open — the role runs with the tool it was supposed to lose,
-// and nothing says so. That is the direction INV-core-7 cares about most, which
+// and nothing says so. That is the direction the write/review separation cares about most, which
 // is why an unknown capability stops the load rather than being skipped.
 func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
 	names, err := parseStringArray(value, where)
@@ -291,7 +291,7 @@ func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
 
 // assignProfile refuses every setting inside a `[profile.<name>]` section.
 //
-// A profile decides nothing since ADR-0063: whether a gate waits is the stage's
+// A profile decides nothing any more: whether a gate waits is the stage's
 // declaration, who answers it is the knob, and the watchdog's clock is
 // project-wide. What survives is the *name* — a task's log carries the one it
 // was created under, and `task new --profile` validates against the set — so the
@@ -308,7 +308,7 @@ func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
 // sentence that is true for any key at all.
 func assignProfile(_ *Config, section, key, _, where string) error {
 	return fmt.Errorf("%s: unknown setting %q in [profile.%s] — a profile holds no "+
-		"settings now, only its name (ADR-0063)", where, key, section)
+		"settings now, only its name", where, key, section)
 }
 
 func assignRoot(cfg *Config, key, value, where string) error {
@@ -371,12 +371,12 @@ func parseSection(header, where string) (sectionRef, error) {
 // ShippedRoles is what each role in the default flow resolves to before a project
 // says otherwise.
 //
-// It reads `src/stock/roles/*.toml`, embedded in the binary (RFC-0003). The
+// It reads `src/stock/roles/*.toml`, embedded in the binary. The
 // definitions used to be a Go map, which meant a project could override a role
 // and could not see what it was overriding.
 //
 // Every role names the same agent kind today, which is honest: the independence
-// that matters is the one INV-core-7 asks for — the reviewer not HAVING Edit —
+// that matters is the one the separation asks for — the reviewer not HAVING Edit —
 // and that needs tool denial rather than a different vendor. Naming different
 // agents there is available to a project and is not pretended to be a substitute.
 //

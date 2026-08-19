@@ -85,8 +85,9 @@ func TestSeveralConditionalsAreSkippedAtOnce(t *testing.T) {
 	}
 
 	// harden is feature-or-bug and architecture needs a discovered fact, so on a
-	// chore both are out — and since ADR-0062 removed `commit`, code-review is the
-	// last stage that runs. Reaching the end is ok=false, not an error.
+	// chore both are out — and since integration left Luna's scope, removing
+	// `commit`, code-review is the last stage that runs. Reaching the end is
+	// ok=false, not an error.
 	if _, ok, err := NextStage(DefaultFlow(), "code-review", ctx); ok || err != nil {
 		t.Errorf("a chore ends at code-review; got ok=%v err=%v", ok, err)
 	}

@@ -59,7 +59,7 @@ func TestUnblockRefusesATaskThatIsNotBlocked(t *testing.T) {
 
 // TestEachLoopCeilingIsReportedByName covers every branch of ceilingHit.
 //
-// The three ceilings exist because they detect different pathologies (ADR-0023);
+// The three ceilings exist because they detect different pathologies;
 // a message that did not distinguish them would collapse the distinction the
 // separate counters were introduced to preserve.
 func TestEachLoopCeilingIsReportedByName(t *testing.T) {

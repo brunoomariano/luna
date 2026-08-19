@@ -107,7 +107,7 @@ func TestAnUnknownTaskHasNoEvents(t *testing.T) {
 	}
 }
 
-// TestTheStoreExposesNoWayToRewriteHistory covers scenario K4 — INV-core-2.
+// TestTheStoreExposesNoWayToRewriteHistory covers scenario K4 — INV-2.
 //
 // The invariant is enforced by absence: there is no Update and no Delete on the
 // type, so no caller can reach for one. A test cannot prove a method is missing,
@@ -140,7 +140,7 @@ func TestTheStoreExposesNoWayToRewriteHistory(t *testing.T) {
 // TestStateIsRebuiltFromTheLog covers scenario L1 — the reason this wave exists.
 //
 // Write a task's history, throw the process away, open the file again, and the
-// state comes back identical. Nothing was ever only in memory (INV-core-2).
+// state comes back identical. Nothing was ever only in memory.
 func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 
@@ -218,8 +218,8 @@ func TestReplayingAnEmptyLogGivesAFreshTask(t *testing.T) {
 
 // TestReplayIsDeterministic covers scenario L3.
 //
-// Replaying the same log twice gives the same state. This is what ADR-0024 buys
-// by keeping the reducer pure: if a transition could run a test suite or read a
+// Replaying the same log twice gives the same state. This is what keeping the
+// reducer pure buys: if a transition could run a test suite or read a
 // clock, the second replay could disagree with the first.
 func TestReplayIsDeterministic(t *testing.T) {
 	s := openTemp(t)
@@ -269,7 +269,7 @@ func TestAnUnknownActionInTheLogIsReported(t *testing.T) {
 
 // ── block N: finding what needs a human ──────────────────────────────────────
 
-// TestSuspendedTasksAreListable covers scenario N1 — INV-core-12.
+// TestSuspendedTasksAreListable covers scenario N1 — INV-5.
 //
 // A task waiting at a gate has released its slot, so nothing is running to remind
 // anyone it exists. If it were not discoverable by a query, it would wait
@@ -279,7 +279,8 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 
 	// One task stops at a gate; another runs past it. Reaching a gate takes a walk
 	// now: the shipped flow starts at the mechanical `setup`, which opens none
-	// (ADR-0062 removed `commit`, and `discovery` went with it).
+	// (integration left Luna's scope, removing `commit`, and `discovery` went
+	// with it).
 	walkToGate(t, s, "waiting")
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
@@ -449,7 +450,8 @@ func TestTasksOfDifferentKindsCoexist(t *testing.T) {
 	}
 }
 
-// TestReplayRefusesALogWrittenUnderAnotherFlow is the whole point of ADR-0046.
+// TestReplayRefusesALogWrittenUnderAnotherFlow is the whole point of the flow
+// fingerprint.
 //
 // Before the fingerprint, a renamed stage replayed as the new name with no error
 // at all, and a stage inserted mid-flow made a task re-run work it had already
@@ -493,12 +495,12 @@ func TestReplayRefusesALogWrittenUnderAnotherFlow(t *testing.T) {
 // TestATaskStampedWithNoFlowDoesNotReplayAgainstOne covers what an unstamped
 // opening event means now.
 //
-// It used to replay against anything, so that a log written before ADR-0046
-// existed kept working. Nothing writes such a log — `luna task new` stamps every
-// task with the flow it was born under — so the permissive reading had no case
-// left to serve except the one it should refuse: a task opened against no flow,
-// replayed against a real one, is the silent mismatch the fingerprint exists to
-// catch.
+// It used to replay against anything, so that a log written before the
+// fingerprint existed kept working. Nothing writes such a log — `luna task new`
+// stamps every task with the flow it was born under — so the permissive reading
+// had no case left to serve except the one it should refuse: a task opened
+// against no flow, replayed against a real one, is the silent mismatch the
+// fingerprint exists to catch.
 func TestATaskStampedWithNoFlowDoesNotReplayAgainstOne(t *testing.T) {
 	s := openTemp(t)
 
@@ -513,7 +515,7 @@ func TestATaskStampedWithNoFlowDoesNotReplayAgainstOne(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableTaskDoesNotHideTheOthers covers INV-core-12 under ADR-0046.
+// TestAnUnreadableTaskDoesNotHideTheOthers covers INV-5 under the flow fingerprint.
 //
 // A task whose flow changed cannot be read, and returning an error from the
 // listing would let that one task hide every other task waiting on a person —
@@ -544,7 +546,8 @@ func TestAnUnreadableTaskDoesNotHideTheOthers(t *testing.T) {
 	}
 }
 
-// TestAConditionalAppendRefusesAStaleDecision is ADR-0047's reason for existing.
+// TestAConditionalAppendRefusesAStaleDecision is why an append declares the
+// position it read from.
 //
 // Two writers replay the same state, both validate the same action against it,
 // and both try to write. Before this, the second one landed: the log ended up
@@ -653,11 +656,11 @@ func TestTheReducersSequenceIsTheLogPosition(t *testing.T) {
 	}
 }
 
-// TestConcurrentAppendsAllLand covers the SQLITE_BUSY half of ADR-0047.
+// TestConcurrentAppendsAllLand covers the SQLITE_BUSY half of the conditional append.
 //
 // Without WAL, a busy timeout and BEGIN IMMEDIATE, this lost 19 of 20 appends —
 // and each loss aborted a task without recording a block, which is the silent
-// failure INV-core-8 forbids.
+// failure INV-5 forbids.
 //
 // Two stores over one file rather than one store used twice, because that is the
 // real case: nothing stops a second `luna` from running against the same

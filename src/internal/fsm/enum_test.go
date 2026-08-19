@@ -8,7 +8,7 @@ import (
 )
 
 // TestAnUnknownEnumStopsTheDecode is the failure neither journalling nor replay
-// catches (ADR-0050).
+// catches.
 //
 // Go's default is to accept any string into a `~string` type, so a value from a
 // newer version lands in the field and reaches the reducer as something no switch
@@ -89,7 +89,7 @@ func TestTheAbsentGateDecisionStillDecodes(t *testing.T) {
 //
 // ShippedProfiles names the three Luna comes with, and its own doc says the engine
 // does not validate against it: a name it has never heard of is a profile somebody
-// defined (ADR-0017, ADR-0026). Closing it alongside the others would have broken
+// defined. Closing it alongside the others would have broken
 // that in passing, which is why the exclusion is tested rather than assumed.
 func TestAProfileIsNotClosed(t *testing.T) {
 	var got Profile

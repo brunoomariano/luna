@@ -9,7 +9,7 @@ import (
 //
 // The answer is the **main** repository, never the worktree the caller happens
 // to be standing in. That distinction is the whole reason this function exists:
-// a stage runs in an ephemeral worktree that is deleted when it ends (ADR-0055),
+// a stage runs in an ephemeral worktree that is deleted when it ends,
 // so a log resolved from the working directory would be created inside something
 // designed to be thrown away — and the task it recorded would vanish with it.
 //

@@ -78,7 +78,7 @@ func runReview(t *testing.T, report string) fsm.TaskState {
 //
 // Before this, `ReviewFinding` was handled by the reducer, serialised by the
 // codec, and produced by nothing — so a `[BLOCKING]` finding had no effect at
-// all (ADR-0041).
+// all.
 func TestABlockingFindingSendsTheWorkBack(t *testing.T) {
 	state := runReview(t, "- [BLOCKING] B1: the failure path has no test")
 
@@ -88,7 +88,7 @@ func TestABlockingFindingSendsTheWorkBack(t *testing.T) {
 	if state.Loop.Rounds == 0 {
 		t.Error("the loop counter did not move, so the ceilings can never fire")
 	}
-	// The green attested to code that is going to change (ADR-0020).
+	// The green attested to code that is going to change.
 	if state.Context.Artifacts["ci_green"] {
 		t.Error("ci_green survived a finding that sent the work back")
 	}
@@ -158,7 +158,7 @@ func TestAReviewThatFoundNothingIsNotALoop(t *testing.T) {
 	}
 }
 
-// TestOnlyAReviewStageCanSendWorkBack is INV-core-7 at the emitter rather than
+// TestOnlyAReviewStageCanSendWorkBack is the write/review separation at the emitter rather than
 // at the reducer. A build stage that produced something looking like a report
 // must not be read as one — an implementer returning its own work is reviewing
 // itself.
@@ -201,7 +201,7 @@ func TestOnlyAReviewStageCanSendWorkBack(t *testing.T) {
 }
 
 // TestTheLoopCeilingStopsAReviewThatNeverPasses. With the emitter wired, the
-// ceilings of ADR-0023 finally have something that can reach them — so the
+// loop ceilings finally have something that can reach them — so the
 // review-forever case has to end somewhere.
 func TestTheLoopCeilingStopsAReviewThatNeverPasses(t *testing.T) {
 	// Every round blocks, so nothing converges.
@@ -221,7 +221,7 @@ func TestTheLoopCeilingStopsAReviewThatNeverPasses(t *testing.T) {
 // The PRD's open question asked what to hash — artifacts, the worktree diff, the
 // evidence — and worried about meaningless variation, a timestamp in a diff that
 // never matches itself. The commit sidesteps that: the handoff *is* the commit
-// (INV-core-6), so two rounds delivering the same sha delivered the same work.
+// , so two rounds delivering the same sha delivered the same work.
 func TestARoundThatDeliveredNothingNewIsCountedAsSuch(t *testing.T) {
 	s := newStore(t)
 	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
@@ -260,7 +260,7 @@ func TestARoundThatDeliveredNothingNewIsCountedAsSuch(t *testing.T) {
 }
 
 // TestAFindingWithNoIdStillNamesItself. The id is the handle for the
-// conversation afterwards (ADR-0041) and a reviewer that omitted it has still
+// conversation afterwards and a reviewer that omitted it has still
 // found the defect — so the summary carries the text rather than nothing.
 func TestAFindingWithNoIdStillNamesItself(t *testing.T) {
 	got := summarise([]fsm.Finding{

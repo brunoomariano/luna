@@ -90,7 +90,7 @@ func TestStuckRefusesACommandLineItCannotParse(t *testing.T) {
 
 // TestNotifyTellsSomebodyRatherThanOnlyTheCaller is the difference between a
 // listing and a watchdog. Without it the report reaches whoever ran the command,
-// and the failure being guarded against is that nobody is looking (INV-core-8).
+// and the failure being guarded against is that nobody is looking.
 func TestNotifyTellsSomebodyRatherThanOnlyTheCaller(t *testing.T) {
 	h := newHarness(t)
 	blockAndAge(t, h, "LUNA-1", "merge conflict on runner.go", 3*time.Hour)

@@ -5,10 +5,10 @@ package store
 //
 // The rule is swarm-forge's, arrived at the expensive way and enforced there
 // with an exit code rather than a line in a prompt: the shared state has exactly
-// one owner. Luna already applies it to the merge (ADR-0053); the log needs it
+// one owner. Luna already applies it to the merge; the log needs it
 // for the same reason and more urgently, because an agent that appends to the
 // log does not corrupt a file — it fabricates history, and history is the audit
-// trail (INV-core-2).
+// trail.
 var ErrNotTheOwner = errNotTheOwner{}
 
 type errNotTheOwner struct{}

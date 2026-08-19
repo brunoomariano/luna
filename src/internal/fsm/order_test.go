@@ -63,8 +63,8 @@ func TestTheFirstOrderNamesTheFlowsFirstStage(t *testing.T) {
 	}
 }
 
-// TestTheOrderCarriesWhatTheRoleMayNotDo is INV-core-7 reaching the lead. A
-// denial that stays in the catalogue is a denial the harness never applies.
+// TestTheOrderCarriesWhatTheRoleMayNotDo is the role's denials reaching the lead.
+// A denial that stays in the catalogue is a denial the harness never applies.
 func TestTheOrderCarriesWhatTheRoleMayNotDo(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 	state.Status = StatusStageDone
@@ -83,8 +83,8 @@ func TestTheOrderCarriesWhatTheRoleMayNotDo(t *testing.T) {
 		t.Fatalf("deny = %v, want Edit and Write", order.Deny)
 	}
 	if order.Worktree == WorktreeName("LUNA-1", "implementer") {
-		t.Error("the reviewer got the implementer's worktree — INV-core-7 is filesystem-deep " +
-			"in this design, and sharing the directory gives that away")
+		t.Error("the reviewer got the implementer's worktree — the separation is " +
+			"filesystem-deep in this design, and sharing the directory gives that away")
 	}
 }
 
@@ -100,7 +100,7 @@ func TestTheOrderOwesWhatTheContractOwes(t *testing.T) {
 
 	got := joinArtifacts(order.Produces)
 	if got != "report,verdict" {
-		t.Errorf("produces = %q, want report,verdict — ProducesForHuman counts (INV-core-11)", got)
+		t.Errorf("produces = %q, want report,verdict — ProducesForHuman counts (INV-3)", got)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestAGateIsAnOrderToWaitNotToRun(t *testing.T) {
 
 // TestAGateWithNothingToSayStillSaysSomething covers the two fallbacks. A wait
 // order whose reason is empty tells whoever is driving nothing at all, which is
-// the silent stop INV-core-8 exists against.
+// the silent stop INV-5 exists against.
 func TestAGateWithNothingToSayStillSaysSomething(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -193,7 +193,7 @@ func TestABlockedTaskSaysWhy(t *testing.T) {
 
 // TestAnAbandonedTaskIsDoneButNotFinished keeps the two endings apart. An audit
 // that cannot tell a task that delivered from one that was called off is missing
-// the more interesting of the two (ADR-0046).
+// the more interesting of the two.
 func TestAnAbandonedTaskIsDoneButNotFinished(t *testing.T) {
 	abandoned := NewTaskState("LUNA-1", KindFeature)
 	abandoned.Status = StatusAbandoned
@@ -238,7 +238,7 @@ func TestAStageOutsideTheFlowIsRefused(t *testing.T) {
 }
 
 // TestAnUnknownRoleStillProducesAnOrder is the deliberate non-refusal. The engine
-// holds the name and configuration holds the meaning (ADR-0040); refusing here
+// holds the name and configuration holds the meaning; refusing here
 // would make the flow undrivable on a machine whose config had not loaded.
 func TestAnUnknownRoleStillProducesAnOrder(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
@@ -256,7 +256,7 @@ func TestAnUnknownRoleStillProducesAnOrder(t *testing.T) {
 }
 
 // TestAMechanicalStageNamesNoRole covers the stages Luna runs itself: setup is a
-// worktree, commit is git (ADR-0040).
+// worktree, commit is git.
 func TestAMechanicalStageNamesNoRole(t *testing.T) {
 	flow := []Stage{{ID: "setup", Requires: []Artifact{TaskID}, Produces: []Artifact{"worktree"}}}
 	state := NewTaskState("LUNA-1", KindFeature)
@@ -272,7 +272,7 @@ func TestAMechanicalStageNamesNoRole(t *testing.T) {
 }
 
 // TestTheBaseIsThePreviousStagesCommit is the handoff. The next agent starts from
-// what was delivered, not from a description of it (INV-core-6).
+// what was delivered, not from a description of it.
 func TestTheBaseIsThePreviousStagesCommit(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 	state.Status = StatusStageDone
@@ -377,7 +377,8 @@ func TestACompleteWithoutACommitLeavesTheBaseAlone(t *testing.T) {
 	}
 }
 
-// TestTheOrderCarriesNoViewOfTheFlow is INV-core-1 at the level of what the lead
+// TestTheOrderCarriesNoViewOfTheFlow is flow control staying out of the model, at
+// the level of what the lead
 // can see. An order that lists what comes next invites the lead to save a round
 // trip by doing two stages, and the closed order is shaped against exactly that.
 func TestTheOrderCarriesNoViewOfTheFlow(t *testing.T) {

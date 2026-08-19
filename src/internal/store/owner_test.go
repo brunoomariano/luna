@@ -10,7 +10,7 @@ import (
 
 // TestOnlyLunaWritesTheLog is the ownership rule, and it is the one that matters
 // most of the three: an agent that appends does not corrupt a file, it fabricates
-// history — and history is the audit trail (INV-core-2).
+// history — and history is the audit trail.
 func TestOnlyLunaWritesTheLog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 

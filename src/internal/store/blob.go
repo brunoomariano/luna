@@ -29,7 +29,7 @@ type Blob struct {
 	Artifact string
 
 	// Seq is the log position this version was written at, which is what orders
-	// two versions of the same artifact without a clock (ADR-0024).
+	// two versions of the same artifact without a clock.
 	Seq int
 
 	// Hash is the content's sha256, hex-encoded. It is what evidence names, so an
@@ -42,7 +42,7 @@ type Blob struct {
 // PutBlob records one version of an artifact.
 //
 // It is an append: a second call for the same stage and artifact at a later seq
-// adds a version rather than replacing one, and both stay readable (INV-core-2).
+// adds a version rather than replacing one, and both stay readable.
 // Writing the same seq twice is a caller repeating itself, and the store refuses
 // rather than quietly keeping one of them.
 func (s *Store) PutBlob(b Blob) error {

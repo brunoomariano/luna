@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-// TestEveryStageFieldIsClassified is the guard ADR-0048 exists to install.
+// TestEveryStageFieldIsClassified is the guard the history-versus-policy rule
+// exists to install.
 //
 // Every field of Stage is either history — read inside the reducer, so it decides
 // what a past event meant — or policy, read only at the moment of use. The
@@ -13,10 +14,10 @@ import (
 //
 // The classification is worth freezing rather than trusting to review because the
 // failure is silent in both directions. A history field left out means a flow
-// change rewrites the past with nothing noticing, which is the bug ADR-0046 was
-// written for. A policy field let in means every replay is refused because
-// somebody edited a brief, and a check that fires on changes that do not matter is
-// one people learn to route around.
+// change rewrites the past with nothing noticing, which is the bug the flow
+// fingerprint was written for. A policy field let in means every replay is
+// refused because somebody edited a brief, and a check that fires on changes
+// that do not matter is one people learn to route around.
 //
 // Camunda paid for the first direction: mapping a catch event preserved the
 // subscription under the old message name, and instances waited forever with no
@@ -30,7 +31,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"ID":               "history", // NextStage and stageIn resolve by it
 		"Requires":         "history", // the entry check decides whether an Advance entered
 		"Produces":         "history", // the exit check decides whether a Complete closed
-		"ProducesForHuman": "history", // the same check, and INV-core-11
+		"ProducesForHuman": "history", // the same check, and INV-3
 		"When":             "history", // AppliesTo decides which stages a task walks
 		"Verifiers":        "history", // partly: the scope it declares, never its command
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
@@ -43,7 +44,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		name := stage.Field(i).Name
 		if _, ok := classified[name]; !ok {
 			t.Errorf("Stage.%s is not classified as history or policy — decide which it is "+
-				"and say so in ADR-0048 before adding it, because leaving it out of the "+
+				"and record it in docs/decisions.md before adding it, because leaving it out of the "+
 				"fingerprint silently rewrites the past and putting it in refuses replays "+
 				"for changes that do not matter", name)
 		}
@@ -122,7 +123,7 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		// The intuition runs the other way on these two, which is why they are
 		// asserted rather than assumed. They decide who is asked at a gate opening
 		// now; a gate answered last week replays from its recorded GateDecision and
-		// not from the policy that produced it (ADR-0026). Including them would
+		// not from the policy that produced it. Including them would
 		// strand every open task the moment a project declared criticality, for a
 		// change that cannot alter how one past event reads.
 		"a gate's criticality, which decides who is asked and not what happened": func(s *Stage) {

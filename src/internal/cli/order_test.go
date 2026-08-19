@@ -62,7 +62,7 @@ func TestNextRefusesATaskThatDoesNotExist(t *testing.T) {
 	}
 }
 
-// TestTheOrderComesInBothShapes is the decision recorded in RFC-0002: text for a
+// TestTheOrderComesInBothShapes is the decision that the order comes in two shapes: text for a
 // person driving by hand, JSON for the lead once one is driving.
 func TestTheOrderComesInBothShapes(t *testing.T) {
 	h := newHarness(t)
@@ -111,7 +111,7 @@ func TestOneTurnOfTheLoopByHand(t *testing.T) {
 	}
 
 	// The commit became the base, which is the handoff: the next stage starts
-	// from what the last one produced (INV-core-6).
+	// from what the last one produced.
 	second := mustOrderFrom(t, h, "LUNA-1")
 	if second.Base != "abc1234" {
 		t.Errorf("base = %q, want the commit just handed in", second.Base)
@@ -123,7 +123,7 @@ func TestOneTurnOfTheLoopByHand(t *testing.T) {
 
 // TestAStageThatDeliveredLessThanItOwedDoesNotClose is the contract check
 // reaching the hand-driven path. No flag on `done` can talk the reducer into
-// closing a stage that came up short (INV-core-3).
+// closing a stage that came up short.
 func TestAStageThatDeliveredLessThanItOwedDoesNotClose(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
@@ -153,7 +153,7 @@ func TestAStageThatDeliveredLessThanItOwedDoesNotClose(t *testing.T) {
 // unnoticed while an unrecorded decision fell back to the profile.
 //
 // `passed` is what these tests mean: they drive a task whose gates are not the
-// subject, and a gate the profile let through is exactly that (ADR-0026).
+// subject, and a gate the profile let through is exactly that.
 func enterStage(t *testing.T, h *harness, id string) {
 	t.Helper()
 
@@ -231,9 +231,9 @@ func TestAnAbandonedTaskHasNoOrderToGive(t *testing.T) {
 	}
 }
 
-// TestStatusShowsTheWholeFlowAndNextDoesNot is the pair that keeps INV-core-1
+// TestStatusShowsTheWholeFlowAndNextDoesNot is the pair that keeps flow control
 // where the decision put it: the panorama exists, and asking for it is a
-// separate act from receiving an instruction (ADR-0052).
+// separate act from receiving an instruction.
 func TestStatusShowsTheWholeFlowAndNextDoesNot(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature")
@@ -266,7 +266,7 @@ func TestStatusShowsTheWholeFlowAndNextDoesNot(t *testing.T) {
 
 // TestStatusMarksSkippedStagesRatherThanHidingThem — "qa does not apply to a
 // chore" is an answer, and a flow that dropped the row would read as a flow that
-// forgot it (ADR-0014).
+// forgot it.
 func TestStatusMarksSkippedStagesRatherThanHidingThem(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore")
@@ -379,7 +379,7 @@ func mustState(t *testing.T, h *harness, id string) fsm.TaskState {
 //
 // Tests about gates want a task at a gate, not a task at a particular stage. They
 // used to reach one with a single Advance because `discovery` was stage 1 and
-// gated; ADR-0062 removed it along with `commit`, so the first gate is now three
+// gated; integration left Luna's scope along with `commit`, so the first gate is now three
 // stages in. Walking until a gate opens says what the test means and survives the
 // next change to the flow.
 func seedAtFirstGate(t *testing.T, h *harness, id string) fsm.StageID {

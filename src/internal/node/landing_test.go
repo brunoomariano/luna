@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// TestLandPointsTheTaskBranchAtWhatItDelivered is the promise ADR-0062 makes and
-// the swarm bench found unkept.
+// TestLandPointsTheTaskBranchAtWhatItDelivered is the promise the task branch
+// makes and the swarm bench found unkept.
 //
 // A task ran all twelve stages with real agents, recorded the right commit as
 // its base, and left `luna/<task>` on the seed — the work was on a role branch

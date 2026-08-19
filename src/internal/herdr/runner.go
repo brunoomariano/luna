@@ -29,7 +29,7 @@ type socketRunner struct {
 	Repo string
 
 	// Settle bounds how long a prompt waits for the agent to stop working. It is
-	// the budget the profile decided (ADR-0034), handed down by the caller.
+	// the budget the profile decided, handed down by the caller.
 	Settle time.Duration
 
 	// retryWait and bootSettle are the startup waits, overridable so a test can
@@ -80,7 +80,7 @@ func (r *socketRunner) dialogWait() time.Duration {
 // `worktree path must be absolute` to a relative `cwd`, and `luna run` defaults
 // it to ".", which is the natural thing for a CLI run from inside the checkout.
 // Failing to resolve it leaves the caller's value alone — herdr's refusal names
-// the problem better than a path this could invent (ADR-0036).
+// the problem better than a path this could invent.
 func NewRunner(client *Client, repo string, settle time.Duration) Runner {
 	if absolute, err := filepath.Abs(repo); err == nil {
 		repo = absolute
@@ -105,12 +105,12 @@ type worktreeCreated struct {
 // OpenWorktree creates the worktree a stage works in and returns where it lives.
 //
 // herdr answers workspace, tab, root pane and worktree in one call, which is why
-// one worktree maps cleanly onto one workspace (ADR-0027).
+// one worktree maps cleanly onto one workspace.
 //
 // The checkout is per task *and* role, branched from the base the order carried
-// (ADR-0055). `base` is a parameter herdr's `worktree.create` already takes —
+// . `base` is a parameter herdr's `worktree.create` already takes —
 // checked against the binary, like every other fact about this protocol
-// (ADR-0036) — so branching from the previous stage's commit costs nothing but
+// — so branching from the previous stage's commit costs nothing but
 // passing it.
 //
 // An existing branch is reopened rather than treated as a failure: a stage that
@@ -146,7 +146,7 @@ func (r *socketRunner) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspac
 		// takes both — sending create's parameters straight through is refused
 		// with `invalid_request`. Found by running it against a live server:
 		// resuming a task is the second run, so every test that opened a worktree
-		// once was happy (ADR-0036).
+		// once was happy.
 		//
 		// The path identifies it, because that is what create was told to make.
 		err = r.client.Call("worktree.open", map[string]any{
@@ -180,7 +180,7 @@ func (r *socketRunner) OpenWorktree(_ context.Context, w WorktreeSpec) (Workspac
 //
 // `--force` because the tree will not be clean: the agent's build artifacts and
 // anything it did not commit are still there, and that is exactly what should
-// not survive. What survives is the commit (INV-core-6).
+// not survive. What survives is the commit.
 //
 // A workspace with no id is not an error. It is a stage that failed before herdr
 // gave one back, and there is nothing to remove.
@@ -190,9 +190,9 @@ func (r *socketRunner) CloseWorktree(_ context.Context, ws Workspace) error {
 	}
 
 	// `workspace_id`, not `workspace`. The CLI's flag is `--workspace` and the
-	// socket API's field is not, which is the exact class of mismatch ADR-0036
-	// exists for — and this one was found by running it against a live server,
-	// where every test against a fake had been happy.
+	// socket API's field is not, which is the exact class of mismatch that checking
+	// against the real binary exists for — and this one was found by running it
+	// against a live server, where every test against a fake had been happy.
 	params := map[string]any{"workspace_id": ws.ID, "force": true}
 	if err := r.client.Call("worktree.remove", params, nil); err != nil {
 		return fmt.Errorf("removing the worktree at %s: %w", ws.Path, err)
@@ -202,7 +202,7 @@ func (r *socketRunner) CloseWorktree(_ context.Context, ws Workspace) error {
 
 // StartAgent puts an agent into the workspace's root pane.
 //
-// The kind must be one herdr supports — 21 of them in 0.8.0 (ADR-0031) — and the
+// The kind must be one herdr supports — 21 of them in 0.8.0 — and the
 // pane must already be sitting at an interactive shell prompt, which the worktree
 // call just produced. herdr blocks until the agent is detected and ready, which
 // removes a race the node would otherwise have to handle itself.
@@ -210,7 +210,7 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 	// An agent already running in this worktree's pane is this same stage's, and
 	// it is reused rather than restarted: `worktree.open` returns the pane a
 	// resumed stage left behind, so a retry after a stall finds the agent that was
-	// already working instead of losing its context (INV-core-5, ADR-0006).
+	// already working instead of losing its context.
 	//
 	// Checked before starting rather than after being refused, because pane.run
 	// has no name to collide with — it would happily start a second agent on top
@@ -260,7 +260,7 @@ func (r *socketRunner) StartAgent(ctx context.Context, ws Workspace, kind, name 
 // *agent* — which is the whole point: Luna talks to herdr over a socket, so an
 // agent started through `agent.start` is a child of the herdr server and inherits
 // nothing from Luna's own process. Wrapping `luna run` contained Luna and left
-// the agent free (ADR-0069).
+// the agent free.
 //
 // `HERDR_AGENT` is herdr's own answer to a wrapper hiding the real process — it
 // names which screen manifest to detect with, and without it herdr sees `ai-jail`
@@ -280,7 +280,7 @@ func jailed(kind, socket string, args []string) (string, error) {
 	if _, err := exec.LookPath(jailBinary); err != nil {
 		return "", fmt.Errorf(
 			"%w: %s is not on PATH, and Luna runs every agent inside it — an agent "+
-				"outside a sandbox would hold the permissions this passes it (INV-core-7)",
+				"outside a sandbox would hold the permissions this passes it (INV-4)",
 			ErrNoSandbox, jailBinary,
 		)
 	}
@@ -289,7 +289,7 @@ func jailed(kind, socket string, args []string) (string, error) {
 
 	// The socket the agent hands artifacts over through, in its environment rather
 	// than only in the brief. The brief is prose an agent may paraphrase; the
-	// variable is what `luna artifact put` actually reads (RFC-0008).
+	// variable is what `luna artifact put` actually reads.
 	//
 	// It is inside the worktree, so it survives the jail — which is the whole
 	// reason the socket is placed there and not beside the log.
@@ -432,7 +432,7 @@ func (r *socketRunner) awaitAgent(ctx context.Context, pane, kind string) error 
 // the agent had started and the race it existed to close was back — one task's
 // scenarios stage delivered and the next one's did not, same binary, same flow.
 // What only a ready claude shows is its permission indicator, which is always
-// rendered because the mode is always passed (ADR-0069). A harness with no
+// rendered because the mode is always passed. A harness with no
 // marker does not wait: there is nothing that would end the wait but the
 // timeout, and paying it on every stage buys nothing.
 func (r *socketRunner) awaitInputReady(ctx context.Context, pane, kind string) error {
@@ -463,7 +463,7 @@ func (r *socketRunner) awaitInputReady(ctx context.Context, pane, kind string) e
 // readyMarkers is what each harness's screen shows once it accepts input, and
 // nothing earlier shows. For claude that is the permission indicator: the shell
 // prompt, the jail banner and the boot banner all lack it, and it is always
-// rendered because the mode is always passed (ADR-0069).
+// rendered because the mode is always passed.
 var readyMarkers = map[string]string{
 	"claude": "bypass permissions on",
 }
@@ -475,10 +475,10 @@ var errNotReadyYet = errors.New("the agent screen shows no input prompt yet")
 // One call, not two. herdr's own documentation says the combined form exists to
 // avoid the race between submitting and arming the wait — the agent can finish in
 // between — and it is also what produces `agent_prompt_stalled` when nothing
-// reacts at all, which the node translates for the lead (ADR-0034).
+// reacts at all, which the node translates for the lead.
 //
 // `blocked` is among the states waited for: an agent asking a person has stopped,
-// and Luna needs to hear about it rather than wait out the budget (ADR-0029).
+// and Luna needs to hear about it rather than wait out the budget.
 func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStatus, error) {
 	deadline := r.Settle
 	if deadline <= 0 {
@@ -518,7 +518,7 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 		return settled.AgentStatus, nil
 	}
 	// herdr answered without naming a state. Unknown is the honest reading, and
-	// it still triggers verification — it just claims nothing (ADR-0028).
+	// it still triggers verification — it just claims nothing.
 	return StatusUnknown, nil
 }
 
@@ -535,8 +535,8 @@ func (r *socketRunner) Prompt(ctx context.Context, pane, text string) (AgentStat
 // cleanup and by every recursive walk the repository does to itself.
 //
 // This briefly had a second form, under `.luna/wt`, for when Luna itself ran
-// inside the sandbox and could not see a sibling. That is gone with ADR-0069:
-// the sandbox wraps the *agent* now, so Luna reads the tree from outside it and
+// inside the sandbox and could not see a sibling. That is gone now that
+// the sandbox wraps the *agent*, so Luna reads the tree from outside it and
 // the agent works in it as its own cwd. Both reach it, and there is one layout
 // again.
 func checkoutPath(repo, taskID string) (string, error) {
@@ -595,7 +595,7 @@ const (
 // jailBinary is the sandbox every agent runs inside.
 //
 // Named rather than configurable, deliberately: which sandbox holds the boundary
-// is not a per-project preference but the thing INV-core-7 rests on, and a
+// is not a per-project preference but the thing containment rests on, and a
 // project that could swap it for `cat` would be a project with no boundary.
 const jailBinary = "ai-jail"
 
@@ -604,7 +604,7 @@ const jailBinary = "ai-jail"
 // Luna refuses rather than falling back to an uncontained agent. The fallback
 // exists — it is what shipped before this — and it is worse than a refusal: the
 // agent runs with permissions granted on the assumption of a sandbox that is not
-// there, and nothing on screen says so (ADR-0069).
+// there, and nothing on screen says so.
 var ErrNoSandbox = errors.New("no sandbox")
 
 // errNoAgentYet is the retry signal while herdr has not yet detected the agent.

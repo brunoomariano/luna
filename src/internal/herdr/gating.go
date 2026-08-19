@@ -10,12 +10,12 @@ import (
 
 // Harness is how one agent kind lets Luna take a capability away.
 //
-// Four official harnesses, four mechanisms, and no two vocabularies alike
-// (ADR-0042). What a role declares is the capability; translating it into a flag
-// is this table's job, which is what lets a project move `reviewer` from one
-// agent to another without rewriting the role.
+// Four official harnesses, four mechanisms, and no two vocabularies alike. What
+// a role declares is the capability; translating it into a flag is this table's
+// job, which is what lets a project move `reviewer` from one agent to another
+// without rewriting the role.
 type Harness struct {
-	// Kind is the agent as herdr names it (ADR-0031).
+	// Kind is the agent as herdr names it.
 	Kind string
 
 	// Deny turns denied capabilities into arguments for this harness. A nil
@@ -35,8 +35,8 @@ type Harness struct {
 	// a capability away, Unattended lets the ones that remain be used. A harness
 	// that defaults to confirming each tool call blocks on its first command no
 	// matter what the role denies — which is the whole flow stopping on a dialog
-	// nobody is watching (INV-core-1: the flow does not wait on a human it was not
-	// told to wait for).
+	// nobody is watching. The flow does not wait on a human it was not told to
+	// wait for.
 	//
 	// Nil means the harness already runs unattended and needs no flag.
 	Unattended []string
@@ -53,8 +53,8 @@ type Harness struct {
 	// It is a separate field rather than a wider default because the flag removes
 	// every check the harness has, and that is only defensible when a sandbox is
 	// holding the boundary instead. ai-jail's own configuration states the rule —
-	// "flags perigosas DENTRO do jail, restrições do SO FORA" — and INV-core-7
-	// says it from Luna's side: confining a process is a sandbox's job.
+	// "flags perigosas DENTRO do jail, restrições do SO FORA" — and INV-4 says it
+	// from Luna's side: confining a process is a sandbox's job.
 	//
 	// Nil means the harness has nothing extra to offer a contained run, and
 	// Unattended is used either way.
@@ -69,8 +69,8 @@ type Harness struct {
 // with no checks at all on a machine with the person's real files.
 func unattendedFor(harness Harness) []string {
 	// Always the contained set: Luna starts every agent inside the sandbox now, so
-	// there is no uncontained case left to be cautious about (ADR-0069). It used
-	// to ask whether *Luna's own process* was contained, which decided the
+	// there is no uncontained case left to be cautious about. It used to ask
+	// whether *Luna's own process* was contained, which decided the
 	// *agent's* permissions — two unrelated facts, because the agent is a child of
 	// the herdr server and inherits nothing from Luna.
 	if len(harness.Contained) > 0 {
@@ -144,7 +144,7 @@ var harnesses = []Harness{
 		// such file — so a role gated here would start fully capable.
 		//
 		// It refuses rather than returning no arguments. That is the whole reason
-		// the table is closed (ADR-0042): a harness that cannot deny must say so,
+		// the table is closed: a harness that cannot deny must say so,
 		// because the alternative is an ungated reviewer with nothing in the log
 		// saying the denial did not take.
 		//
@@ -198,7 +198,7 @@ func SupportedHarnesses() []string {
 //
 // A role that does deny something and names an agent Luna cannot gate stops the
 // stage. The message names the harness and the alternatives, because this refusal
-// will read as a bug the first time someone meets it (ADR-0041).
+// will read as a bug the first time someone meets it.
 func gateArgs(role fsm.Role) ([]string, error) {
 	harness, ok := HarnessFor(role.Agent)
 	if !ok {

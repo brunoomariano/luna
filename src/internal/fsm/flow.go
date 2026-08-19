@@ -8,18 +8,18 @@ import (
 )
 
 // DefaultFlow is the flow Luna ships with — the 14 stages of
-// docs/architecture/stages.md.
+// docs/architecture.md.
 //
 // It is not mandatory: stages can be disabled, edited or replaced, and new ones
-// created (ADR-0017). What does not change is the contract — every stage declares
+// created. What does not change is the contract — every stage declares
 // what it requires and what it produces.
 //
 // Order is significant: AuditContract checks precedence, not existence.
 //
 // It reads the stock embedded in the binary rather than returning Go literals
-// (RFC-0003). The files are the source, so the surface a project edits and the
+// . The files are the source, so the surface a project edits and the
 // flow Luna runs are the same thing rather than two descriptions of it — which
-// is what makes ADR-0017 true rather than aspirational.
+// is what makes "a project brings its own flow" true rather than aspirational.
 //
 // A stock that does not parse is a panic, and deliberately: it is embedded at
 // build time, so a broken one is a broken binary rather than a bad input. Every
@@ -65,5 +65,5 @@ var project []Stage
 //
 // It exists because the flow has to be decided where the repository is known,
 // and that is the process boundary — not the engine, which must not read a
-// filesystem (ADR-0024).
+// filesystem.
 func UseFlow(flow []Stage) { project = flow }

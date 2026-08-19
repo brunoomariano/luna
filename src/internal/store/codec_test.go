@@ -28,12 +28,12 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 					t.Fatalf("want Advance, got %T", got)
 				}
 				// The flow is supplied at replay, not read from the log: recording
-				// it would freeze a task to the flow it started under (ADR-0017).
+				// it would freeze a task to the flow it started under.
 				if len(a.Flow) != len(fsm.DefaultFlow()) {
 					t.Errorf("replay supplies the current flow, got %d stages", len(a.Flow))
 				}
 				// The decision goes the other way: it is history, and recomputing
-				// it would let an edited profile rewrite the past (ADR-0026).
+				// it would let an edited profile rewrite the past.
 				if a.GateDecision != fsm.GateDecisionPassed {
 					t.Errorf("want the recorded gate decision, got %q", a.GateDecision)
 				}
@@ -70,10 +70,10 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 				}
 				// Every field is checked rather than the map: evidence that comes
 				// back with its scope or verdict lost would replay as a different
-				// claim about the same delivery (ADR-0024, ADR-0028).
+				// claim about the same delivery.
 				code := a.Evidence["code"]
 				if code.Scope != fsm.ScopeFull || code.Verdict != fsm.VerdictPassed || code.Command != "go test ./..." {
-					t.Errorf("the evidence must survive the round trip (ADR-0024), got %+v", a.Evidence)
+					t.Errorf("the evidence must survive the round trip, got %+v", a.Evidence)
 				}
 			},
 		},
@@ -171,7 +171,7 @@ func TestEveryActionSurvivesARoundTrip(t *testing.T) {
 		},
 		{
 			// The statement rides in the log now rather than being read from a
-			// registry on every stage (ADR-0067), so the round trip is what stands
+			// registry on every stage, so the round trip is what stands
 			// between an agent's briefing and silence.
 			name: "TaskCreated",
 			action: fsm.TaskCreated{

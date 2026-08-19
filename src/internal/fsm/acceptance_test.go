@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The tests here are named acceptance criteria: docs/invariants/core.md lists,
+// The tests here are named acceptance criteria: docs/invariants.md lists,
 // for five invariants, the tests without which the invariant is described rather
 // than implemented. AGENTS.md is explicit that a piece of the engine whose
 // criteria are uncovered is not done.
@@ -14,7 +14,7 @@ import (
 // These two were not, and both are the same shape: an invariant asserting
 // something about *every* path, with nothing walking every path.
 
-// TestNoRunningPathEndsWithoutAnEnding is INV-core-8's third criterion.
+// TestNoRunningPathEndsWithoutAnEnding is INV-5's third criterion.
 //
 // The rule is that every task ends in a commit, a gate or a notified block —
 // "None dies without someone knowing". The first two criteria test the two
@@ -85,8 +85,8 @@ func TestNoRunningPathEndsWithoutAnEnding(t *testing.T) {
 
 			switch after.Status {
 			case StatusBlocked, StatusAwaitingGate, StatusDone, StatusAbandoned:
-				// The endings INV-core-8 names, plus abandoned — which ADR-0046
-				// added as terminal and the invariant's wording predates.
+				// The endings INV-5 names, plus abandoned — added as terminal
+				// later, and the invariant's wording predates it.
 			case StatusRunning, StatusStageDone, StatusReady:
 				// Still moving is fine: what the invariant forbids is *resting*
 				// somewhere that is not an ending, and a task that is running or
@@ -166,7 +166,7 @@ func TestEveryActionIsCoveredAbove(t *testing.T) {
 	}
 }
 
-// TestAStageDoesNotCloseWithoutItsHumanFacingArtifact is INV-core-11's first
+// TestAStageDoesNotCloseWithoutItsHumanFacingArtifact is INV-3's first
 // criterion.
 //
 // `ProducesForHuman` is the field that says a stage owes a person something — a
@@ -226,13 +226,13 @@ func TestAStageDoesNotCloseWithoutItsHumanFacingArtifact(t *testing.T) {
 	}
 
 	// The report does not enter the context: nothing downstream requires it, and
-	// letting it in would make it satisfy some stage's Requires (ADR-0021).
+	// letting it in would make it satisfy some stage's Requires.
 	if delivered.Context.Artifacts["qa_report"] {
 		t.Error("a human-facing artifact entered the flow's context")
 	}
 }
 
-// TestEveryMechanicallyProvableArtifactRunsSomething is INV-core-4's first
+// TestEveryMechanicallyProvableArtifactRunsSomething is INV-1's first
 // criterion, and the one the shipped flow had already broken.
 //
 // The rule is that an artifact closing on `existence` alone must be a **declared**
@@ -249,7 +249,7 @@ func TestAStageDoesNotCloseWithoutItsHumanFacingArtifact(t *testing.T) {
 // It caught `refactor`: it required `tests_green`, produced only `code`, and
 // `code` closes on existence — so the stage whose whole purpose is rewriting
 // working code closed without running anything. It produces `tests_green` now,
-// re-earning the green rather than inheriting it (ADR-0020).
+// re-earning the green rather than inheriting it.
 func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 	// Artifacts no command can prove, each for a reason that is about the artifact
 	// and not about the effort of writing the check.
@@ -262,12 +262,12 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 		"approach":    "prose naming what will change",
 		"contract":    "prose stating obligations; whether it is right is the gate's question",
 		"code":        "the compiler is part of `make test`, and a non-empty diff proves nothing",
-		"dod_checked": "a checklist a person reads; recording it as a passing check is the lie ADR-0032 names",
+		"dod_checked": "a checklist a person reads; recording it as a passing check is a lie about what ran",
 
 		// The reports. What each says is judgement — whether the QA found the right
 		// gaps, whether the review is fair — and a command can only ever prove that
 		// a file was written. They declare a path instead, so at least the writing
-		// is git's answer rather than the agent's (ADR-0070).
+		// is git's answer rather than the agent's.
 		"qa_report":       "a report: what it found is judgement, and only that it exists is checkable",
 		"review_report":   "a report: whether the review is right is not a thing a command decides",
 		"mutation_report": "a report: the mutation run is the agent's, and its reading is judgement",
@@ -295,7 +295,7 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 			if _, runs := VerifierFor(stage, artifact).(Command); !runs {
 				t.Errorf("%s produces %s and nothing runs to prove it — either give it a "+
 					"command, or add it to `unprovable` above with the reason no command can "+
-					"(INV-core-4)", stage.ID, artifact)
+					"(INV-1)", stage.ID, artifact)
 			}
 		}
 	}
@@ -328,14 +328,14 @@ func TestTheUnprovableListDescribesTheFlowItGuards(t *testing.T) {
 }
 
 // TestAStageThatRewritesWhatItWasGivenReprovesIt is the other half of
-// INV-core-4's first criterion, and the half that caught the real defect.
+// INV-1's first criterion, and the half that caught the real defect.
 //
 // The test above asks whether each produced artifact has a proof. It cannot see
 // the failure `refactor` had, because that one was about an artifact the stage
 // did *not* produce: it required `tests_green`, rewrote the `code` that green
 // attested to, and produced only `code` — so the green carried over from `build`,
-// describing code that no longer existed. That is the invalidation ADR-0020
-// names, arrived at from the producing side.
+// describing code that no longer existed. That is the invalidation an aligned
+// finding performs, arrived at from the producing side.
 //
 // The rule: a stage that produces an artifact it also requires has rewritten it,
 // and everything that was proven *about* the old one has to be proven again.
@@ -365,7 +365,7 @@ func TestAStageThatRewritesWhatItWasGivenReprovesIt(t *testing.T) {
 		for _, given := range stage.Requires {
 			if !produces[given] {
 				t.Errorf("%s rewrites what it was given and does not re-deliver %s — "+
-					"that proof describes the version it replaced (INV-core-4, ADR-0020)",
+					"that proof describes the version it replaced (INV-1)",
 					stage.ID, given)
 			}
 		}

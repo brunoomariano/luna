@@ -53,7 +53,7 @@ func writeFileAt(t *testing.T, dir, name, body string) {
 
 // TestTheLogBelongsToTheMainRepositoryNotTheWorktree is the defect this fixes.
 //
-// A stage runs in an ephemeral worktree that is deleted when it ends (ADR-0055).
+// A stage runs in an ephemeral worktree that is deleted when it ends.
 // Resolving the log from the working directory put a second database inside that
 // worktree — measured, not theorised: two `.luna/luna.db` files, and the task in
 // the main repository invisible from the other.

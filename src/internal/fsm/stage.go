@@ -1,7 +1,7 @@
 // Package fsm is Luna's engine: stages, contract and transitions.
 //
 // The FSM decides which stage comes next; the model works inside it. See
-// docs/invariants/core.md (INV-core-1) and docs/ADRs/0001-flow-control-out-of-model.md.
+// docs/architecture.md.
 package fsm
 
 // Artifact identifies a product of the flow — what a stage requires to start or
@@ -13,12 +13,12 @@ type Artifact string
 type StageID string
 
 // TaskKind is the nature of the task. It governs which conditional stages enter
-// the flow — see docs/ADRs/0014-conditional-stages.md.
+// the flow — see docs/architecture.md.
 type TaskKind string
 
 // The task kinds Luna ships with. They govern which conditional stages enter the
 // flow: diagnose is bug-only, spec and harden skip a chore, code-review skips
-// docs (see docs/architecture/stages.md).
+// docs (see docs/architecture.md).
 const (
 	KindFeature TaskKind = "feature"
 	KindBug     TaskKind = "bug"
@@ -83,7 +83,7 @@ func (c TaskContext) HasArtifact(a Artifact) bool {
 // Produces and ProducesForHuman are separate fields on purpose. The first is
 // consumed by some later stage and takes part in the static check; the second is
 // read by a person and is exempt from it — nobody consuming it is not a defect.
-// See docs/ADRs/0021-produces-for-human-is-a-separate-contract-field.md.
+// See docs/decisions.md.
 type Stage struct {
 	ID   StageID
 	Role string
@@ -98,7 +98,7 @@ type Stage struct {
 	// diagnoses. Checked on exit like Produces, exempt from the static check.
 	ProducesForHuman []Artifact
 
-	// Verifiers declares how each produced artifact is proven (ADR-0032). An
+	// Verifiers declares how each produced artifact is proven. An
 	// artifact absent from the map is verified by existence alone, which the
 	// static check warns about so the floor stays a choice.
 	Verifiers map[Artifact]Verifier
@@ -112,14 +112,14 @@ type Stage struct {
 	//
 	// It carries a name because it is history — it decides which stages a task
 	// should have walked through — and a bare function has no identity a
-	// fingerprint could record (ADR-0048).
+	// fingerprint could record.
 	When Condition
 
 	// Gate is the decision a person makes on entering this stage, when there is
-	// one (ADR-0049).
+	// one.
 	//
 	// It lives on the stage rather than in a switch over stage ids because a flow
-	// is meant to be replaceable (ADR-0017), and a custom flow with no gates at
+	// is meant to be replaceable, and a custom flow with no gates at
 	// all was not a flow anyone would want — it was what the code did.
 	Gate *GateSpec
 
@@ -127,8 +127,8 @@ type Stage struct {
 	// its verdict costs when it sends the work back.
 	//
 	// Nil means the stage produces nothing to review. Only a review stage may
-	// emit a ReviewFinding, which is INV-core-7 in the engine: an implementer
-	// sending its own work back would be reviewing itself.
+	// emit a ReviewFinding, which is whoever-writes-does-not-review in the engine:
+	// an implementer sending its own work back would be reviewing itself.
 	Review *ReviewSpec
 }
 
@@ -142,7 +142,7 @@ type GateSpec struct {
 	Artifact Artifact
 
 	// Criticality is how much this gate matters, 1–10, higher being more critical.
-	// The knob absorbs every gate whose criticality is at or below it (RFC-0006).
+	// The knob absorbs every gate whose criticality is at or below it.
 	//
 	// The range starts at 1 rather than 0 because a gate exists precisely because
 	// something about it matters: a criticality of zero would be a gate every knob
@@ -178,7 +178,7 @@ func (g GateSpec) declared() bool {
 // load such a gate was the louder alternative and is wrong for this feature
 // specifically: every shipped stage declares no criticality today, so refusing
 // would break every existing flow the moment the field arrived. Defaulting to the
-// safest value is what keeps "declare nothing, change nothing" true (RFC-0006).
+// safest value is what keeps "declare nothing, change nothing" true.
 const DefaultCriticality = 10
 
 // Resolved is the criticality the stage declared, or the default when it
@@ -209,19 +209,19 @@ func (g *GateSpec) AbsorbedBy(knob int) bool {
 //
 // Both fields were constants in the reducer, which meant a project could rename
 // `build` or invalidate a differently-named green and lose the behaviour without
-// anything saying so (ADR-0049).
+// anything saying so.
 type ReviewSpec struct {
 	// SendsBackTo is the stage the work returns to when a finding is aligned.
 	SendsBackTo StageID
 
 	// Invalidates are the artifacts that stop being true once the work goes back —
-	// the green attested to code that no longer exists (ADR-0020).
+	// the green attested to code that no longer exists.
 	Invalidates []Artifact
 }
 
 // ProducesArtifact reports whether the stage delivers the artifact for the flow
 // to consume. ProducesForHuman does not count: an audit report satisfies nobody's
-// Requires (INV-core-11).
+// Requires (INV-3).
 func (s Stage) ProducesArtifact(a Artifact) bool {
 	return containsArtifact(s.Produces, a)
 }

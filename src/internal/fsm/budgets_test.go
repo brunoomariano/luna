@@ -10,7 +10,7 @@ import (
 //
 // A turn may contain a build, and thirty minutes — the old idle value — was a
 // wrong answer no configuration could fix, because the field that would have fixed
-// it was read and discarded (ADR-0051).
+// it was read and discarded.
 func TestTheTurnBudgetIsTwoHours(t *testing.T) {
 	if got := DefaultBudgets().Turn; got != 2*time.Hour {
 		t.Errorf("a turn may contain a build; want 2h, got %s", got)

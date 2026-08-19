@@ -71,7 +71,7 @@ func run(args []string) error {
 	defer func() { _ = s.Close() }()
 
 	// The registry answers the one question the log cannot: what is happening in
-	// another checkout (ADR-0054). It is resolved from the working directory
+	// another checkout. It is resolved from the working directory
 	// rather than from the log's path, because LUNA_STORE may point anywhere and
 	// `bd` discovers its own database from the repository it is run in.
 	//
@@ -90,14 +90,14 @@ func run(args []string) error {
 	// repository either way, which is the point of resolving it there. Saying so
 	// matters anyway: a stage's worktree is deleted when the stage ends, and
 	// someone who believes they are working in an isolated checkout should know
-	// the state they are changing is shared (ADR-0057).
+	// the state they are changing is shared.
 	if node.InsideAWorktree(ctx, cwd) {
 		fmt.Fprintf(os.Stderr, "note: this is a worktree; the log and registry are %s\n", root)
 	}
 
-	// A project's own stages replace the shipped ones, if it has any (RFC-0003).
+	// A project's own stages replace the shipped ones, if it has any.
 	// Decided here because this is where the repository is known: the engine may
-	// not read a filesystem (ADR-0024), and the flow has to be settled before any
+	// not read a filesystem, and the flow has to be settled before any
 	// command reads it.
 	stockDir := cli.StockDir(path)
 	if files, ok := cli.ProjectStock(stockDir); ok {
@@ -121,7 +121,7 @@ func run(args []string) error {
 // inside a function that also opens a database.
 func environment(s *store.Store, stockDir string, cfg cli.Config, root string) cli.Env {
 	// One harness, asked two ways: for an intent when a person types, and
-	// directly when the lead conducts or judges (ADR-0043, ADR-0044).
+	// directly when the lead conducts or judges.
 	harness := interpret.Harness{Agent: cfg.Interpreter}
 
 	return cli.Env{
@@ -133,16 +133,15 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 		In:     os.Stdin,
 		Edit:   cli.Editor(cfg),
 		// Luna hosts no model: the interpreter is one of the official harnesses
-		// run non-interactively (ADR-0044).
+		// run non-interactively.
 		Interpret: harness,
 		// The same harness, asked directly rather than for an intent. It is what
-		// `luna lead` conducts with and what judges a gate the knob reached
-		// (ADR-0043, RFC-0006).
+		// `luna lead` conducts with and what judges a gate the knob reached.
 		Lead: harness.Ask,
 
 		// A block is only a block once someone knows. herdr already owns a
 		// notification layer and is already what a person is looking at, so this
-		// delegates rather than growing a transport of its own (INV-core-8).
+		// delegates rather than growing a transport of its own.
 		Notify: herdr.NewNotifier().Blocked,
 	}
 }
@@ -151,8 +150,8 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 // the **main** repository containing the working directory.
 //
 // The main repository and not the working directory, which is the correction
-// (ADR-0057). A stage runs in an ephemeral worktree that is deleted when the
-// stage ends (ADR-0055), so resolving from the cwd put a second log inside
+// . A stage runs in an ephemeral worktree that is deleted when the
+// stage ends, so resolving from the cwd put a second log inside
 // something built to be thrown away — and the task it recorded went with it.
 // That was measured, not theorised: running from a worktree produced two
 // `.luna/luna.db` files with the task visible in only one.

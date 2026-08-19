@@ -3,7 +3,7 @@ package fsm
 import "testing"
 
 // TestScopeSatisfiesIsOneDirectional is the rule that stops a targeted check from
-// becoming a green suite (ADR-0028).
+// becoming a green suite.
 //
 // The study found that laundering everywhere evidence was recorded at all, and
 // the one project that refused it wrote the refusal into its own source.
@@ -90,7 +90,7 @@ func TestStaleIsNotPassing(t *testing.T) {
 }
 
 // TestEvidenceRendersWhatItProves covers the CLI line: an audit that says a stage
-// closed but not on what grounds answers half the question (ADR-0024).
+// closed but not on what grounds answers half the question.
 func TestEvidenceRendersWhatItProves(t *testing.T) {
 	ran := Evidence{Scope: ScopeFull, Verdict: VerdictPassed, Command: "go test ./...", ExitCode: 0}
 	if got := ran.String(); got != "passed (full) go test ./... → 0" {
@@ -124,8 +124,8 @@ func TestApprovedIsHumanScoped(t *testing.T) {
 	}
 }
 
-// TestVerifierForDefaultsToExistence covers the honest floor of ADR-0032, and the
-// fact that a declared verifier wins over it.
+// TestVerifierForDefaultsToExistence covers `existence` as the honest floor, and
+// the fact that a declared verifier wins over it.
 func TestVerifierForDefaultsToExistence(t *testing.T) {
 	stage := Stage{
 		ID:       "build",

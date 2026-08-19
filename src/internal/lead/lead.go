@@ -1,6 +1,6 @@
 // Package lead conducts a task through the flow, in either of two shapes.
 //
-// Lead is the loop the design calls hybrid (ADR-0002): code decides the next
+// Lead is the loop the design calls hybrid: code decides the next
 // stage, calls the node, checks the delivery and records the transition —
 // deterministic, zero tokens. When something goes off the rails, a model decides
 // what to do with it, and that judgement arrives through the Judge interface
@@ -8,7 +8,7 @@
 // model at all.
 //
 // Agent is the same task conducted by a model, so a person can talk to the thing
-// running it (ADR-0056). What does not change is who decides the stage: the
+// running it. What does not change is who decides the stage: the
 // agent is handed one closed order at a time and its answer is never parsed, so
 // there is no path from anything it says to a transition. It is what `luna lead`
 // uses.
@@ -30,19 +30,19 @@ import (
 
 // ErrStalled is returned when a task stops making progress without failing. It is
 // the failure mode the design calls the most expensive one: a fleet that stops
-// talking stops in silence (ADR-0019).
+// talking stops in silence.
 var ErrStalled = errors.New("the task stopped making progress")
 
 // ErrInfrastructure is returned when the machinery around the task broke rather
 // than the work in it — herdr went away, a socket died, a worktree vanished.
 //
 // It is kept apart from an ordinary failure because the retry budget is for a
-// stage that failed, and infrastructure says nothing about the stage (ADR-0011,
-// ADR-0033). Retrying it would also be retrying the wrong thing: a herdr that is
+// stage that failed, and infrastructure says nothing about the stage.
+// Retrying it would also be retrying the wrong thing: a herdr that is
 // not running will not be running on the second attempt either.
 //
 // The node layer wraps whatever its own transport reported, so the lead learns the
-// distinction without importing the transport (ADR-0030).
+// distinction without importing the transport.
 var ErrInfrastructure = errors.New("the machinery around the task broke")
 
 // Node runs one stage and reports what came back.
@@ -53,7 +53,7 @@ var ErrInfrastructure = errors.New("the machinery around the task broke")
 type Node interface {
 	// Run executes the stage and returns what it delivered, with the evidence for
 	// each artifact. The evidence comes from running the real tool — the test
-	// passed, the file exists, the commit resolves (ADR-0024, INV-core-4).
+	// passed, the file exists, the commit resolves.
 	Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (Result, error)
 }
 
@@ -65,7 +65,7 @@ type Result struct {
 	Evidence  map[fsm.Artifact]fsm.Evidence
 
 	// Commit is what the stage delivered, and it is the handoff: the next stage
-	// branches from it (ADR-0055, INV-core-6).
+	// branches from it.
 	//
 	// Empty means the stage committed nothing, and then the base does not move —
 	// which is right for a mechanical stage, and is a stage that produced nothing
@@ -81,7 +81,7 @@ const (
 	// DecideRetry runs the stage again with the error in context.
 	DecideRetry Decision = "retry"
 
-	// DecideBlock stops and notifies. Every blocked task notifies (INV-core-8).
+	// DecideBlock stops and notifies. Every blocked task notifies.
 	DecideBlock Decision = "block"
 )
 
@@ -92,21 +92,21 @@ const (
 // The reason it exists as an interface rather than a call to an LLM is
 // testability, but there is a second reason worth naming: the design's own
 // argument for a hybrid lead comes from a case where the machine was wrong and
-// the model caught it (ADR-0002). A judgement layer that cannot be swapped cannot
+// the model caught it. A judgement layer that cannot be swapped cannot
 // be studied.
 type Judge interface {
 	OnFailure(ctx context.Context, state fsm.TaskState, reason string) Decision
 }
 
 // Lead conducts one task. One per task, never shared: the parallelism is between
-// tasks, not inside them (ADR-0003).
-// There is no watchdog field, and the absence is deliberate. ADR-0019 imagined one
-// polling the state between transitions; ADR-0034 replaced that with delegation,
+// tasks, not inside them.
+// There is no watchdog field, and the absence is deliberate. The original design
+// imagined one polling the state between transitions; that was replaced with delegation,
 // and delegation is what shipped — herdr bounds the wait and a stall arrives as
 // ErrStalled from Node.Run, which the loop below already handles. A second
 // interface asking a replayed TaskState whether it looks stuck could only answer
 // from a clock the state does not carry, which is why nothing but a test fake ever
-// implemented it (ADR-0051).
+// implemented it.
 type Lead struct {
 	Store *store.Store
 	Node  Node
@@ -121,7 +121,7 @@ type Lead struct {
 	// A function rather than an interface pair because it is the seam between two
 	// things the lead deliberately does not own: which commands answer a gate
 	// lives in the registry, and running them belongs to the node layer. The lead
-	// only needs the verdict, which is the ADR-0024 shape — the observation
+	// only needs the verdict, which is the pure-reducer shape — the observation
 	// arrives, the decision is taken here.
 	//
 	// Nil means no mechanical half at all, which is what a run with no registry
@@ -130,14 +130,14 @@ type Lead struct {
 	CheckGate func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome
 
 	// Ask is how the lead judges a gate the knob reached. It is the same boundary
-	// Agent uses and the same one ADR-0043 draws: Luna hosts no model of its own.
+	// Agent uses, and the same one drawn everywhere: Luna hosts no model of its own.
 	//
 	// Nil is the ordinary case — `luna run` needs no model, and a run with none
 	// sends every judgement to a person rather than approving what nobody looked
 	// at.
 	Ask func(ctx context.Context, prompt string) (string, error)
 
-	// Land points the task's branch at the commit it ended on (ADR-0062).
+	// Land points the task's branch at the commit it ended on.
 	//
 	// A function rather than a git call here for the reason the reducer's purity
 	// already established: the lead decides *that* a task landed, and the node
@@ -191,7 +191,7 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 }
 
 // land points the task's branch at what it delivered, so `done` means what
-// ADR-0062 says it means: ready to integrate, on a branch a person can name.
+// what it means: ready to integrate, on a branch a person can name.
 //
 // It runs on the way out of the loop rather than at the last stage, because
 // "the task is finished" is a property of the state and not of any one stage —
@@ -230,21 +230,21 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	if err != nil {
 		// A stall is a decision, not a judgement call: the node observed that the
 		// agent is alive and doing nothing, and there is nothing for a model to
-		// weigh (ADR-0034). It also must not spend the retry budget — that budget
+		// weigh. It also must not spend the retry budget — that budget
 		// is for a stage that failed, and a stall says nothing about the stage.
 		if errors.Is(err, ErrStalled) {
 			return l.stall(taskID, err.Error())
 		}
 		// Infrastructure blocks without consulting anyone and without spending the
 		// budget: there is no judgement to make about a herdr that went away, and
-		// the budget belongs to the stage (ADR-0033).
+		// the budget belongs to the stage.
 		if errors.Is(err, ErrInfrastructure) {
 			return l.record(taskID, fsm.Block{Reason: err.Error()})
 		}
 		return l.handleFailure(ctx, taskID, state, err.Error())
 	}
 
-	// The verdict came from outside; the reducer decides what it means (ADR-0024).
+	// The verdict came from outside; the reducer decides what it means.
 	// A stage that delivered less than it promised will not close, and the lead
 	// does not argue with that — it records the attempt and lets the next pass see
 	// a blocked task.
@@ -253,8 +253,8 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		Evidence:  result.Evidence,
 		Commit:    result.Commit,
 		Flow:      flow,
-		// A review gate opens when the stage that produced its artifact closes
-		// (ADR-0064), so this is the action that reaches it and the decision is
+		// A review gate opens when the stage that produced its artifact closes,
+		// so this is the action that reaches it and the decision is
 		// owed here rather than on the next advance.
 		GateDecision: l.decideGate(ctx, state, fsm.GateClosing(state, flow)),
 	}); err != nil {
@@ -274,7 +274,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 // readReview turns a review stage's report into a transition, when it carries
 // one.
 //
-// This is what ADR-0041 specified and nothing implemented: the reviewer produces
+// This is what the review contract specified and nothing implemented: the reviewer produces
 // a report like any other artifact, and **Luna reads it**. A `[BLOCKING]`
 // finding sends the work back; anything else lets the flow carry on.
 //
@@ -282,7 +282,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 // a `luna review-finding --aligned` would be the direct route and would put a
 // transition in a model's hands — with nothing able to stop a false one, and
 // nothing able to detect it. So the model reports and the code decides, which is
-// INV-core-1 applied to the one place where letting the model decide would look
+// Flow control out of the model, applied to the one place where letting it decide would look
 // most reasonable: it has just finished forming an opinion, and acting on one is
 // the obvious next step.
 //
@@ -298,7 +298,7 @@ func (l *Lead) readReview(
 	}
 
 	// The delivered content travels in the evidence's detail, which is where the
-	// gate payload reads it from too (ADR-0024: the node ran the tool, and what it
+	// gate payload reads it from too — the node ran the tool, and what it
 	// saw arrives in the action).
 	findings := fsm.ReadReport(result.Evidence[artifact].Detail)
 	if !fsm.Blocks(findings) {
@@ -310,8 +310,8 @@ func (l *Lead) readReview(
 		Summary:  summarise(findings),
 		Progress: progressOf(state, result),
 		Flow:     l.flow(),
-		// What a spent ceiling means is the lead's to decide, from the history
-		// (ADR-0063). It is consulted only when a ceiling is actually reached; an
+		// What a spent ceiling means is the lead's to decide, from the history.
+		// It is consulted only when a ceiling is actually reached; an
 		// ordinary round leaves this absent and nothing is asked.
 		GateDecision: l.decideCeiling(ctx, state),
 	})
@@ -323,11 +323,11 @@ func (l *Lead) readReview(
 // Not a fixed rule, because the two endings are right in different situations and
 // only the history separates them — a loop that produced nothing for three rounds
 // is a block, while one converging slowly is a question worth asking. That is the
-// ADR-0002 carve-out exactly as written: the lead decides what to do about a
+// The hybrid-lead carve-out exactly as written: the lead decides what to do about a
 // failure, never which stage comes next.
 //
 // With no model, it blocks. An unattended run that cannot ask must not carry on
-// looping (ADR-0059), and the absent decision is what produces that.
+// looping, and the absent decision is what produces that.
 func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateWaited {
 	if l.Ask == nil {
 		return fsm.GateDecisionAbsent
@@ -352,13 +352,13 @@ func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateW
 //
 // It is the delivered commit. That is the closest thing Luna has to "did the
 // work change", and it is exact rather than approximate: the handoff *is* the
-// commit (INV-core-6), so two rounds delivering the same sha delivered the same
+// commit, so two rounds delivering the same sha delivered the same
 // work — no hashing, no diff, no guessing which parts of a diff are meaningful.
 //
 // The PRD's open question asked what to hash, listing artifacts, the worktree
 // diff and the evidence, and worried about meaningless variation — a timestamp
 // in a diff that never matches itself. The commit sidesteps that entirely, and
-// only because the handoff moved to git first (ADR-0055): hashing a worktree
+// only because the handoff moved to git first: hashing a worktree
 // would have had exactly the problem the question describes.
 //
 // A round that delivered no commit says nothing rather than guessing, which the
@@ -405,7 +405,7 @@ func (l *Lead) flow() []fsm.Stage {
 // A stage that opens no gate records no decision: there was nothing to decide,
 // and writing "passed" would claim a gate was reached that never was.
 //
-// Whether it waits at all is no longer a profile's to say (ADR-0063). A gate
+// Whether it waits at all is no longer a profile's to say. A gate
 // waits because the stage declared something to answer it with — judgement
 // criteria in the flow, or checks in the task's registry entry. One with neither
 // was never going to put a question in front of anybody, so stopping at it would
@@ -417,7 +417,7 @@ func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.Pe
 
 	// The two halves are declared in different places, so both are consulted
 	// before concluding that nothing was: criteria live in the stage file and
-	// checks live per task in the registry (RFC-0006).
+	// checks live per task in the registry.
 	spec := fsm.GateSpecIn(l.flow(), gate.Stage)
 
 	checks := fsm.GateChecksOutcome{}
@@ -450,7 +450,7 @@ func declared(spec *fsm.GateSpec, checks fsm.GateChecksOutcome) bool {
 // gate — `make ci` is not a question to ask twice.
 //
 // Reading the registry and running commands is the node layer's work, and the
-// verdict arrives as an observation the way every other one does (ADR-0024).
+// verdict arrives as an observation the way every other one does.
 // What this owns is the decision made from it, which is why the rule itself
 // lives in fsm.ResolveGate and is testable without a registry or a shell.
 func (l *Lead) answerDeclaredGate(
@@ -508,7 +508,7 @@ func (l *Lead) judge(ctx context.Context, spec *fsm.GateSpec, gate *fsm.PendingG
 // failure says the stage went wrong, a stall says nothing about the stage at all.
 // Collapsing them would spend the retry budget on an agent that is not going to
 // react, and would leave the audit unable to tell the two apart at exactly the
-// moment someone needs to know which happened (ADR-0034, ADR-0011).
+// moment someone needs to know which happened.
 func (l *Lead) stall(taskID, reason string) error {
 	return l.record(taskID, fsm.Block{Reason: reason})
 }
@@ -530,7 +530,7 @@ func (l *Lead) handleFailure(ctx context.Context, taskID string, state fsm.TaskS
 	case DecideBlock:
 		// One decision, one event. Spending the retry budget to reach a block would
 		// leave three failures in the log where there was one choice to escalate,
-		// and the history is the audit trail (INV-core-2).
+		// and the history is the audit trail.
 		return l.record(taskID, fsm.Block{Reason: reason})
 	default:
 		return fmt.Errorf("the judge returned an unknown decision %q", decision)
@@ -557,8 +557,7 @@ func (l *Lead) record(taskID string, action fsm.Action) error {
 	// validated this action against `state`, and between reading it and writing
 	// there is a window: something landing in it means the decision was made
 	// against a task that has since moved, and appending anyway would put two
-	// decisions taken from one state into a log that cannot be repaired
-	// (ADR-0047).
+	// decisions taken from one state into a log that cannot be repaired.
 	return l.Store.AppendActionAt(taskID, state.Seq, action)
 }
 

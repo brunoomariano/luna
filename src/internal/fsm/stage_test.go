@@ -20,7 +20,7 @@ func auditOnlyStage() Stage {
 // A stage declares three distinct things: what it requires to start, what it
 // delivers to the flow and what it delivers to a person. The three are separate
 // fields — merging them would erase the difference between "product someone
-// consumes" and "report someone reads", which is what ADR-0021 exists to preserve.
+// consumes" and "report someone reads", which the three fields exist to preserve.
 func TestStageSeparatesTheThreeFields(t *testing.T) {
 	build := Stage{
 		ID:       "build",

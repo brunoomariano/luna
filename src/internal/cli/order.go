@@ -12,7 +12,7 @@ import (
 // commit, with what denied.
 //
 // This is the interface between the FSM and whatever is driving it — a person
-// today, an agent lead later (RFC-0002). It is a read: asking twice changes
+// today, an agent lead later. It is a read: asking twice changes
 // nothing, and a running stage is reported again rather than skipped past. That
 // matters more than it looks, because the caller may be a process that crashed
 // and restarted, and an order that advanced on being read would lose a stage
@@ -50,11 +50,11 @@ func nextCommand(env Env, args []string) error {
 //
 // The commit is what makes this more than a status update. It becomes the next
 // stage's base, so the handoff is the artifact rather than a description of it
-// (INV-core-6). What Luna does with it is verify — the message describes, the
+// . What Luna does with it is verify — the message describes, the
 // diff decides.
 //
 // Nothing here judges the work. The delivery and its evidence go into the
-// action and the reducer decides whether the stage closed (ADR-0024): a stage
+// action and the reducer decides whether the stage closed: a stage
 // that owed two artifacts and delivered one does not close, and no flag on this
 // command can make it.
 func doneCommand(env Env, args []string) error {
@@ -83,9 +83,8 @@ func doneCommand(env Env, args []string) error {
 
 	// Existence is the floor, and it is recorded as exactly that. A stage whose
 	// contract declares a command will not close on it — underProven refuses the
-	// weaker check (INV-core-4). That refusal is the point: reporting a stage
-	// done by hand must not be a way to launder a verdict nobody produced
-	// (ADR-0045).
+	// weaker check. That refusal is the point: reporting a stage
+	// done by hand must not be a way to launder a verdict nobody produced.
 	evidence := map[fsm.Artifact]fsm.Evidence{}
 	for _, artifact := range delivered {
 		// fsm.Exists rather than a literal: the floor is defined in one place, so
@@ -127,9 +126,9 @@ func doneCommand(env Env, args []string) error {
 //
 // It exists because `luna next` deliberately does not carry one. An order that
 // listed the stages ahead would invite whoever reads it to save a round trip by
-// doing two of them, which is the model taking flow control back (INV-core-1).
+// doing two of them, which is the model taking flow control back.
 // Keeping the panorama in a separate command means seeing it is an explicit act
-// rather than something that arrives alongside an instruction (ADR-0052).
+// rather than something that arrives alongside an instruction.
 func statusCommand(env Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: status needs a task id", ErrUsage)
@@ -149,7 +148,7 @@ func statusCommand(env Env, args []string) error {
 	report := statusReport(state, fsm.DefaultFlow())
 	// Filled here rather than in statusReport, which is pure and takes no
 	// filesystem: reading a ref is a git call, and where the task landed is a
-	// fact about the repository rather than about the state (ADR-0024).
+	// fact about the repository rather than about the state.
 	if state.Status == fsm.StatusDone {
 		report.Branch = node.TaskBranch(state.ID)
 	}
@@ -163,7 +162,7 @@ func statusCommand(env Env, args []string) error {
 	}
 	// Where the work is, which is the half of `done` a person actually needs.
 	// `done` means ready to integrate, and integrating is a manual act — so the
-	// branch has to be named rather than left to be worked out (ADR-0062).
+	// branch has to be named rather than left to be worked out.
 	if report.Branch != "" {
 		fmt.Fprintf(env.Out, "  branch %s\n", report.Branch)
 	}
@@ -183,7 +182,7 @@ type StatusReport struct {
 
 	// Branch is the ref this task's work is on. Empty until the task ends —
 	// before that the branch exists but is stranded where the task opened, and
-	// naming it would point a person at the wrong commit (ADR-0062).
+	// naming it would point a person at the wrong commit.
 	Branch string      `json:"branch,omitempty"`
 	Stages []StageMark `json:"stages"`
 }
@@ -199,7 +198,7 @@ type StageMark struct {
 //
 // A stage the task's conditions exclude is reported as skipped rather than
 // omitted: "qa does not apply to a chore" is an answer, and a flow that silently
-// dropped it would read as a flow that forgot it (ADR-0014).
+// dropped it would read as a flow that forgot it.
 func statusReport(state fsm.TaskState, flow []fsm.Stage) StatusReport {
 	report := StatusReport{
 		TaskID: state.ID,

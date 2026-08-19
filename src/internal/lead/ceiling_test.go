@@ -13,7 +13,7 @@ import (
 // The decision turns on reading the counters: three rounds that changed nothing
 // is a different situation from three that each moved something, and a brief that
 // summarised instead of showing them would be asking for an opinion rather than a
-// reading (ADR-0023, ADR-0063).
+// reading.
 func TestTheCeilingBriefCarriesTheHistory(t *testing.T) {
 	brief := CeilingBrief(fsm.LoopCounters{
 		Rounds:       4,
@@ -36,7 +36,8 @@ func TestTheCeilingBriefCarriesTheHistory(t *testing.T) {
 	}
 
 	// And it has to bound what is being asked. A lead that read this as an
-	// invitation to pick a stage would be deciding the flow (INV-core-1).
+	// invitation to pick a stage would be deciding the flow — the one thing Luna
+	// exists to prevent.
 	if !strings.Contains(brief, "you may not choose a") {
 		t.Error("the brief does not say the flow is not the lead's to decide")
 	}
@@ -63,7 +64,7 @@ func TestAnEmptyLoopStillRendersAReadableBrief(t *testing.T) {
 //
 // At a gate the cheap direction is asking a person. Here asking is what costs: a
 // loop nobody assessed and nobody stops is the one that burns tokens forever, so
-// anything unreadable blocks (INV-core-8).
+// anything unreadable blocks (INV-5).
 func TestOnlyALeadingAskReachesAPerson(t *testing.T) {
 	cases := map[string]CeilingVerdict{
 		"ASK":                                   CeilingAsk,
@@ -99,7 +100,7 @@ func TestTheUnreadableCeilingBlocks(t *testing.T) {
 // TestWithNoModelASpentCeilingBlocks is the guard for an unattended run.
 //
 // `luna run` needs no model. A ceiling reached with none must stop and notify
-// rather than carry on, which is what an absent decision produces (ADR-0059).
+// rather than carry on, which is what an absent decision produces.
 func TestWithNoModelASpentCeilingBlocks(t *testing.T) {
 	l := &Lead{}
 

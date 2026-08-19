@@ -69,7 +69,7 @@ func TestStorePathPrefersTheEnvironment(t *testing.T) {
 //
 // Per-repository rather than per-directory: a stage runs in an ephemeral
 // worktree, so resolving from the cwd would put the log somewhere that is about
-// to be deleted (ADR-0057).
+// to be deleted.
 func TestStorePathDefaultsToTheRepositoryRoot(t *testing.T) {
 	t.Setenv("LUNA_STORE", "")
 
@@ -139,7 +139,7 @@ func TestRunReportsAnUnopenableStore(t *testing.T) {
 	}
 }
 
-// TestRunFromAWorktreeUsesTheMainRepositorysLog is the defect ADR-0057 fixes,
+// TestRunFromAWorktreeUsesTheMainRepositorysLog is the defect the shared log location fixes,
 // exercised end to end through `run` rather than through the resolver alone.
 //
 // Before it, running from a worktree created a second `.luna/luna.db` inside a

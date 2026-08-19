@@ -61,8 +61,8 @@ func TestAFailingNotifierReportsWhatWentWrong(t *testing.T) {
 // TestTheShippedNotifierCallsHerdr pins the command line.
 //
 // The arguments were checked against the binary rather than read from
-// documentation, which is the discipline ADR-0036 arrived at after ten protocol
-// facts turned out to be wrong. This keeps them from drifting quietly.
+// documentation, the discipline arrived at after ten protocol facts turned out
+// to be wrong. This keeps them from drifting quietly.
 func TestTheShippedNotifierCallsHerdr(t *testing.T) {
 	if NewNotifier().Run == nil {
 		t.Fatal("the shipped notifier has to do something")

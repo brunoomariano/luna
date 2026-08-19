@@ -55,7 +55,8 @@ func chatting(t *testing.T, h *harness, interpreter Interpreter, confirm func(*b
 	return out.String()
 }
 
-// TestApprovingAGateAsksFirst is the one exception ADR-0043 carves out.
+// TestApprovingAGateAsksFirst is the one exception carved out: `gate approve`
+// is the statement that a human looked, and the log cannot undo that meaning.
 //
 // Approving is not a command that happens to write: it is the statement "a human
 // looked", recorded indistinguishably from the person having read the artifact. A
@@ -176,7 +177,7 @@ func TestTheLayerSeesWhatLunaReports(t *testing.T) {
 		t.Fatalf("want the state shown once, got %d", len(interpreter.stateShown))
 	}
 	// It is the machine-readable form, which is the contract the layer reads
-	// rather than prose meant for a person (ADR-0043).
+	// rather than prose meant for a person.
 	if !strings.Contains(interpreter.stateShown[0], `"waiting"`) {
 		t.Errorf("want the structured view, got %q", interpreter.stateShown[0])
 	}

@@ -18,10 +18,11 @@ import (
 // Everything else in this package talks to a fake that answers what the protocol
 // notes say herdr answers. That is the right default — the suite has to run in CI
 // with no herdr installed — but it means the notes are the only thing being
-// tested, and ADR-0036 exists because ten of those notes were wrong until a real
-// server contradicted them. The trap it records is the one a fake cannot
-// reproduce: herdr accepts unknown fields silently, so a wrong field name gates
-// nothing while every assertion still passes.
+// tested, and the rule of checking against the real binary exists because ten of
+// those notes were wrong until a real server contradicted them. The trap it
+// records is the one a fake cannot reproduce: herdr accepts unknown fields
+// silently, so a wrong field name gates nothing while every assertion still
+// passes.
 //
 // They are gated on what each one actually needs, so as much runs as the machine
 // allows and nothing fails for being absent:
@@ -83,7 +84,7 @@ func TestE2EAMissingSocketIsGoneRatherThanAnyError(t *testing.T) {
 // Luna's gating claim is that a reviewer starts without the tools it must not
 // have. A fake can only confirm that Luna assembled the argv it meant to; whether
 // the harness accepts those flags, and whether it rejects a wrong one instead of
-// ignoring it, is a fact about the binary. ADR-0042 records that the mapping is
+// ignoring it, is a fact about the binary. The harness table's mapping is
 // version-specific and unversioned, and this is what would notice it drifting.
 //
 // It asserts the harness *rejects* a flag that does not exist. A harness that
@@ -125,9 +126,10 @@ func TestE2ETheDenialReachesTheHarness(t *testing.T) {
 
 // TestE2EEveryGatedHarnessRejectsAnUnknownFlag generalises the control above.
 //
-// This is the version-drift alarm ADR-0042 asks for and nothing implemented. A
-// harness that silently ignores an unknown flag will silently ignore a renamed
-// denial flag, and Luna would keep reporting that the reviewer was gated.
+// This is the version-drift alarm the harness table asks for and nothing
+// implemented. A harness that silently ignores an unknown flag will silently
+// ignore a renamed denial flag, and Luna would keep reporting that the reviewer
+// was gated.
 func TestE2EEveryGatedHarnessRejectsAnUnknownFlag(t *testing.T) {
 	for _, kind := range herdr.SupportedHarnesses() {
 		harness, _ := herdr.HarnessFor(kind)

@@ -17,7 +17,7 @@ import (
 //
 // Each of those fields answers a question the audit will ask later, and evidence
 // missing any of them says a stage closed without saying on what grounds
-// (ADR-0024).
+// .
 func TestProveRecordsWhatTheCommandAnswered(t *testing.T) {
 	shell := Shell{Dir: t.TempDir()}
 
@@ -43,8 +43,8 @@ func TestProveRecordsWhatTheCommandAnswered(t *testing.T) {
 	}
 }
 
-// TestProveHonoursTheDeclaredScope covers the direction of ADR-0028: the node
-// layer reports the scope the contract declared and never invents a wider one.
+// TestProveHonoursTheDeclaredScope covers the direction verification runs in: the
+// node layer reports the scope the contract declared and never invents a wider one.
 //
 // A targeted run that came back as full would be exactly the laundering the
 // scope exists to prevent, and this is the only place it could be introduced.
@@ -98,7 +98,7 @@ func TestAFailingCommandIsAVerdictNotAnError(t *testing.T) {
 	}
 }
 
-// TestAVerifierThatExecutesNothingRunsNothing covers ADR-0032's honest floor:
+// TestAVerifierThatExecutesNothingRunsNothing covers the honest floor:
 // existence is a claim about delivery, not about a check.
 //
 // The proof is a directory that does not exist. Any attempt to run a command
@@ -376,7 +376,7 @@ func TestACancelledContextIsNotAVerdict(t *testing.T) {
 // where it cost a task that had already delivered.
 //
 // A stage stalled, the worktree was removed with it — correctly, since a stage
-// that ended has no tree (ADR-0055) — and every retry then failed on
+// that ended has no tree — and every retry then failed on
 // `chdir ...: no such file` rather than on the work. `make ci` was green on the
 // agent's own commit.
 //
@@ -427,12 +427,13 @@ func TestProveVerifiesTheNamedCommitAndNotTheLatest(t *testing.T) {
 	}
 }
 
-// TestADeclaredPathIsCheckedAgainstTheCommit is what RFC-0004 is for.
+// TestADeclaredPathIsCheckedAgainstTheCommit is what checking a declared path
+// against the commit is for.
 //
 // Measured on a real run before this existed: six of six artifacts closed with
 // scope `existence`, which proves nothing — an agent that writes `Delivered:
 // contract` and commits no file at all closed the stage green. That is the
-// self-reported completion ADR-0028 rejects for status, one level down.
+// self-reported completion Luna rejects for status, one level down.
 func TestADeclaredPathIsCheckedAgainstTheCommit(t *testing.T) {
 	dir := repo(t)
 	if err := os.MkdirAll(filepath.Join(dir, "reports"), 0o755); err != nil {

@@ -12,7 +12,7 @@ import (
 )
 
 // stageWithHandover owes one artifact through Luna's store rather than through
-// the commit (RFC-0008).
+// the commit.
 func stageWithHandover() fsm.Stage {
 	return fsm.Stage{
 		ID:       "spec",
@@ -54,7 +54,7 @@ func storedHashes(m map[string]string) func(taskID, stage, artifact string) (str
 
 // TestAHandedOverArtifactIsProvenByTheStore is the exit check for an artifact
 // that is not in the commit: the store is the witness, and the evidence carries
-// the hash INV-core-11 asks the handoff to hold.
+// the hash INV-3 asks the handoff to hold.
 func TestAHandedOverArtifactIsProvenByTheStore(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	socket := &fakeSocket{}
@@ -110,7 +110,7 @@ func TestAnArtifactNobodyHandedOverFailsItsStage(t *testing.T) {
 }
 
 // TestAHandoverStageWithNoStoreFailsRatherThanTrusts covers the unwired caller:
-// recording a pass with nothing to ask would be the self-report ADR-0028 refuses.
+// recording a pass with nothing to ask would be the self-report Luna refuses.
 func TestAHandoverStageWithNoStoreFailsRatherThanTrusts(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	n := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}
@@ -256,8 +256,9 @@ func TestAMissingHandoverDoesNotErasesItsNeighbours(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableTreeStopsAHandoverStageToo pins that RFC-0008 kept ADR-0068's
-// correction: the commit read fails, the stage stops, whatever the store holds.
+// TestAnUnreadableTreeStopsAHandoverStageToo pins that the socket handover kept
+// the unreachable-worktree correction: the commit read fails, the stage stops,
+// whatever the store holds.
 func TestAnUnreadableTreeStopsAHandoverStageToo(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	socket := &fakeSocket{}

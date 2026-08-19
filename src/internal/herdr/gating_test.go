@@ -12,7 +12,8 @@ import (
 // could still create a file has not been stopped from changing what it judges.
 var noWriting = []fsm.Capability{fsm.CapEdit, fsm.CapWrite}
 
-// TestEachHarnessSpeaksItsOwnVocabulary is the table ADR-0042 exists for.
+// TestEachHarnessSpeaksItsOwnVocabulary is the table the per-harness capability
+// mapping exists for.
 //
 // Four official harnesses, four mechanisms, no two alike. The role declares the
 // capability; translating it is Luna's job, which is what lets a project move
@@ -54,7 +55,7 @@ func TestEachHarnessSpeaksItsOwnVocabulary(t *testing.T) {
 //
 // An empty argv is indistinguishable from a denial that worked, and the failure
 // is silent: an agent that should not be able to write starts able to. Refusing
-// is what ADR-0042 means by not failing open.
+// is what the harness table means by not failing open.
 func TestOpencodeRefusesToGateRatherThanPretending(t *testing.T) {
 	harness, ok := HarnessFor("opencode")
 	if !ok {
@@ -168,7 +169,7 @@ func TestAnAgentStartsUnattended(t *testing.T) {
 // `bypassPermissions` at `done` with a real commit.
 //
 // The wider flag is defensible because Luna now starts every agent inside the
-// sandbox itself (ADR-0069). It used to be conditional on whether *Luna's own
+// sandbox itself. It used to be conditional on whether *Luna's own
 // process* was contained, which decided the *agent's* permissions — two
 // unrelated facts, since the agent is a child of the herdr server. Where there
 // is no sandbox to start it in, Luna refuses rather than falling back.
@@ -211,7 +212,7 @@ func TestTheAgentStartsWithThePermissionItsContainmentAllows(t *testing.T) {
 }
 
 // TestTheDenialReachesTheAgent is the end of the chain: a gated role starts with
-// the tool absent rather than discouraged (ADR-0018).
+// the tool absent rather than discouraged.
 func TestTheDenialReachesTheAgent(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{
@@ -238,8 +239,8 @@ func TestTheDenialReachesTheAgent(t *testing.T) {
 	}
 }
 
-// TestAGatedRoleOnAnUngateableHarnessStopsTheStage is the refusal ADR-0041 chose
-// over reported degradation.
+// TestAGatedRoleOnAnUngateableHarnessStopsTheStage is the refusal chosen over
+// reported degradation.
 //
 // A review that ran ungated is a review whose independence rests on the prompt,
 // and a log entry afterwards does not give the finding back its weight.

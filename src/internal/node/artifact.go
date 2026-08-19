@@ -17,7 +17,7 @@ import (
 // Inside the worktree because that is the only place a contained agent can reach:
 // measured against ai-jail 1.17.0, a socket in $HOME, in /tmp, or reached through
 // a symlink out of the working directory all answer ENOENT, and a real socket
-// under the cwd connects (RFC-0008). Landlock permits connect() on an inode it can
+// under the cwd connects. Landlock permits connect() on an inode it can
 // see; the process on the other end is not contained and writes wherever it likes.
 const SocketName = ".luna/artifact.sock"
 
@@ -207,7 +207,7 @@ const sunPathLimit = 107
 // A worktree can live arbitrarily deep — measured: the first real run put one
 // 140 bytes down and the server died on `bind: invalid argument` before the
 // agent ever started. The socket cannot move (inside the worktree is the one
-// place a contained agent reaches, RFC-0008), so the *name* is shortened
+// place a contained agent reaches), so the *name* is shortened
 // instead: the directory is opened, and the path goes through /proc/self/fd,
 // which resolves to the same inode in a handful of bytes. The descriptor only
 // has to outlive the syscall — the socket, once bound, is reached by its real

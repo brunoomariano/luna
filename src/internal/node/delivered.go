@@ -23,11 +23,11 @@ const gitTimeout = time.Minute
 // and never committed — so a suite that passes there says nothing about what the
 // stage actually handed over. Measured across coding agents, that incoherence is
 // the dominant way a green check turns out to be wrong; deliberate sabotage is
-// rarer and is not what this addresses (INV-core-4).
+// rarer and is not what this addresses.
 //
 // It is not containment. An agent that controls what it commits controls what is
 // verified, and confining the process is a sandbox's job — Luna delegates that
-// rather than building it (INV-core-7).
+// rather than building it.
 type Delivered struct {
 	// Path is the checkout, valid until Close.
 	Path string
@@ -51,7 +51,7 @@ func (d *Delivered) Close() {
 //
 // `git worktree add --detach` rather than a clone: it shares the object database,
 // so it costs a checkout rather than a copy of the history, and it is the same
-// mechanism Luna already uses for a task's own tree (ADR-0037).
+// mechanism Luna already uses for a task's own tree.
 //
 // A repository with no commit yet is not an error — it is the first stage of the
 // first task, before anything was delivered. The caller gets nil and falls back to
@@ -67,7 +67,7 @@ func CheckoutDelivered(ctx context.Context, worktree string) (*Delivered, error)
 //
 // Naming the commit is what lets the checkout be cut from the repository rather
 // than from the stage's worktree. The repository outlives every stage; the
-// worktree is removed when the stage ends (ADR-0055), and a verification that
+// worktree is removed when the stage ends, and a verification that
 // resolved HEAD from it failed on a missing directory the moment a stage was
 // retried — measured on the swarm bench, on work that was itself green.
 func CheckoutAt(ctx context.Context, repo, commit string) (*Delivered, error) {
@@ -173,7 +173,7 @@ func short(sha string) string {
 // The message is the channel because committing is already mandatory — the brief
 // says so — and it needs no new protocol between Luna and the harness. What it
 // is not is proof: the agent is reporting, and the contract check decides
-// (INV-core-1).
+// .
 //
 // Empty for both when there is no commit, which is the first stage of the first
 // task and not an error.

@@ -10,7 +10,7 @@ import (
 	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
-// TestFlowCheckReportsAnOpenTask covers the primary defence of ADR-0046.
+// TestFlowCheckReportsAnOpenTask covers the primary defence of the flow fingerprint.
 //
 // Changing the flow while a task is open rewrites how that task's history reads,
 // so the rule is to stop and confirm nothing is in flight. This is the command
@@ -154,7 +154,7 @@ func TestFlowRefusesAnUnknownSubcommand(t *testing.T) {
 // through.
 //
 // Everything after this treats the id as safe: it becomes `wt-<repo>-<id>` on
-// disk and part of an agent name in herdr, and neither checked. ADR-0037 named
+// disk and part of an agent name in herdr, and neither checked. The convention named
 // the path risk and left the guard for later; this is later.
 func TestTaskNewRefusesAnIdThatBreaksDownstream(t *testing.T) {
 	for _, id := range []string{"../../etc", "a/b", "LUNA 1", strings.Repeat("x", 40)} {
@@ -175,7 +175,7 @@ func TestTaskNewStillTakesOrdinaryIds(t *testing.T) {
 	}
 }
 
-// TestABlockedTaskNotifies is the third ending INV-core-8 names.
+// TestABlockedTaskNotifies is the third ending INV-5 names.
 //
 // "Every task ends in a commit, a gate or a notified block" — and the third had
 // nothing behind it. Printing to stdout is not notifying: the run that most needs
@@ -259,7 +259,7 @@ func TestNoNotifierIsNotAnError(t *testing.T) {
 	}
 }
 
-// TestRetryExhaustionBlocksAndNotifies is INV-core-8's first acceptance
+// TestRetryExhaustionBlocksAndNotifies is INV-5's first acceptance
 // criterion: the budget is spent, the task ends `blocked`, **and** somebody is
 // told.
 //
@@ -349,7 +349,7 @@ func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 		t.Fatalf("the gate listing is missing:\n%s", out)
 	}
 	// Every gate the shipped flow opens declares criteria now — that is what makes
-	// it wait at all (ADR-0063) — so each line has to say what reaches it.
+	// it wait at all — so each line has to say what reaches it.
 	if !strings.Contains(out, "→ knob") {
 		t.Errorf("the listing does not say which knob reaches a gate:\n%s", out)
 	}
@@ -358,7 +358,7 @@ func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 	}
 	// The mechanical half is per task rather than per flow, and the listing has to
 	// name the command that declares it — otherwise a person edits the stage file
-	// looking for somewhere to put a check that does not belong there (ADR-0067).
+	// looking for somewhere to put a check that does not belong there.
 	if !strings.Contains(out, "luna gate checks") {
 		t.Errorf("the listing does not say how checks are declared:\n%s", out)
 	}
@@ -428,7 +428,7 @@ func TestFlowCheckSaysSoWhenTheContractHolds(t *testing.T) {
 
 // TestFlowGatesNamesTheKnobThatReachesEach. The knob is a number, and a number is
 // meaningless without the list of what it reaches — this listing is what makes
-// `luna autonomy 6` a decision rather than a guess (RFC-0006).
+// `luna autonomy 6` a decision rather than a guess.
 func TestFlowGatesNamesTheKnobThatReachesEach(t *testing.T) {
 	h := newHarness(t)
 

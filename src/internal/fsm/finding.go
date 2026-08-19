@@ -6,7 +6,7 @@ import (
 )
 
 // Severity is the tag a review finding carries. Exactly one per finding
-// (ADR-0041).
+// .
 type Severity string
 
 const (
@@ -20,7 +20,7 @@ const (
 	SeverityNit Severity = "NIT"
 
 	// SeverityUncertain is a statement about confidence rather than a severity
-	// between two others, and it must say what would confirm it (ADR-0041).
+	// between two others, and it must say what would confirm it.
 	//
 	// It does not send work back. A reviewer that is unsure has not found a
 	// defect, and treating "I might be wrong" as blocking would make the loop
@@ -51,12 +51,12 @@ var findingLine = regexp.MustCompile(`(?m)^[\s\-\*\d\.\)]*(?:\*\*)?\[(BLOCKING|S
 
 // ReadReport pulls the findings out of a review report.
 //
-// This is the piece ADR-0041 specifies and nothing implemented: the reviewer
-// produces a report like any other artifact, and **Luna reads it**. The agent
-// never emits the transition — it reports, and the code decides. That is
-// INV-core-1 applied to the one place where letting the model decide would look
-// most reasonable, because the model has just finished forming an opinion and
-// the obvious next step is to let it act on one.
+// This is the piece the review contract specifies and nothing implemented: the
+// reviewer produces a report like any other artifact, and **Luna reads it**. The
+// agent never emits the transition — it reports, and the code decides. That is
+// flow control staying out of the model, applied to the one place where letting
+// the model decide would look most reasonable, because the model has just
+// finished forming an opinion and the obvious next step is to let it act on one.
 //
 // A report with no recognisable finding yields nothing, which is the honest
 // answer: it means the reviewer found nothing worth tagging, or wrote something
@@ -97,12 +97,12 @@ func Blocks(findings []Finding) bool {
 // four shipped review stages produce `qa_report`, `review_report`,
 // `mutation_report` and an architecture assessment, and a project's flow may
 // name its own. A hardcoded name would work for one stage and silently skip the
-// rest — which is the shape of bug ADR-0049 moved gates and reviews onto the
-// stage to avoid.
+// rest — which is the shape of bug that moving gates and reviews onto the stage
+// avoids.
 //
 // The report is the stage's human-facing product. That is what makes it the
 // right field: a review's output is read by a person and by this, and satisfies
-// nobody's Requires (INV-core-11).
+// nobody's Requires (INV-3).
 func ReviewedArtifact(stage Stage) (Artifact, bool) {
 	if stage.Review == nil || len(stage.ProducesForHuman) == 0 {
 		return "", false

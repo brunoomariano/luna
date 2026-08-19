@@ -6,7 +6,7 @@ import (
 )
 
 // ErrUnknownValue is returned when the log holds a value this build does not
-// recognise for a domain enum (ADR-0050).
+// recognise for a domain enum.
 //
 // It is the third refusal, after ErrUnknownAction for an action the build cannot
 // read and ErrFlowChanged for a flow it was not written under. All three say the
@@ -37,8 +37,9 @@ var ErrUnknownValue = fmt.Errorf("unknown value in the log")
 //
 // Profile is deliberately open. ShippedProfiles names the three Luna comes with
 // and its own doc comment says the engine "does not validate against it: a name
-// it has never heard of is a profile someone defined, not an error" (ADR-0017,
-// ADR-0026). Closing it here would break the extension point on the way past.
+// it has never heard of is a profile someone defined, not an error" — a project
+// brings its own flow, and the log records the decision rather than the policy.
+// Closing it here would break the extension point on the way past.
 //
 // The distinction worth keeping: these five are closed because the *engine*
 // decides what they mean. A profile's meaning lives in configuration, so a value

@@ -72,7 +72,7 @@ func TestTheLeadDrivesTheTaskThroughItsStages(t *testing.T) {
 
 // TestALeadThatClaimsSuccessWithoutReportingMovesNothing is the guarantee this
 // phase turns on. A model can say anything, including that it finished — and
-// saying so has to do nothing at all (INV-core-1).
+// saying so has to do nothing at all.
 func TestALeadThatClaimsSuccessWithoutReportingMovesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
@@ -141,7 +141,7 @@ func TestTheAutonomyKnobReachesTheLead(t *testing.T) {
 //
 // The three names are refused rather than aliased onto knob values: a flag
 // meaning "knob 5" would authorise the lead to judge gates up to criticality 5
-// without the word "gate" appearing anywhere (RFC-0006).
+// without the word "gate" appearing anywhere.
 func TestTheKnobIsANumberAndTheOldNamesAreGone(t *testing.T) {
 	for _, value := range []string{"ask", "retry", "decide", "whatever", "11", "-1"} {
 		h, _ := leadHarness(t)
@@ -161,7 +161,7 @@ func TestTheKnobIsANumberAndTheOldNamesAreGone(t *testing.T) {
 }
 
 // TestWithNoLeadTheCommandSaysSoAndNamesTheAlternative. Luna hosts no model
-// (ADR-0043), and a machine with none should be told what does work rather than
+// , and a machine with none should be told what does work rather than
 // what does not.
 func TestWithNoLeadTheCommandSaysSoAndNamesTheAlternative(t *testing.T) {
 	h := newHarness(t)
@@ -247,7 +247,7 @@ func TestALeadThatCannotFinishAStageStillTerminates(t *testing.T) {
 }
 
 // TestTheLeadIsGivenOneOrderAtATime — never the flow, and never two stages in
-// one prompt (ADR-0052).
+// one prompt.
 func TestTheLeadIsGivenOneOrderAtATime(t *testing.T) {
 	h, lead := leadHarness(t)
 

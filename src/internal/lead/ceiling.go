@@ -12,11 +12,11 @@ import (
 // It carries the counters rather than a summary, because the counters are the
 // history and the decision turns on reading them: three rounds with no functional
 // change is a different situation from three rounds that each moved something,
-// and only the numbers separate them (ADR-0023, ADR-0063).
+// and only the numbers separate them.
 //
 // It asks for one of two answers and nothing else. The lead is not being asked
 // what to do about the work — that would be choosing a stage, which it may never
-// do (INV-core-1). It is being asked which of two endings this loop has earned.
+// do. It is being asked which of two endings this loop has earned.
 func CeilingBrief(loop fsm.LoopCounters) string {
 	var b strings.Builder
 
@@ -70,7 +70,7 @@ type CeilingVerdict int
 const (
 	// CeilingBlock stops the task and notifies. It is the zero value, and that is
 	// deliberate: anything unreadable ends here, and a run that cannot conclude
-	// must not carry on looping (INV-core-8).
+	// must not carry on looping (INV-5).
 	CeilingBlock CeilingVerdict = iota
 
 	// CeilingAsk puts the loop in front of a person, with the history in view.

@@ -10,10 +10,9 @@ import (
 
 // Autonomy is how far the lead may go before it needs a person.
 //
-// It is the knob PRD gate-0001 asked for, and RFC-0002 makes it load-bearing
-// rather than optional: once the lead is a model, "what does it do when
-// something goes wrong" stops being a switch statement and starts being a
-// decision somebody has to have bounded in advance.
+// It is load-bearing rather than optional: once the lead is a model, "what does
+// it do when something goes wrong" stops being a switch statement and starts
+// being a decision somebody has to have bounded in advance.
 type Autonomy string
 
 const (
@@ -21,7 +20,8 @@ const (
 	AutonomyAsk Autonomy = "ask"
 
 	// AutonomyDecide lets the lead choose what to do about a failure, within the
-	// carve-out ADR-0002 already allows. It never widens to choosing a stage.
+	// carve-out the hybrid design already allows. It never widens to choosing a
+	// stage.
 	AutonomyDecide Autonomy = "decide"
 )
 
@@ -31,30 +31,30 @@ const (
 // does before anything else — so a name for "retries and then stops" described
 // the floor rather than a choice. ParseAutonomy went with it: nothing outside
 // this package may name an autonomy any more, because naming one was the second
-// control RFC-0006 exists to remove (ADR-0058 — what has no caller is either
-// wired or gone).
+// control the knob exists to remove — and what has no caller is either wired or
+// gone.
 
 // Agent is the lead as a model rather than a loop.
 //
 // It exists so that a person can talk to the thing running their task, which is
-// the whole reason RFC-0002 makes this change. Everything else about it is
-// shaped against the risk that introduces: a model that can be told what is
-// happening can also decide what happens next, and that is the one thing it must
-// not do (INV-core-1).
+// the whole reason for making this change. Everything else about it is shaped
+// against the risk that introduces: a model that can be told what is happening
+// can also decide what happens next, and that is the one thing it must not do —
+// the one thing Luna exists to prevent.
 //
 // The defence is not the brief. It is that the lead is never given a choice to
 // make on the happy path — `luna next` returns an order, the lead executes it and
-// reports, and the next order comes from the FSM having recorded the result
-// (ADR-0052). The brief below describes that arrangement; it does not create it.
+// reports, and the next order comes from the FSM having recorded the result. The
+// brief below describes that arrangement; it does not create it.
 type Agent struct {
 	// Ask sends the lead a message and returns what it said. It is the whole
 	// boundary between Luna and the model, and it is an interface because Luna
-	// hosts no model of its own (ADR-0043).
+	// hosts no model of its own.
 	Ask func(ctx context.Context, prompt string) (string, error)
 
 	// Knob is the one control a person sets. What the lead may do about a failure
 	// is derived from it, never configured beside it — two settings both called
-	// autonomy is a worse product than one (RFC-0006).
+	// autonomy is a worse product than one.
 	Knob fsm.Knob
 }
 
@@ -110,7 +110,7 @@ and not a loop.
 	// the branch, rather than being a thing the strictest setting forbids. It is
 	// the recovery whose bound is already in the state and it needs no judgement
 	// to be safe — and a person woken for a failure a second attempt would have
-	// cleared is attention spent for nothing (RFC-0006).
+	// cleared is attention spent for nothing.
 	b.WriteString(`
 When a stage fails:
 
@@ -152,7 +152,7 @@ When the retry is spent:
 // structural rather than a matter of the brief being persuasive.
 func (a *Agent) Conduct(ctx context.Context, order fsm.Order) (string, error) {
 	if a.Ask == nil {
-		return "", fmt.Errorf("no lead configured: Luna hosts no model of its own (ADR-0043)")
+		return "", fmt.Errorf("no lead configured: Luna hosts no model of its own")
 	}
 
 	// No default to apply: the knob's zero value is KnobAsk, the most supervised

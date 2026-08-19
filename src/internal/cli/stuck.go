@@ -25,7 +25,7 @@ const defaultPatience = time.Hour
 // This is the watchdog, and it is a command rather than a loop on purpose.
 // Whatever polls — a cron, herdr, the lead — decides how often to ask; keeping
 // the schedule outside means the clock is read in exactly one place and nothing
-// in Luna has to stay running to notice a stall (ADR-0053).
+// in Luna has to stay running to notice a stall.
 func stuckCommand(env Env, args []string) error {
 	flags, err := parseFlags(args)
 	if err != nil {
@@ -47,7 +47,7 @@ func stuckCommand(env Env, args []string) error {
 
 	// Only this checkout's log is asked. The registry used to be consulted here for
 	// tasks blocked in *another* checkout — the one question a single repository's
-	// log cannot answer — and that went with it (ADR-0067).
+	// log cannot answer — and that went with it.
 	//
 	// What replaces it is a central store rather than a central tracker: one
 	// LUNA_STORE shared between checkouts makes every task local to the same log,
@@ -68,7 +68,7 @@ func stuckCommand(env Env, args []string) error {
 
 	// --notify is what turns a listing into a watchdog. Without it this reports
 	// to whoever already ran the command, which is whoever was already looking —
-	// and the failure being guarded against is that nobody is (INV-core-8).
+	// and the failure being guarded against is that nobody is.
 	if _, ok := flags["notify"]; ok {
 		return announce(env, stuck)
 	}

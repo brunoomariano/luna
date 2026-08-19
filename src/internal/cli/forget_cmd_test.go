@@ -27,7 +27,7 @@ func forgetHarness(t *testing.T, terminal fsm.Action) *harness {
 	return h
 }
 
-// TestForgetRemovesAFinishedTasksContent is the cleanup RFC-0008 promised: the
+// TestForgetRemovesAFinishedTasksContent is the cleanup the store handover promised: the
 // content goes, the log and its hashes stay.
 func TestForgetRemovesAFinishedTasksContent(t *testing.T) {
 	h := forgetHarness(t, fsm.Abandon{Reason: "done with it"})
@@ -64,7 +64,7 @@ func TestForgetRefusesARunningTask(t *testing.T) {
 }
 
 // TestForgetSaysWhenThereIsNothing covers the task that handed nothing over —
-// every task from before RFC-0008, and every docs task.
+// every task from before the store handover, and every docs task.
 func TestForgetSaysWhenThereIsNothing(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore")

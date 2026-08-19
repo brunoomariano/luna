@@ -16,7 +16,7 @@ import (
 // Two of these are traps, and naming them here is half of why this package
 // exists. `Idle` means "prompt visible, nothing happening" — not that the work
 // succeeded. `Done` is a UI flag that decays to `Idle` once a human focuses the
-// tab. Neither is a verdict, and neither closes a stage (ADR-0028).
+// tab. Neither is a verdict, and neither closes a stage.
 type AgentStatus string
 
 // The five statuses herdr reports. Two of them are traps, which is why they are
@@ -64,11 +64,11 @@ type Runner interface {
 	// workspace that holds it. The binding anchors on the workspace because pane
 	// ids move.
 	//
-	// One worktree per task *and* role, branched from the base (ADR-0055). The
+	// One worktree per task *and* role, branched from the base. The
 	// role is what makes "whoever writes does not review" a property of the
-	// filesystem rather than a line in a brief (INV-core-7), and the base is what
+	// filesystem rather than a line in a brief, and the base is what
 	// makes the handoff the previous stage's commit rather than a description of
-	// it (INV-core-6).
+	// it.
 	OpenWorktree(ctx context.Context, w WorktreeSpec) (Workspace, error)
 
 	// CloseWorktree removes it again.
@@ -79,11 +79,11 @@ type Runner interface {
 	CloseWorktree(ctx context.Context, ws Workspace) error
 
 	// StartAgent puts an agent into a pane in that workspace and waits until it
-	// is interactive. The kind must be one herdr knows (ADR-0031); the name is
+	// is interactive. The kind must be one herdr knows; the name is
 	// herdr-wide and must be unique, so it carries the task and the stage.
 	//
 	// args are passed through to the agent itself, which is how a denied
-	// capability reaches it (ADR-0042).
+	// capability reaches it.
 	StartAgent(ctx context.Context, ws Workspace, kind, name string, args []string) (string, error)
 
 	// Prompt submits text and waits for the agent to settle, returning the status
@@ -94,7 +94,7 @@ type Runner interface {
 // Prover runs the checks that prove an artifact.
 //
 // It is deliberately not part of Runner: verification is not a herdr operation
-// (ADR-0035). herdr creates the worktree and hosts the agent; the check runs
+// . herdr creates the worktree and hosts the agent; the check runs
 // against a real exit code somewhere else, which is what keeps the evidence the
 // tool's answer rather than something scraped off a screen.
 type Prover interface {
@@ -110,7 +110,7 @@ type Workspace struct {
 
 	// ArtifactSocket is where the agent hands artifacts over, when the stage
 	// declares any that are not committed. Empty means the stage owes none, and
-	// the agent gets no writer it has no use for (RFC-0008).
+	// the agent gets no writer it has no use for.
 	ArtifactSocket string
 }
 
@@ -148,13 +148,13 @@ func (w WorktreeSpec) Branch() string {
 	return "luna/" + w.TaskID + "-" + string(w.Role)
 }
 
-// Node runs a stage inside herdr. It satisfies lead.Node (ADR-0030).
+// Node runs a stage inside herdr. It satisfies lead.Node.
 type Node struct {
 	Runner Runner
 
 	// Roles resolves a stage's role to what runs it. A stage whose role does not
 	// resolve stops loudly rather than running under some fallback agent and
-	// having the result called that role's opinion (ADR-0040).
+	// having the result called that role's opinion.
 	Roles func(fsm.RoleName) (fsm.Role, bool)
 
 	// Prompt builds what the agent is told for a stage. Injected rather than
@@ -178,14 +178,14 @@ type Node struct {
 	// Prove runs the contract's checks over a named commit.
 	//
 	// It takes the commit rather than the worktree, because the worktree is
-	// removed when the stage ends (ADR-0055) and a retry then had nowhere to run
+	// removed when the stage ends and a retry then had nowhere to run
 	// — measured on the swarm bench, on a delivery that was itself green. The
 	// commit outlives the tree, and the repository the node was configured with
-	// is what the checkout is cut from (ADR-0035).
+	// is what the checkout is cut from.
 	Prove func(commit string) Prover
 
 	// Artifacts opens the socket a stage's agent hands artifacts over through, for
-	// the artifacts the contract says are not committed (RFC-0008).
+	// the artifacts the contract says are not committed.
 	//
 	// Injected for the same reason as Delivered and Prove: this package talks to
 	// herdr, and the store is somebody else's dependency. Nil means no socket is
@@ -200,7 +200,7 @@ type Node struct {
 
 	// Stored reports the hash of what a stage handed over, or an error if it
 	// handed over nothing. It is what replaces the agent's word for an artifact
-	// that is not in the commit (RFC-0008).
+	// that is not in the commit.
 	Stored func(taskID, stage, artifact string) (hash string, err error)
 
 	// Warn reports something that went wrong beside the work rather than in it —
@@ -210,7 +210,7 @@ type Node struct {
 
 	// There is no Merge field, and its absence is the decision rather than an
 	// omission: Luna does not integrate. A task ends on its own branch and moving
-	// that work anywhere else is a manual act (ADR-0062), so nothing here brings
+	// that work anywhere else is a manual act, so nothing here brings
 	// a commit back into a shared branch.
 }
 
@@ -224,14 +224,14 @@ func (n *Node) warn(format string, args ...any) {
 // runMechanical performs a stage with no agent in it.
 //
 // It verifies and nothing else. `setup` is a worktree and there is no longer a
-// stage that integrates — the work stays on the task's own branch (ADR-0062).
+// stage that integrates — the work stays on the task's own branch.
 func (n *Node) runMechanical(ctx context.Context, state fsm.TaskState, stage fsm.Stage, ws Workspace) (lead.Result, error) {
 	return n.verify(ctx, ws, state, stage)
 }
 
 // Run drives one stage and reports what it delivered.
 //
-// The shape is the whole of ADR-0028: herdr's status decides only *when* to
+// The shape is the whole point: herdr's status decides only *when* to
 // verify, and the verdict decides what happened. A stage that settles without
 // passing verification comes back with failing evidence, and the reducer turns
 // that into a block — this layer never decides a transition.
@@ -239,7 +239,7 @@ func (n *Node) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (l
 	result, err := n.conduct(ctx, state, stage)
 	// herdr going away is the machinery breaking, not the stage failing. Marking it
 	// here rather than at each return keeps the lead from importing this package to
-	// tell the two apart (ADR-0030, ADR-0033).
+	// tell the two apart.
 	if errors.Is(err, ErrGone) {
 		return result, fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
 	}
@@ -260,7 +260,7 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 
 	// The worktree lasts exactly as long as the stage. What survives is the
 	// commit, which is the handoff — so the next role starts from the artifact
-	// and never from a directory somebody else was working in (ADR-0055).
+	// and never from a directory somebody else was working in.
 	//
 	// A failure to clean up does not fail the stage: the work is committed by
 	// then, and turning "the stage delivered" into "the stage failed" because a
@@ -273,8 +273,8 @@ func (n *Node) conduct(ctx context.Context, state fsm.TaskState, stage fsm.Stage
 	}()
 
 	// A mechanical stage runs no agent at all: `setup` is a worktree, `commit` is
-	// git, and paying a model to run those buys nothing and can lose something
-	// (ADR-0040). The verification still runs, so the stage still has to prove
+	// git, and paying a model to run those buys nothing and can lose something.
+	// The verification still runs, so the stage still has to prove
 	// what it produced.
 	if stage.Mechanical() {
 		return n.runMechanical(ctx, state, stage, ws)
@@ -320,12 +320,12 @@ func (n *Node) runAgent(ctx context.Context, ws Workspace, state fsm.TaskState, 
 	// The statement arrives replayed, in the state the caller handed in. It used
 	// to be read fresh from the registry here, so that an edit made mid-run
 	// reached the next stage; now an edit *is* an event, so the replay already has
-	// it and there is nothing left to go and ask (ADR-0067).
+	// it and there is nothing left to go and ask.
 	name := agentName(state.ID, stage.ID)
 
 	// A gated role starts without what it must not have — the tool is absent
-	// rather than discouraged (ADR-0018). A harness Luna cannot gate stops the
-	// stage instead of running an ungated review (ADR-0041).
+	// rather than discouraged. A harness Luna cannot gate stops the
+	// stage instead of running an ungated review.
 	args, err := gateArgs(role)
 	if err != nil {
 		return fmt.Errorf("stage %q: %w", stage.ID, err)
@@ -338,12 +338,12 @@ func (n *Node) runAgent(ctx context.Context, ws Workspace, state fsm.TaskState, 
 
 	// The prompt targets the pane. An agent started through `pane.run` has no
 	// herdr-side name to be reached by — measured: `agent.prompt` resolves a pane
-	// id and answers, and only an unknown *name* is refused (ADR-0069).
+	// id and answers, and only an unknown *name* is refused.
 	status, err := n.Runner.Prompt(ctx, pane, n.prompt(state, stage, role))
 	if err != nil {
 		// A stall is translated here so nothing above this package has to read
-		// herdr's error codes. What crosses the boundary is Luna's vocabulary
-		// (ADR-0030), and the lead decides what a stall means (ADR-0034).
+		// herdr's error codes. What crosses the boundary is Luna's vocabulary,
+		// and the lead decides what a stall means.
 		if Stalled(err) {
 			return fmt.Errorf("%w: the agent did not react in stage %q", lead.ErrStalled, stage.ID)
 		}
@@ -352,7 +352,7 @@ func (n *Node) runAgent(ctx context.Context, ws Workspace, state fsm.TaskState, 
 
 	// A blocked agent is asking a person for something the flow did not foresee.
 	// It is reported as an error so the lead escalates it, and the reason names
-	// the pane so someone can find what is asking (ADR-0029).
+	// the pane so someone can find what is asking.
 	if status == StatusBlocked {
 		return fmt.Errorf("the agent in pane %s is asking for input", pane)
 	}
@@ -363,7 +363,7 @@ func (n *Node) runAgent(ctx context.Context, ws Workspace, state fsm.TaskState, 
 //
 // Every owed artifact gets a record, including the ones nothing checked: an
 // artifact verified by existence says so in its scope rather than borrowing the
-// appearance of a passing test (ADR-0032).
+// appearance of a passing test.
 func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	result := lead.Result{
@@ -388,7 +388,7 @@ func (n *Node) verify(ctx context.Context, ws Workspace, state fsm.TaskState, st
 		// An artifact handed to Luna is not in the commit, so the commit is the
 		// wrong place to look for it — neither the assumption nor the agent's
 		// `Delivered:` line can vouch for it. The store answers instead, and it
-		// answers with a hash, which is the location INV-core-11 asks the handoff
+		// answers with a hash, which is the location INV-3 asks the handoff
 		// to carry.
 		if existence, ok := verifier.(fsm.Existence); ok && existence.Handover {
 			evidence, delivered := n.proveHandover(state, stage, artifact)
@@ -429,7 +429,7 @@ func claimOnly(delivered []fsm.Artifact, artifact fsm.Artifact, wasDelivered boo
 
 // proveHandover asks the store whether the agent handed the artifact over.
 //
-// This is the same correction ADR-0070 made for a path, one step further: the
+// This is the same correction made for a declared path, one step further: the
 // agent's word is replaced by a witness. There the witness is git; here it is
 // Luna's own store, which is stronger — Luna wrote the row itself, so there is
 // nothing to take on trust.
@@ -438,7 +438,7 @@ func claimOnly(delivered []fsm.Artifact, artifact fsm.Artifact, wasDelivered boo
 // say *which* version satisfied the check rather than that something did.
 func (n *Node) proveHandover(state fsm.TaskState, stage fsm.Stage, artifact fsm.Artifact) (fsm.Evidence, bool) {
 	if n.Stored == nil {
-		// Nothing to ask. Recording a pass here would be the self-report ADR-0028
+		// Nothing to ask. Recording a pass here would be the self-report Luna
 		// refuses, so it fails and says why.
 		return fsm.Evidence{
 			Scope:      fsm.ScopeExistence,
@@ -471,7 +471,7 @@ func (n *Node) proveHandover(state fsm.TaskState, stage fsm.Stage, artifact fsm.
 // A tree that cannot be read stops the stage. Carrying on would record an empty
 // commit, which reads as "delivered nothing" — the base would not move and the
 // verification would fall back to the repository's own HEAD, so the stage would
-// pass having checked somebody else's work (ADR-0068).
+// pass having checked somebody else's work.
 //
 // The declaration replaces the assumption: without it the exit check compares
 // `owed` against `owed` and always agrees — measured: `verify` owed
@@ -549,7 +549,7 @@ func (n *Node) prompt(state fsm.TaskState, stage fsm.Stage, role fsm.Role) strin
 // It has to carry the handoff, because the agent is new: it did not run the
 // previous stage and has no memory of it. What crosses is pointers and the
 // contract — never a prose summary of what happened, which would degrade at every
-// hop (INV-core-6).
+// hop.
 //
 // The body is generated here rather than written by an agent, which is what stops
 // one stage from injecting narrative into the next.
@@ -597,7 +597,7 @@ func brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 }
 
 // provenance names how a required artifact was proven, so the agent knows whether
-// it is reading something checked or something merely delivered (ADR-0032).
+// it is reading something checked or something merely delivered.
 func provenance(state fsm.TaskState, artifact fsm.Artifact) string {
 	evidence, ok := state.Evidence[artifact]
 	if !ok || !evidence.Delivered() {
@@ -612,7 +612,7 @@ func provenance(state fsm.TaskState, artifact fsm.Artifact) string {
 // A declared path is told for the stronger reason: it is not only what the
 // artifact is checked against, it is the one thing the agent has to get right for
 // the check to find anything. An agent that writes the correct content in the
-// wrong directory fails a check it was never shown (ADR-0070).
+// wrong directory fails a check it was never shown.
 func howProven(stage fsm.Stage, artifact fsm.Artifact) string {
 	switch verifier := fsm.VerifierFor(stage, artifact).(type) {
 	case fsm.Command:
@@ -680,7 +680,7 @@ func agentName(taskID string, stage fsm.StageID) string {
 }
 
 // agentNameLimit is what herdr accepts for an agent name, verified against a
-// running server: `[a-z][a-z0-9_-]{0,31}` (ADR-0036).
+// running server: `[a-z][a-z0-9_-]{0,31}`.
 const agentNameLimit = 32
 
 // join lists artifacts the way the brief asks the agent to write them back.
@@ -718,8 +718,8 @@ func writeHandover(b *strings.Builder, stage fsm.Stage) {
 			"These are working documents, not part of the repository — do not commit them.\n")
 	}
 
-	// The handoff, said out loud. ADR-0055 makes the commit the handoff and
-	// ADR-0058 makes it the snapshot, and neither was ever told to the agent: the
+	// The handoff, said out loud. The commit is both the handoff and the
+	// snapshot, and neither was ever told to the agent: the
 	// first full run closed six stages across five branches and left the
 	// repository byte-identical to where it started.
 	fmt.Fprintf(b, "\nHand the work over by committing it to this worktree's branch. "+

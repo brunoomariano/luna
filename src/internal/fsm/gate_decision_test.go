@@ -2,7 +2,8 @@ package fsm
 
 import "testing"
 
-// TestARecordedDecisionOverridesTheShippedPolicy is the point of ADR-0026.
+// TestARecordedDecisionOverridesTheShippedPolicy is the point of recording the
+// gate decision rather than the policy that produced it.
 //
 // The profile in the state says one thing and the recorded decision says another.
 // The recorded one wins, because it is what happened — and that is exactly what a
@@ -52,7 +53,7 @@ func TestARecordedWaitHoldsAgainstAPermissiveProfile(t *testing.T) {
 // decision means, and that the profile no longer changes it.
 //
 // It used to fall back to the profile's own policy, so the same event replayed
-// two ways depending on a name — which is what ADR-0026 rules out: a policy read
+// two ways depending on a name — which recording the decision rules out: a policy read
 // at replay time means editing a profile rewrites how past tasks read. What
 // replaced it is the conservative reading, the same one `KnobAsk` takes: a gate
 // nobody recorded an answer for is a gate to ask about.
@@ -75,9 +76,9 @@ func TestAnEventWithNoDecisionWaitsWhateverTheProfile(t *testing.T) {
 // This asserted the opposite until 2026-08-13: a recorded `passed` let the
 // ceiling through and the loop carried on. Wiring the ReviewFinding emitter made
 // that reachable for the first time, and it ran forever — 8 rounds against a
-// ceiling of 4, with the counters climbing and nothing firing. INV-core-8 names
+// ceiling of 4, with the counters climbing and nothing firing. INV-5 names
 // that case in as many words, so the ceiling now stops the task whichever way
-// the gate was answered; only *how* it stops depends on the profile (ADR-0059).
+// the gate was answered; only *how* it stops depends on the profile.
 func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 	// A loop already at its ceiling, on a profile that stops at everything.
 	spent := TaskState{
@@ -99,7 +100,7 @@ func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 	}
 	if passed.Blocked == "" {
 		t.Error("the block does not say why — a task that halts without a reason is " +
-			"the silent failure INV-core-8 forbids")
+			"the silent failure INV-5 forbids")
 	}
 
 	// The same state with no decision recorded waits, because an unrecorded
@@ -119,7 +120,7 @@ func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 // suspend it.
 //
 // The decision arrives in the action rather than being read off the profile — a
-// run nobody is supervising is one whose lead let the gate through (ADR-0063).
+// run nobody is supervising is one whose lead let the gate through.
 func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
 	spent := TaskState{
 		Status:   StatusRunning,
@@ -283,12 +284,13 @@ func start(t *testing.T, profile Profile) TaskState {
 	return state
 }
 
-// TestAReviewFindingMakesTheGreenStale covers the audit half of ADR-0020.
+// TestAReviewFindingMakesTheGreenStale covers the audit half of an aligned
+// finding invalidating the green.
 //
 // The rollback already removes ci_green from the context so nothing downstream
 // consumes it. The evidence is a different question: dropping it would leave an
 // audit unable to tell "never checked" from "checked, then invalidated by a
-// finding", and the second is the one worth seeing (ADR-0032).
+// finding", and the second is the one worth seeing.
 func TestAReviewFindingMakesTheGreenStale(t *testing.T) {
 	state := TaskState{
 		Status:  StatusRunning,
@@ -328,8 +330,9 @@ func TestAReviewFindingMakesTheGreenStale(t *testing.T) {
 // gatedFlow is a one-stage flow whose stage opens a confirm.
 //
 // These tests are about what a recorded decision does, not about the shipped
-// flow's shape — which changed when ADR-0062 removed `commit` and `discovery`
-// went with it, leaving the mechanical `setup` first and gateless.
+// flow's shape — which changed when integration left Luna's scope, removing
+// `commit`, and `discovery` went with it, leaving the mechanical `setup` first
+// and gateless.
 func gatedFlow() []Stage {
 	return []Stage{{
 		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},

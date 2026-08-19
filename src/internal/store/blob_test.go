@@ -49,7 +49,7 @@ func TestAnArtifactIsReadBackAsItWasWritten(t *testing.T) {
 	}
 }
 
-// TestARevisionIsAppendedNotReplaced is INV-core-2 applied to content: the older
+// TestARevisionIsAppendedNotReplaced is INV-2 applied to content: the older
 // version stays readable, and the newer one is what a plain read returns.
 func TestARevisionIsAppendedNotReplaced(t *testing.T) {
 	s := blobStore(t)
@@ -163,7 +163,7 @@ func TestAMissingArtifactSaysWhatWasLookedFor(t *testing.T) {
 }
 
 // TestAReadOnlyStoreCannotWriteBlobs pins that the ownership rule covers content
-// as well as events (ADR-0057).
+// as well as events.
 func TestAReadOnlyStoreCannotWriteBlobs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 	writer, err := store.OpenAs(path, store.LunaOwnsTheLog)

@@ -25,8 +25,8 @@ func (n *deliveringNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage
 	delivered = append(delivered, stage.ProducesForHuman...)
 
 	// Passing evidence for everything it owes: a stage only closes when every owed
-	// artifact has a verdict that passed (ADR-0028), so a node that always succeeds
-	// has to say so artifact by artifact.
+	// artifact has a verdict that passed, so a node that always succeeds has to say
+	// so artifact by artifact.
 	evidence := map[fsm.Artifact]fsm.Evidence{}
 	for _, a := range delivered {
 		evidence[a] = fsm.Evidence{
@@ -83,7 +83,7 @@ func (j *alwaysBlocks) OnFailure(context.Context, fsm.TaskState, string) Decisio
 //
 // This is the only way a stall reaches the lead. There is no watchdog interface
 // beside it, because nothing in a replayed TaskState says "stuck" — the state
-// carries no clock, so only the node, which was there, can tell (ADR-0051).
+// carries no clock, so only the node, which was there, can tell.
 type stallingNode struct{}
 
 func (stallingNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, error) {
@@ -112,11 +112,10 @@ func nightly(t *testing.T, s *store.Store, id string, kind fsm.TaskKind) {
 // nightlyUnder is the same, for a test that drives a flow of its own.
 //
 // A task records the flow it was born under, and a replay refuses a log written
-// against a different one (ADR-0046) — so a test that hands the lead a custom
-// flow has to open its task under that flow rather than the shipped one. The
-// stamp is not incidental to what those tests check: it is the mechanism that
-// makes a flow swapped underneath an open task an error instead of a silent
-// re-run.
+// against a different one — so a test that hands the lead a custom flow has to
+// open its task under that flow rather than the shipped one. The stamp is not
+// incidental to what those tests check: it is the mechanism that makes a flow
+// swapped underneath an open task an error instead of a silent re-run.
 func nightlyUnder(t *testing.T, s *store.Store, id string, kind fsm.TaskKind, flow []fsm.Stage) {
 	t.Helper()
 
@@ -132,13 +131,12 @@ func nightlyUnder(t *testing.T, s *store.Store, id string, kind fsm.TaskKind, fl
 //
 // Given a node that always delivers and a profile that stops at nothing, the lead
 // walks the whole flow and the task finishes — with no model consulted anywhere,
-// because nothing went wrong (ADR-0002).
+// because nothing went wrong.
 // approvingLead answers every gate the knob reaches with an approval.
 //
-// It exists because a gate waits when the stage declared criteria (ADR-0063), so
-// a test that wants a task to run to the end has to say who answers them. Naming
-// it here keeps that intent visible instead of repeating a closure whose meaning
-// is easy to miss.
+// It exists because a gate waits when the stage declared criteria, so a test that
+// wants a task to run to the end has to say who answers them. Naming it here keeps
+// that intent visible instead of repeating a closure whose meaning is easy to miss.
 func approvingLead() func(context.Context, string) (string, error) {
 	return func(context.Context, string) (string, error) {
 		return "APPROVE\n\nevery criterion is met", nil
@@ -148,8 +146,8 @@ func approvingLead() func(context.Context, string) (string, error) {
 func TestTheLeadDrivesATaskToTheEnd(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
-	// Unattended is the knob's job now rather than a profile's (ADR-0063), and it
-	// is task state, so it is set the way every decision is: through the log.
+	// Unattended is the knob's job now rather than a profile's, and it is task
+	// state, so it is set the way every decision is: through the log.
 	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
 		t.Fatalf("setting the knob: %v", err)
 	}
@@ -157,7 +155,7 @@ func TestTheLeadDrivesATaskToTheEnd(t *testing.T) {
 	node := &deliveringNode{}
 	judge := &alwaysRetries{}
 	// Knob 10 with a lead that approves: unattended is the knob's job now
-	// rather than a profile's (ADR-0063).
+	// rather than a profile's.
 	l := &Lead{Store: s, Node: node, Judge: judge, Ask: approvingLead()}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
@@ -208,7 +206,7 @@ func TestTheLeadStopsAtAGate(t *testing.T) {
 //
 // A second lead, with no memory of the first, picks the task up from the log and
 // carries on. This is the property that makes killing the process survivable
-// (INV-core-2).
+// (INV-2).
 func TestTheLeadResumesFromWhereItStopped(t *testing.T) {
 	s := newStore(t)
 	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}); err != nil {
@@ -245,8 +243,8 @@ func TestTheLeadResumesFromWhereItStopped(t *testing.T) {
 // TestAFailingNodeConsultsTheJudge covers the hybrid boundary.
 //
 // The model is asked only once something has gone wrong. That is the whole shape
-// of ADR-0002: deterministic on the happy path, judgement where the machine has
-// nothing to go on.
+// of the hybrid lead: deterministic on the happy path, judgement where the machine
+// has nothing to go on.
 func TestAFailingNodeConsultsTheJudge(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
@@ -265,8 +263,7 @@ func TestAFailingNodeConsultsTheJudge(t *testing.T) {
 	if state.Status != fsm.StatusBlocked {
 		t.Errorf("want the task blocked, got %q", state.Status)
 	}
-	// A blocked task that does not say why is the silent failure INV-core-8
-	// forbids.
+	// A blocked task that does not say why is the silent failure INV-5 forbids.
 	if state.Blocked == "" {
 		t.Error("a blocked task must carry its reason")
 	}
@@ -276,7 +273,7 @@ func TestAFailingNodeConsultsTheJudge(t *testing.T) {
 //
 // The judgement layer chooses, but it does not get to choose forever: the retry
 // ceiling belongs to the reducer, and a model that always says "try again" still
-// ends at a block (ADR-0011). Without this, a confident judge is an infinite loop.
+// ends at a block. Without this, a confident judge is an infinite loop.
 func TestRetryIsBoundedEvenWhenTheJudgeKeepsSayingRetry(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
@@ -284,7 +281,7 @@ func TestRetryIsBoundedEvenWhenTheJudgeKeepsSayingRetry(t *testing.T) {
 	node := &failingNode{reason: "still broken"}
 	judge := &alwaysRetries{}
 	// Knob 10 with a lead that approves: unattended is the knob's job now
-	// rather than a profile's (ADR-0063).
+	// rather than a profile's.
 	l := &Lead{Store: s, Node: node, Judge: judge, Ask: approvingLead()}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
@@ -376,7 +373,7 @@ func TestAPartialDeliveryBlocksTheTask(t *testing.T) {
 	}
 }
 
-// TestEvidenceReachesTheLog covers ADR-0024 from the lead's side.
+// TestEvidenceReachesTheLog covers the verification verdict from the lead's side.
 //
 // What the tool reported has to survive into the history, or the audit says a
 // stage closed without saying on what grounds.
@@ -404,7 +401,7 @@ func TestEvidenceReachesTheLog(t *testing.T) {
 
 // ── the watchdog ─────────────────────────────────────────────────────────────
 
-// TestAStalledTaskBlocksWithoutConsultingTheJudge covers ADR-0019 and ADR-0034.
+// TestAStalledTaskBlocksWithoutConsultingTheJudge covers the stall path.
 //
 // A node that returns nothing is not a node that failed — only something outside
 // the call can tell those apart. When the watchdog says the task stopped moving,
@@ -434,11 +431,11 @@ func TestAStalledTaskBlocksWithoutConsultingTheJudge(t *testing.T) {
 	}
 }
 
-// TestAStallDoesNotSpendTheRetryBudget covers the other half of ADR-0034.
+// TestAStallDoesNotSpendTheRetryBudget covers the other half of the stall path.
 //
 // The retry budget is for a stage that failed. A stall says nothing about the
 // stage — burning attempts on an agent that is not going to react would reach a
-// block through three recorded failures that never happened (INV-core-2).
+// block through three recorded failures that never happened (INV-2).
 func TestAStallDoesNotSpendTheRetryBudget(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
@@ -467,7 +464,7 @@ func TestAStallDoesNotSpendTheRetryBudget(t *testing.T) {
 }
 
 // TestAStalledNodeBlocksToo covers the stall reported by the node rather than by
-// the watchdog — the path herdr's `agent_prompt_stalled` takes (ADR-0034).
+// the watchdog — the path herdr's `agent_prompt_stalled` takes.
 func TestAStalledNodeBlocksToo(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
@@ -495,7 +492,7 @@ func TestANodeThatAnswersIsNotStalled(t *testing.T) {
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
 	// The knob is what carries it past the gates; this test is about the node
-	// answering, not about who answers a gate (ADR-0063).
+	// answering, not about who answers a gate.
 	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
 		t.Fatalf("setting the knob: %v", err)
 	}
@@ -551,8 +548,8 @@ func TestABrokenStoreStopsTheLead(t *testing.T) {
 
 // TestACustomFlowIsHonoured covers the Flow field.
 //
-// Flows are meant to be editable (ADR-0017), so the lead must drive the one it
-// was given rather than the shipped one.
+// Flows are meant to be editable, so the lead must drive the one it was given
+// rather than the shipped one.
 func TestACustomFlowIsHonoured(t *testing.T) {
 	s := newStore(t)
 
@@ -600,7 +597,7 @@ func TestARefusedActionNeverReachesTheLog(t *testing.T) {
 // TestAStageOutsideTheFlowIsHandledGracefully covers the fallback in stageIn.
 //
 // A log naming a stage the current flow no longer has is possible once flows are
-// editable (ADR-0017). The lookup returns a stage that declares nothing rather
+// editable. The lookup returns a stage that declares nothing rather
 // than panicking, so the contract's exit check is what reports the problem.
 func TestAStageOutsideTheFlowIsHandledGracefully(t *testing.T) {
 	stage := stageIn(fsm.DefaultFlow(), "a-stage-that-was-removed")
@@ -613,12 +610,12 @@ func TestAStageOutsideTheFlowIsHandledGracefully(t *testing.T) {
 	}
 }
 
-// ── the judge that ships (ADR-0051) ──────────────────────────────────────────
+// ── the judge that ships ──────────────────────────────────────────
 
 // TestTheBudgetJudgeSpendsTheBudgetBeforeBlocking is why it exists.
 //
-// Without a Judge the lead blocked on the first failure, so ADR-0011's retry
-// budget was never spent and the hybrid lead of ADR-0002 was, in production, a
+// Without a Judge the lead blocked on the first failure, so the retry
+// budget was never spent and the hybrid lead was, in production, a
 // purely deterministic one. That was a behaviour nobody chose — it was the zero
 // value of an optional field.
 func TestTheBudgetJudgeSpendsTheBudgetBeforeBlocking(t *testing.T) {
@@ -648,7 +645,7 @@ func TestTheBudgetJudgeSpendsTheBudgetBeforeBlocking(t *testing.T) {
 // TestTheJudgeReadsTheBudgetFromTheState keeps it from holding a second copy.
 //
 // A counter kept here would disagree with the log after the first restart, and
-// the log is the state (INV-core-2). This is the same reason the reducer owns
+// the log is the state. This is the same reason the reducer owns
 // every other count.
 func TestTheJudgeReadsTheBudgetFromTheState(t *testing.T) {
 	generous := fsm.TaskState{Retry: fsm.Retry{Attempts: 4, Max: 9}}
@@ -657,7 +654,7 @@ func TestTheJudgeReadsTheBudgetFromTheState(t *testing.T) {
 	}
 }
 
-// TestInfrastructureBlocksWithoutSpendingTheBudget covers ADR-0033 through the
+// TestInfrastructureBlocksWithoutSpendingTheBudget covers losing the runner through the
 // path that now exists.
 //
 // A herdr that went away is not a stage that failed, and it will not be back on
@@ -702,7 +699,7 @@ func (j *countingJudge) OnFailure(context.Context, fsm.TaskState, string) Decisi
 }
 
 // committingNode is a node whose stages actually commit, which is what every
-// real one does: the handoff is the commit (ADR-0055, INV-core-6).
+// real one does: the handoff is the commit.
 type committingNode struct{ commits []string }
 
 func (n *committingNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (Result, error) {

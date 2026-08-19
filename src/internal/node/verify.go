@@ -1,12 +1,12 @@
 // Package node runs the checks that prove a stage delivered.
 //
-// It is separate from the package that talks to herdr on purpose (ADR-0035):
+// It is separate from the package that talks to herdr on purpose:
 // verification is not a herdr operation. herdr creates the worktree and hosts the
 // agent; the check runs here, against a real exit code, so the evidence is the
-// tool's answer rather than something recovered from a screen (INV-core-4).
+// tool's answer rather than something recovered from a screen.
 //
 // Nothing in here decides a transition. It observes, and the verdict travels
-// inward inside an action (ADR-0024).
+// inward inside an action.
 package node
 
 import (
@@ -36,13 +36,13 @@ type Shell struct {
 	// changed to fix.
 	//
 	// Measured on the swarm bench: a stage stalled, its worktree was removed with
-	// it — correctly, since a stage that ended has no tree (ADR-0055) — and every
+	// it — correctly, since a stage that ended has no tree — and every
 	// retry then failed on `chdir ...: no such file` rather than on the work. The
 	// delivery was fine and `make ci` was green on the agent's own commit.
 	//
 	// A commit outlives the tree that produced it, and the repository outlives
-	// every stage. That is the same correction ADR-0055 made for the handoff and
-	// RFC-0006 made for gate checks; this is the third caller to make it.
+	// every stage. That is the same correction already made for the handoff and
+	// for gate checks; this is the third caller to make it.
 	Dir string
 
 	// Commit is what to verify. Empty means the delivery is whatever the
@@ -61,7 +61,7 @@ type Shell struct {
 	// It exists for the callers that have no delivery to check out — a test with a
 	// directory that is not a repository, mainly — and never for a real run: a
 	// verdict about the working tree is a verdict about uncommitted files, local
-	// configuration and stale build output, which is the incoherence INV-core-4
+	// configuration and stale build output, which is the incoherence INV-1
 	// exists to keep out of the log.
 	OverWorkingTree bool
 }
@@ -69,9 +69,8 @@ type Shell struct {
 // Prove runs a verifier and reports what it observed.
 //
 // A verifier that executes nothing and names no path produces evidence without
-// touching anything: the artifact was delivered and that is the entire claim
-// (ADR-0032). An existence check *with* a path asks git instead — see
-// provePath.
+// touching anything: the artifact was delivered and that is the entire claim.
+// An existence check *with* a path asks git instead — see provePath.
 func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence, error) {
 	if existence, ok := v.(fsm.Existence); ok {
 		if existence.Path == "" {
@@ -86,7 +85,7 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 	}
 
 	// The command runs over what was delivered, not over the tree the agent worked
-	// in (INV-core-4). A stage with nothing committed yet has no delivery to check
+	// in. A stage with nothing committed yet has no delivery to check
 	// out, and then the working tree is all there is to verify.
 	where := s.Dir
 	if !s.OverWorkingTree {
@@ -127,7 +126,7 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 //
 // The delivered commit rather than the worktree, for the reason every other check
 // here uses it: the tree the agent worked in is removed when the stage ends, and
-// verifying it is the incoherence INV-core-4 exists to prevent. `git ls-tree`
+// verifying it is the incoherence INV-1 exists to prevent. `git ls-tree`
 // reads the commit directly, so nothing has to be checked out to answer.
 //
 // A stage with no commit is not a failure. It is the first stage of the first
@@ -169,7 +168,7 @@ func (s Shell) provePath(ctx context.Context, v fsm.Existence, seq int) (fsm.Evi
 //
 // `sh -c` rather than an argv: a contract will want pipes and `&&`, and the
 // command comes from the project's own configuration rather than from a model
-// (ADR-0035).
+// .
 func (s Shell) runIn(ctx context.Context, dir, command string) (int, string, error) {
 	timeout := s.Timeout
 	if timeout <= 0 {

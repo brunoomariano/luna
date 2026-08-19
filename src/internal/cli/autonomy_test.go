@@ -48,7 +48,7 @@ func TestTheKnobSurvivesTheProcess(t *testing.T) {
 //
 // The three old names are refused rather than aliased: a value meaning "knob 5"
 // would authorise the lead to judge gates up to criticality 5 without the word
-// "gate" appearing anywhere (RFC-0006).
+// "gate" appearing anywhere.
 func TestMovingTheKnobIsRefusedOutOfRange(t *testing.T) {
 	for _, value := range []string{"-1", "11", "ask", "retry", "decide", "high", "5.5"} {
 		h := newHarness(t)

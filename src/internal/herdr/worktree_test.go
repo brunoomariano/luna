@@ -11,7 +11,7 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// TestEachRoleGetsItsOwnWorktree is INV-core-7 becoming a property of the
+// TestEachRoleGetsItsOwnWorktree is the write/review separation becoming a property of the
 // filesystem rather than a line in a brief.
 //
 // A reviewer that shares a directory with the implementer it is reviewing can
@@ -37,7 +37,7 @@ func TestEachRoleGetsItsOwnWorktree(t *testing.T) {
 		t.Fatalf("opened %d worktrees, want one per stage", len(herdr.opened))
 	}
 	if herdr.opened[0].Branch() == herdr.opened[1].Branch() {
-		t.Errorf("both roles worked on %s — the separation INV-core-7 relies on "+
+		t.Errorf("both roles worked on %s — the separation the flow relies on "+
 			"is the directory, and sharing it gives that away", herdr.opened[0].Branch())
 	}
 	if herdr.opened[0].Role != "implementer" || herdr.opened[1].Role != "reviewer" {
@@ -47,7 +47,7 @@ func TestEachRoleGetsItsOwnWorktree(t *testing.T) {
 
 // TestTheWorktreeBranchesFromWhatTheLastStageDelivered is the handoff. The next
 // agent starts from the artifact rather than from a description of it
-// (INV-core-6).
+// .
 func TestTheWorktreeBranchesFromWhatTheLastStageDelivered(t *testing.T) {
 	herdr := &fakeHerdr{settlesAt: StatusIdle}
 	node := &Node{Runner: herdr, Roles: fixedRole("claude"), Prove: herdr.proving()}

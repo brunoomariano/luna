@@ -3,8 +3,8 @@
 // It is deliberately thin: every command reads or writes the store and prints.
 // Nothing here decides flow — that is the engine's job — and nothing here runs an
 // agent, which belongs to the lead. What it does own is making a suspended task
-// discoverable, which is the half of INV-core-12 that no amount of engine work
-// can provide.
+// discoverable, which is the half of INV-5 that no amount of engine work can
+// provide.
 package cli
 
 import (
@@ -49,12 +49,12 @@ type Env struct {
 
 	// Notify tells a person a task stopped. Injected for the same reason as Edit:
 	// a test must not draw a banner, and a machine with no notifier should print
-	// and carry on rather than fail the run (INV-core-8).
+	// and carry on rather than fail the run (INV-5).
 	Notify func(ctx context.Context, taskID, reason string) error
 
 	// Interpret is what turns plain language into commands for `luna chat`.
 	// Injected because Luna hosts no model, and nil means the command says so
-	// rather than pretending to work (ADR-0043).
+	// rather than pretending to work.
 	Interpret Interpreter
 
 	// Lead is the model that conducts a task for `luna lead`. Injected for the
@@ -62,9 +62,9 @@ type Env struct {
 	// the same flow without one.
 	Lead func(ctx context.Context, prompt string) (string, error)
 
-	// Stock is the project's copy of the stages, roles and profiles — `.luna/stock`
-	// (RFC-0003). Empty, or a directory that has none, means the embedded copy is
-	// what runs, which is what a project that never ran `luna init` gets.
+	// Stock is the project's copy of the stages, roles and profiles —
+	// `.luna/stock`. Empty, or a directory that has none, means the embedded copy
+	// is what runs, which is what a project that never ran `luna init` gets.
 	Stock string
 }
 
@@ -239,7 +239,7 @@ func runTask(env Env, args []string) error {
 	}
 }
 
-// taskAbandon ends a task a person decided not to finish (ADR-0046).
+// taskAbandon ends a task a person decided not to finish.
 //
 // It is the one command that does not replay before acting, and that is the whole
 // reason it exists. A task whose flow changed under it no longer replays at all,
@@ -282,8 +282,8 @@ func taskNew(env Env, args []string) error {
 
 	// Validated here, at the only place an id enters the system. Everything
 	// downstream treats it as safe: it becomes a directory name and part of an
-	// agent name, and neither checked (ADR-0037 flagged the first and left the
-	// guard unbuilt).
+	// agent name, and neither checked — the directory name was flagged first and
+	// the guard was left unbuilt.
 	if err := fsm.ValidateTaskID(id); err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
 	}
@@ -304,7 +304,7 @@ func taskNew(env Env, args []string) error {
 	}
 
 	// The flow the task is born under is recorded with it, so a later replay can
-	// tell it is being read against a different one (ADR-0046).
+	// tell it is being read against a different one.
 	flow := fsm.Fingerprint(fsm.DefaultFlow())
 	created := fsm.TaskCreated{
 		Kind:      opts.kind,
@@ -327,7 +327,7 @@ func taskNew(env Env, args []string) error {
 //
 // Separate from `task new` because the two answer different questions — "open
 // this" and "here is what it turned out to be" — and because a revision is an
-// action of its own, so the previous statement stays in the log (ADR-0067).
+// action of its own, so the previous statement stays in the log.
 func taskStatement(env Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: luna task statement <id> [--about ...] [--design ...] [--acceptance ...]", ErrUsage)
@@ -374,9 +374,9 @@ func taskStatement(env Env, args []string) error {
 // a feature, supervised. An unstated profile must not run unattended.
 //
 // The valid names come from the project's configuration rather than a list in the
-// engine, because a project defines its own profiles (ADR-0026). The rejection is
-// still worth doing here: someone who meant `nightly` hears about the typo,
-// instead of getting a supervised run with nothing saying why.
+// engine, because a project defines its own profiles. The rejection is still
+// worth doing here: someone who meant `nightly` hears about the typo, instead of
+// getting a supervised run with nothing saying why.
 // taskOptions is everything `task new` was told: how to run the task, and what
 // the task is about.
 type taskOptions struct {
@@ -384,7 +384,7 @@ type taskOptions struct {
 	profile fsm.Profile
 
 	// stated is what the task is about, as it was given on the command line. It
-	// rides into the log with the task rather than into a registry (ADR-0067).
+	// rides into the log with the task rather than into a registry.
 	stated fsm.Statement
 }
 
@@ -496,18 +496,18 @@ func taskShow(env Env, args []string) error {
 }
 
 // printHandedOver lists what the task's stages handed to Luna rather than to the
-// commit (RFC-0008).
+// commit.
 //
-// This is the listing INV-core-12 asks for: an artifact produced for a person is
+// This is the listing INV-5 asks for: an artifact produced for a person is
 // discoverable by command, without anyone having watched it scroll by. Before it,
 // `qa_report` was verified, had evidence in the log, and appeared nowhere — the
 // produced list above reads Context.Artifacts, which human-facing artifacts never
-// enter by design (ADR-0021).
+// enter by design.
 func printHandedOver(env Env, id string) {
 	blobs, err := env.Store.Blobs(id)
 	if err != nil || len(blobs) == 0 {
 		// An unreadable store already failed louder above; an empty one is every
-		// task that ran before RFC-0008, and silence is the right shape for it.
+		// task that ran before the handover, and silence is the right shape for it.
 		return
 	}
 
@@ -523,7 +523,7 @@ func printHandedOver(env Env, id string) {
 // It exists because the declaration used to be hand-written JSON in the
 // registry's metadata (`bd update --metadata '{"luna_gates":...}'`), which is why
 // almost no task ever carried one. A gate that can be answered by a command
-// should not need a second tool and a schema to say so (ADR-0067).
+// should not need a second tool and a schema to say so.
 //
 // `--run` may be repeated, and the order is kept: the checks run in the order
 // they were declared, and the first failure is the answer.
@@ -621,7 +621,7 @@ func knobNote(knob fsm.Knob) string {
 // The counters existed and were invisible: a task circling without converging
 // counted rounds in silence until a ceiling fired, and the first anyone heard of
 // it was the gate it opened. Three separate ceilings mean three separate
-// pathologies (ADR-0023), so they are named separately rather than summed.
+// pathologies, so they are named separately rather than summed.
 //
 // `LastProgress` is shown because the audit's question is what was compared — a
 // person told two rounds made no progress wants to see what the machine looked at
@@ -648,13 +648,13 @@ func printLoop(env Env, loop fsm.LoopCounters) {
 // printTask writes the form a person reads.
 //
 // Split from taskShow so the two output shapes stay separable: the structured one
-// is a contract (ADR-0043) and this one is prose, and mixing their construction
+// is a contract and this one is prose, and mixing their construction
 // is how they drift.
 func printTask(env Env, state fsm.TaskState, events int) {
 	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, state.Status)
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
 	// The knob rather than the profile: the profile decides nothing since
-	// ADR-0063 and is kept only so old logs replay, while the knob is what bounds
+	// retired with the profiles and is kept only so old logs replay, while the knob is what bounds
 	// who answers a gate — and it moves through the log, so a replay reproduces
 	// every value it held.
 	fmt.Fprintf(env.Out, "  autonomy %d%s\n", state.Knob, knobNote(state.Knob))
@@ -667,9 +667,9 @@ func printTask(env Env, state fsm.TaskState, events int) {
 	fmt.Fprintf(env.Out, "  events   %d\n", events)
 	printLoop(env, state.Loop)
 
-	// What the task is about comes out of the log now rather than the registry
-	// (ADR-0067), so the command that shows a task can show it without a second
-	// lookup — and a person can check what the agents were told.
+	// What the task is about comes out of the log now rather than the registry,
+	// so the command that shows a task can show it without a second lookup — and
+	// a person can check what the agents were told.
 	for _, line := range []struct{ label, value string }{
 		{"about", state.Statement.Description},
 		{"design", state.Statement.Design},
@@ -687,10 +687,10 @@ func printTask(env Env, state fsm.TaskState, events int) {
 
 	fmt.Fprintf(env.Out, "\nproduced\n")
 	for _, a := range artifacts {
-		// Evidence is what the tool reported (ADR-0024). Showing it is the
+		// Evidence is what the tool reported. Showing it is the
 		// difference between knowing a stage closed and knowing on what grounds —
 		// and the scope is what separates a green suite from a file that merely
-		// exists (ADR-0032).
+		// exists.
 		if evidence := state.Evidence[a]; evidence.Delivered() {
 			fmt.Fprintf(env.Out, "  %-16s %s\n", a, evidence)
 			continue
@@ -732,7 +732,7 @@ func runGates(env Env, args []string) error {
 //
 // It happens when a profile is deleted or renamed after tasks have run under it.
 // Those tasks replay exactly as they ran — every gate decision they took is in
-// their log (ADR-0026) — but the ones still moving have no policy left to decide
+// their log — but the ones still moving have no policy left to decide
 // their next gate, and that is worth saying before someone watches a nightly run
 // start stopping at everything.
 func undefinedProfileNote(cfg Config, p fsm.Profile) string {
@@ -823,7 +823,7 @@ func gateShow(env Env, state fsm.TaskState, flow []fsm.Stage) error {
 		fmt.Fprintf(env.Out, "\n%s\n%s\n", gate.Artifact, gate.Payload)
 
 		// An artifact handed to Luna is in the store, so the person deciding gets
-		// the thing itself rather than a hash naming it (RFC-0008). Before this,
+		// the thing itself rather than a hash naming it. Before this,
 		// the answer to "where is what I should be looking at?" was a line of
 		// evidence — measured on a real gate, and it is not something a person can
 		// review.
@@ -846,7 +846,7 @@ func gateShow(env Env, state fsm.TaskState, flow []fsm.Stage) error {
 }
 
 // printGateCriteria lists what this gate is judged on and what answers it
-// mechanically, so a person can see both halves before deciding (RFC-0006).
+// mechanically, so a person can see both halves before deciding.
 func printGateCriteria(env Env, state fsm.TaskState, flow []fsm.Stage) {
 	spec := gateSpecFor(flow, state.Gate.Stage)
 	if spec != nil && len(spec.Judge) > 0 {
@@ -977,8 +977,8 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 	}
 	// Conditional on the log still ending where it was read: a gate approved from
 	// one terminal while a run advances the same task in another is exactly the
-	// case ADR-0047 exists for, and it is the likeliest one — a gate frees the
-	// slot, so the approval arrives from somewhere else by design (ADR-0012).
+	// case the position-declaring append exists for, and it is the likeliest one — a gate frees the
+	// slot, so the approval arrives from somewhere else by design.
 	if err := env.Store.AppendActionAt(id, state.Seq, action); err != nil {
 		return err
 	}

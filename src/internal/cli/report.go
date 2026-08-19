@@ -10,7 +10,7 @@ import (
 )
 
 // The JSON shapes below are a contract, not a serialisation of whatever the
-// engine happens to hold (ADR-0043).
+// engine happens to hold.
 //
 // They exist because the conversational layer has to read state, and parsing
 // output written for people makes every reworded message a silent breakage. A
@@ -28,7 +28,7 @@ type TaskReport struct {
 
 	// Blocked is why the task stopped, and is present exactly when the status is
 	// blocked — a task that halts without saying why is the silent failure
-	// INV-core-8 forbids.
+	// INV-5 forbids.
 	Blocked string `json:"blocked,omitempty"`
 
 	// Gate is what the task is waiting on, present only when it is waiting.
@@ -36,13 +36,13 @@ type TaskReport struct {
 
 	// Statement is what a person said the task is about. It used to live in the
 	// registry, where `task show` could not see it without a second lookup; now it
-	// replays with the task (ADR-0067), so the command that shows a task shows it.
+	// replays with the task, so the command that shows a task shows it.
 	//
 	// Absent when nobody described the task, which is the ordinary case.
 	Statement *StatementReport `json:"statement,omitempty"`
 
 	// Loop is where a convergence loop stands, absent when there is none. The
-	// three counters are separate because the ceilings are (ADR-0023).
+	// three counters are separate because the ceilings are.
 	Loop *LoopReport `json:"loop,omitempty"`
 
 	Events   int              `json:"events"`
@@ -50,7 +50,7 @@ type TaskReport struct {
 
 	// ProfileDefined is false when the task names a profile the configuration no
 	// longer has. The task still replays — its decisions are in its log — but a
-	// reader should be able to say so (ADR-0026).
+	// reader should be able to say so.
 	ProfileDefined bool `json:"profile_defined"`
 }
 
@@ -86,7 +86,7 @@ type GateReport struct {
 //
 // Scope is the field that matters most here: a reader that cannot tell a green
 // suite from a file that merely exists would report the two the same way, which
-// is the laundering ADR-0028 exists to prevent.
+// is the laundering the scope rule exists to prevent.
 type ArtifactReport struct {
 	Name     string `json:"name"`
 	Scope    string `json:"scope,omitempty"`

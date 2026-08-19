@@ -43,7 +43,7 @@ func atStage(t *testing.T, kind TaskKind, target StageID, produced ...Artifact) 
 			if err != nil {
 				t.Fatalf("completing %q: %v", next.Stage, err)
 			}
-			// A review gate opens on the way *out* now (ADR-0064), so a stage that
+			// A review gate opens on the way *out* now, so a stage that
 			// carries one leaves the task waiting here rather than on the next
 			// advance. Approving keeps this helper doing what it says: driving.
 			if next.Status == StatusAwaitingGate {
@@ -98,8 +98,8 @@ func TestAdvanceEntersTheFirstStage(t *testing.T) {
 		t.Errorf("want setup, got %q", state.Stage)
 	}
 	// setup is mechanical and opens no gate, so the task runs straight into it.
-	// It became the first stage when ADR-0062 removed `commit` and `discovery`
-	// went with it.
+	// It became the first stage when integration left Luna's scope, removing
+	// `commit`, and `discovery` went with it.
 	if state.Status != StatusRunning {
 		t.Errorf("setup opens no gate; want running, got %q", state.Status)
 	}
@@ -145,14 +145,14 @@ func TestAdvanceRefusesAStageMissingItsInputs(t *testing.T) {
 //
 // Reaching the end is the happy path, not a failure: the task becomes done.
 func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
-	// `commit` was the last stage until ADR-0062. On a docs task the flow now ends
-	// after qa: code-review is not-docs, harden is feature-or-bug, and
-	// architecture needs a fact this task never discovered.
+	// `commit` was the last stage until integration left Luna's scope. On a docs
+	// task the flow now ends after qa: code-review is not-docs, harden is
+	// feature-or-bug, and architecture needs a fact this task never discovered.
 	state := atStage(t, KindDocs, "qa")
 	stage := stageIn(DefaultFlow(), "qa")
 
 	// qa owes only a human-read report, so the delivery has to include
-	// ProducesForHuman — the exit check counts both fields (INV-core-11).
+	// ProducesForHuman — the exit check counts both fields (INV-3).
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	state, err := Reduce(state, Complete{
 		Delivered: owed,
@@ -199,11 +199,11 @@ func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
 		}
 	}
 	if state.Evidence["tests_green"].Command != "go test ./..." {
-		t.Errorf("the evidence for a delivery must be kept (ADR-0024), got %+v", state.Evidence["tests_green"])
+		t.Errorf("the evidence for a delivery must be kept, got %+v", state.Evidence["tests_green"])
 	}
 }
 
-// TestCompleteRefusesEvidenceWeakerThanTheContract covers INV-core-4's second
+// TestCompleteRefusesEvidenceWeakerThanTheContract covers INV-1's second
 // acceptance criterion.
 //
 // The delivery is complete and the verdict passed — what is wrong is that the
@@ -287,7 +287,7 @@ func TestCompleteRefusesAPartialDelivery(t *testing.T) {
 	}
 }
 
-// TestCompleteRequiresTheHumanReport covers scenario G3 — INV-core-11.
+// TestCompleteRequiresTheHumanReport covers scenario G3 — INV-3.
 //
 // A stage owing an audit report does not close without it. The report has no
 // consumer in the flow, so nothing downstream would ever miss it: without this
@@ -310,7 +310,7 @@ func TestCompleteRequiresTheHumanReport(t *testing.T) {
 //
 // The report is required on exit, but it is not an input: putting it in the
 // context would let it satisfy some stage's requires, which is the very thing
-// ADR-0021 separates the two fields to prevent.
+// separating `Produces` from `ProducesForHuman` prevents.
 func TestAuditReportDoesNotEnterTheFlowContext(t *testing.T) {
 	state := atStage(t, KindFeature, "verify")
 	stage := stageIn(DefaultFlow(), "verify")
@@ -331,7 +331,7 @@ func TestAuditReportDoesNotEnterTheFlowContext(t *testing.T) {
 
 // ── block H: failure and gates ───────────────────────────────────────────────
 
-// TestFailRetriesTwiceThenBlocks covers scenario H1 — ADR-0011.
+// TestFailRetriesTwiceThenBlocks covers scenario H1 — the retry ceiling.
 //
 // Two attempts with the error in context, then a block that notifies. No infinite
 // retry, and no silent death.
@@ -395,7 +395,7 @@ func TestGateApproveResumesTheStage(t *testing.T) {
 	}
 }
 
-// TestGateAdjustReplacesThePayload covers scenario H3 — ADR-0022.
+// TestGateAdjustReplacesThePayload covers scenario H3 — approve, adjust or reject.
 //
 // The human edits the artifact and the edited version is what carries on. Without
 // this the review would happen outside the system, leaving the handoff describing
@@ -416,8 +416,8 @@ func TestGateAdjustReplacesThePayload(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// A review gate opens on the way out of the stage that produced its artifact
-	// (ADR-0064), so answering resumes at `stage_done` — the stage has already
+	// A review gate opens on the way out of the stage that produced its artifact,
+	// so answering resumes at `stage_done` — the stage has already
 	// run, and `running` would ask for it a second time.
 	if state.Status != StatusStageDone {
 		t.Errorf("want the task carrying on from the closed stage, got %q", state.Status)
@@ -427,7 +427,7 @@ func TestGateAdjustReplacesThePayload(t *testing.T) {
 	}
 }
 
-// TestGateRejectSendsTheStageBack covers scenario H4 — ADR-0022.
+// TestGateRejectSendsTheStageBack covers scenario H4 — approve, adjust or reject.
 //
 // A rejected artifact does not enter the context, and the stage that produced it
 // runs again with the rejection in hand. Unlike the review rollback, there is no
@@ -456,9 +456,10 @@ func TestGateRejectSendsTheStageBack(t *testing.T) {
 
 // ── block I: review findings and loop ceilings ───────────────────────────────
 
-// TestAlignedFindingInvalidatesTheGreen covers scenario I1 — ADR-0020.
+// TestAlignedFindingInvalidatesTheGreen covers scenario I1 — an aligned finding
+// invalidating the green.
 //
-// The check the whole ADR exists for: going back to build removes ci_green, so
+// The check the whole rule exists for: going back to build removes ci_green, so
 // the stages downstream cannot be satisfied by a verification that ran against
 // code which no longer exists.
 func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
@@ -474,7 +475,7 @@ func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
 		t.Errorf("an aligned finding goes back to build, got %q", state.Stage)
 	}
 	if state.Context.HasArtifact("ci_green") {
-		t.Error("the green must be invalidated on the way back (ADR-0020)")
+		t.Error("the green must be invalidated on the way back")
 	}
 }
 
@@ -502,8 +503,8 @@ func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
 // TestFindingFromANonReviewStageIsRejected covers scenario I3.
 //
 // Only a review stage produces a finding. Accepting one from build would let the
-// implementer send its own work back, which is the separation INV-core-7 exists
-// to keep.
+// implementer send its own work back, which is the separation the flow
+// guarantees.
 func TestFindingFromANonReviewStageIsRejected(t *testing.T) {
 	state := atStage(t, KindFeature, "build")
 
@@ -514,7 +515,8 @@ func TestFindingFromANonReviewStageIsRejected(t *testing.T) {
 	}
 }
 
-// TestLoopCeilingOpensAGateRatherThanBlocking covers scenario I4 — ADR-0023.
+// TestLoopCeilingOpensAGateRatherThanBlocking covers scenario I4 — a spent loop
+// ceiling stopping the task.
 //
 // Not converging is a decision to make, not a node failure. The distinction shows
 // up here: a gate waits for a human with the history in view, a block reports an
@@ -537,7 +539,7 @@ func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
 	}
 }
 
-// TestOscillationIsCountedApartFromRounds covers scenario I5 — ADR-0023.
+// TestOscillationIsCountedApartFromRounds covers scenario I5 — the loop ceilings.
 //
 // Returning to a stage already visited in this loop is a distinct pathology from
 // simply going round again: one counter for both would let a productive loop and
@@ -688,7 +690,7 @@ func TestAdvanceRefusesAStageStillRunning(t *testing.T) {
 //
 // The lead used to reach a block by recording Fail until the budget ran out,
 // which left three failures in the log where there had been one decision. The
-// history is the audit trail (INV-core-2).
+// history is the audit trail (INV-2).
 func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
 	state := atStage(t, KindFeature, "build")
 
@@ -711,7 +713,7 @@ func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
 
 // TestABlockMustSayWhy covers the required reason.
 //
-// A task that halts without saying why is the silent failure INV-core-8 forbids,
+// A task that halts without saying why is the silent failure INV-5 forbids,
 // so the reason is required rather than defaulted to something unhelpful.
 func TestABlockMustSayWhy(t *testing.T) {
 	state := atStage(t, KindFeature, "build")
@@ -736,7 +738,7 @@ func TestBlockingWhatIsAlreadyOverIsRefused(t *testing.T) {
 //
 // It is a seed for configuration rather than a validation list: the engine does
 // not reject a name it has not heard of, because a project defines its own
-// (ADR-0026).
+// .
 func TestShippedProfilesAreTheDefaults(t *testing.T) {
 	want := map[Profile]bool{ProfileInteractive: true, ProfileTurbo: true, ProfileNightly: true}
 
@@ -751,7 +753,7 @@ func TestShippedProfilesAreTheDefaults(t *testing.T) {
 	}
 }
 
-// ── block M: ending a task that will not finish (ADR-0046) ───────────────────
+// ── block M: ending a task that will not finish ───────────────────
 
 // TestAbandonEndsATaskFromWhereverItIs covers the reason abandon is wider than
 // the other human actions.
@@ -788,7 +790,7 @@ func TestAbandonEndsATaskFromWhereverItIs(t *testing.T) {
 // TestAbandonClearsAPendingGate keeps an ended task out of the gate listing.
 //
 // A gate left pending on a task nobody will finish would sit in `luna gates`
-// forever, waiting for a decision that no longer means anything (INV-core-12).
+// forever, waiting for a decision that no longer means anything (INV-5).
 func TestAbandonClearsAPendingGate(t *testing.T) {
 	gated := []Stage{{
 		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
@@ -809,7 +811,7 @@ func TestAbandonClearsAPendingGate(t *testing.T) {
 // TestAbandonRefusesATaskThatAlreadyEnded keeps a second ending out of the log.
 //
 // A history showing a task finish twice is worse than an error the caller has to
-// read, and the log has no way to take an event back (INV-core-2).
+// read, and the log has no way to take an event back (INV-2).
 func TestAbandonRefusesATaskThatAlreadyEnded(t *testing.T) {
 	ended := mustReduce(t, readyTask(KindChore), Abandon{Reason: "first"})
 
@@ -828,7 +830,7 @@ func TestAbandonNeedsAReason(t *testing.T) {
 	}
 }
 
-// TestBlockedIsNotTerminal is the distinction ADR-0046 declined to blur.
+// TestBlockedIsNotTerminal is the distinction the endings decline to blur.
 //
 // A block is an anomaly a person clears with Unblock. Counting it as an ending
 // would erase the difference between "this failed and someone should look" and

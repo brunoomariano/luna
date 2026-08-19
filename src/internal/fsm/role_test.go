@@ -92,7 +92,7 @@ func TestAuditRolesNamesTheStageAndWhatItOwes(t *testing.T) {
 		t.Errorf("want the artifact that needs judgement, got %v", gaps[0].Produces)
 	}
 	// A human-read artifact counts: nobody downstream would miss it, which is
-	// exactly why the check has to (INV-core-11).
+	// exactly why the check has to (INV-3).
 	if len(gaps[1].Produces) != 1 || gaps[1].Produces[0] != "min_case" {
 		t.Errorf("want the human-read artifact reported, got %v", gaps[1].Produces)
 	}
@@ -128,7 +128,7 @@ func TestGatedReportsWhetherAnythingWasDenied(t *testing.T) {
 // codex denies writing wholesale and takes no tool names, so a role that denies
 // both maps onto it exactly and one that denies only Edit does not — it could
 // still create a file, which is not "cannot change the work it judges"
-// (ADR-0042).
+// .
 func TestDeniesWritingNeedsBothCapabilities(t *testing.T) {
 	cases := []struct {
 		denied []Capability
@@ -152,8 +152,8 @@ func TestDeniesWritingNeedsBothCapabilities(t *testing.T) {
 // in.
 //
 // A misspelled capability that parsed would leave the role running with the tool
-// it was supposed to lose, and nothing saying so — the failure INV-core-7 cares
-// about most.
+// it was supposed to lose, and nothing saying so — the failure the containment
+// INV-4 requires cares about most.
 func TestParseCapabilityRefusesWhatItDoesNotKnow(t *testing.T) {
 	for _, known := range KnownCapabilities() {
 		got, err := ParseCapability(string(known))
@@ -163,7 +163,7 @@ func TestParseCapabilityRefusesWhatItDoesNotKnow(t *testing.T) {
 	}
 
 	// Case matters: the role file holds the capability, and `edit` is a harness's
-	// spelling rather than the capability's name (ADR-0042).
+	// spelling rather than the capability's name.
 	for _, bad := range []string{"Edt", "edit", "", "Delete"} {
 		if _, err := ParseCapability(bad); err == nil {
 			t.Errorf("%q must be refused", bad)
@@ -199,9 +199,9 @@ func TestDenyingAShellIsRefusedWithItsOwnReason(t *testing.T) {
 		t.Fatal("a shell cannot be denied, and saying so is the point")
 	}
 
-	// The message has to explain, not just refuse: this is the floor INV-core-7
+	// The message has to explain, not just refuse: this is the floor INV-4
 	// declares, and whoever meets it is entitled to know why it is there.
-	for _, want := range []string{"tests", "sandbox", "INV-core-7"} {
+	for _, want := range []string{"tests", "sandbox", "INV-4"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal should mention %q, got %q", want, err)
 		}

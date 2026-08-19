@@ -15,14 +15,14 @@ const notifyTimeout = 10 * time.Second
 
 // Notifier tells a person a task needs them.
 //
-// INV-core-8 says every task ends in a commit, a gate or a **notified** block, and
+// INV-5 says every task ends in a commit, a gate or a **notified** block, and
 // the notification was the missing third: a block printed to stdout at 3am is a
 // block nobody sees, which is the silent failure the invariant names.
 //
 // It delegates rather than implements. herdr already owns a notification layer and
 // is already the process a person is looking at, so Luna asking it to draw a
 // banner is a line of code where a mail transport or a webhook would be a
-// subsystem (ADR-0027).
+// subsystem.
 type Notifier struct {
 	// Run sends the notification. A variable so a test can observe the call
 	// without a herdr on the machine.
@@ -33,7 +33,7 @@ type Notifier struct {
 //
 // `herdr notification show` rather than the socket: the CLI is the documented
 // surface for this and the arguments were checked against the binary, which is the
-// discipline ADR-0036 arrived at after ten protocol facts turned out to be wrong.
+// discipline adopted after ten protocol facts turned out to be wrong.
 func NewNotifier() Notifier {
 	return Notifier{Run: func(ctx context.Context, title, body string) error {
 		ctx, cancel := context.WithTimeout(ctx, notifyTimeout)

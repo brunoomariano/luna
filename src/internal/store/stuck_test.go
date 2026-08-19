@@ -226,7 +226,7 @@ func TestZeroPatienceListsEverythingStopped(t *testing.T) {
 
 // TestAGateWithNoRecordedReasonStillReportsSomething. A stuck task whose reason
 // is blank tells whoever reads the alert nothing at all, which is the silent
-// stop INV-core-8 exists against.
+// stop INV-5 exists against.
 func TestAGateWithNoRecordedReasonStillReportsSomething(t *testing.T) {
 	s, _ := clockedStore(t)
 
@@ -367,9 +367,9 @@ func TestTheLogRecordsWhenItWasWritten(t *testing.T) {
 	}
 }
 
-// TestTheTimestampNeverReachesTheState is the boundary ADR-0024 draws. The
-// reducer is pure, and a state that carried the clock would make a replay depend
-// on when it ran.
+// TestTheTimestampNeverReachesTheState is the boundary purity draws. The reducer
+// is pure, and a state that carried the clock would make a replay depend on when
+// it ran.
 func TestTheTimestampNeverReachesTheState(t *testing.T) {
 	s, now := clockedStore(t)
 	blockedTask(t, s, "LUNA-1", "blocked")

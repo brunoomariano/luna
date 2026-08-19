@@ -16,7 +16,7 @@ import (
 // One file per role, named after it — `reviewer.toml` defines `reviewer`. The
 // name comes from the filename rather than a field so it cannot disagree with
 // itself, which is the mistake a `[role.reviewer]` header inside `scout.toml`
-// invites (RFC-0003).
+// invites.
 //
 // The keys are exactly the ones `[role.*]` accepts in a project's config, and
 // they are parsed by the same code. A stock file and an override are the same

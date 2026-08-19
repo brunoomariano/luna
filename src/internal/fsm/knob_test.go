@@ -23,7 +23,7 @@ func TestPassingChecksApproveWithoutAsking(t *testing.T) {
 // TestAFailingCheckRejectsAndNothingIsJudged covers the order of the two halves.
 //
 // The mechanical half runs first and can only reject, which is the second of the
-// three differences RFC-0006 claims against the shape that rubber-stamped: the
+// three differences the gate design claims against the shape that rubber-stamped: the
 // model is never the thing standing between a failing test and an approval.
 func TestAFailingCheckRejectsAndNothingIsJudged(t *testing.T) {
 	gate := &GateSpec{
@@ -231,7 +231,7 @@ func TestSetKnobRefusesWhatCannotBeHonoured(t *testing.T) {
 // TestGateSpecInFindsWhatTheStageDeclared covers the accessor the lead reads a
 // gate's declaration through.
 //
-// It is what decides whether a gate waits at all now (ADR-0063), so a stage the
+// It is what decides whether a gate waits at all now, so a stage the
 // flow does not contain has to answer nil rather than panic: the caller is asking
 // about a gate that is opening, and a flow that does not describe it declares
 // nothing about it.

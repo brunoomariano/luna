@@ -11,14 +11,14 @@ type ContractGap struct {
 // AuditContract walks the flow in order and reports every stage whose Requires
 // is not satisfied by some earlier stage.
 //
-// This is the first of the contract's three checks (INV-core-3), and the only one
+// This is the first of the contract's three checks (INV-3), and the only one
 // that runs without executing anything: it detects a flow broken *on paper*,
 // before any agent is called. The other two — on entry and on exit — can only
 // fail once the task is already running.
 //
 // ProducesForHuman deliberately stays out of the available set: an audit report
 // is read by a person, not consumed by the flow, and satisfying a Requires with
-// one would make the field decorative (ADR-0021).
+// one would make the field decorative.
 //
 // Order is what gets checked, not existence: an artifact produced after the stage
 // that requires it does not satisfy that stage.
@@ -66,7 +66,7 @@ type RoleGap struct {
 // AuditRoles reports every stage that needs an agent and has none.
 //
 // It exists because the mechanical path is silent by nature. A stage with no role
-// runs without an agent (ADR-0040), which is right for `setup` and `commit` and
+// runs without an agent, which is right for `setup` and `commit` and
 // catastrophic for one that was supposed to write a contract: it would run,
 // deliver nothing, and look like it worked.
 //
@@ -103,10 +103,10 @@ type NameGap struct {
 
 // AuditFlowNames reports stages whose ids squeeze the task id past its limit.
 //
-// herdr caps an agent name at 32 characters (ADR-0036) and Luna builds that name
+// herdr caps an agent name at 32 characters and Luna builds that name
 // as `luna-<id>-<stage>`, so a long stage name and a long task id cannot both fit.
 // MaxTaskIDLen is derived from the longest stage in the *shipped* flow, and a
-// custom flow (ADR-0017) can break that arithmetic.
+// custom flow can break that arithmetic.
 //
 // It is a static check for the same reason AuditContract is one: the alternative
 // is discovering it when two stages of one task produce the same truncated agent

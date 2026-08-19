@@ -14,7 +14,7 @@ import (
 // This is `luna run` with the loop moved: instead of Go deciding when to call
 // the node, Luna hands the lead an order and the lead carries it out. What did
 // not move is which order — that is still `fsm.NextOrder`, and the lead never
-// sees a choice (ADR-0052, ADR-0056).
+// sees a choice.
 //
 // The loop lives here rather than in the model. Luna asks for the order, gives
 // it over, records what came back, and asks again. A lead that answered with a
@@ -38,9 +38,9 @@ func leadCommand(env Env, args []string) error {
 	}
 
 	// The knob is the only control, and its state is what decides behaviour on a
-	// failure (RFC-0006). The three names this flag used to take are gone rather
-	// than aliased: a flag meaning "knob 5" would hide the gate consequences of
-	// the value it set, authorising the lead to judge gates up to criticality 5
+	// failure. The three names this flag used to take are gone rather than
+	// aliased: a flag meaning "knob 5" would hide the gate consequences of the
+	// value it set, authorising the lead to judge gates up to criticality 5
 	// without the word "gate" appearing anywhere.
 	knob, err := fsm.ParseKnob(flags["autonomy"])
 	if err != nil {
@@ -49,7 +49,7 @@ func leadCommand(env Env, args []string) error {
 
 	if env.Lead == nil {
 		return errors.New("no lead is configured: Luna hosts no model of its own, so " +
-			"`luna lead` needs one wired in (ADR-0043). `luna run` drives the same " +
+			"`luna lead` needs one wired in. `luna run` drives the same " +
 			"flow without a model")
 	}
 
@@ -67,9 +67,9 @@ func leadCommand(env Env, args []string) error {
 // was written first, on the reasoning that a model can talk itself into a loop;
 // no test could reach it, because every way out of this loop is the engine's.
 // The lead cannot keep a stage open — failing it spends the retry budget and the
-// third failure blocks (ADR-0011) — and a task that stops for any reason returns
-// an order that is not OrderRun, which ends the loop above. A ceiling nothing can
-// reach is one that gets trusted without ever having held.
+// third failure blocks — and a task that stops for any reason returns an order
+// that is not OrderRun, which ends the loop above. A ceiling nothing can reach is
+// one that gets trusted without ever having held.
 func conductTask(env Env, id string, conductor *lead.Agent) error {
 	for {
 		state, err := env.replay(id)

@@ -26,7 +26,7 @@ func (c CheckOutcome) Passed() bool { return c.ExitCode == 0 }
 // GateVerdict is what the mechanical half of a gate concluded.
 //
 // The three states are distinct because they go three different places
-// (RFC-0006): passing approves the gate outright, a failure rejects it, and a
+// : passing approves the gate outright, a failure rejects it, and a
 // check that could not run at all goes to a person with the results attached.
 type GateVerdict struct {
 	// Ran is every check that produced an exit code, in the order declared.
@@ -35,7 +35,7 @@ type GateVerdict struct {
 	// Unrunnable is the error from a check that never produced an exit code — no
 	// shell, a deadline, a cancelled run.
 	//
-	// It is kept apart from a non-zero exit for the reason INV-core-4 exists: a
+	// It is kept apart from a non-zero exit for the reason INV-1 exists: a
 	// command that was killed exits non-zero, and reading that as "the checks
 	// failed" would tell the audit they ran and lost when nobody ever asked them.
 	Unrunnable error
@@ -74,10 +74,10 @@ func (v GateVerdict) Failures() []CheckOutcome {
 // CheckGate runs the commands declared for a gate over what was delivered.
 //
 // The checkout is the delivered commit, never the tree an agent worked in — the
-// same rule verification already follows (INV-core-4), for the same reason: a
+// same rule verification already follows, for the same reason: a
 // verdict about the working tree is a verdict about uncommitted files and stale
 // build output. The stage's own worktree is gone by now anyway; what survives a
-// stage is the commit (ADR-0055), and the commit is reachable from the
+// stage is the commit, and the commit is reachable from the
 // repository whatever tree produced it.
 //
 // It stops at the first failure. A gate is rejected by one failing command, so

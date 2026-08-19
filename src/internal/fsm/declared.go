@@ -28,7 +28,7 @@ var artifactSeparator = regexp.MustCompile(`[,\s]+`)
 //
 // This does not verify anything, and must not be mistaken for it. It is the
 // agent reporting, and the code deciding — the same shape as ReadReport
-// (ADR-0041, INV-core-1). A stage that declares an artifact it did not produce
+// A stage that declares an artifact it did not produce
 // still closes; what this catches is the far commoner case of an agent that
 // produced something else and says so.
 //

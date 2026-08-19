@@ -14,9 +14,9 @@ func reviewing(t *testing.T) TaskState {
 // TestTwoRoundsDeliveringTheSameThingCountAsNoProgress is PRD node-0002's whole
 // point, and the ceiling that was decorative until now.
 //
-// `Loop.NoProgress` has existed since ADR-0023 and nothing ever incremented it —
-// the counter that would catch a task circling without converging was the one
-// counting nothing.
+// `Loop.NoProgress` has existed since the loop ceilings were designed and
+// nothing ever incremented it — the counter that would catch a task circling
+// without converging was the one counting nothing.
 func TestTwoRoundsDeliveringTheSameThingCountAsNoProgress(t *testing.T) {
 	state := reviewing(t)
 
@@ -94,9 +94,9 @@ func TestARoundThatObservedNothingLeavesTheStreakAlone(t *testing.T) {
 // TestTheNoProgressCeilingFiresOnRepeatedWork walks the whole path: same commit
 // every round until the ceiling the flow declares is spent.
 //
-// Before this, reaching that ceiling was impossible — which is why ADR-0034 said
-// the watchdog did not cover a busy agent achieving nothing, on the grounds that
-// the loop ceilings did.
+// Before this, reaching that ceiling was impossible — which is why the watchdog
+// was said not to cover a busy agent achieving nothing, on the grounds that the
+// loop ceilings did.
 func TestTheNoProgressCeilingFiresOnRepeatedWork(t *testing.T) {
 	state := reviewing(t)
 	limit := DefaultLoopLimits().NoProgress
@@ -124,7 +124,7 @@ func TestTheNoProgressCeilingFiresOnRepeatedWork(t *testing.T) {
 		t.Fatalf("gate = %+v, want a loop ceiling", state.Gate)
 	}
 	// Not converging is a decision to make with the history in view, not a node
-	// failure (ADR-0023) — so a gate, and the reason says which ceiling.
+	// failure — so a gate, and the reason says which ceiling.
 	if state.Gate.Reason == "" {
 		t.Error("the gate does not say why it opened")
 	}

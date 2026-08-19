@@ -21,8 +21,7 @@ wait = ["confirm"]
 		t.Fatal("an unknown key inside a profile must be reported")
 	}
 	// The error names what arrived and says where settings went, because there is
-	// no list of valid keys to offer any more: a profile holds only its name
-	// (ADR-0063).
+	// no list of valid keys to offer any more: a profile holds only its name.
 	if !strings.Contains(err.Error(), "wait") {
 		t.Errorf("the error should name what arrived, got %v", err)
 	}
@@ -151,10 +150,10 @@ func TestATrailingCommaInAListIsTolerated(t *testing.T) {
 	}
 }
 
-// TestAProfileCanTightenItsWatchdog covers what a profile still decides: how
-// The watchdog's clock is project-wide now, not a property of a profile
-// (ADR-0063): profiles stopped deciding anything, and how long a suite takes is
-// a fact about the repository rather than about who answers a gate.
+// TestTheTurnBudgetIsProjectWide covers where the clock lives now. It is a
+// property of the project, not of a profile: profiles stopped deciding
+// anything, and how long a suite takes is a fact about the repository rather
+// than about who answers a gate.
 
 func TestTheTurnBudgetIsProjectWide(t *testing.T) {
 	cfg := load(t, "turn_budget = \"45m\"\n")
@@ -167,7 +166,7 @@ func TestTheTurnBudgetIsProjectWide(t *testing.T) {
 // TestAProjectWithNoBudgetStillHasAWatchdog covers the direction that matters.
 //
 // Falling back to no limit would mean a project that never set one has tasks
-// that hang forever (ADR-0034).
+// that hang forever.
 func TestAProjectWithNoBudgetStillHasAWatchdog(t *testing.T) {
 	cfg := load(t, "editor = \"vi\"\n")
 
@@ -194,7 +193,7 @@ func TestAMalformedBudgetIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProjectCanDefineARole covers what ADR-0040 makes configurable.
+// TestAProjectCanDefineARole covers what a role declaration makes configurable.
 func TestAProjectCanDefineARole(t *testing.T) {
 	cfg := load(t, `
 [role.reviewer]
@@ -329,7 +328,7 @@ func TestASectionWithNoNameIsRefused(t *testing.T) {
 	}
 }
 
-// TestEveryReviewRoleShipsUnableToWrite is INV-core-7 as a test rather than a
+// TestEveryReviewRoleShipsUnableToWrite is the separation as a test rather than a
 // description.
 //
 // The invariant names the failure directly: "a role whose restriction exists only
@@ -406,7 +405,7 @@ tools_deny = ["Edit", "Write"]
 // TestAnUnknownCapabilityIsRefused covers the direction a typo fails in.
 //
 // A misspelled capability would leave the role running with the tool it was
-// supposed to lose, and nothing saying so — which is the failure INV-core-7 cares
+// supposed to lose, and nothing saying so — which is the failure the separation cares
 // about most.
 func TestAnUnknownCapabilityIsRefused(t *testing.T) {
 	_, err := LoadConfig(writeConfig(t, "[role.auditor]\ntools_deny = [\"Edt\"]\n"))
@@ -423,7 +422,7 @@ func TestAnUnknownCapabilityIsRefused(t *testing.T) {
 }
 
 // TestEveryProfileKeyIsRefused. A profile holds nothing but its name since
-// ADR-0063 — whether a gate waits is the stage's declaration, who answers is the
+// Whether a gate waits is the stage's declaration, who answers is the
 // knob, and the watchdog's clock is project-wide.
 //
 // Refused rather than ignored, and that is the whole of it: a config that loads
