@@ -355,3 +355,25 @@ func TestADeepSocketWhoseDirectoryIsGoneIsReported(t *testing.T) {
 		t.Errorf("an unopenable directory must be reported as itself, got %v", err)
 	}
 }
+
+// TestAnUnnamedArtifactIsRefusedAtTheSocket is the regression for a blob stored
+// with an empty name: the CLI refuses one, but the socket is the boundary that
+// decides, and a real agent got one through — a row nothing can ask for by name,
+// listed as a blank line beside the real one.
+func TestAnUnnamedArtifactIsRefusedAtTheSocket(t *testing.T) {
+	fake := newMemoryArtifacts()
+	server := serve(t, "code-review", fake)
+
+	for _, op := range []string{"put", "get"} {
+		resp, err := node.CallArtifact(server.Path(), node.Request{Op: op, Body: []byte("x")})
+		if err != nil {
+			t.Fatalf("%s: calling: %v", op, err)
+		}
+		if !strings.Contains(resp.Err, "names no artifact") {
+			t.Errorf("%s with no name must be refused, got %q", op, resp.Err)
+		}
+	}
+	if len(fake.saved) != 0 {
+		t.Errorf("nothing may be stored under no name, got %v", keys(fake.saved))
+	}
+}

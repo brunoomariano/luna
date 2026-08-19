@@ -135,6 +135,15 @@ func (s *ArtifactServer) handle(conn net.Conn) {
 		return
 	}
 
+	// The CLI refuses an empty name, but the socket is the boundary that decides:
+	// anything on the jail's side of it is the agent, and one of them was measured
+	// getting an unnamed blob stored — a row nothing can ask for by name, listed
+	// as a blank line beside the real one.
+	if req.Artifact == "" {
+		s.reply(conn, Response{Err: "the request names no artifact"})
+		return
+	}
+
 	switch req.Op {
 	case "put":
 		if err := s.store.PutArtifact(s.stage, req.Artifact, req.Body); err != nil {
