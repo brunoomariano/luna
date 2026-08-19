@@ -50,9 +50,10 @@ src/
   cmd/luna/          CLI entry point
   internal/fsm/      the engine: stages, transitions, contract, fingerprint
   internal/store/    append-only log, replay, blob store
-  internal/node/     running a stage: sandbox, socket, verification
+  internal/agent/    calling an agent: one subprocess, prompt in, usage out
+  internal/node/     running a stage: worktree, sandbox, socket, verification
   internal/cli/      commands
-  internal/lead/     the model that judges a gate when the knob allows
+  internal/lead/     conducting a task, and the model that judges a gate
   stock/             defaults: stages, roles, profiles (embedded TOML)
 docs/                four files, above
 scripts/             lint helpers

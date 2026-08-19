@@ -332,3 +332,77 @@ func TestChatNeedsSomethingToReadFrom(t *testing.T) {
 		t.Error("chat with no input must say so rather than hang")
 	}
 }
+
+// TestACommandThatRanIsNotLostWhenTheWordingFails is the asymmetry that makes
+// this worth a test of its own.
+//
+// The two halves of a turn fail differently. An interpreter that misreads the
+// sentence costs nothing — nothing ran. An interpreter that runs the command and
+// then cannot phrase the result has already changed the world, and swallowing
+// that failure would leave the person believing their instruction was never
+// carried out. The turn has to say what broke, out loud, while the conversation
+// stays open.
+func TestACommandThatRanIsNotLostWhenTheWordingFails(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+
+	interpreter := &scriptedInterpreter{
+		intents:   []Intent{{Command: []string{"task", "show", "LUNA-1"}}},
+		phraseErr: errors.New("the model timed out"),
+	}
+	out := chatting(t, h, interpreter, func(*bufio.Scanner, string) bool { return true },
+		"how is LUNA-1", "and again")
+
+	if len(interpreter.phrased) == 0 {
+		t.Fatal("the command never ran, so this is testing the wrong half")
+	}
+	if !strings.Contains(out, "the model timed out") {
+		t.Errorf("the person was not told the answer was lost, got %q", out)
+	}
+	// Still listening: one lost sentence is not a reason to end the session.
+	if len(interpreter.saidToInterpret) != 2 {
+		t.Errorf("want the conversation still open, got %d turns", len(interpreter.saidToInterpret))
+	}
+}
+
+// TestAConfirmationNobodyAnsweredIsARefusal covers the terminal going away
+// mid-question.
+//
+// The prompt is the whole of the layer's limit on approving a gate, and the one
+// way to break it that nobody types is closing the input while it waits. Reading
+// nothing must mean no: treating end-of-input as consent would record "a human
+// looked" for a human who is not there, which is precisely the statement the
+// confirmation exists to make true.
+func TestAConfirmationNobodyAnsweredIsARefusal(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	h.env.Interpret = &scriptedInterpreter{intents: []Intent{
+		{Command: []string{"gate", "approve", "LUNA-1"}},
+	}}
+
+	before, err := h.env.Store.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+
+	var out strings.Builder
+	env := h.env
+	env.Out = &out
+	// The instruction, and then nothing — the input ends where the answer was due.
+	env.In = strings.NewReader("approve it\n")
+
+	if err := chatCommand(env, nil); err != nil {
+		t.Fatalf("a closed terminal is not a failure: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "left alone") {
+		t.Errorf("an unanswered confirmation must refuse, got %q", out.String())
+	}
+	after, err := h.env.Store.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("an approval nobody gave reached the log: %d new events", len(after)-len(before))
+	}
+}

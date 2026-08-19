@@ -461,3 +461,66 @@ func TestANonPositiveBudgetIsNotABudget(t *testing.T) {
 		}
 	}
 }
+
+// TestAMalformedListSaysWhatWentWrongWithIt covers the three ways a list is
+// written badly, each with its own message.
+//
+// `tools_deny` is the config's only list, and it is the setting that takes a
+// capability away from a role. Refusing it with one generic "bad value" would put
+// a person in a hand-written TOML file hunting a bracket — and the direction the
+// mistake fails in is the dangerous one: a list that did not load is a role that
+// keeps the tool it was supposed to lose.
+func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
+	for name, malformed := range map[string]struct{ line, names string }{
+		"not a list at all": {`tools_deny = "Edit"`, `"Edit"`},
+		"never closed":      {`tools_deny = ["Edit"`, `["Edit"`},
+		"an unquoted entry": {`tools_deny = [Edit]`, "Edit"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := LoadConfig(writeConfig(t, "[role.auditor]\n"+malformed.line+"\n"))
+
+			if err == nil {
+				t.Fatalf("%s was accepted as a list", name)
+			}
+			if !strings.Contains(err.Error(), malformed.names) {
+				t.Errorf("the refusal must quote what was written, got %v", err)
+			}
+		})
+	}
+}
+
+// TestASectionThatNamesNothingIsRefused covers the header a stray keystroke
+// produces.
+//
+// `[profile.]` and `[role.]` declare a thing with an empty name. Accepting them
+// would put a nameless profile in the set `task new --profile` validates
+// against, so the next typo would match it and a task would be created under a
+// profile nobody wrote.
+func TestASectionThatNamesNothingIsRefused(t *testing.T) {
+	for _, header := range []string{"[profile.]", "[role.]"} {
+		_, err := LoadConfig(writeConfig(t, header+"\n"))
+
+		if err == nil {
+			t.Errorf("%s declared something with no name", header)
+			continue
+		}
+		if !strings.Contains(err.Error(), "names nothing") {
+			t.Errorf("%s: the refusal should say the section is nameless, got %v", header, err)
+		}
+	}
+}
+
+// TestTheProjectCanNameItsOwnInterpreter covers the setting that decides which
+// model `luna chat` talks to.
+//
+// It sits beside `editor` in the same switch, and an unrecognised key there is
+// an error — so the failure this catches is the branch quietly going missing:
+// the project would keep a configured interpreter in its file and get "chat
+// needs an interpreter, and none is configured" with nothing pointing at why.
+func TestTheProjectCanNameItsOwnInterpreter(t *testing.T) {
+	cfg := load(t, `interpreter = "claude --model sonnet"`)
+
+	if cfg.Interpreter != "claude --model sonnet" {
+		t.Errorf("want the configured interpreter, got %q", cfg.Interpreter)
+	}
+}
