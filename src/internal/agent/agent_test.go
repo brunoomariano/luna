@@ -413,3 +413,22 @@ func TestOneModelIsNamedAndTwoAreNot(t *testing.T) {
 		t.Errorf("want no model named when none is reported, got %q", got)
 	}
 }
+
+// TestCanGateAnswersFromTheClosedTable covers the question a role's
+// configuration asks before a task runs: can Luna actually withhold what this
+// role must not have?
+//
+// An unlisted harness answers false rather than being guessed at. Guessing fails
+// open — a flag another harness silently ignores produces an ungated agent and a
+// report that it was gated.
+func TestCanGateAnswersFromTheClosedTable(t *testing.T) {
+	if !CanGate("claude") {
+		t.Error("claude is in the table and must be gateable")
+	}
+	if CanGate("gpt-cli") {
+		t.Error("an unlisted harness must not be reported as gateable")
+	}
+	if CanGate("") {
+		t.Error("an unnamed harness must not be reported as gateable")
+	}
+}

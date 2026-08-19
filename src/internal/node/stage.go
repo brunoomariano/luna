@@ -201,6 +201,14 @@ func (r *Runner) verify(
 	for i, artifact := range owed {
 		verifier := stage.Verifiers[artifact]
 
+		// An artifact with no declared verifier closes on existence alone — the
+		// agent's word, and nothing more is claimed about it. The static check
+		// reports the omission so the floor stays a choice; here it must not be a
+		// nil dereference, which is what it was until a test asked for it.
+		if verifier == nil {
+			verifier = fsm.Existence{}
+		}
+
 		// An artifact handed to Luna is not in the commit, so the tree is the
 		// wrong place to look for it — neither the contract's assumption nor the
 		// agent's word can vouch for it. The store answers, and it answers with a

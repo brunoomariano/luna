@@ -856,3 +856,49 @@ func repoWithCommit(t *testing.T) string {
 	}
 	return dir
 }
+
+// TestADryRunNeitherStartsAnAgentNorNeedsASandbox covers the branch that tells a
+// broken flow apart from a broken integration.
+//
+// It exercises the engine, the log and the gates end to end with nothing
+// installed — which is what makes it useful on a machine that has neither a
+// harness nor a sandbox.
+func TestADryRunNeitherStartsAnAgentNorNeedsASandbox(t *testing.T) {
+	h := newHarness(t)
+
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true, Repo: t.TempDir()}, fsm.ProfileNightly)
+	if err != nil {
+		t.Fatalf("building a dry conductor: %v", err)
+	}
+	defer cleanup()
+
+	if _, ok := conductor.Node.(*node.Runner); ok {
+		t.Error("a dry run built the real stage runner, which would start an agent")
+	}
+}
+
+// TestTheConductorCarriesTheMechanicalHalfOfAGate covers the wiring that lets a
+// gate be answered by a command's exit code before any model is involved.
+func TestTheConductorCarriesTheMechanicalHalfOfAGate(t *testing.T) {
+	h := newHarness(t)
+
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileInteractive)
+	if err != nil {
+		t.Fatalf("building the conductor: %v", err)
+	}
+	defer cleanup()
+
+	if conductor.CheckGate == nil {
+		t.Error("the conductor cannot answer a gate mechanically")
+	}
+	// A judge is what makes the retry budget real: without one the lead blocks on
+	// the first failure and the budget is never spent.
+	if conductor.Judge == nil {
+		t.Error("the conductor has no judge, so the retry budget would never be spent")
+	}
+	// Landing is what makes `done` mean "ready to integrate, on a branch a person
+	// can name".
+	if conductor.Land == nil {
+		t.Error("the conductor cannot point the task's branch at what it delivered")
+	}
+}

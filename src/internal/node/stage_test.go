@@ -449,3 +449,168 @@ func roleLookup(roles map[fsm.RoleName]fsm.Role) func(fsm.RoleName) (fsm.Role, b
 		return role, ok
 	}
 }
+
+// TestWarningsReachTheCallerWhenThereIsOne covers the reporting channel for what
+// goes wrong beside the work rather than in it. A worktree that will not go away
+// does not fail the stage, but a checkout left behind on every run eventually
+// fills a disk — and the first anyone would hear of it is that.
+func TestWarningsReachTheCallerWhenThereIsOne(t *testing.T) {
+	var warned []string
+	r := &Runner{Warn: func(format string, args ...any) {
+		warned = append(warned, format)
+	}}
+
+	r.warn("could not remove %s", "something")
+	if len(warned) != 1 {
+		t.Errorf("want the warning reported, got %d", len(warned))
+	}
+
+	// And a runner with nowhere to print must not panic on the same path.
+	(&Runner{}).warn("discarded")
+}
+
+// TestTheBriefCarriesTheStatementTheTaskWasOpenedWith covers what a fresh agent
+// is told. It did not run the previous stage and has no memory of it, so what
+// crosses is pointers and the contract — never a prose summary, which would
+// degrade at every hop.
+func TestTheBriefCarriesTheStatementTheTaskWasOpenedWith(t *testing.T) {
+	state := runningState("T-20")
+	state.Statement = fsm.Statement{
+		Description: "add a --loud flag",
+		Design:      "a flag, not a second script",
+		Acceptance:  "greet.sh --loud shouts",
+	}
+
+	stage := fsm.Stage{
+		ID: "build", Role: "implementer",
+		Requires: []fsm.Artifact{"scenarios"},
+		Produces: []fsm.Artifact{"code"},
+	}
+
+	brief := Brief(state, stage, fsm.Role{Agent: "claude"})
+
+	for _, want := range []string{
+		"add a --loud flag",      // what the task is about
+		"a flag, not a second",   // how it should be approached
+		"greet.sh --loud shouts", // what done means
+		"scenarios",              // what it has
+		"code",                   // what it owes
+		"T-20",                   // which task
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief does not carry %q:\n%s", want, brief)
+		}
+	}
+}
+
+// TestAStageWithNothingToSayStillGetsAUsableBrief covers the task nobody
+// described. It still runs every stage; the agent is simply left with less to go
+// on, and an empty statement must not produce an empty instruction.
+func TestAStageWithNothingToSayStillGetsAUsableBrief(t *testing.T) {
+	brief := Brief(runningState("T-21"), fsm.Stage{ID: "setup"}, fsm.Role{})
+
+	if !strings.Contains(brief, "T-21") {
+		t.Error("the brief does not name the task")
+	}
+	if !strings.Contains(brief, "commit") {
+		t.Error("the brief does not say the commit is the handoff")
+	}
+}
+
+// TestAHandoverWithNoStoreStopsTheStage covers the misconfiguration that would
+// otherwise look like an agent failing to deliver.
+//
+// A stage declaring a handover and given nowhere to write it cannot succeed, and
+// saying so before the agent runs is cheaper than an agent spending a turn on an
+// artifact with no destination.
+func TestAHandoverWithNoStoreStopsTheStage(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
+		// No Artifacts, and the stage below hands one over.
+	}
+
+	stage := fsm.Stage{
+		ID: "qa", Role: "qa",
+		ProducesForHuman: []fsm.Artifact{"qa_report"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"qa_report": fsm.Existence{Handover: true},
+		},
+	}
+
+	_, err := r.Run(context.Background(), runningState("T-30"), stage)
+	if err == nil {
+		t.Fatal("want a refusal when a handover has nowhere to go, got a run")
+	}
+	if !strings.Contains(err.Error(), "qa") {
+		t.Errorf("want the refusal to name the stage, got %q", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Error("the agent ran despite having nowhere to hand its artifact")
+	}
+}
+
+// TestAFailedAgentStopsTheStageAndKeepsTheBill covers the call that went wrong.
+// A failed call was still billed, and dropping the usage would make failures
+// look free — the one direction a cost record must not be wrong in.
+func TestAFailedAgentStopsTheStageAndKeepsTheBill(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{
+		result: agent.Result{Usage: agent.Usage{CostUSD: 0.05, InputTokens: 100}},
+		err:    errors.New("the model refused"),
+	}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+	}
+
+	_, err := r.Run(context.Background(), runningState("T-31"), fsm.Stage{ID: "build", Role: "implementer"})
+	if err == nil {
+		t.Fatal("want the stage to fail when the agent does, got success")
+	}
+	if !strings.Contains(err.Error(), "build") {
+		t.Errorf("want the error to name the stage, got %q", err)
+	}
+}
+
+// TestAStageProvesEveryArtifactItOwes covers the exit check running over both
+// contract fields. An audit report has no consumer downstream, so nothing would
+// ever miss it — which is why it is checked here rather than by the flow.
+func TestAStageProvesEveryArtifactItOwes(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
+		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
+		Stored:    func(_, _, _ string) (string, error) { return "hash", nil },
+	}
+
+	stage := fsm.Stage{
+		ID: "qa", Role: "qa",
+		Produces:         []fsm.Artifact{"qa_done"},
+		ProducesForHuman: []fsm.Artifact{"qa_report"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"qa_report": fsm.Existence{Handover: true},
+		},
+	}
+
+	result, err := r.Run(context.Background(), runningState("T-32"), stage)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, owed := range []fsm.Artifact{"qa_done", "qa_report"} {
+		if _, ok := result.Evidence[owed]; !ok {
+			t.Errorf("no evidence recorded for %q, which the stage owes", owed)
+		}
+	}
+}

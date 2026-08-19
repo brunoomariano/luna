@@ -105,9 +105,8 @@ func parseRunOptions(args []string) (runOptions, error) {
 
 // conduct assembles the lead for this run.
 //
-// The node is chosen here and nowhere else: swapping how a stage is run is
-// one more branch in this function, not a change to the lead or the engine
-// .
+// The node is chosen here and nowhere else: swapping how a stage is run is one
+// more branch in this function, not a change to the lead or the engine.
 func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(), error) {
 	cfg := env.profiles()
 	// The judge is what makes the retry budget real: without one the lead blocks on
