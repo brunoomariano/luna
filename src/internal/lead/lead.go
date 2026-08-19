@@ -64,6 +64,10 @@ type Result struct {
 	Delivered []fsm.Artifact
 	Evidence  map[fsm.Artifact]fsm.Evidence
 
+	// Spent is what the stage's agent cost, as its harness reported it. Zero for
+	// a mechanical stage, which runs no agent.
+	Spent fsm.Spend
+
 	// Commit is what the stage delivered, and it is the handoff: the next stage
 	// branches from it.
 	//
@@ -252,6 +256,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		Delivered: result.Delivered,
 		Evidence:  result.Evidence,
 		Commit:    result.Commit,
+		Spent:     result.Spent,
 		Flow:      flow,
 		// A review gate opens when the stage that produced its artifact closes,
 		// so this is the action that reaches it and the decision is
