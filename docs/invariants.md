@@ -34,8 +34,16 @@ schema instead of execution; a verdict about a tree that is not the delivery it 
 **What it does not claim.** This is not containment. An agent controls what it commits,
 and therefore what is verified. Confinement is INV-4's job.
 
-**Covered by.** Verifier scope tests in `internal/fsm`; the delivered-tree test in
-`internal/node`.
+**The case that got through.** A stage that delivered *nothing* used to pass. An empty
+commit reached `CheckoutAt`, which read it as `HEAD` and resolved it against the main
+repository — so the command ran over whatever was already committed there and exited zero.
+Measured on TALLY-3: `build` recorded `make test → 0` while its branch sat on the base
+commit with a clean worktree. The green was true, and it was true about code the stage did
+not write. A stage with a base to build on that adds no commit now fails; a repository with
+no commit at all is still the first stage of the first task, and still verifies its tree.
+
+**Covered by.** Verifier scope tests in `internal/fsm`; the delivered-tree test and
+`TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode` in `internal/node`.
 
 ---
 

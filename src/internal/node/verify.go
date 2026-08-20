@@ -83,19 +83,39 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 		return fsm.Evidence{Scope: v.Proves(), Verdict: fsm.VerdictPassed, RecordedAt: seq}, nil
 	}
 
-	// The command runs over what was delivered, not over the tree the agent worked
-	// in. A stage with nothing committed yet has no delivery to check
-	// out, and then the working tree is all there is to verify.
-	where := s.Dir
-	if !s.OverWorkingTree {
-		delivered, err := CheckoutAt(ctx, s.Dir, s.Commit)
-		if err != nil {
-			return fsm.Evidence{}, err
-		}
-		if delivered != nil {
-			defer delivered.Close()
-			where = delivered.Path
-		}
+	// A stage that owes a command-proven artifact and committed nothing has not
+	// delivered, and the honest verdict is that it failed.
+	//
+	// It used to fall through to CheckoutAt, which reads "" as "HEAD" and resolves
+	// it against Dir — the main repository. So the command ran over whatever was
+	// already committed there and exited zero. Measured on TALLY-3: build was
+	// billed $0.56 and recorded `make test → 0` while its branch sat on the base
+	// commit with a clean worktree. The green was true, and it was true about code
+	// the stage did not write.
+	//
+	// `provePath` has always drawn this line; the command path did not, and the
+	// asymmetry between two verifiers looking at the same missing commit was the
+	// whole defect. It answers "passed" there because an artifact nobody delivered
+	// yet has nowhere to be looked for — no claim is made. Here a claim would be
+	// made, about a tree that is not the delivery.
+	//
+	// OverWorkingTree is exempt: it says outright that the tree is the subject,
+	// which is what a gate check declared against work in progress wants.
+	where, undelivered, err := s.whereToRun(ctx)
+	if err != nil {
+		return fsm.Evidence{}, err
+	}
+	if undelivered != nil {
+		defer undelivered.Close()
+	}
+	if where == "" {
+		return fsm.Evidence{
+			Scope:      command.Proves(),
+			Verdict:    fsm.VerdictFailed,
+			Command:    command.Run,
+			Detail:     "the stage committed nothing, so there is no delivery to run it over",
+			RecordedAt: seq,
+		}, nil
 	}
 
 	exit, output, err := s.runIn(ctx, where, command.Run)
@@ -118,6 +138,58 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 		Detail:     summarise(output, verdict),
 		RecordedAt: seq,
 	}, nil
+}
+
+// whereToRun answers where a command should be run, and whether there is
+// anywhere at all.
+//
+// An empty path means the stage delivered nothing on top of a base it had, which
+// is a failed delivery rather than a broken machine — the caller records the
+// verdict. The returned checkout, when there is one, is the caller's to close.
+//
+// Two situations answer "no commit" and only one of them is the stage's fault.
+// A repository with no commit at all is the first stage of the first task: there
+// is nothing to have delivered, the working tree is all there is, and refusing
+// would block a task for not committing what it was never asked to. A repository
+// that *has* commits and a stage that added none is the defect — the stage had a
+// base to build on and delivered nothing on top of it. Measured on TALLY-3,
+// where an empty commit resolved to the main repository's HEAD and `make test`
+// passed over code the stage never wrote.
+//
+// A Dir that is not a repository is neither: that caller is checking a plain
+// directory on purpose, and refusing would report a broken machine as a failed
+// delivery, which is the distinction runIn's error path exists to keep.
+func (s Shell) whereToRun(ctx context.Context) (where string, checkout *Delivered, err error) {
+	if s.OverWorkingTree {
+		return s.Dir, nil, nil
+	}
+	if s.Commit == "" {
+		if s.hasSomethingToBuildOn(ctx) {
+			return "", nil, nil
+		}
+		return s.Dir, nil, nil
+	}
+
+	delivered, err := CheckoutAt(ctx, s.Dir, s.Commit)
+	if err != nil {
+		return "", nil, err
+	}
+	if delivered == nil {
+		return s.Dir, nil, nil
+	}
+	return delivered.Path, delivered, nil
+}
+
+// hasSomethingToBuildOn reports whether Dir is a repository that already has a
+// commit.
+//
+// Anything that is not a clear yes answers no, because the cautious direction
+// here is to run the command rather than to refuse it: a false yes blocks a task
+// that did nothing wrong, while a false no only costs the check it would have
+// refused.
+func (s Shell) hasSomethingToBuildOn(ctx context.Context) bool {
+	_, err := git(ctx, s.Dir, "rev-parse", "--verify", "HEAD^{commit}")
+	return err == nil
 }
 
 // provePath asks git whether the stage committed anything under the declared

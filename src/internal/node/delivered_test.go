@@ -33,6 +33,21 @@ func repo(t *testing.T) string {
 	return dir
 }
 
+// head is the commit a test names as the delivery.
+//
+// Named rather than left empty: an empty Commit used to resolve to the
+// repository's HEAD, which is what let a stage that delivered nothing pass a
+// check over whatever was already there. These tests are about a real delivery,
+// so they say which one.
+func head(t *testing.T, dir string) string {
+	t.Helper()
+	sha, err := git(context.Background(), dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("reading HEAD: %v", err)
+	}
+	return strings.TrimSpace(sha)
+}
+
 // TestVerificationDoesNotSeeUncommittedWork is INV-1's acceptance criterion.
 //
 // A file left in the working tree and never delivered must not reach the check.
@@ -45,7 +60,7 @@ func TestVerificationDoesNotSeeUncommittedWork(t *testing.T) {
 	// The agent leaves something behind that it never committed.
 	write(t, dir, "left-behind.txt", "not delivered")
 
-	shell := Shell{Dir: dir}
+	shell := Shell{Dir: dir, Commit: head(t, dir)}
 	evidence, err := shell.Prove(
 		context.Background(),
 		fsm.Command{Run: "test -f left-behind.txt", Scope: fsm.ScopeTargeted},
@@ -81,9 +96,10 @@ func TestVerificationDoesNotSeeUncommittedWork(t *testing.T) {
 // handed over.
 func TestVerificationSeesTheCommittedVersionOfAnEditedFile(t *testing.T) {
 	dir := repo(t)
+	delivered := head(t, dir)
 	write(t, dir, "delivered.txt", "edited after the commit")
 
-	evidence, err := Shell{Dir: dir}.Prove(
+	evidence, err := Shell{Dir: dir, Commit: delivered}.Prove(
 		context.Background(),
 		fsm.Command{Run: "grep -q committed delivered.txt", Scope: fsm.ScopeTargeted},
 		1,

@@ -16,8 +16,7 @@ import (
 // the command verbatim, the scope the verifier declared, and the log position.
 //
 // Each of those fields answers a question the audit will ask later, and evidence
-// missing any of them says a stage closed without saying on what grounds
-// .
+// missing any of them says a stage closed without saying on what grounds it did.
 func TestProveRecordsWhatTheCommandAnswered(t *testing.T) {
 	shell := Shell{Dir: t.TempDir()}
 
@@ -213,7 +212,8 @@ func TestACommandThatCannotStartIsAnError(t *testing.T) {
 // already says everything, and copying a green suite's output into the log
 // buries the records that matter.
 func TestAPassingCheckCarriesNoDetail(t *testing.T) {
-	shell := Shell{Dir: t.TempDir()}
+	repo, commit := deliveredRepo(t)
+	shell := Shell{Dir: repo, Commit: commit}
 
 	got, err := shell.Prove(context.Background(), fsm.Command{Run: "echo everything is fine", Scope: fsm.ScopeFull}, 1)
 	if err != nil {
@@ -229,7 +229,8 @@ func TestAPassingCheckCarriesNoDetail(t *testing.T) {
 // The reason a build failed is at the end of its output, not in its banner, so
 // the summary keeps the last lines and drops the head.
 func TestAFailingCheckCarriesTheTail(t *testing.T) {
-	shell := Shell{Dir: t.TempDir()}
+	repo, commit := deliveredRepo(t)
+	shell := Shell{Dir: repo, Commit: commit}
 	command := fsm.Command{
 		Run:   "echo banner; echo noise; echo third-last; echo second-last; echo the real reason; exit 1",
 		Scope: fsm.ScopeFull,
@@ -328,7 +329,8 @@ func TestZeroTimeoutFallsBackToTheDefault(t *testing.T) {
 
 	// A zero Timeout still runs, so the fallback is a real duration rather than
 	// an immediately expired context.
-	shell := Shell{Dir: t.TempDir()}
+	repo, commit := deliveredRepo(t)
+	shell := Shell{Dir: repo, Commit: commit}
 	if shell.Timeout != 0 {
 		t.Fatalf("this test is about the unset field, got %s", shell.Timeout)
 	}
@@ -343,7 +345,7 @@ func TestZeroTimeoutFallsBackToTheDefault(t *testing.T) {
 
 	// And the deadline that would be reported is the constant, not the zero the
 	// caller left in the field.
-	tight := Shell{Dir: t.TempDir(), Timeout: 50 * time.Millisecond}
+	tight := Shell{Dir: repo, Commit: commit, Timeout: 50 * time.Millisecond}
 	_, err = tight.Prove(context.Background(), fsm.Command{Run: "sleep 5", Scope: fsm.ScopeFull}, 1)
 	if err == nil {
 		t.Fatal("the tight deadline should have hit")
@@ -362,7 +364,8 @@ func TestACancelledContextIsNotAVerdict(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	shell := Shell{Dir: t.TempDir()}
+	repo, commit := deliveredRepo(t)
+	shell := Shell{Dir: repo, Commit: commit}
 	got, err := shell.Prove(ctx, fsm.Command{Run: "true", Scope: fsm.ScopeFull}, 1)
 	if err == nil {
 		t.Fatalf("an abandoned run has no verdict, got %+v", got)
@@ -509,4 +512,56 @@ func TestNothingDeliveredYetIsNotAMissingArtifact(t *testing.T) {
 	if evidence.Verdict != fsm.VerdictPassed {
 		t.Errorf("a stage with nothing delivered was blamed for it: %+v", evidence)
 	}
+}
+
+// TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode is INV-1 stated
+// where it was actually broken.
+//
+// A stage that owes a command-proven artifact and committed nothing has not
+// delivered. Before this, `Prove` passed the empty commit to `CheckoutAt`, which
+// turned "" into "HEAD" and resolved it against `Shell.Dir` — the main repository
+// — so the command ran over whatever was already there and exited zero.
+//
+// Measured on TALLY-3, with no kill involved: build was billed $0.56, recorded
+// `tests_green passed (targeted) make test → 0`, and its branch sat on the base
+// commit with a clean worktree. The green was true about code the stage did not
+// write, which is the one thing verification exists to prevent.
+func TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode(t *testing.T) {
+	repo := repoWithCommit(t)
+
+	// The repository's own HEAD passes the check. That is the trap: whatever is
+	// already committed here is not what the stage owed.
+	shell := Shell{Dir: repo, Commit: ""}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeTargeted}, 3)
+	if err != nil {
+		t.Fatalf("a stage with nothing committed is a failed delivery, not a broken machine: %v", err)
+	}
+
+	if got.Verdict == fsm.VerdictPassed {
+		t.Fatalf("a stage that committed nothing passed a command check — the verdict "+
+			"attests to code the stage did not write (evidence: %+v)", got)
+	}
+	if !strings.Contains(got.Detail, "committed nothing") {
+		t.Errorf("the evidence must say why it failed, got %q", got.Detail)
+	}
+}
+
+// deliveredRepo is a repository and the commit standing in for what a stage
+// delivered.
+//
+// Tests about how a command *behaves* — its output, its deadline, its
+// cancellation — need a delivery to reach the command at all, because a Shell
+// with no commit now fails before running anything. That refusal is the subject
+// of TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode; here it is
+// only in the way.
+func deliveredRepo(t *testing.T) (repo, commit string) {
+	t.Helper()
+	repo = repoWithCommit(t)
+
+	sha, err := git(context.Background(), repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("reading the delivered commit: %v", err)
+	}
+	return repo, strings.TrimSpace(sha)
 }
