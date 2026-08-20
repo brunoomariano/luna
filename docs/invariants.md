@@ -42,8 +42,16 @@ commit with a clean worktree. The green was true, and it was true about code the
 not write. A stage with a base to build on that adds no commit now fails; a repository with
 no commit at all is still the first stage of the first task, and still verifies its tree.
 
-**Covered by.** Verifier scope tests in `internal/fsm`; the delivered-tree test and
-`TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode` in `internal/node`.
+The other half of it took a second run to find. That guard asked whether a commit
+*existed*, and a stage that adds none hands back the base — which exists, and resolves. So
+the check ran over the code the stage was given and passed, because that code was already
+green when the stage received it. Measured on TALLY-5: `build` was billed $0.64 over 17
+turns, ended clean at its base with none of the feature written, and closed `tests_green`
+as `targeted` and `passed`. A delivery equal to the base is not a delivery.
+
+**Covered by.** Verifier scope tests in `internal/fsm`; the delivered-tree test,
+`TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode` and
+`TestAStageThatDeliveredNothingNewIsNotProvenByItsBase` in `internal/node`.
 
 ---
 
