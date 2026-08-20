@@ -638,13 +638,12 @@ func TestGateShowNamesWhatItIsJudgedOn(t *testing.T) {
 	if !strings.Contains(out, "judged on") {
 		t.Errorf("the gate does not say what it is judged on:\n%s", out)
 	}
-	// The shipped `plan` gate declares four criteria; showing some and hiding the
-	// rest would be worse than showing none.
+	// Every criterion the shipped `plan` gate declares; showing some and hiding
+	// the rest would be worse than showing none.
 	for _, want := range []string{
-		"observable behaviour",
-		"nothing outside the task",
 		"what is required and what is forbidden",
 		"Every acceptance criterion",
+		"No obligation contradicts another",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the criterion %q is missing:\n%s", want, out)

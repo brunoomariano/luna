@@ -306,15 +306,28 @@ func assignGate(gate *GateSpec, key, value, at string) error {
 			return err
 		}
 		gate.Criticality = level
-	case "judge":
-		criteria, err := parseStrings(value, at)
-		if err != nil {
-			return err
-		}
-		gate.Judge = criteria
+	case "judge", "judge_by_reading":
+		return assignGateCriteria(gate, key, value, at)
 	default:
 		return fmt.Errorf("%s: unknown key %q in [gate]", at, key)
 	}
+	return nil
+}
+
+// assignGateCriteria puts one of the gate's two criterion lists into the spec.
+//
+// Split from the switch above because the two parse identically and differ only
+// in where they land; keeping them inline made one function decide six things.
+func assignGateCriteria(gate *GateSpec, key, value, at string) error {
+	criteria, err := parseStrings(value, at)
+	if err != nil {
+		return err
+	}
+	if key == "judge" {
+		gate.Judge = criteria
+		return nil
+	}
+	gate.ReadableJudge = criteria
 	return nil
 }
 

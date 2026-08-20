@@ -1,6 +1,9 @@
 package fsm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // soundFlow returns a short flow where every Requires has an earlier producer.
 // A named fake: several scenarios start from it and change one point at a time.
@@ -166,5 +169,53 @@ func TestGapGroupsMissingArtifactsByStage(t *testing.T) {
 func TestEmptyFlowReportsNoGap(t *testing.T) {
 	if gaps := AuditContract(nil); len(gaps) != 0 {
 		t.Errorf("an empty flow has nothing to report, got %v", gaps)
+	}
+}
+
+// TestAReadableCriterionMustBeOneTheGateActuallyJudges keeps a typo from quietly
+// narrowing what the lead may approve on.
+//
+// `judge_by_reading` names criteria out of `judge`. A name that matches none of
+// them is not an extra criterion — it is an exception that applies to nothing,
+// so the criterion it was meant to free stays unsupported and the gate goes on
+// waiting for a person. That is the failure this whole field exists to remove,
+// arriving silently through a spelling mistake.
+func TestAReadableCriterionMustBeOneTheGateActuallyJudges(t *testing.T) {
+	flow := []Stage{{
+		ID: "plan", Role: "maker",
+		Produces: []Artifact{"contract"},
+		Gate: &GateSpec{
+			Kind:          GateReviewArtifact,
+			Artifact:      "contract",
+			Judge:         []string{"the contract states what is forbidden"},
+			ReadableJudge: []string{"the contract sates what is forbidden"}, // typo
+		},
+	}}
+
+	gaps := AuditGateCriteria(flow)
+	if len(gaps) == 0 {
+		t.Fatal("a readable criterion that matches no judged one must be reported")
+	}
+	if !strings.Contains(gaps[0].Criterion, "sates") {
+		t.Errorf("the report must name the invalid value, got %+v", gaps[0])
+	}
+}
+
+// TestAGateWhoseReadableCriteriaAllMatchIsClean is the other side, so the check
+// cannot pass by reporting everything.
+func TestAGateWhoseReadableCriteriaAllMatchIsClean(t *testing.T) {
+	flow := []Stage{{
+		ID: "plan", Role: "maker",
+		Produces: []Artifact{"contract"},
+		Gate: &GateSpec{
+			Kind:          GateReviewArtifact,
+			Artifact:      "contract",
+			Judge:         []string{"a", "b"},
+			ReadableJudge: []string{"b"},
+		},
+	}}
+
+	if gaps := AuditGateCriteria(flow); len(gaps) != 0 {
+		t.Errorf("a gate whose readable criteria all match must be clean, got %+v", gaps)
 	}
 }

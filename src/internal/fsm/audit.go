@@ -176,3 +176,41 @@ func AuditContextChain(flow []Stage) []ContextGap {
 	}
 	return gaps
 }
+
+// CriterionGap is a readable criterion that names nothing the gate judges.
+type CriterionGap struct {
+	Stage     StageID
+	Criterion string
+}
+
+// AuditGateCriteria reports every `judge_by_reading` entry that matches no entry
+// of the same gate's `judge`.
+//
+// The exception exists so the lead can settle a criterion by reading the
+// artifact instead of by running something. An entry that matches nothing frees
+// nothing: the criterion it was meant to cover stays unsupported and the gate
+// goes on waiting for a person — which is the failure the field exists to remove,
+// arriving through a spelling mistake and saying nothing.
+//
+// Static for the same reason the contract check is: the alternative is finding
+// out from a nightly run that stopped, which reads exactly like a gate somebody
+// meant to be asked about.
+func AuditGateCriteria(flow []Stage) []CriterionGap {
+	var gaps []CriterionGap
+
+	for _, stage := range flow {
+		if stage.Gate == nil {
+			continue
+		}
+		judged := make(map[string]bool, len(stage.Gate.Judge))
+		for _, criterion := range stage.Gate.Judge {
+			judged[criterion] = true
+		}
+		for _, criterion := range stage.Gate.ReadableJudge {
+			if !judged[criterion] {
+				gaps = append(gaps, CriterionGap{Stage: stage.ID, Criterion: criterion})
+			}
+		}
+	}
+	return gaps
+}

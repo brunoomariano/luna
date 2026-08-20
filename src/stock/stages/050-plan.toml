@@ -40,9 +40,30 @@ reason   = "review the plan and its contract"
 # approving something the contract gate re-approved forty turns later; a contract
 # is what every later stage is held to, and a wrong one surfaces at `verify`.
 criticality = 9
+# Every criterion is about the contract, because the contract is what the gate
+# attaches — a gate carries one artifact, and criteria about the other two
+# arrived when `scenarios` and `spec` merged into this stage. A real judgement
+# found it: asked about the scenarios, the lead correctly answered UNSUPPORTED,
+# because it had been given a document that only *references* them. Asking about
+# what is not shown is how a gate teaches whoever answers it to guess.
+#
+# The scenarios and the approach are still handed over and still readable with
+# `luna artifact get`. What is not claimed is that this gate reviewed them.
 judge = [
-  "The scenarios describe observable behaviour, not implementation steps",
-  "The approach names what will change, and nothing outside the task",
   "The contract states what is required and what is forbidden, with no suggestions",
   "Every acceptance criterion in the task appears as an obligation",
+  "No obligation contradicts another, and none is impossible to satisfy",
+]
+
+# All of them, because this gate asks about prose that has not become code yet:
+# there is nothing to run a check against, and without this the lead marks every
+# criterion unsupported and the gate goes to a person at any autonomy. Measured
+# on TALLY-3, which stopped here under `nightly`.
+#
+# It does not mean the artifact is believed. The brief still refuses its verdict
+# about itself and asks for the line that settles each criterion.
+judge_by_reading = [
+  "The contract states what is required and what is forbidden, with no suggestions",
+  "Every acceptance criterion in the task appears as an obligation",
+  "No obligation contradicts another, and none is impossible to satisfy",
 ]

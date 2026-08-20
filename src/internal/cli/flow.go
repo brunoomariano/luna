@@ -46,8 +46,9 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 	roles := fsm.AuditRoles(flow)
 	names := fsm.AuditFlowNames(flow)
 	contexts := fsm.AuditContextChain(flow)
+	criteria := fsm.AuditGateCriteria(flow)
 
-	if len(contract)+len(roles)+len(names)+len(contexts) == 0 {
+	if len(contract)+len(roles)+len(names)+len(contexts)+len(criteria) == 0 {
 		fmt.Fprintf(env.Out, "the contract holds: every stage's inputs are produced before it\n")
 		return
 	}
@@ -63,6 +64,10 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 	for _, gap := range names {
 		fmt.Fprintf(env.Out, "  %s is long enough that it leaves only %d characters for a task id\n",
 			gap.Stage, gap.Budget)
+	}
+	for _, gap := range criteria {
+		fmt.Fprintf(env.Out, "  %s declares %q readable, and judges no criterion by that name\n",
+			gap.Stage, gap.Criterion)
 	}
 	for _, gap := range contexts {
 		if gap.From == "" {

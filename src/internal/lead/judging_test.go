@@ -190,3 +190,53 @@ func TestAGateWithNoArtifactSaysSo(t *testing.T) {
 		t.Error("a gate carrying an artifact was told there was none")
 	}
 }
+
+// TestCriteriaAboutTheArtifactAreAnsweredByReadingIt is the fix for a gate that
+// could not be approved by anybody but a person, at any autonomy.
+//
+// The brief tells the lead not to believe a claim, which is right: the rule
+// exists because a stage once approved a defect it had itself named. But with no
+// checkout it said *every* criterion whose evidence is a claim is UNSUPPORTED —
+// and the shipped gate's criteria are all judgements about the text of an
+// artifact that is attached to the brief. So all four came back unsupported, the
+// lead always declined, and `nightly` stopped at the one gate Luna ships.
+//
+// A criterion the gate declares as readable is answered by reading the artifact.
+// One it does not is still unsupported without something to run.
+func TestCriteriaAboutTheArtifactAreAnsweredByReadingIt(t *testing.T) {
+	gate := &fsm.GateSpec{
+		Kind:          fsm.GateReviewArtifact,
+		Artifact:      "contract",
+		Judge:         []string{"the contract states what is forbidden", "the suite passes"},
+		ReadableJudge: []string{"the contract states what is forbidden"},
+	}
+
+	brief := JudgingBrief(gate, "the contract says: X is forbidden", "")
+
+	if !strings.Contains(brief, "answered by reading the artifact") {
+		t.Errorf("a readable criterion must be named as answerable, brief was:\n%s", brief)
+	}
+	if !strings.Contains(brief, "the contract states what is forbidden") {
+		t.Error("the readable criterion must still be listed")
+	}
+	if !strings.Contains(brief, "the suite passes") {
+		t.Error("the criterion needing proof must still be listed")
+	}
+}
+
+// TestAGateWithNoReadableCriteriaStillDemandsProof keeps the escape hatch shut.
+//
+// Declaring nothing readable must leave the old behaviour exactly as it was: a
+// gate that says nothing about its criteria gets the rule that protects it.
+func TestAGateWithNoReadableCriteriaStillDemandsProof(t *testing.T) {
+	gate := &fsm.GateSpec{Kind: fsm.GateConfirm, Judge: []string{"the suite passes"}}
+
+	brief := JudgingBrief(gate, "", "")
+
+	if strings.Contains(brief, "answered by reading the artifact") {
+		t.Errorf("a gate declaring nothing readable must not gain a way to approve on prose:\n%s", brief)
+	}
+	if !strings.Contains(brief, "UNSUPPORTED") {
+		t.Error("the rule that protects an unverifiable criterion must still be there")
+	}
+}

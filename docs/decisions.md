@@ -257,6 +257,31 @@ look alike and the difference is load-bearing: `Run` starts an agent that will w
 it would need the store reachable from inside the jail, which is what INV-4 keeps out.
 Stated as a test rather than a comment, because the two are one edit apart.
 
+**A gate declares which of its criteria are settled by reading.** `judge_by_reading` names
+entries of `judge` that the artifact itself answers. Without it the judging brief's rule —
+with no checkout, a criterion whose evidence is a claim is UNSUPPORTED — was total, and the
+shipped gate's criteria are all judgements about prose that has not become code. So the
+lead declined every time and the autonomy knob did nothing at the only gate Luna ships.
+Measured on TALLY-3 under `nightly`, which promises to stop at nothing and stopped there.
+
+The rule it does not weaken is the one that matters: the artifact's verdict about itself is
+still worth nothing, and the brief still asks for the line that settles each criterion. A
+criterion is answered by what the text *says*, never by what it concludes about its own
+quality. *Rejected:* giving the lead a checkout instead — the plan gate asks about prose
+before there is any delivery to check out, so it would answer a gate Luna does not have.
+*Rejected:* inferring which criteria are readable — that is exactly the judgement a model
+must not make about its own task. A `judge_by_reading` entry naming no judged criterion is
+refused by `luna flow check`, because a typo would silently narrow what the lead may
+approve on.
+
+**A gate's criteria are about the artifact it attaches.** The `plan` gate inherited criteria
+about `scenarios` and `approach` when those stages merged into it, while a gate still
+carries one artifact. A real judgement found it: asked about the scenarios, the lead
+correctly answered UNSUPPORTED, having been handed a contract that only references them.
+Asking about what is not shown teaches whoever answers to guess. The other two artifacts are
+still handed over and still readable with `luna artifact get`; what is no longer claimed is
+that this gate reviewed them.
+
 ---
 
 ## Rejected and removed

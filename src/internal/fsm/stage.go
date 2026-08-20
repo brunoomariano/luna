@@ -252,9 +252,28 @@ type GateSpec struct {
 	// Judge is what the lead is asked to decide, one criterion per entry.
 	//
 	// Empty means this gate has no judgement half: the declared checks are the
-	// whole answer, and where there are none either, a person is asked. That is
-	// every gate in the shipped stock today, which is what makes this additive.
+	// whole answer, and where there are none either, a person is asked.
 	Judge []string
+
+	// ReadableJudge names the criteria of Judge that are settled by reading the
+	// artifact, rather than by running something over a delivery.
+	//
+	// It exists because the lead could not approve the one gate Luna ships. The
+	// judging brief tells it not to believe a claim — right, and the reason that
+	// rule exists is a stage that once approved a defect it had itself named —
+	// but with no checkout it made *every* criterion unsupported. The shipped
+	// gate's criteria are all judgements about the text of an artifact that is
+	// attached to the brief, so all of them came back unsupported and `nightly`
+	// stopped at the only gate in the flow.
+	//
+	// Declared per criterion rather than inferred, because "this can be settled
+	// by reading" is exactly the judgement a model must not make about its own
+	// task. An entry naming a criterion Judge does not have is refused by the
+	// static check: a typo would silently narrow what the lead may approve on.
+	//
+	// Empty leaves the old rule exactly as it was, which is what keeps this
+	// additive for a gate that says nothing.
+	ReadableJudge []string
 }
 
 // declared reports whether the file said anything about a gate at all.
