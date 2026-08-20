@@ -443,7 +443,11 @@ func workCommand(env Env, args []string) error {
 // runs, so there is no `luna done` line to copy. What the reader wants to know is
 // what the tool concluded and what the call cost.
 func reportWork(env Env, id string, stage fsm.StageID, result lead.Result) {
-	fmt.Fprintf(env.Out, "%s ran %s\n", id, stage)
+	// "closed", not "ran": the lead read "ran setup / delivered worktree" as a
+	// report and went looking for the command that would close it. It said so
+	// itself — "reads like a closure but isn't one" — which was the right
+	// observation about output that was by then out of date.
+	fmt.Fprintf(env.Out, "%s closed %s\n", id, stage)
 	if result.Commit != "" {
 		fmt.Fprintf(env.Out, "  commit    %s\n", result.Commit)
 	}

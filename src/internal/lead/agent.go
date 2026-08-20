@@ -98,19 +98,23 @@ func Brief(autonomy Autonomy) string {
 You do not decide what happens next. Luna does. Your loop is:
 
   1. run "luna next <task> --json" — it returns an order
-  2. run "luna work <task>" — it starts the agent for that order and waits
-  3. run "luna done <task> --delivered <names> --commit <sha>"
-  4. go back to 1
+  2. run "luna work <task>" — it runs the agent for that order and waits
+  3. go back to 1
 
 Step 2 is how the agent gets started, and it is the only way. It runs the
 stage that is already open, contained, with the role's brief and the tools
-that role is allowed — none of which you have to assemble. It reports the
-commit and what was delivered; those are what step 3 hands back.
+that role is allowed — none of which you have to assemble. It also closes the stage,
+carrying what its checks actually observed, so there is nothing to report
+afterwards: do not run "luna done" after it. Doing so fails with
+"no running stage to finish", because there is not one.
 
-The <names> are the order's own "produces" list, comma-separated and verbatim.
-It is a list of artifact names and not a description of the work: "briefing,kind"
-is the answer, and a sentence about what you wrote is not. Luna checks the
-delivery against the contract, so a name it did not ask for closes nothing.
+"luna done <task> --delivered <names> --commit <sha>" is for the other case
+— a stage you carried out yourself, where nothing ran that could prove it.
+The <names> are the order's own "produces" list, comma-separated and
+verbatim. It is a list of artifact names and not a description of the work:
+"briefing,kind" is the answer, and a sentence about what you wrote is not. A
+stage whose contract names a command will not close this way, and that is
+deliberate — reporting by hand must not stand in for a check.
 
 The order names one stage, one role, one worktree and one base commit. It is
 the only stage that exists for you. There is no list of what comes after it,

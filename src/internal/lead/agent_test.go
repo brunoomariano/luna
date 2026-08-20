@@ -298,3 +298,32 @@ func TestTheBriefNamesTheCommandThatStartsTheAgent(t *testing.T) {
 		t.Error("the rule the command serves went missing")
 	}
 }
+
+// TestTheLoopDoesNotReportAStageWorkAlreadyClosed keeps the brief in step with
+// what the commands do.
+//
+// `luna work` records the evidence its verifiers produced, which means it closes
+// the stage. The brief still had `luna done` after it, so the lead ran a command
+// that could only fail — "no running stage to finish" — and read the failure as
+// a missing transition. Measured on TALLY-5, where the lead stopped and
+// escalated rather than reaching for `luna run`, which was the right call about
+// the wrong problem.
+//
+// `luna done` stays in the brief for what it is still for: a stage whose
+// contract asks for nothing a command can prove, reported by hand.
+func TestTheLoopDoesNotReportAStageWorkAlreadyClosed(t *testing.T) {
+	brief := Brief(AutonomyDecide)
+
+	work := strings.Index(brief, "luna work")
+	done := strings.Index(brief, "luna done")
+	if work < 0 {
+		t.Fatal("the brief lost the command that starts the agent")
+	}
+	if done > 0 && done < work {
+		t.Error("the brief still tells the lead to report before it works the stage")
+	}
+	if !strings.Contains(brief, "closes the stage") {
+		t.Errorf("the brief does not say that work closes the stage, which is what "+
+			"made the lead run `luna done` into a refusal:\n%s", brief)
+	}
+}

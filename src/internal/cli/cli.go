@@ -141,10 +141,10 @@ luna — deterministic orchestration for AI agents
         --dry-run exercises the flow with no agent and no worktree.
 
   luna work <id> [--agent <kind>] [--dry-run]
-        run the agent for the stage that is already open, and stop. It
-        chooses no stage and closes none — that is what luna done does.
-        This is how the lead starts an agent instead of doing the
-        work itself.
+        run the agent for the stage that is already open, and close that
+        stage with whatever its checks observed. It chooses no stage.
+        This is how the lead starts an agent instead of doing the work
+        itself; luna done is for a stage carried out by hand.
 
   luna lead <id> [--autonomy 0-10]
         hand the task to the lead agent: Luna gives it one order at a
