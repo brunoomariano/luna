@@ -419,3 +419,35 @@ func TestWhatTheLeadConcludedAboutAGateIsKept(t *testing.T) {
 		t.Errorf("`gate show` does not show what the lead concluded:\n%s", h.out.String())
 	}
 }
+
+// TestTheLeadIsWiredToLandAndToWarn covers two fields that were simply absent.
+//
+// `luna run` built its lead with Land and Warn; `luna lead` built a different
+// one without them. So a task conducted by the lead finished with its work
+// reachable only through the stage branches, `luna status` printed a landing ref
+// nothing had created, and the warning that would have said so had nowhere to
+// go — the silent failure INV-5 forbids, arriving through a struct literal.
+//
+// Measured on TALLY-7: six real commits, `done`, and no `luna/TALLY-7/done`.
+//
+// Asserted against the command's own wiring rather than by running a task,
+// because what was wrong is which fields the command sets.
+func TestTheLeadIsWiredToLandAndToWarn(t *testing.T) {
+	h, _ := leadHarness(t)
+	h.env.Lead = func(context.Context, string) (string, error) { return "stopping", nil }
+
+	// The command builds its lead and runs it; a task that goes nowhere is fine
+	// here, since the assertion is about the fields.
+	_ = Run(h.env, []string{"lead", "LUNA-1"})
+
+	// Rebuilt the same way the command does, which is the thing under test: if
+	// leadCommand stops setting these, this constructor has to stop too or the
+	// test is asserting about a struct nothing uses.
+	built := leadFor(h.env, ".")
+	if built.Land == nil {
+		t.Error("the lead cannot land: a finished task's work stays on the stage branches")
+	}
+	if built.Warn == nil {
+		t.Error("the lead has nowhere to report a landing that failed")
+	}
+}

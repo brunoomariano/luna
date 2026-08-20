@@ -102,8 +102,37 @@ func TestLandingRefusesACommitThatDoesNotResolve(t *testing.T) {
 // not exist while the work sat on one nothing named — which is the bug this
 // whole file exists to close, arriving by a different door.
 func TestTheTaskBranchIsTheNameReportedToThePerson(t *testing.T) {
-	if got := TaskBranch("LUNA-1"); got != "luna/LUNA-1" {
-		t.Errorf("the task branch is %q, and everything that reports one expects luna/LUNA-1", got)
+	if got := TaskBranch("LUNA-1"); got != "luna/LUNA-1/done" {
+		t.Errorf("the task branch is %q, and everything that reports one expects luna/LUNA-1/done", got)
+	}
+}
+
+// TestATaskCanLandAfterItsStagesHaveRun is the collision the name above exists
+// to avoid, asked of git rather than of a string.
+//
+// Git stores refs as directories, so `luna/T-1` cannot be created once
+// `luna/T-1/maker` exists — and every task has stage branches by the time it
+// lands. The previous test pinned the spelling and would have passed either way;
+// this one runs the sequence a real task runs.
+//
+// Measured on TALLY-7, which reported `branch luna/TALLY-7` in its status for a
+// ref `git branch -f` had refused to create.
+func TestATaskCanLandAfterItsStagesHaveRun(t *testing.T) {
+	dir := repo(t)
+	commit := head(t, dir)
+
+	// The stage branches a task leaves behind, one per role.
+	for _, role := range []string{"maker", "critic", "mechanical"} {
+		if _, err := git(context.Background(), dir, "branch", stageBranch("LUNA-1", role), commit); err != nil {
+			t.Fatalf("seeding the %s stage branch: %v", role, err)
+		}
+	}
+
+	if err := Land(context.Background(), dir, "LUNA-1", commit); err != nil {
+		t.Fatalf("landing a task whose stages have run: %v", err)
+	}
+	if !branchExists(t, dir, "LUNA-1") {
+		t.Error("the task landed on a branch that does not exist")
 	}
 }
 

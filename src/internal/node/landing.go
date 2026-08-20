@@ -5,12 +5,24 @@ import (
 	"fmt"
 )
 
-// TaskBranch is the ref a task ends on: `luna/<task>`.
+// TaskBranch is the ref a task ends on: `luna/<task>/done`.
 //
-// Land creates it, and until a task finishes there is nothing under the name at
-// all — the stages work on `luna/<task>/<role>`. Pointing it at the last stage's
-// commit is what turns it into the answer to "where is the work".
-func TaskBranch(taskID string) string { return "luna/" + taskID }
+// Land creates it, and pointing it at the last stage's commit is what turns it
+// into the answer to "where is the work".
+//
+// The trailing segment is what makes it creatable at all. It was `luna/<task>`,
+// and git stores refs as directories: a task whose stages worked on
+// `luna/<task>/maker` cannot then have `luna/<task>`, because the name is
+// already a directory holding them. `git branch -f` answers "cannot lock ref
+// 'refs/heads/luna/T-1': 'refs/heads/luna/T-1/critic' exists".
+//
+// The same collision was found and fixed for the stage branches, one segment
+// deeper — see stageBranch, whose comment describes it. The landing ref was left
+// on the colliding shape, and the failure was invisible for a second reason:
+// `luna lead` wired up neither Land nor Warn, so nothing tried and nothing said
+// so. Measured on TALLY-7, which reported `branch luna/TALLY-7` in its status
+// for a ref that was never created.
+func TaskBranch(taskID string) string { return "luna/" + taskID + "/done" }
 
 // Land points a task's branch at the commit its last stage delivered.
 //

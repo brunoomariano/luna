@@ -7,6 +7,7 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/node"
 )
 
 // leadCommand hands a task to the lead agent.
@@ -63,10 +64,28 @@ func leadCommand(env Env, args []string) error {
 	// The recorded one wins for gates because a gate decision is history — it is
 	// replayed as a fact, and a flag on one invocation must not rewrite how a
 	// past run reads.
-	entering := &lead.Lead{
+	entering := leadFor(env, ".")
+
+	// The stage budget, not the question timeout: conducting a stage means
+	// starting an agent and waiting for it to work, which is the shape
+	// `turn_budget` describes. The default is hours; `Ask`'s two minutes are for
+	// a model answering a question.
+	conductor := &lead.Agent{Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn()}
+
+	return conductTask(env, id, conductor, entering)
+}
+
+// leadFor builds the lead `luna lead` conducts with.
+//
+// Extracted so a test can assert on the same construction the command uses. Two
+// of these fields were missing here while `luna run` had them, and the absence
+// was invisible: a task finished, its work stayed on the stage branches, and the
+// warning that would have said so had nowhere to go.
+func leadFor(env Env, repo string) *lead.Lead {
+	return &lead.Lead{
 		Store:     env.Store,
 		Ask:       env.Lead,
-		CheckGate: checkGateWith(env.Store, "."),
+		CheckGate: checkGateWith(env.Store, repo),
 		// The artifact itself rather than the evidence line naming it: a gate that
 		// asks the lead to judge a contract has to hand it the contract.
 		Artifact: func(taskID, artifact string) (string, bool) {
@@ -76,15 +95,22 @@ func leadCommand(env Env, args []string) error {
 			}
 			return string(blob.Body), true
 		},
+
+		// `done` means ready to integrate, and this is what makes it true. Absent
+		// here while `luna run` had it, so a task conducted by the lead finished
+		// with its work reachable only through the stage branches — and `luna
+		// status` printed the landing ref it had not created. Measured on TALLY-7.
+		Land: func(ctx context.Context, taskID, commit string) error {
+			return node.Land(ctx, repo, taskID, commit)
+		},
+
+		// And somewhere for that to be said. Without it the landing could fail
+		// and the run would end clean, which is the silent failure INV-5 forbids —
+		// the warning existed and had nowhere to go.
+		Warn: func(format string, args ...any) {
+			fmt.Fprintf(env.Err, format+"\n", args...)
+		},
 	}
-
-	// The stage budget, not the question timeout: conducting a stage means
-	// starting an agent and waiting for it to work, which is the shape
-	// `turn_budget` describes. The default is hours; `Ask`'s two minutes are for
-	// a model answering a question.
-	conductor := &lead.Agent{Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn()}
-
-	return conductTask(env, id, conductor, entering)
 }
 
 // reportEnding says why the loop stopped, and what the lead made of it.
