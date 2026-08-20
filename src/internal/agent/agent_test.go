@@ -540,6 +540,42 @@ func TestTheSandboxIsAskedToAllowTheNetwork(t *testing.T) {
 	}
 }
 
+// TestTheSandboxIsAskedToPassWorktreeMetadata is a regression test for five
+// stages that billed $3.33 and delivered nothing.
+//
+// A stage's checkout is a git worktree, and a worktree's `.git` is not a
+// directory — it is a one-line pointer into the main repository's
+// `.git/worktrees/`, which is outside the jail. Without `--worktree` the jail
+// does not carry that metadata across, so every git command the agent runs
+// answers `fatal: not a git repository: (null)`.
+//
+// The agent reads and edits fine, does the work and cannot deliver it. Luna
+// then reads the worktree from outside the jail, finds HEAD still on the base,
+// and records a delivery at the commit the stage started from. That is TALLY-5:
+// five consecutive stages, no error anywhere, no commit anywhere.
+//
+// The flag is off by default in ai-jail 1.19.0.
+func TestTheSandboxIsAskedToPassWorktreeMetadata(t *testing.T) {
+	fake := newFakeHarness(t, `{"result":"done","session_id":"s1"}`, 0)
+	h := Harness{Sandbox: fake.path(), Binary: "claude"}
+
+	if _, err := h.Run(context.Background(), Call{Kind: "claude", Prompt: "x"}); err != nil {
+		t.Fatalf("running: %v", err)
+	}
+
+	argv := fake.argv(t)
+	if !strings.Contains(argv, "--worktree") {
+		t.Errorf("the sandbox was not asked to pass worktree metadata, so the agent's "+
+			"git could not see a repository and the stage could not commit. argv was:\n%s", argv)
+	}
+
+	// The sandbox's argument, not the harness's: `claude --worktree` is not a
+	// thing, and a flag after the binary is silently the wrong one's.
+	if strings.Index(argv, "--worktree") > strings.Index(argv, "claude") {
+		t.Errorf("--worktree must be the sandbox's argument, not the harness's:\n%s", argv)
+	}
+}
+
 // TestAStaleSessionFallsBackToAFreshOne keeps a persisted session from turning
 // into a broken stage.
 //

@@ -331,20 +331,29 @@ func (h Harness) runOnce(ctx context.Context, call Call) (Result, error) {
 }
 
 // sandboxArgs is how the sandbox is asked to contain an agent that still has to
-// reach a model.
+// reach a model and commit what it built.
 //
-// `--network` is the whole list, and it is not a relaxation of the containment
-// that matters. The jail's filesystem boundary is what INV-4 rests on — the
-// agent still sees only its own worktree — and the network is what the harness
-// needs to be an agent at all: the model is on the other side of it.
+// Neither flag relaxes the containment that matters. The jail's filesystem
+// boundary is what INV-4 rests on — the agent still sees only its own worktree.
 //
-// Measured, and it cost a run to find. Without the flag the harness starts,
-// opens its TLS bundle, and blocks forever on a connection the jail will not
-// let it make: no output, no error, no exit. Luna's own budget is a two-hour
-// default, so the stage simply sat there. `ai-jail claude -p` reproduces it in
-// one command and `ai-jail --network claude -p` answers in two seconds.
+// `--network` is what the harness needs to be an agent at all: the model is on
+// the other side of it. Measured, and it cost a run to find. Without it the
+// harness starts, opens its TLS bundle, and blocks forever on a connection the
+// jail will not let it make: no output, no error, no exit. Luna's own budget is
+// a two-hour default, so the stage simply sat there. `ai-jail claude -p`
+// reproduces it in one command and `ai-jail --network claude -p` answers in two
+// seconds.
+//
+// `--worktree` is what makes the stage's checkout a repository. A worktree's
+// `.git` is a one-line pointer into the main repository's `.git/worktrees/`,
+// which is outside the jail, so without the flag every git command inside
+// answers `fatal: not a git repository: (null)`. The agent reads and edits
+// fine, does the work, and has no way to deliver it — five stages of TALLY-5
+// billed $3.33 and left HEAD on the base commit for exactly this. The flag is
+// off by default in ai-jail 1.19.0; `ai-jail --network /bin/sh -c 'git log'` in
+// a worktree reproduces it in one command.
 func sandboxArgs() []string {
-	return []string{"--network"}
+	return []string{"--network", "--worktree"}
 }
 
 // environ is the parent environment an agent inherits. Wrapped in a function so

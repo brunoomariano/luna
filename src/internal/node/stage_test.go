@@ -3,6 +3,8 @@ package node
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -811,4 +813,136 @@ func TestAnUngatedRoleRunsOnAnyHarness(t *testing.T) {
 	if _, err := r.Run(context.Background(), runningState("T-61"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
 		t.Fatalf("an ungated role was refused: %v", err)
 	}
+}
+
+// TestWhatTheAgentSaidSurvivesAnEmptyDelivery covers INV-5 on the path that
+// broke it.
+//
+// A stage that commits nothing has said something about why, and the reply was
+// being discarded: `Result.Text` reached the runner and nothing read it. Five
+// stages of TALLY-5 each reported "delivered nothing" while the agent was
+// saying, five times over, that git was unreachable inside the sandbox. The
+// failure was silent for a whole run because the only place the reason existed
+// was the field nobody kept.
+func TestWhatTheAgentSaidSurvivesAnEmptyDelivery(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{
+		Text: "I could not commit: fatal: not a git repository",
+	}}
+
+	var warned []string
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+		Warn: func(format string, args ...any) {
+			warned = append(warned, fmt.Sprintf(format, args...))
+		},
+	}
+
+	// The agent commits nothing, so the worktree's HEAD stays on the base — which
+	// is what the runner reads back as the delivery.
+	state := runningState("T-30")
+	state.Base = head(t, repo)
+
+	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if !anyContains(warned, "not a git repository") {
+		t.Errorf("a stage that delivered nothing discarded the only account of why; warnings were: %v", warned)
+	}
+}
+
+// TestAStageThatDeliveredDoesNotRepeatTheAgent is the other side, so the
+// reporting cannot pass by printing everything.
+//
+// On the happy path the reply is the agent narrating a delivery that already
+// speaks for itself, and echoing it on every stage is how a log stops being
+// read.
+func TestAStageThatDeliveredDoesNotRepeatTheAgent(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &committingAgent{text: "built it, all green"}
+
+	var warned []string
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+		Warn: func(format string, args ...any) {
+			warned = append(warned, fmt.Sprintf(format, args...))
+		},
+	}
+
+	state := runningState("T-31")
+	state.Base = head(t, repo)
+
+	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if anyContains(warned, "all green") {
+		t.Errorf("a stage that delivered must not echo the agent's reply; warnings were: %v", warned)
+	}
+}
+
+// TestTheAgentIsGivenSomeoneToCommitAs covers the identity crossing into the
+// sandbox.
+//
+// The jail has no `~/.gitconfig`, so an agent with no identity in its
+// environment does the work and then cannot commit it. The four variables git
+// reads before any config file are how the repository's own identity gets there.
+func TestTheAgentIsGivenSomeoneToCommitAs(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+	}
+
+	if _, err := r.Run(context.Background(), runningState("T-32"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	env := strings.Join(fake.last(t).Env, " ")
+	for _, want := range []string{"GIT_AUTHOR_NAME=", "GIT_AUTHOR_EMAIL=", "GIT_COMMITTER_NAME=", "GIT_COMMITTER_EMAIL="} {
+		if !strings.Contains(env, want) {
+			t.Errorf("the agent was given no %s, so its commit fails in the sandbox: %q", want, env)
+		}
+	}
+}
+
+// committingAgent is a named fake that does what a working agent does: it
+// commits. The empty-delivery fakes cannot show the other side of the reporting
+// rule, because a stage that never commits is exactly the case being reported.
+type committingAgent struct {
+	text string
+	call agent.Call
+}
+
+func (c *committingAgent) Run(ctx context.Context, call agent.Call) (agent.Result, error) {
+	c.call = call
+	if err := os.WriteFile(filepath.Join(call.Dir, "built.txt"), []byte("work"), 0o600); err != nil {
+		return agent.Result{}, err
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-m", "the work"}} {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = call.Dir
+		cmd.Env = append(os.Environ(), call.Env...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return agent.Result{}, fmt.Errorf("git %v: %w: %s", args, err, out)
+		}
+	}
+	return agent.Result{Text: c.text}, nil
+}
+
+func anyContains(list []string, want string) bool {
+	for _, got := range list {
+		if strings.Contains(got, want) {
+			return true
+		}
+	}
+	return false
 }

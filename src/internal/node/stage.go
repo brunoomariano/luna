@@ -117,14 +117,42 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 		}()
 	}
 
-	spend, err := r.call(ctx, state, stage, role, wt, handsOver)
+	spend, said, err := r.call(ctx, state, stage, role, wt, handsOver)
 	if err != nil {
 		return lead.Result{}, err
 	}
 
 	// The agent stopped, whatever that means. Only the verifier says whether the
 	// stage delivered.
-	return r.verify(ctx, state, stage, wt, spend)
+	//
+	// The report goes out before the error is returned rather than after a
+	// success: a stage whose verification failed is exactly one whose reply is
+	// worth keeping.
+	result, err := r.verify(ctx, state, stage, wt, spend)
+	r.reportEmptyDelivery(state, stage, result, said)
+	return result, err
+}
+
+// reportEmptyDelivery surfaces what the agent said when the stage produced
+// nothing durable.
+//
+// On the happy path the reply is noise — the delivery speaks, and the reply is
+// the agent narrating it. When a stage commits nothing, the reply is the only
+// place the reason exists, and discarding it is how five stages of TALLY-5
+// reported "delivered nothing" while the agent was saying, five times over, that
+// git was unreachable inside the sandbox. INV-5 is the rule that was breaking.
+//
+// A delivery equal to the base counts as nothing: the stage handed back what it
+// was given, which is the shape that failure actually took.
+func (r *Runner) reportEmptyDelivery(state fsm.TaskState, stage fsm.Stage, result lead.Result, said string) {
+	if said == "" {
+		return
+	}
+	if result.Commit != "" && result.Commit != state.Base {
+		return
+	}
+	r.warn("stage %s of %s committed nothing on top of %s; the agent said: %s",
+		stage.ID, state.ID, short(state.Base), said)
 }
 
 // call runs the agent and returns what it cost.
@@ -135,7 +163,15 @@ func (r *Runner) call(
 	role fsm.Role,
 	wt Worktree,
 	handsOver bool,
-) (fsm.Spend, error) {
+) (fsm.Spend, string, error) {
+	// Read before the agent starts rather than discovered at the handover: an
+	// agent whose git cannot name a committer produces nothing, and finding that
+	// out afterwards means having paid for the stage first.
+	identity, err := ReadCommitIdentity(ctx, r.Repo)
+	if err != nil {
+		return fsm.Spend{}, "", fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
+	}
+
 	call := agent.Call{
 		Kind:    role.Agent,
 		Dir:     wt.Path,
@@ -145,6 +181,7 @@ func (r *Runner) call(
 		Budget:  r.Budget,
 		Context: agent.Fresh,
 		Memory:  agent.MemoryOff,
+		Env:     identity.Env(),
 	}
 	if stage.Memory.Enabled() {
 		call.Memory = agent.MemoryOn
@@ -170,15 +207,15 @@ func (r *Runner) call(
 		// failing, so the lead does not spend the retry budget on a binary that
 		// will keep not being there.
 		if errors.Is(err, agent.ErrNoHarness) {
-			return spend, fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
+			return spend, "", fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
 		}
-		return spend, fmt.Errorf("stage %q: %w", stage.ID, err)
+		return spend, "", fmt.Errorf("stage %q: %w", stage.ID, err)
 	}
 
 	spend.Session = result.Session
 	// The session goes into the spend, and from there into the log: which stage
 	// continues it is the flow's decision, made after this one ran.
-	return spend, nil
+	return spend, result.Text, nil
 }
 
 // verify runs the contract's exit check over what the stage delivered.
