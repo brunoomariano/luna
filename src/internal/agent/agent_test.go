@@ -27,6 +27,10 @@ func newFakeHarness(t *testing.T, reply string, exit int) fakeHarness {
 	// The script records argv and stdin so a test can assert what the agent was
 	// actually asked, then prints the reply the harness would have printed.
 	script := "#!/bin/sh\n" +
+		// The sandbox's own flags come first and the sandbox consumes them. The
+		// fake does the same, because `sh` would otherwise read a leading
+		// `--network` as one of its own options and refuse to run at all — which
+		// is a fact about /bin/sh, not about what Luna built.
 		"printf '%s\\n' \"$@\" > " + filepath.Join(dir, "argv") + "\n" +
 		"cat > " + filepath.Join(dir, "stdin") + "\n" +
 		"cat <<'REPLY'\n" + reply + "\nREPLY\n" +
@@ -44,6 +48,24 @@ func itoa(n int) string {
 		return "0"
 	}
 	return string(rune('0' + n))
+}
+
+// fakeSandbox stands in for `ai-jail`: it takes its own flags, then execs what
+// follows. `/bin/sh` was used for this and could not — Luna passes the sandbox
+// `--network`, and sh reads a leading long option as one of its own and refuses
+// to start. That made every one of these tests assert that the sandbox is
+// invoked with no flags of its own, which is exactly the assumption that let a
+// networkless agent ship.
+func fakeSandbox(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fake-sandbox")
+	script := "#!/bin/sh\n" +
+		"while [ \"${1#--}\" != \"$1\" ]; do shift; done\n" +
+		"exec \"$@\"\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing the fake sandbox: %v", err)
+	}
+	return path
 }
 
 func (f fakeHarness) path() string { return filepath.Join(f.dir, "fake-harness") }
@@ -76,7 +98,7 @@ const success = `{"result":"done","session_id":"s-1","is_error":false,"subtype":
 // one parse, with nothing read off a screen.
 func TestRunReportsWhatTheAgentSaidAndWhatItCost(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	got, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: "build it"})
 	if err != nil {
@@ -151,7 +173,7 @@ func TestAnUnknownHarnessIsRefusedRatherThanGuessed(t *testing.T) {
 // success, so the stage would silently lose the context it asked to keep.
 func TestALiveCallWithoutASessionIsRefused(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Context: Live})
 	if err == nil {
@@ -167,7 +189,7 @@ func TestALiveCallWithoutASessionIsRefused(t *testing.T) {
 // left to talk it out of.
 func TestDeniedToolsReachTheCommandLine(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{
 		Kind: "claude", Dir: t.TempDir(), Prompt: "review it",
@@ -189,7 +211,7 @@ func TestDeniedToolsReachTheCommandLine(t *testing.T) {
 // "live"`: continuing costs a flag and the session id, nothing more.
 func TestALiveCallResumesTheNamedSession(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{
 		Kind: "claude", Dir: t.TempDir(), Prompt: "carry on",
@@ -210,7 +232,7 @@ func TestALiveCallResumesTheNamedSession(t *testing.T) {
 // still look like a working stage.
 func TestAFreshCallResumesNothing(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{
 		Kind: "claude", Dir: t.TempDir(), Prompt: "start",
@@ -230,7 +252,7 @@ func TestAFreshCallResumesNothing(t *testing.T) {
 // a limit a long stage would find on its own.
 func TestThePromptTravelsOnStdin(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	brief := strings.Repeat("the contract says a great deal. ", 500)
 	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: brief})
@@ -254,7 +276,7 @@ func TestAnAgentReportedFailureIsAnError(t *testing.T) {
 		`"subtype":"error_during_execution","session_id":"s-2","total_cost_usd":0.01}`
 
 	fake := newFakeHarness(t, failed, 0) // exit 0, failure in the body
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	got, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: "go"})
 	if err == nil {
@@ -273,7 +295,7 @@ func TestAnAgentReportedFailureIsAnError(t *testing.T) {
 // other than the agreed shape — a banner, a stack trace, an upgrade notice.
 func TestUnreadableOutputNamesWhatCameBack(t *testing.T) {
 	fake := newFakeHarness(t, "not json at all", 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: "go"})
 	if err == nil {
@@ -330,7 +352,7 @@ func TestTheHarnessKindNamesTheBinary(t *testing.T) {
 // stage on an agent that never ran.
 func TestSilenceIsAnErrorRatherThanAnEmptyDelivery(t *testing.T) {
 	fake := newFakeHarness(t, "", 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: "go"})
 	if err == nil {
@@ -362,7 +384,7 @@ func TestAMissingSandboxIsASetupFailure(t *testing.T) {
 // appends to its own system prompt.
 func TestTheRoleReachesTheAgentAsASystemPrompt(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{
 		Kind: "claude", Dir: t.TempDir(), Prompt: "review it",
@@ -438,7 +460,7 @@ func TestCanGateAnswersFromTheClosedTable(t *testing.T) {
 // must not escape could.
 func TestMemoryWrapsTheCallInsideTheSandbox(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	// The wrapper stands in for ai-memory: it records what it was asked to launch
 	// and runs it, which is what the real one does with native arguments.
@@ -471,7 +493,7 @@ func TestMemoryWrapsTheCallInsideTheSandbox(t *testing.T) {
 // every stage of every task writes to is one that fills with the transient.
 func TestMemoryIsOffUnlessAsked(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
-	h := Harness{Sandbox: "/bin/sh", Binary: fake.path()}
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 
 	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir(), Prompt: "go"})
 	if err != nil {
@@ -480,5 +502,40 @@ func TestMemoryIsOffUnlessAsked(t *testing.T) {
 
 	if argv := fake.argv(t); strings.Contains(argv, memoryWrapper) {
 		t.Errorf("a call that asked for no memory got the wrapper:\n%s", argv)
+	}
+}
+
+// TestTheSandboxIsAskedToAllowTheNetwork is a regression test for a stage that
+// could never have worked.
+//
+// The agent is contained by the jail's filesystem boundary, which is what INV-4
+// rests on. The network is not part of that boundary: the model is on the other
+// side of it, so a harness with no network is a harness that cannot be an agent.
+//
+// Without the flag, `claude -p` inside the jail starts, opens its TLS bundle and
+// blocks forever on a connection it is not allowed to make — no output, no
+// error, no exit. Nothing in this suite could see it, because nothing asserted
+// what the sandbox was actually asked to do; a real run found it, and the
+// default two-hour budget meant it found it slowly.
+func TestTheSandboxIsAskedToAllowTheNetwork(t *testing.T) {
+	fake := newFakeHarness(t, `{"result":"done","session_id":"s1"}`, 0)
+	h := Harness{Sandbox: fake.path(), Binary: "claude"}
+
+	if _, err := h.Run(context.Background(), Call{Kind: "claude", Prompt: "x"}); err != nil {
+		t.Fatalf("running: %v", err)
+	}
+
+	argv := fake.argv(t)
+	if !strings.Contains(argv, "--network") {
+		t.Errorf("the sandbox was not asked to allow the network, so the agent could "+
+			"never reach a model. argv was:\n%s", argv)
+	}
+
+	// And it comes before the harness: a flag after the binary is the harness's
+	// argument, not the sandbox's, and `claude --network` is not a thing.
+	network := strings.Index(argv, "--network")
+	harness := strings.Index(argv, "claude")
+	if network > harness {
+		t.Errorf("--network must be the sandbox's argument, not the harness's:\n%s", argv)
 	}
 }

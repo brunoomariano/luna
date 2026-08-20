@@ -48,6 +48,20 @@ func OpenWorktree(ctx context.Context, repo, taskID, role, base string) (Worktre
 		}
 	}
 
+	// And a registration whose directory is already gone, which the check above
+	// cannot see: a stage that is killed never closes its worktree, so git goes
+	// on holding that branch checked out at a path that no longer exists, and the
+	// `add` below fails with "already used by worktree at …".
+	//
+	// It needed the roles to collapse before it could bite. A branch is named for
+	// the task and the role, so with twelve roles a killed stage stranded a name
+	// nothing asked for again; with one `maker` across plan, build and refactor,
+	// the next stage asks for exactly that name. Measured on TALLY-2 — killed
+	// during build, blocked at refactor.
+	if _, err := git(ctx, repo, "worktree", "prune"); err != nil {
+		return Worktree{}, fmt.Errorf("clearing worktrees git still holds for %s: %w", repo, err)
+	}
+
 	from := base
 	if from == "" {
 		from = "HEAD"

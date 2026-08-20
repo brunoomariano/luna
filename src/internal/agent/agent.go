@@ -242,6 +242,7 @@ func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
 		// then remembered, so a call that must not escape still cannot.
 		args = append([]string{memoryWrapper, "run", call.Kind}, args[1:]...)
 	}
+	args = append(sandboxArgs(), args...)
 	started := time.Now()
 
 	// #nosec G204 — running a named binary with built arguments is what this
@@ -294,6 +295,23 @@ func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
 		return result, fmt.Errorf("%s failed: %w: %s", call.Kind, runErr, tail(stderr.String()))
 	}
 	return result, nil
+}
+
+// sandboxArgs is how the sandbox is asked to contain an agent that still has to
+// reach a model.
+//
+// `--network` is the whole list, and it is not a relaxation of the containment
+// that matters. The jail's filesystem boundary is what INV-4 rests on — the
+// agent still sees only its own worktree — and the network is what the harness
+// needs to be an agent at all: the model is on the other side of it.
+//
+// Measured, and it cost a run to find. Without the flag the harness starts,
+// opens its TLS bundle, and blocks forever on a connection the jail will not
+// let it make: no output, no error, no exit. Luna's own budget is a two-hour
+// default, so the stage simply sat there. `ai-jail claude -p` reproduces it in
+// one command and `ai-jail --network claude -p` answers in two seconds.
+func sandboxArgs() []string {
+	return []string{"--network"}
 }
 
 // environ is the parent environment an agent inherits. Wrapped in a function so

@@ -96,12 +96,31 @@ exemption outlived the artifact") and could not see it either, because it checke
 hand-written list rather than the map. The fix was to walk the map as well as the flow,
 and the proof was inverting it: a dead name put back now fails, and did not before.
 
+**A fake that cannot be wrong the way the real thing is wrong proves nothing.** Every test
+of the agent transport passed `Sandbox: "/bin/sh"`. It ran, it recorded its arguments, the
+assertions held — and because `sh` refuses a leading long option, the whole suite
+structurally encoded "the sandbox is invoked with no flags of its own". That was the
+assumption under a shipped agent that could never reach a model: `ai-jail` was started
+without `--network`, so `claude -p` inside it opened its TLS bundle and blocked forever on
+a connection the jail forbids. No output, no error, no exit — and the default budget is two
+hours. A real run found it in twelve minutes; the suite could not have found it at all.
+The fix to the tests was a fake sandbox that takes its own flags and execs the rest, the
+way the real one does.
+
 **The same bug twice, because the second copy had no test that could see it.** `Run` was
 fixed months ago to give an agent its own process group and kill the group, after a stage
 with a 200ms budget ran its child for the full 30 seconds. The interpreter package had the
 same defect the whole time and nobody knew, because nothing there ever tested a deadline
 against a process that ignores it. Writing that test while moving the code took the
 package's suite from 60 seconds to 0.4 — the tests had been *waiting out* the bug.
+
+**A collapsed name turns a survivable failure into a blocking one.** A branch is named for
+the task and the role. While every stage had its own role, a stage killed mid-flight
+stranded a registration git still held — and nothing ever asked for that name again, so
+nobody noticed. With one `maker` across plan, build and refactor, the very next stage asks
+for exactly that name and the task blocks on `already used by worktree at …`, pointing at
+a directory that no longer exists. Merging roles did not create the fault; it removed the
+slack that had been hiding it.
 
 **Verify against the binary and invert the test.** Running the claim against the built
 artifact, and writing the test so it fails when the behaviour is absent, caught an error

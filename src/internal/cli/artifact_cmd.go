@@ -30,7 +30,7 @@ const SocketEnv = "LUNA_ARTIFACT_SOCKET"
 // same data is how they drift.
 func artifactCommand(env Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%w: usage: luna artifact <put|get> <artifact> [--stage <stage>]", ErrUsage)
+		return fmt.Errorf("%w: luna artifact <put|get> <artifact> [--stage <stage>]", ErrUsage)
 	}
 
 	socket := os.Getenv(SocketEnv)

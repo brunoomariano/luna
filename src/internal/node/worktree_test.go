@@ -200,3 +200,39 @@ func TestAnUnreadableBaseStopsTheStage(t *testing.T) {
 		t.Errorf("want the error to name the task, got %q", err)
 	}
 }
+
+// TestAStageKilledMidFlightDoesNotBlockTheNextOne is the regression for a task
+// that blocked halfway through its own flow.
+//
+// A stage that is killed never closes its worktree, so git goes on holding that
+// branch checked out at a directory that is no longer there. The next stage
+// asking for the same branch gets "already used by worktree at …".
+//
+// It needed the roles to collapse before it could bite. A branch is named for
+// the task and the role: with twelve roles, a killed stage stranded a name
+// nothing asked for again; with one `maker` across plan, build and refactor, the
+// next stage asks for exactly that name. Measured on TALLY-2 — killed during
+// build, blocked at refactor.
+func TestAStageKilledMidFlightDoesNotBlockTheNextOne(t *testing.T) {
+	repo := repoWithCommit(t)
+	ctx := context.Background()
+
+	// A stage that ran and was killed: the directory is gone, the registration
+	// is not, because CloseWorktree never ran.
+	killed, err := OpenWorktree(ctx, repo, "T-3", "maker", "")
+	if err != nil {
+		t.Fatalf("opening the worktree that will be killed: %v", err)
+	}
+	if err := os.RemoveAll(killed.Path); err != nil {
+		t.Fatalf("simulating the kill: %v", err)
+	}
+
+	// The next stage, same role, same branch name.
+	next, err := OpenWorktree(ctx, repo, "T-3", "maker", "")
+	if err != nil {
+		t.Fatalf("the next stage of the same role must not be blocked by the killed one: %v", err)
+	}
+	if err := CloseWorktree(ctx, repo, next); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+}
