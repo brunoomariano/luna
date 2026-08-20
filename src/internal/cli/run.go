@@ -145,6 +145,10 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 	// for.
 	conductor.Node = &node.Runner{
 		Repo: opts.Repo,
+		// The flow, so a stage declaring `context = "live"` can find which session
+		// its role was last in. The answer comes out of the task's log, and the
+		// flow is what says which stage belongs to which role.
+		Flow: fsm.DefaultFlow(),
 		Agent: agent.Harness{
 			// Which sandbox is deliberately not configurable: making it so would
 			// move the containment boundary into the file where `editor` lives.

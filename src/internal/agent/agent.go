@@ -224,7 +224,35 @@ func (h Harness) resolve(call Call) (harness, string, error) {
 }
 
 // Run executes one call and returns what the agent said and what it cost.
+//
+// A live call whose session the harness no longer has is retried fresh. The id
+// lives in the log now, so it can outlive the conversation it names — a task
+// picked up days later, a harness that pruned its history — and that is a
+// recovery rather than a stage failing for something nobody did wrong. The
+// retried result reports Fresh, so the cost column does not claim a resumption
+// that did not happen.
 func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
+	result, err := h.runOnce(ctx, call)
+	if err != nil && call.Context == Live && staleSession(err) {
+		fresh := call
+		fresh.Context, fresh.Session = Fresh, ""
+		return h.runOnce(ctx, fresh)
+	}
+	return result, err
+}
+
+// staleSession reports whether a failure is the harness saying it does not have
+// the conversation.
+//
+// Matched on what the harness prints rather than on an exit code, because the
+// code is the same one a real failure uses. Measured against claude 2.1.237,
+// which answers a session it has lost with plain text on stdout and no JSON at
+// all — so this arrives as a parse failure carrying the message.
+func staleSession(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "no conversation found")
+}
+
+func (h Harness) runOnce(ctx context.Context, call Call) (Result, error) {
 	spec, binary, err := h.resolve(call)
 	if err != nil {
 		return Result{}, err
@@ -288,7 +316,12 @@ func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
 
 	switch {
 	case parseErr != nil && runErr != nil:
-		return result, fmt.Errorf("%s failed: %w: %s", call.Kind, runErr, tail(stderr.String()))
+		// Both diagnostics, because either can be the one that explains it. A
+		// harness refusing a session it no longer has says so on *stdout* and
+		// exits non-zero — reporting only stderr threw the reason away and left
+		// "exit status 1" with nothing after the colon.
+		return result, fmt.Errorf("%s failed: %w: %s: %s",
+			call.Kind, runErr, tail(stderr.String()), tail(stdout.String()))
 	case parseErr != nil:
 		return result, fmt.Errorf("%s: %w", call.Kind, parseErr)
 	case runErr != nil && result.Text == "":

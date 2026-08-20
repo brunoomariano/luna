@@ -122,6 +122,13 @@ for exactly that name and the task blocks on `already used by worktree at …`, 
 a directory that no longer exists. Merging roles did not create the fault; it removed the
 slack that had been hiding it.
 
+**State that has to survive a process belongs in the log, and "a process" is shorter than
+it looks.** The session id that makes `context = "live"` work lived in a map on the runner.
+That is correct for as long as one `luna run` stays alive — and the shipped flow puts a
+gate in the middle of the maker's run, so answering it ends the process and the next stage
+starts cold. The cost column is what showed it: `fresh` recorded where `live` was declared.
+A counter that only confirmed expectations would have hidden it.
+
 **Verify against the binary and invert the test.** Running the claim against the built
 artifact, and writing the test so it fails when the behaviour is absent, caught an error
 almost every time it was applied. Reasoning about whether code is correct is not the same

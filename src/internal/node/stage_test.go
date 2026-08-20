@@ -184,23 +184,38 @@ func TestTheStageRecordsWhatItCost(t *testing.T) {
 
 // TestALiveStageContinuesItsRolesSession is the mechanism behind `context =
 // "live"`: the session a role was last using is handed back to it.
+//
+// The session travels through the state rather than through a field on the
+// Runner, which is the whole point of the change: a map on the struct lives as
+// long as the process, and the shipped flow gates in the middle of the maker's
+// run. So the test hands the first stage's spend back the way the log does.
 func TestALiveStageContinuesItsRolesSession(t *testing.T) {
 	repo := repoWithCommit(t)
 	fake := &recordingAgent{result: agent.Result{Text: "done", Session: "s-first"}}
+
+	first := fsm.Stage{ID: "build", Role: "implementer"}
+	second := fsm.Stage{ID: "refactor", Role: "implementer", Context: fsm.ContextLive}
 
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
 		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+		Flow:  []fsm.Stage{first, second},
 	}
 
 	state := runningState("T-5")
-	first := fsm.Stage{ID: "build", Role: "implementer"}
-	if _, err := r.Run(context.Background(), state, first); err != nil {
+	result, err := r.Run(context.Background(), state, first)
+	if err != nil {
 		t.Fatalf("first stage: %v", err)
 	}
+	if result.Spent.Session != "s-first" {
+		t.Fatalf("the first stage must report the session it opened, got %q", result.Spent.Session)
+	}
 
-	second := fsm.Stage{ID: "refactor", Role: "implementer", Context: fsm.ContextLive}
+	// What the reducer does with a Complete, done by hand: the spend lands in the
+	// state, and that is where the next stage reads it from.
+	state.Spent = map[fsm.StageID]fsm.Spend{first.ID: result.Spent}
+
 	if _, err := r.Run(context.Background(), state, second); err != nil {
 		t.Fatalf("second stage: %v", err)
 	}

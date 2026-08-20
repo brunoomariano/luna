@@ -52,11 +52,15 @@ type Runner struct {
 	// Budget bounds one agent call. Zero leaves it to the caller's context.
 	Budget time.Duration
 
-	// Sessions carries a session id from one stage to the next, for the stages
-	// that declared `context = "live"`. Keyed by role, because a session belongs
-	// to the conversation a role has been having and never crosses to another —
-	// which is the half of the fresh-context rule that survived.
-	Sessions map[fsm.RoleName]string
+	// Flow is the task's flow, for resolving which stage belongs to which role
+	// when a live stage asks what session to continue.
+	//
+	// It replaced a `Sessions` map on this struct. A map lives as long as the
+	// process, and the shipped flow puts a gate in the middle of the maker's run
+	// — answering it ends the process, so `build` started cold every time.
+	// Measured on TALLY-3: one resumed pair out of three. The session id is in
+	// the log now, and this is how it is found.
+	Flow []fsm.Stage
 
 	// Brief overrides what an agent is told. Injected for tests; production
 	// leaves it nil and Brief below is what runs.
@@ -149,11 +153,12 @@ func (r *Runner) call(
 		call.Env = append(call.Env, socketEnv+"="+SocketName)
 	}
 
-	// A stage asking to continue gets the session its role was last using. An
-	// absent one means there is nothing to continue — the first stage a role
-	// runs — and starting fresh is the honest answer rather than an error.
+	// A stage asking to continue gets the session its role was last using, read
+	// from the log. An absent one means there is nothing to continue — the first
+	// stage a role runs — and starting fresh is the honest answer rather than an
+	// error.
 	if !stage.Context.Fresh() {
-		if session := r.Sessions[fsm.RoleName(stage.Role)]; session != "" {
+		if session := state.SessionOf(r.Flow, stage.Role); session != "" {
 			call.Context, call.Session = agent.Live, session
 		}
 	}
@@ -170,14 +175,9 @@ func (r *Runner) call(
 		return spend, fmt.Errorf("stage %q: %w", stage.ID, err)
 	}
 
-	// The session is remembered whether or not the next stage wants it: which
-	// stage continues is the flow's decision, and it is made after this one ran.
-	if result.Session != "" {
-		if r.Sessions == nil {
-			r.Sessions = map[fsm.RoleName]string{}
-		}
-		r.Sessions[fsm.RoleName(stage.Role)] = result.Session
-	}
+	spend.Session = result.Session
+	// The session goes into the spend, and from there into the log: which stage
+	// continues it is the flow's decision, made after this one ran.
 	return spend, nil
 }
 

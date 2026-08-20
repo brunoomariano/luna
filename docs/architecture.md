@@ -123,6 +123,13 @@ Three things follow from the transport:
   session" would mean continuing the investigator's. The static check refused it, which is
   what the static check is for.
 
+  The session id is recorded in the log, with the stage's spend. It was a map on the
+  runner until a real run showed what that costs: answering a gate ends the process, the
+  shipped flow gates in the middle of the maker's run, and `build` started cold every
+  time — one resumed pair out of three. A session the harness no longer has is retried
+  fresh rather than failing the stage, and the retry reports `fresh`, so the cost column
+  never claims a resumption that did not happen.
+
 ## Roles
 
 A role is a TOML file in `src/stock/roles/` — three of them ship:

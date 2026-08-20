@@ -200,3 +200,60 @@ func TestAStageIsBilledOnceWhenItCloses(t *testing.T) {
 		t.Errorf("want the stage billed once (0.10), got %v", got)
 	}
 }
+
+// TestTheSessionSurvivesAReplay is what makes `context = "live"` more than a
+// property of one process.
+//
+// The session id used to live only in `node.Runner.Sessions`, a map on a struct.
+// Answering a gate ends the process, and the shipped flow puts a gate in the
+// middle of the maker's run — so `build`, declared live, started cold because the
+// id `plan` had opened was gone. Measured on TALLY-3: the flow got one resumed
+// pair out of three, and the gate cost the other two.
+//
+// The log is where things that must outlive a process already live.
+func TestTheSessionSurvivesAReplay(t *testing.T) {
+	state := atStage(t, KindFeature, "plan")
+
+	stage := stageIn(DefaultFlow(), "plan")
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	closed, err := Reduce(state, Complete{
+		Delivered: owed,
+		Evidence:  passing(stage, owed),
+		Flow:      DefaultFlow(),
+		Commit:    "c0ffee",
+		Spent:     Spend{Turns: 3, CostUSD: 0.5, Session: "sess-plan", Context: "fresh"},
+	})
+	if err != nil {
+		t.Fatalf("closing plan: %v", err)
+	}
+
+	got := closed.Spent["plan"].Session
+	if got != "sess-plan" {
+		t.Errorf("the session a stage opened must be readable from the state, got %q", got)
+	}
+}
+
+// TestTheLastSessionOfARoleIsWhatALiveStageContinues answers the question the
+// node layer actually asks: not "what did this stage do" but "what session is
+// this role in".
+func TestTheLastSessionOfARoleIsWhatALiveStageContinues(t *testing.T) {
+	state := TaskState{
+		Spent: map[StageID]Spend{
+			"intake": {Session: "sess-intake", Turns: 1},
+			"plan":   {Session: "sess-plan", Turns: 1},
+			"verify": {Session: "sess-verify", Turns: 1},
+		},
+	}
+
+	// maker ran intake and then plan; the live one continues the later.
+	if got := state.SessionOf(DefaultFlow(), "maker"); got != "sess-plan" {
+		t.Errorf("maker's session is the last one it opened, got %q", got)
+	}
+	if got := state.SessionOf(DefaultFlow(), "critic"); got != "sess-verify" {
+		t.Errorf("critic's session is its own, got %q", got)
+	}
+	if got := state.SessionOf(DefaultFlow(), "investigator"); got != "" {
+		t.Errorf("a role that has not run has no session to continue, got %q", got)
+	}
+}

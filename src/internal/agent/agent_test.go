@@ -539,3 +539,77 @@ func TestTheSandboxIsAskedToAllowTheNetwork(t *testing.T) {
 		t.Errorf("--network must be the sandbox's argument, not the harness's:\n%s", argv)
 	}
 }
+
+// TestAStaleSessionFallsBackToAFreshOne keeps a persisted session from turning
+// into a broken stage.
+//
+// A session id now lives in the log, so it can outlive the conversation it names
+// — a task resumed days later, a harness that pruned its history. The harness
+// answers that with plain text on stdout ("No conversation found with session
+// ID: …") rather than JSON, so the reply does not parse and the stage would fail
+// for a reason that is nobody's fault.
+//
+// Starting clean is the honest recovery, and the result says `fresh` so the cost
+// column does not claim a resumption that did not happen.
+func TestAStaleSessionFallsBackToAFreshOne(t *testing.T) {
+	fake := newSessionAwareHarness(t)
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
+
+	result, err := h.Run(context.Background(), Call{
+		Kind:    "claude",
+		Prompt:  "x",
+		Context: Live,
+		Session: "gone-a-long-time",
+	})
+	if err != nil {
+		t.Fatalf("a stale session is a recovery, not a failure: %v", err)
+	}
+	if result.Text == "" {
+		t.Error("the retry must produce the answer the fresh call gave")
+	}
+
+	argv := fake.argvAll(t)
+	if strings.Count(argv, "--resume") > 1 {
+		t.Errorf("the retry must not ask to resume again:\n%s", argv)
+	}
+}
+
+// sessionAwareHarness refuses a --resume the way the real one does — plain text
+// on stdout, exit 1 — and answers a call without one normally.
+//
+// Measured against claude 2.1.237: a session it no longer has produces
+// "No conversation found with session ID: …" and no JSON at all, which is why
+// the fallback cannot key off the exit code alone.
+type sessionAwareHarness struct{ dir string }
+
+func newSessionAwareHarness(t *testing.T) sessionAwareHarness {
+	t.Helper()
+	dir := t.TempDir()
+	argv := filepath.Join(dir, "argv-all")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" >> " + argv + "\n" +
+		"for a in \"$@\"; do\n" +
+		"  if [ \"$a\" = \"--resume\" ]; then\n" +
+		"    echo 'No conversation found with session ID: gone-a-long-time'\n" +
+		"    exit 1\n" +
+		"  fi\n" +
+		"done\n" +
+		"cat >/dev/null\n" +
+		`echo '{"result":"done fresh","session_id":"s-new","num_turns":2}'` + "\n"
+	path := filepath.Join(dir, "session-aware")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing the session-aware harness: %v", err)
+	}
+	return sessionAwareHarness{dir: dir}
+}
+
+func (f sessionAwareHarness) path() string { return filepath.Join(f.dir, "session-aware") }
+
+func (f sessionAwareHarness) argvAll(t *testing.T) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(f.dir, "argv-all"))
+	if err != nil {
+		t.Fatalf("the harness recorded no arguments: %v", err)
+	}
+	return string(body)
+}

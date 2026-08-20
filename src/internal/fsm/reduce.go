@@ -171,6 +171,18 @@ type Spend struct {
 	// Context records whether the stage started clean or continued. Without it
 	// the cost column cannot answer the question it was added for.
 	Context string `json:"context,omitempty"`
+
+	// Session is the conversation this stage's agent was having, for a later
+	// stage of the same role that continues it.
+	//
+	// It lives in the log because the alternative did not survive a gate. It used
+	// to be a map on the node's Runner, so `context = "live"` worked only while
+	// one process stayed alive — and the shipped flow puts a gate in the middle
+	// of the maker's run, which ends the process. Measured on TALLY-3: one
+	// resumed pair out of three, and the gate cost the other two.
+	//
+	// `omitempty`, so a log written before this field re-encodes byte-identically.
+	Session string `json:"session,omitempty"`
 }
 
 // Zero reports whether anything was spent. A mechanical stage runs no agent, and
@@ -1121,9 +1133,37 @@ func withSpend(spent map[StageID]Spend, stage StageID, add Spend) map[StageID]Sp
 	if add.Context != "" {
 		running.Context = add.Context
 	}
+	if add.Session != "" {
+		running.Session = add.Session
+	}
 
 	spent[stage] = running
 	return spent
+}
+
+// SessionOf is the conversation a role is in, and it is what a stage declaring
+// `context = "live"` continues.
+//
+// Keyed by role rather than by stage, because a session belongs to the
+// conversation a role has been having: `build` continues what `plan` opened, not
+// whatever stage happened to run last. Reading it from the log rather than from
+// a map on a struct is what lets that survive a gate, a restart or a crash — the
+// map did not, and the shipped flow gates in the middle of the maker's run.
+//
+// The flow says which stage belongs to which role; the state says what each
+// stage spent. The last stage of that role to have opened a session wins, since
+// a role that ran twice is better continued from where it actually left off.
+func (s TaskState) SessionOf(flow []Stage, role string) string {
+	session := ""
+	for _, stage := range flow {
+		if stage.Role != role {
+			continue
+		}
+		if spent, ran := s.Spent[stage.ID]; ran && spent.Session != "" {
+			session = spent.Session
+		}
+	}
+	return session
 }
 
 // TotalSpend is what the whole task cost.
