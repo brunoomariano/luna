@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
@@ -217,5 +218,40 @@ func TestAutonomyIsDerivedAndNotSettable(t *testing.T) {
 	autonomous := &Agent{Ask: (&disobedientLead{}).ask, Knob: fsm.KnobAll}
 	if got := autonomous.Autonomy(); got != AutonomyDecide {
 		t.Errorf("knob 10 derived %q, want decide", got)
+	}
+}
+
+// TestConductingAStageIsNotBoundedByTheQuestionTimeout separates two uses of one
+// boundary that need very different amounts of time.
+//
+// `Ask` bounds a question: judging a gate, answering a ceiling. Two minutes is
+// right there — a model that has not answered is not about to, and somebody is
+// waiting. But `luna lead` puts the same `Ask` behind the lead *conducting a
+// stage*: starting an agent, waiting for it to work, reporting what it produced.
+// That is the shape `turn_budget` already describes, and it defaults to hours.
+//
+// Measured on TALLY-4: `setup` closed, and the next turn died with "claude did
+// not answer within 2m0s" while the agent was still working.
+func TestConductingAStageIsNotBoundedByTheQuestionTimeout(t *testing.T) {
+	var got time.Duration
+	agent := &Agent{
+		Ask: func(ctx context.Context, _ string) (string, error) {
+			deadline, ok := ctx.Deadline()
+			if ok {
+				got = time.Until(deadline)
+			}
+			return "carried out", nil
+		},
+		Knob:   fsm.Knob(9),
+		Budget: 90 * time.Minute,
+	}
+
+	if _, err := agent.Conduct(context.Background(), fsm.Order{Kind: fsm.OrderRun, Stage: "build"}); err != nil {
+		t.Fatalf("conducting: %v", err)
+	}
+
+	if got < time.Hour {
+		t.Errorf("conducting a stage got %s to work in — the question timeout, not the "+
+			"stage budget", got)
 	}
 }

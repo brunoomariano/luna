@@ -105,12 +105,22 @@ func TestACancelledAskIsNotReportedAsASlowModel(t *testing.T) {
 		stop()
 	}()
 
+	started := time.Now()
 	_, err := h.Ask(ctx, "anything")
 	if err == nil {
 		t.Fatal("a cancelled ask must report the cancellation")
 	}
 	if !strings.Contains(err.Error(), "stopped before it answered") {
 		t.Errorf("a cancellation must not read as a timeout, got %q", err)
+	}
+
+	// And it returns when cancelled, rather than reporting the cancellation
+	// after the harness finishes anyway. Without this the test passes while the
+	// caller's context reaches nothing — it just takes the full sleep to do it,
+	// which is a suite waiting a bug out rather than catching it.
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Errorf("the cancellation took %s to take effect — the caller's context is "+
+			"not what stopped the call", elapsed)
 	}
 }
 
@@ -197,5 +207,32 @@ func TestAskCanRunTheCommandsItIsToldToRun(t *testing.T) {
 	argv := fake.argv(t)
 	if !strings.Contains(argv, "bypassPermissions") {
 		t.Errorf("a lead that cannot run `luna next` cannot conduct anything. argv was:\n%s", argv)
+	}
+}
+
+// TestAskDoesNotShortenADeadlineTheCallerAlreadySet keeps one boundary from
+// overriding another that means something different.
+//
+// AskTimeout is the ceiling for a question nobody set a budget for. A caller
+// that *did* set one — the lead conducting a stage, which has hours — must not
+// have it clamped back to two minutes on the way through here. Measured on
+// TALLY-4, where a stage died at 2m0s while its agent was still working.
+func TestAskDoesNotShortenADeadlineTheCallerAlreadySet(t *testing.T) {
+	// Well past AskTimeout, and the caller means it.
+	ctx, stop := context.WithTimeout(context.Background(), 90*time.Minute)
+	defer stop()
+
+	// A harness slower than this Harness's own deadline: the short one has to
+	// bite, or the other half of the test proves nothing.
+	slow := newSlowHarness(t, 1*time.Second)
+	if _, err := (Harness{Binary: slow, Deadline: 200 * time.Millisecond}).Ask(ctx, "x"); err == nil {
+		t.Fatal("the short deadline did not bite, so this test measures nothing")
+	}
+
+	// The same generous caller context, and no deadline of this package's own
+	// short enough to cut it: the call survives.
+	fake := newFakeHarness(t, "done", 0)
+	if _, err := (Harness{Binary: fake.path()}).Ask(ctx, "x"); err != nil {
+		t.Fatalf("a caller that set its own deadline had it overridden: %v", err)
 	}
 }

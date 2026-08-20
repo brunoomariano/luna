@@ -69,7 +69,13 @@ func leadCommand(env Env, args []string) error {
 		CheckGate: checkGateWith(env.Store, "."),
 	}
 
-	return conductTask(env, id, &lead.Agent{Ask: env.Lead, Knob: knob}, entering)
+	// The stage budget, not the question timeout: conducting a stage means
+	// starting an agent and waiting for it to work, which is the shape
+	// `turn_budget` describes. The default is hours; `Ask`'s two minutes are for
+	// a model answering a question.
+	conductor := &lead.Agent{Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn()}
+
+	return conductTask(env, id, conductor, entering)
 }
 
 // conductTask is the loop: ask Luna for the order, give it to the lead, check

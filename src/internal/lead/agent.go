@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
@@ -56,6 +57,19 @@ type Agent struct {
 	// is derived from it, never configured beside it — two settings both called
 	// autonomy is a worse product than one.
 	Knob fsm.Knob
+
+	// Budget is how long the lead has to conduct one stage.
+	//
+	// Not the question timeout, which is what this used to get by default and is
+	// the wrong shape: `Ask` bounds a model answering a question, and two minutes
+	// is right for judging a gate. Conducting a stage means starting an agent and
+	// waiting for it to work, which is what `turn_budget` already describes and
+	// why it defaults to hours. Measured on TALLY-4, where the run died with
+	// "claude did not answer within 2m0s" while the agent was still working.
+	//
+	// Zero leaves it to the caller's context, which is the same thing the node
+	// layer does with an unset budget.
+	Budget time.Duration
 }
 
 // Autonomy is what this agent's knob means for a failure.
@@ -158,6 +172,12 @@ func (a *Agent) Conduct(ctx context.Context, order fsm.Order) (string, error) {
 	// No default to apply: the knob's zero value is KnobAsk, the most supervised
 	// setting, and Autonomy derives from it. The old empty-means-retry fallback
 	// was a second place deciding the same thing.
+	if a.Budget > 0 {
+		var stop context.CancelFunc
+		ctx, stop = context.WithTimeout(ctx, a.Budget)
+		defer stop()
+	}
+
 	said, err := a.Ask(ctx, Brief(a.Autonomy())+"\n\nYour order:\n\n"+order.Text())
 	if err != nil {
 		return "", fmt.Errorf("the lead did not answer: %w", err)
