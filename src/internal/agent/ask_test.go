@@ -218,21 +218,25 @@ func TestAskCanRunTheCommandsItIsToldToRun(t *testing.T) {
 // have it clamped back to two minutes on the way through here. Measured on
 // TALLY-4, where a stage died at 2m0s while its agent was still working.
 func TestAskDoesNotShortenADeadlineTheCallerAlreadySet(t *testing.T) {
-	// Well past AskTimeout, and the caller means it.
-	ctx, stop := context.WithTimeout(context.Background(), 90*time.Minute)
-	defer stop()
-
-	// A harness slower than this Harness's own deadline: the short one has to
-	// bite, or the other half of the test proves nothing.
+	// A harness slower than AskTimeout would be, with AskTimeout standing in as a
+	// short value so the test does not have to wait two real minutes.
 	slow := newSlowHarness(t, 1*time.Second)
-	if _, err := (Harness{Binary: slow, Deadline: 200 * time.Millisecond}).Ask(ctx, "x"); err == nil {
-		t.Fatal("the short deadline did not bite, so this test measures nothing")
+
+	// No Deadline of its own: the default applies, and it is short here.
+	short := Harness{Binary: slow, Deadline: 100 * time.Millisecond}
+	if _, err := short.Ask(context.Background(), "x"); err == nil {
+		t.Fatal("the default deadline did not bite, so this test measures nothing")
 	}
 
-	// The same generous caller context, and no deadline of this package's own
-	// short enough to cut it: the call survives.
-	fake := newFakeHarness(t, "done", 0)
-	if _, err := (Harness{Binary: fake.path()}).Ask(ctx, "x"); err != nil {
-		t.Fatalf("a caller that set its own deadline had it overridden: %v", err)
+	// The same harness and the same short default, but a caller that set its own
+	// deadline and meant it. The caller's is the one that governs: AskTimeout is
+	// what applies when nobody said otherwise, not a ceiling over somebody who
+	// did. Measured on TALLY-4, where the conductor's ten minutes were clamped to
+	// two and the stage died mid-work.
+	ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+	defer stop()
+
+	if _, err := short.Ask(ctx, "x"); err != nil {
+		t.Errorf("the caller's deadline was overridden by this package's default: %v", err)
 	}
 }

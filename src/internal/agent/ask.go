@@ -46,8 +46,20 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 		return "", err
 	}
 
-	asking, stop := context.WithTimeout(ctx, timeout)
-	defer stop()
+	// The default applies only when the caller set no deadline of its own. It is
+	// the ceiling for a question nobody bounded, not one imposed over somebody
+	// who did: `luna lead` gives the conductor the stage budget, and clamping it
+	// back to two minutes killed a stage while its agent was still working.
+	// Measured on TALLY-4, twice — the second time after the budget was wired
+	// through and this was still cutting it.
+	asking := ctx
+	if deadline, set := ctx.Deadline(); set {
+		timeout = time.Until(deadline)
+	} else {
+		var stop context.CancelFunc
+		asking, stop = context.WithTimeout(ctx, timeout)
+		defer stop()
+	}
 
 	// The lead's whole loop is Luna commands — `luna next` for the order, `luna
 	// done` to report — so a harness that stops to ask a person about each one
@@ -86,11 +98,15 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 	// The two cancellations are kept apart: "someone stopped the run" and "the
 	// model ran out of time" are different facts, and reporting one as the other
 	// sends whoever reads it looking for a slow harness that was never slow.
-	if ctx.Err() != nil {
-		return "", fmt.Errorf("%s was stopped before it answered: %w", kind, ctx.Err())
-	}
-	if asking.Err() != nil {
-		return "", fmt.Errorf("%s did not answer within %s", kind, timeout)
+	//
+	// Asked of the error rather than of which context carries it, because when
+	// the caller set the deadline the two are the same context — and a run out of
+	// time would otherwise read as somebody having stopped it.
+	if err := asking.Err(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", fmt.Errorf("%s did not answer within %s", kind, timeout.Round(time.Second))
+		}
+		return "", fmt.Errorf("%s was stopped before it answered: %w", kind, err)
 	}
 
 	var exitErr *exec.ExitError
