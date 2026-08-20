@@ -99,8 +99,13 @@ You do not decide what happens next. Luna does. Your loop is:
 
   1. run "luna next <task> --json" — it returns an order
   2. carry out exactly that order
-  3. run "luna done <task> --delivered <what it produced> --commit <sha>"
+  3. run "luna done <task> --delivered <names> --commit <sha>"
   4. go back to 1
+
+The <names> are the order's own "produces" list, comma-separated and verbatim.
+It is a list of artifact names and not a description of the work: "briefing,kind"
+is the answer, and a sentence about what you wrote is not. Luna checks the
+delivery against the contract, so a name it did not ask for closes nothing.
 
 The order names one stage, one role, one worktree and one base commit. It is
 the only stage that exists for you. There is no list of what comes after it,

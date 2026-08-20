@@ -255,3 +255,28 @@ func TestConductingAStageIsNotBoundedByTheQuestionTimeout(t *testing.T) {
 			"stage budget", got)
 	}
 }
+
+// TestTheBriefSaysWhatDeliveredTakes closes a gap a real run walked straight
+// into.
+//
+// The brief said `--delivered <what it produced>`, which reads as an invitation
+// to describe the work. On TALLY-4 the lead passed a sentence — "BRIEFING.md —
+// intake briefing for the --avg flag; kind=feature (justified against…" — and
+// Luna refused it, correctly, as a stage that owed `briefing` and `kind` and
+// delivered neither.
+//
+// The order already answers this: it carries `produces=briefing,kind`. What was
+// missing was the brief saying that is the list, verbatim.
+func TestTheBriefSaysWhatDeliveredTakes(t *testing.T) {
+	brief := Brief(AutonomyDecide)
+
+	if !strings.Contains(brief, "produces") {
+		t.Error("the brief does not tell the lead where the delivered names come from")
+	}
+	for _, want := range []string{"verbatim", "not a description"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief leaves %q open, which is how a sentence got passed as a "+
+				"list of artifacts:\n%s", want, brief)
+		}
+	}
+}
