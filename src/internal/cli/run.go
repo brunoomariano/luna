@@ -409,18 +409,39 @@ func workCommand(env Env, args []string) error {
 		return fmt.Errorf("working %s: %w", state.Stage, err)
 	}
 
-	// What the agent produced is reported, not recorded: closing the stage is
-	// `luna done`, and keeping them apart is what stops this command from
-	// becoming a way to finish a stage without the contract check.
+	// The evidence is recorded here, by the command whose verifiers produced it.
+	//
+	// The first version printed a `luna done` line instead and threw the verdict
+	// away, on the reasoning that closing a stage belongs to `done`. That was
+	// backwards: `done` records `existence` for everything, always and
+	// deliberately, so a stage reported by hand cannot launder a verdict nobody
+	// produced. Which makes it the wrong command to close a stage whose contract
+	// declares `make test` — every one of them blocked with "proved [tests_green]
+	// with a weaker check than its contract declared", measured on TALLY-4, where
+	// the agent had genuinely run the tests.
+	//
+	// The lead's word still costs nothing. What closes the stage is what the tool
+	// returned; the lead only chose to start it, and the reducer refuses a
+	// delivery that falls short whoever hands it in.
+	if err := env.Store.AppendActionAt(id, state.Seq, fsm.Complete{
+		Delivered: result.Delivered,
+		Evidence:  result.Evidence,
+		Commit:    result.Commit,
+		Spent:     result.Spent,
+		Flow:      fsm.DefaultFlow(),
+	}); err != nil {
+		return err
+	}
+
 	reportWork(env, id, state.Stage, result)
 	return nil
 }
 
-// reportWork prints what the agent did, in the shape the next command wants.
+// reportWork prints what the agent did and what it cost.
 //
-// What it does not do is record any of it: closing the stage is `luna done`,
-// where the report meets the contract check. Printing the `done` line ready to
-// copy is the whole handoff between the two.
+// It reports rather than instructs: the stage is already closed by the time this
+// runs, so there is no `luna done` line to copy. What the reader wants to know is
+// what the tool concluded and what the call cost.
 func reportWork(env Env, id string, stage fsm.StageID, result lead.Result) {
 	fmt.Fprintf(env.Out, "%s ran %s\n", id, stage)
 	if result.Commit != "" {
@@ -433,13 +454,6 @@ func reportWork(env Env, id string, stage fsm.StageID, result lead.Result) {
 		fmt.Fprintf(env.Out, "  spent     %d tokens  $%.4f  %d turns\n",
 			result.Spent.Tokens(), result.Spent.CostUSD, result.Spent.Turns)
 	}
-
-	fmt.Fprintf(env.Out, "  report it with `luna done %s --delivered %s",
-		id, joinArtifactNames(result.Delivered))
-	if result.Commit != "" {
-		fmt.Fprintf(env.Out, " --commit %s", result.Commit)
-	}
-	fmt.Fprintf(env.Out, "`\n")
 }
 
 // joinArtifactNames renders a delivery for a person to copy into `luna done`.

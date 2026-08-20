@@ -1087,3 +1087,46 @@ func TestWorkRefusesToChooseAStage(t *testing.T) {
 		t.Errorf("work moved the flow: %q at %q", after.Status, after.Stage)
 	}
 }
+
+// TestWorkRecordsTheEvidenceItEarned is the correction to how `luna work` and
+// `luna done` were first split.
+//
+// `luna done` records `existence` for everything, always, and deliberately: a
+// stage reported by hand must not launder a verdict nobody produced. That makes
+// it the wrong command to close a stage whose contract declares `make test` —
+// and it is not a gap in `done`, it is the whole reason `done` is safe.
+//
+// `luna work` runs the real verifiers and gets real evidence. Printing a `done`
+// line and discarding it meant every command-proven stage blocked with "proved
+// [tests_green] with a weaker check than its contract declared" — measured on
+// TALLY-4, where the agent had genuinely run the tests and the verdict was
+// thrown away between the two commands.
+//
+// So work closes the stage it worked, carrying the evidence its verifiers
+// produced. The lead's word still costs nothing: what closes the stage is what
+// the tool returned, not what anybody reported.
+func TestWorkRecordsTheEvidenceItEarned(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+
+	entering := &lead.Lead{Store: h.env.Store}
+	if err := entering.Enter(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("opening a stage: %v", err)
+	}
+
+	before := mustState(t, h, "LUNA-1")
+	if err := Run(h.env, []string{"work", "LUNA-1", "--dry-run"}); err != nil {
+		t.Fatalf("working: %v", err)
+	}
+
+	after := mustState(t, h, "LUNA-1")
+	if after.Seq == before.Seq {
+		t.Fatal("work ran the stage and recorded nothing — the evidence its verifiers " +
+			"produced has nowhere else to go")
+	}
+	for artifact, evidence := range after.Evidence {
+		if evidence.Detail == "reported by hand through `luna done`" {
+			t.Errorf("%s closed on a hand report from the command that ran the tool", artifact)
+		}
+	}
+}

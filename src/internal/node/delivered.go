@@ -210,3 +210,25 @@ func Handover(ctx context.Context, worktree string) (commit, message string, err
 	}
 	return head, body, nil
 }
+
+// ResolveCommit reports whether a commit exists in the repository, and what it
+// resolves to.
+//
+// Asked of git rather than of the string, which is the whole point: forty hex
+// characters look exactly like a delivery and prove nothing. A lead found this
+// by reading the design — "a fabricated SHA would sail past a stage whose check
+// was strong enough" — and it was right: the value became the task's base, the
+// commit the next stage branches from.
+//
+// `^{commit}` rather than a bare rev-parse: a tag or a tree would otherwise
+// resolve, and a delivery has to be a commit.
+func ResolveCommit(ctx context.Context, repo, commit string) (string, error) {
+	if commit == "" {
+		return "", nil
+	}
+	resolved, err := git(ctx, repo, "rev-parse", "--verify", commit+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("%q does not resolve to a commit in %s", commit, repo)
+	}
+	return strings.TrimSpace(resolved), nil
+}

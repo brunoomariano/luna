@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -81,24 +82,21 @@ func doneCommand(env Env, args []string) error {
 		return err
 	}
 
-	// Existence is the floor, and it is recorded as exactly that. A stage whose
-	// contract declares a command will not close on it — underProven refuses the
-	// weaker check. That refusal is the point: reporting a stage
-	// done by hand must not be a way to launder a verdict nobody produced.
-	evidence := map[fsm.Artifact]fsm.Evidence{}
-	for _, artifact := range delivered {
-		// fsm.Exists rather than a literal: the floor is defined in one place, so
-		// a change to what "nothing was checked" records cannot apply here and
-		// not to the engine.
-		e := fsm.Exists(state.Seq)
-		e.Detail = "reported by hand through `luna done`"
-		evidence[artifact] = e
+	evidence := handReportedEvidence(delivered, state.Seq)
+
+	// The commit is checked against git rather than taken on its word. It becomes
+	// the base the next stage branches from, so a value that resolves to nothing
+	// strands every stage after this one — and forty hex characters look exactly
+	// like a delivery.
+	commit, err := node.ResolveCommit(context.Background(), ".", flags["commit"])
+	if err != nil {
+		return err
 	}
 
 	action := fsm.Complete{
 		Delivered: delivered,
 		Evidence:  evidence,
-		Commit:    flags["commit"],
+		Commit:    commit,
 		Flow:      fsm.DefaultFlow(),
 	}
 
@@ -265,4 +263,24 @@ func (e Env) replay(id string) (fsm.TaskState, error) {
 		return fsm.TaskState{}, fmt.Errorf("no task %q", id)
 	}
 	return e.Store.Replay(id, fsm.DefaultFlow())
+}
+
+// handReportedEvidence records the floor for a delivery somebody reported.
+//
+// Existence, and recorded as exactly that. A stage whose contract declares a
+// command will not close on it — underProven refuses the weaker check, and that
+// refusal is the point: reporting a stage done by hand must not be a way to
+// launder a verdict nobody produced. `luna work` is what closes those, carrying
+// what its verifiers actually observed.
+func handReportedEvidence(delivered []fsm.Artifact, seq int) map[fsm.Artifact]fsm.Evidence {
+	evidence := make(map[fsm.Artifact]fsm.Evidence, len(delivered))
+	for _, artifact := range delivered {
+		// fsm.Exists rather than a literal: the floor is defined in one place, so
+		// a change to what "nothing was checked" records cannot apply here and not
+		// to the engine.
+		e := fsm.Exists(seq)
+		e.Detail = "reported by hand through `luna done`"
+		evidence[artifact] = e
+	}
+	return evidence
 }

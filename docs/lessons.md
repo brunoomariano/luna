@@ -106,6 +106,14 @@ real task to surface and none of them could have been found by a test of Luna's 
 because none of them *is* Luna's own code — they are what Luna asks of the things around
 it. The suite was never wrong; it was answering a different question.
 
+**The lead found a hole by reading the design, not by hitting it.** Mid-run it observed
+that "a stage can self-report a commit SHA that Luna never verifies exists — the delivery
+check caught the weak proof, but a fabricated SHA would sail past a stage whose check *was*
+strong enough". Probed, and it was right: forty hex characters became the task's base, the
+commit every later stage branches from. This is the SwarmForge lesson the project wrote
+down at the start and then did not apply everywhere — validate the commit by running git,
+not by checking that the text looks like a SHA.
+
 **A brief can promise a mechanism that does not exist, and nothing will say so.** The
 lead's brief said "the agent you start does the work — you do not do it yourself" from the
 beginning, and Luna had no command that starts an agent: `next` reads, `done` reports, and

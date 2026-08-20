@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/brunoomariano/luna/src/internal/node"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
@@ -105,7 +108,8 @@ func TestOneTurnOfTheLoopByHand(t *testing.T) {
 	enterStage(t, h, "LUNA-1")
 
 	owed := strings.Join(artifactNames(first.Produces), ",")
-	out := h.mustRun(t, "done", "LUNA-1", "--delivered", owed, "--commit", "abc1234")
+	handed := aRealCommit(t)
+	out := h.mustRun(t, "done", "LUNA-1", "--delivered", owed, "--commit", handed)
 
 	if !strings.Contains(out, "closed") {
 		t.Fatalf("the stage did not close after delivering everything it owed: %s", out)
@@ -114,7 +118,7 @@ func TestOneTurnOfTheLoopByHand(t *testing.T) {
 	// The commit became the base, which is the handoff: the next stage starts
 	// from what the last one produced.
 	second := mustOrderFrom(t, h, "LUNA-1")
-	if second.Base != "abc1234" {
+	if second.Base != handed {
 		t.Errorf("base = %q, want the commit just handed in", second.Base)
 	}
 	if second.Stage == first.Stage {
@@ -362,9 +366,10 @@ func TestStatusFollowsATaskAsItMoves(t *testing.T) {
 
 	first := mustOrderFrom(t, h, "LUNA-1")
 	enterStage(t, h, "LUNA-1")
+	handed := aRealCommit(t)
 	h.mustRun(t, "done", "LUNA-1",
 		"--delivered", strings.Join(artifactNames(first.Produces), ","),
-		"--commit", "c0ffee")
+		"--commit", handed)
 
 	raw := h.mustRun(t, "status", "LUNA-1", "--json")
 	var report StatusReport
@@ -372,7 +377,7 @@ func TestStatusFollowsATaskAsItMoves(t *testing.T) {
 		t.Fatalf("status --json: %v", err)
 	}
 
-	if report.Base != "c0ffee" {
+	if report.Base != handed {
 		t.Errorf("base = %q, want the commit the closed stage delivered", report.Base)
 	}
 	if report.Stages[0].State != "current" {
@@ -381,7 +386,7 @@ func TestStatusFollowsATaskAsItMoves(t *testing.T) {
 	}
 
 	// And the text shape says the same thing.
-	if text := h.mustRun(t, "status", "LUNA-1"); !strings.Contains(text, "c0ffee") {
+	if text := h.mustRun(t, "status", "LUNA-1"); !strings.Contains(text, handed) {
 		t.Errorf("the text shape does not show the base:\n%s", text)
 	}
 }
@@ -463,4 +468,53 @@ func stageByID(flow []fsm.Stage, id fsm.StageID) fsm.Stage {
 		}
 	}
 	return fsm.Stage{ID: id}
+}
+
+// TestDoneRefusesACommitThatDoesNotResolve closes a hole the lead found by
+// reading the design rather than by hitting it.
+//
+// It said: "a stage can self-report a commit SHA that Luna never verifies
+// exists. The delivery check caught the weak proof, but a fabricated SHA would
+// sail past a stage whose check *was* strong enough." Probed, and it was right —
+// forty hex characters became the task's `base`, which is the commit the next
+// stage branches from.
+//
+// SwarmForge's lesson is the one this restores: validate the commit by running
+// git, not by checking that the text looks like a SHA.
+func TestDoneRefusesACommitThatDoesNotResolve(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+	enterStage(t, h, "LUNA-1")
+
+	err := Run(h.env, []string{
+		"done", "LUNA-1", "--delivered", "worktree",
+		"--commit", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+	})
+
+	if err == nil {
+		t.Fatal("a commit that resolves to nothing was accepted as the delivery")
+	}
+	if !strings.Contains(err.Error(), "deadbeef") {
+		t.Errorf("the refusal must name the value it refused, got %q", err)
+	}
+
+	if state := mustState(t, h, "LUNA-1"); strings.Contains(state.Base, "deadbeef") {
+		t.Error("the fabricated commit became the base the next stage branches from")
+	}
+}
+
+// aRealCommit is a commit that resolves, for the tests that hand one to `luna
+// done`.
+//
+// `done` checks the commit against git now, because a fabricated SHA used to
+// become the base the next stage branches from. So a test that means "a
+// delivery happened" has to name a delivery that exists — HEAD of the
+// repository the test runs in.
+func aRealCommit(t *testing.T) string {
+	t.Helper()
+	sha, err := node.ResolveCommit(context.Background(), ".", "HEAD")
+	if err != nil {
+		t.Fatalf("reading a commit to hand over: %v", err)
+	}
+	return sha
 }
