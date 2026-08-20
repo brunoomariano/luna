@@ -167,8 +167,8 @@ func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 // TestADryRunDeliversWhatTheHumanWasOwedToo covers ProducesForHuman.
 //
 // A stage owes two lists, and a node that honoured only Produces would leave every
-// stage with a human deliverable unable to close — the flow would stop at qa and
-// nobody would learn why until they read the contract.
+// stage with a human deliverable unable to close — the flow would stop at review
+// and nobody would learn why until they read the contract.
 func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
@@ -181,8 +181,8 @@ func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 		t.Fatalf("replaying: %v", err)
 	}
 
-	// qa_report is ProducesForHuman only; verify owes dod_checked the same way.
-	for _, owed := range []fsm.Artifact{"qa_report", "dod_checked"} {
+	// review_report is ProducesForHuman only; verify owes dod_checked the same way.
+	for _, owed := range []fsm.Artifact{"review_report", "dod_checked"} {
 		if _, ok := state.Evidence[owed]; !ok {
 			t.Errorf("want %q delivered, got evidence for %v", owed, state.Evidence)
 		}
@@ -253,10 +253,10 @@ func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
-	if !strings.Contains(out, "waiting at scenarios") {
+	if !strings.Contains(out, "waiting at plan") {
 		t.Errorf("want the stage it stopped at, got %q", out)
 	}
-	if !strings.Contains(out, "approve the plan") {
+	if !strings.Contains(out, "review the plan and its contract") {
 		t.Errorf("want the reason it stopped, got %q", out)
 	}
 	if !strings.Contains(out, "luna gate show LUNA-1") {
@@ -598,7 +598,7 @@ func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 	if runner.Roles == nil {
 		t.Fatal("the runner needs roles to resolve")
 	}
-	if role, ok := runner.Roles("implementer"); !ok || role.Agent != "codex" {
+	if role, ok := runner.Roles("maker"); !ok || role.Agent != "codex" {
 		t.Errorf("want the override applied to every role, got %+v (found=%v)", role, ok)
 	}
 	if runner.Repo != "/some/repo" {

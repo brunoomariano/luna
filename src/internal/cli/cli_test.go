@@ -102,7 +102,7 @@ func (h *harness) loop(t *testing.T, id string, want fsm.LoopCounters) {
 	for round := range want.Rounds {
 		// A finding is legal from the stage a review loop returns to, so the task
 		// is walked there before each one.
-		h.walkTo(t, id, "code-review")
+		h.walkTo(t, id, "review")
 
 		// The same signal every round is what NoProgress counts, and a distinct one
 		// resets it — which is how a count smaller than the round total is made.
@@ -613,17 +613,21 @@ func TestGateShowSaysWhatIsBeingAskedFor(t *testing.T) {
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
 
-	if !strings.Contains(out, "approve the plan") {
+	if !strings.Contains(out, "review the plan and its contract") {
 		t.Errorf("want the reason it stopped, got %q", out)
 	}
 }
 
 // TestGateShowNamesWhatItIsJudgedOn is the fix for a gate answered blind.
 //
-// A `confirm` gate carries no artifact — it asks about work that has not run —
-// so before this the whole prompt was three lines and "approve the plan". On the
-// first real run in somebody else's repository it was approved without the
-// person knowing what was being asked, because nothing on screen said.
+// The gate this once caught was a `confirm` on `scenarios`, which carries no
+// artifact — it asks about work that has not run — so the whole prompt was three
+// lines and "approve the plan". On the first real run in somebody else's
+// repository it was approved without the person knowing what was being asked,
+// because nothing on screen said. The criteria are what closed that, and every
+// gate owes them whether or not it also carries an artifact — which is why this
+// holds the shipped first gate, now a `review-artifact` on `plan`, to them too.
+// TestGateShowNamesCriteriaOnAConfirmGate keeps the no-artifact case covered.
 func TestGateShowNamesWhatItIsJudgedOn(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
@@ -634,9 +638,14 @@ func TestGateShowNamesWhatItIsJudgedOn(t *testing.T) {
 	if !strings.Contains(out, "judged on") {
 		t.Errorf("the gate does not say what it is judged on:\n%s", out)
 	}
-	// The shipped `scenarios` gate declares two criteria; showing one and hiding
-	// the other would be worse than showing neither.
-	for _, want := range []string{"observable behaviour", "nothing outside the task"} {
+	// The shipped `plan` gate declares four criteria; showing some and hiding the
+	// rest would be worse than showing none.
+	for _, want := range []string{
+		"observable behaviour",
+		"nothing outside the task",
+		"what is required and what is forbidden",
+		"Every acceptance criterion",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the criterion %q is missing:\n%s", want, out)
 		}
@@ -648,7 +657,7 @@ func TestGateShowNamesWhatItIsJudgedOn(t *testing.T) {
 func TestGateShowNamesTheChecksTheTaskDeclared(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	h.mustRun(t, "gate", "checks", "LUNA-1", "--on", "confirm", "--run", "make ci")
+	h.mustRun(t, "gate", "checks", "LUNA-1", "--on", "review-artifact", "--run", "make ci")
 	seedAtFirstGate(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
@@ -669,7 +678,7 @@ func TestGateShowTellsUndeclaredFromDeclaredEmpty(t *testing.T) {
 
 	decided := newHarness(t)
 	decided.mustRun(t, "task", "new", "LUNA-1")
-	decided.mustRun(t, "gate", "checks", "LUNA-1", "--on", "confirm")
+	decided.mustRun(t, "gate", "checks", "LUNA-1", "--on", "review-artifact")
 	seedAtFirstGate(t, decided, "LUNA-1")
 	stated := decided.mustRun(t, "gate", "show", "LUNA-1")
 
@@ -687,6 +696,10 @@ func TestGateShowTellsUndeclaredFromDeclaredEmpty(t *testing.T) {
 	}
 }
 
+// TestGateApproveResumesTheTask. The flow's first gate opens on the way *out* of
+// `plan`, so approving it resumes at `stage_done`: the stage it gated has already
+// closed, and `running` would ask the node to run it a second time.
+// TestApprovingAConfirmGateResumesTheStageItGates covers the other side.
 func TestGateApproveResumesTheTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
@@ -702,8 +715,40 @@ func TestGateApproveResumesTheTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replaying: %v", err)
 	}
-	if state.Status != fsm.StatusRunning {
-		t.Errorf("want the task running again, got %q", state.Status)
+	if state.Status != fsm.StatusStageDone {
+		t.Errorf("want the task carrying on from the closed stage, got %q", state.Status)
+	}
+}
+
+// TestApprovingAConfirmGateResumesTheStageItGates holds the other side of the
+// resume rule, which no stage in the shipped flow exercises any more.
+//
+// A `confirm` gate asks before its stage runs, so approving one must leave the
+// task `running` — there is still a stage to run. The shipped flow's only gate
+// opens on the way out and resumes at `stage_done`; reading that as the rule for
+// every gate would silently skip the stage a confirm gate was guarding, so the
+// property is held here against a local flow instead of being dropped with the
+// stage that used to carry it.
+func TestApprovingAConfirmGateResumesTheStageItGates(t *testing.T) {
+	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
+	state.Status = fsm.StatusAwaitingGate
+	state.Stage = "plan"
+	state.Gate = &fsm.PendingGate{
+		Kind:   fsm.GateConfirm,
+		Stage:  "plan",
+		Reason: "approve the plan",
+	}
+
+	approved, err := fsm.Reduce(state, fsm.GateApprove{})
+	if err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+
+	if approved.Status != fsm.StatusRunning {
+		t.Errorf("want the gated stage still to run, got %q", approved.Status)
+	}
+	if approved.Gate != nil {
+		t.Errorf("an answered gate must not stay open, got %+v", approved.Gate)
 	}
 }
 
@@ -725,16 +770,33 @@ func TestGateCommandsRefuseATaskThatIsNotWaiting(t *testing.T) {
 
 // ── gate adjust ──────────────────────────────────────────────────────────────
 
-func TestGateAdjustAppliesTheEditedVersion(t *testing.T) {
+// TestGateAdjustRefusesAGateWithNoArtifact. `adjust` edits what the gate is
+// holding, so a gate holding nothing has to say so rather than open an editor on
+// an empty buffer and record the result as a human's decision.
+//
+// No stage in the shipped flow opens a `confirm` gate any more — its only gate is
+// the `review-artifact` on `plan`, which is the adjustable case — so the state is
+// built here rather than walked to. What is being tested is the refusal, not
+// which stage happens to ask.
+func TestGateAdjustRefusesAGateWithNoArtifact(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
-	seedAtFirstGate(t, h, "LUNA-1")
 
-	// scenarios carries a plain confirm, which has nothing to adjust.
-	err := h.run(t, "gate", "adjust", "LUNA-1")
+	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
+	state.Status = fsm.StatusAwaitingGate
+	state.Stage = "plan"
+	state.Gate = &fsm.PendingGate{
+		Kind:   fsm.GateConfirm,
+		Stage:  "plan",
+		Reason: "approve the plan",
+	}
+
+	err := gateAdjust(h.env, "LUNA-1", state, nil)
 
 	if err == nil || !strings.Contains(err.Error(), "no artifact") {
 		t.Errorf("adjusting a gate with no artifact must say so, got %v", err)
+	}
+	if h.edits != 0 {
+		t.Errorf("a gate with nothing to edit must not open the editor, got %d", h.edits)
 	}
 }
 
@@ -866,11 +928,11 @@ func TestAFlagWithoutAValueIsRejected(t *testing.T) {
 	}
 }
 
-// specGateStore stages a task suspended at a review-artifact gate.
+// planGateStore stages a task suspended at the flow's review-artifact gate.
 //
-// Reaching spec through the real flow takes six stages; what these tests are
+// Reaching `plan` through the real flow takes three stages; what these tests are
 // about is the gate, so the log is written directly to the point of interest.
-func specGateStore(t *testing.T, h *harness, id string) {
+func planGateStore(t *testing.T, h *harness, id string) {
 	t.Helper()
 
 	// Each stage closes on existence evidence: a stage now blocks unless every
@@ -884,15 +946,15 @@ func specGateStore(t *testing.T, h *harness, id string) {
 		return fsm.Complete{Delivered: artifacts, Evidence: evidence}
 	}
 
-	// Same, with content on the artifact, so the gate that opens has something to
-	// carry — which is the whole point of a review gate.
-	deliveredWithPayload := func(artifact fsm.Artifact, payload string) fsm.Action {
-		return fsm.Complete{
-			Delivered: []fsm.Artifact{artifact},
-			Evidence: map[fsm.Artifact]fsm.Evidence{
-				artifact: {Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed, Detail: payload},
-			},
+	// Same, with content on one of the artifacts, so the gate that opens has
+	// something to carry — which is the whole point of a review gate.
+	deliveredWithPayload := func(carrying fsm.Artifact, payload string, artifacts ...fsm.Artifact) fsm.Action {
+		evidence := map[fsm.Artifact]fsm.Evidence{}
+		for _, a := range artifacts {
+			evidence[a] = fsm.Exists(0)
 		}
+		evidence[carrying] = fsm.Evidence{Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed, Detail: payload}
+		return fsm.Complete{Delivered: artifacts, Evidence: evidence}
 	}
 
 	actions := []fsm.Action{
@@ -901,13 +963,11 @@ func specGateStore(t *testing.T, h *harness, id string) {
 		delivered("worktree"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // intake
 		delivered("briefing", "kind"),
-		fsm.Advance{Flow: fsm.DefaultFlow()}, // scenarios, gated on the way in
-		fsm.GateApprove{},                    //
-		delivered("scenarios", "approach"),
-		fsm.Advance{Flow: fsm.DefaultFlow()}, // spec
-		// The review gate opens when `spec` closes, because that is the first
+		fsm.Advance{Flow: fsm.DefaultFlow()}, // plan
+		// The review gate opens when `plan` closes, because that is the first
 		// moment the contract exists to be reviewed.
-		deliveredWithPayload("contract", "the contract the stage wrote"),
+		deliveredWithPayload("contract", "the contract the stage wrote",
+			"scenarios", "approach", "contract"),
 	}
 
 	for i, action := range actions {
@@ -920,15 +980,15 @@ func specGateStore(t *testing.T, h *harness, id string) {
 	if err != nil {
 		t.Fatalf("replaying the seed: %v", err)
 	}
-	if state.Stage != "spec" || state.Gate == nil {
-		t.Fatalf("the seed should stop at the spec gate, got stage=%q gate=%+v", state.Stage, state.Gate)
+	if state.Stage != "plan" || state.Gate == nil {
+		t.Fatalf("the seed should stop at the plan gate, got stage=%q gate=%+v", state.Stage, state.Gate)
 	}
 }
 
 // TestGateShowDisplaysTheArtifactUnderReview covers the review-artifact branch.
 func TestGateShowDisplaysTheArtifactUnderReview(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
 
@@ -946,7 +1006,7 @@ func TestGateShowDisplaysTheArtifactUnderReview(t *testing.T) {
 // handoff describes what the next stage actually received.
 func TestGateAdjustAppliesAnEditedContract(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.edited = "the contract a human fixed"
 
 	out := h.mustRun(t, "gate", "adjust", "LUNA-1")
@@ -978,7 +1038,7 @@ func TestGateAdjustAppliesAnEditedContract(t *testing.T) {
 // TestGateRejectSendsTheStageBack covers the third answer.
 func TestGateRejectSendsTheStageBack(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 
 	out := h.mustRun(t, "gate", "reject", "LUNA-1", "the", "approach", "does", "not", "hold")
 
@@ -1013,7 +1073,7 @@ func TestGateCommandsOnAnUnknownTask(t *testing.T) {
 // — and a task that cannot be rebuilt is worse than one that refused a command.
 func TestAnswerRefusesWhatTheReducerWouldReject(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 
 	// Answering twice: the second has no gate to answer.
 	h.mustRun(t, "gate", "approve", "LUNA-1")
@@ -1130,7 +1190,7 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 // agent into approving something it meant to change.
 func TestGateAdjustAppends(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.env.Edit = nil // no editor anywhere; the flag must carry it
 
 	out := h.mustRun(t, "gate", "adjust", "LUNA-1", "--append", "and one more constraint")
@@ -1151,7 +1211,7 @@ func TestGateAdjustAppends(t *testing.T) {
 // TestGateAdjustReplaces covers the wholesale swap.
 func TestGateAdjustReplaces(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.env.Edit = nil
 
 	h.mustRun(t, "gate", "adjust", "LUNA-1", "--replace", "a completely different contract")
@@ -1168,7 +1228,7 @@ func TestGateAdjustReplaces(t *testing.T) {
 // TestGateAdjustFromStdin covers the pipeline mode.
 func TestGateAdjustFromStdin(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.env.Edit = nil
 	h.env.In = strings.NewReader("a contract from a pipeline")
 
@@ -1189,7 +1249,7 @@ func TestGateAdjustFromStdin(t *testing.T) {
 // would silently wipe the artifact.
 func TestGateAdjustWithStdinAndNothingConnected(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.env.Edit = nil
 	h.env.In = nil
 
@@ -1203,7 +1263,7 @@ func TestGateAdjustWithStdinAndNothingConnected(t *testing.T) {
 // TestGateAdjustRefusesTwoModesAtOnce covers the ambiguity.
 func TestGateAdjustRefusesTwoModesAtOnce(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 
 	err := h.run(t, "gate", "adjust", "LUNA-1", "--append", "x", "--replace", "y")
 
@@ -1215,7 +1275,7 @@ func TestGateAdjustRefusesTwoModesAtOnce(t *testing.T) {
 // TestGateAdjustRejectsAnUnknownFlag covers the typo path.
 func TestGateAdjustRejectsAnUnknownFlag(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 
 	if err := h.run(t, "gate", "adjust", "LUNA-1", "--apend", "x"); !errors.Is(err, ErrUsage) {
 		t.Errorf("want ErrUsage for a mistyped flag, got %v", err)
@@ -1229,7 +1289,7 @@ func TestGateAdjustRejectsAnUnknownFlag(t *testing.T) {
 // editor untouched.
 func TestAnAppendThatChangesNothingAppliesNothing(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.env.Edit = nil
 
 	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
@@ -1248,7 +1308,7 @@ func TestAnAppendThatChangesNothingAppliesNothing(t *testing.T) {
 // TestAdjustWithNoEditorAndNoFlagSaysWhatToDo covers the dead end.
 func TestAdjustWithNoEditorAndNoFlagSaysWhatToDo(t *testing.T) {
 	h := newHarness(t)
-	specGateStore(t, h, "LUNA-1")
+	planGateStore(t, h, "LUNA-1")
 	h.env.Edit = nil
 
 	err := h.run(t, "gate", "adjust", "LUNA-1")

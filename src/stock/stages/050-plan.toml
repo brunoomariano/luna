@@ -1,0 +1,48 @@
+# Scenarios, approach and contract in one stage, because they were one piece of
+# work billed as two. Measured on the first full run under the headless
+# transport: `scenarios` cost $2.02 and `spec` $2.12, together 61% of a $6.78
+# task whose entire content was a `--loud` flag — and `contract`, the artifact
+# the second stage existed to produce, is required by no stage in the flow.
+#
+# It is not waste, though: the obligations the contract created are where that
+# run's unrequested quality came from (a shellcheck pass, idempotent repeated
+# flags, exit 2 with a diagnostic). So the contract stays an artifact and the
+# gate that reviews it stays; what goes is the second cold start, the second
+# session and the lower of the two gates.
+
+id       = "plan"
+role     = "maker"
+# Fresh, not live, and the static check is what said so: on a bug task
+# `diagnose` runs immediately before this, so continuing "the previous session"
+# would mean continuing the investigator's. AuditContextChain refuses a live
+# stage whose predecessor holds a different role, and it refused this one.
+context  = "fresh"
+requires = ["briefing", "kind"]
+produces = ["scenarios", "approach", "contract"]
+
+[verify.scenarios]
+kind     = "existence"
+handover = "store"
+
+[verify.approach]
+kind     = "existence"
+handover = "store"
+
+[verify.contract]
+kind     = "existence"
+handover = "store"
+
+[gate]
+kind     = "review-artifact"
+artifact = "contract"
+reason   = "review the plan and its contract"
+# The higher of the two gates this stage replaces. The plan's `confirm` at 8 was
+# approving something the contract gate re-approved forty turns later; a contract
+# is what every later stage is held to, and a wrong one surfaces at `verify`.
+criticality = 9
+judge = [
+  "The scenarios describe observable behaviour, not implementation steps",
+  "The approach names what will change, and nothing outside the task",
+  "The contract states what is required and what is forbidden, with no suggestions",
+  "Every acceptance criterion in the task appears as an obligation",
+]

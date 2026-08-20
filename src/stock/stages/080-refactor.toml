@@ -1,5 +1,6 @@
 id       = "refactor"
-role     = "cleaner"
+role     = "maker"
+context  = "live"
 requires = ["code", "tests_green"]
 produces = ["code", "tests_green"]
 

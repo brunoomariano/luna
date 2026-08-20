@@ -208,7 +208,7 @@ func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
 	//
 	// No open task was stranded: every store carrying the previous fingerprint held
 	// only test tasks, checked before the value moved.
-	const pinned FlowFingerprint = "18464f834de0e0fd"
+	const pinned FlowFingerprint = "973859a43a216809"
 
 	if got := Fingerprint(DefaultFlow()); got != pinned {
 		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+

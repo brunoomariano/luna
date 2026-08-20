@@ -1,0 +1,11 @@
+# The role that builds. It covers intake, planning, building and refactoring —
+# the stage's brief says which of those is happening, so the role carries only
+# what is true across all of them.
+#
+# One role rather than five because a role is only worth splitting when it denies
+# a different tool, cannot inherit the previous session, or runs on another
+# harness. Five briefs that differ and nothing else were five cold starts buying
+# nothing: the stage already injects the mission.
+
+agent = "claude"
+brief = "You build. You produce what the stage says it owes, and you do not review your own work — a later stage does that, with the tools to edit removed."

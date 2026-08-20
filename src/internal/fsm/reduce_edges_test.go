@@ -99,7 +99,7 @@ func TestEachLoopCeilingIsReportedByName(t *testing.T) {
 // change. Counting only rounds would let it spin to the round limit before anyone
 // noticed.
 func TestNoProgressCeilingOpensAGate(t *testing.T) {
-	state := atStage(t, KindFeature, "code-review")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 	state.Loop.NoProgress = DefaultLoopLimits().NoProgress
 
@@ -115,7 +115,7 @@ func TestNoProgressCeilingOpensAGate(t *testing.T) {
 
 // TestCustomLoopLimitsAreHonoured covers the non-default branch of the limits.
 func TestCustomLoopLimitsAreHonoured(t *testing.T) {
-	state := atStage(t, KindFeature, "code-review")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 
 	// A single round is enough under a ceiling of zero.
@@ -141,10 +141,10 @@ func TestCustomLoopLimitsAreHonoured(t *testing.T) {
 func TestGateApproveKeepsTheReviewedArtifact(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 	state.Status = StatusAwaitingGate
-	state.Stage = "spec"
+	state.Stage = "plan"
 	state.Gate = &PendingGate{
 		Kind:     GateReviewArtifact,
-		Stage:    "spec",
+		Stage:    "plan",
 		Artifact: "contract",
 		Payload:  "the generated contract",
 	}

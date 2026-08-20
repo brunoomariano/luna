@@ -87,6 +87,15 @@ limit at the same time as the limit.
 reported complete and tested was masking a non-terminating loop elsewhere, because the
 path that would have exposed it was never reached.
 
+**A guard that only checks one direction is a guard with a blind spot.** A test held a
+list of artifacts exempted from mechanical proof, each with the reason no command could
+prove it. It walked the flow's produced artifacts and looked each one up — so an
+exemption whose artifact no longer existed was never visited, and three of them survived
+a flow change invisibly. Its sibling test was written for exactly that failure ("the
+exemption outlived the artifact") and could not see it either, because it checked its own
+hand-written list rather than the map. The fix was to walk the map as well as the flow,
+and the proof was inverting it: a dead name put back now fails, and did not before.
+
 **Verify against the binary and invert the test.** Running the claim against the built
 artifact, and writing the test so it fails when the behaviour is absent, caught an error
 almost every time it was applied. Reasoning about whether code is correct is not the same
@@ -127,6 +136,23 @@ The counter was also wrong in the direction that flatters: spend was recorded on
 stage *closed*, and the exit checks return before that — so a blocked stage came out free
 and the flow that fails most read as the cheapest. Caught by running a task, not by
 reading the code.
+
+**And then the measurement was acted on, which is the only reason to take one.** The flow
+went from twelve stages to eight and from twelve roles to three. `scenarios` and `spec`
+merged, because they were 61% of the bill and the artifact the second one existed to
+produce — `contract` — was required by no stage in the flow. The four review stages merged,
+because they were structurally the same stage with four different conditions, reading the
+same code and the same green, paying to ingest one diff four times.
+
+The roles collapsed for a related reason: twelve of them differed only in the sentence
+describing the work, and Luna already generates that sentence per stage with the contract
+in it. What a role is actually for is what a stage cannot express — which tools it denies,
+and whether it may continue the previous session. That test leaves two boundaries, not
+twelve.
+
+Whether this is cheaper is not yet known. Twelve cold starts became two, and `--resume`
+measured about eleven times cheaper than starting cold — but that is arithmetic about the
+transport, not a second measurement of the flow. The number to compare against is $6.78.
 
 **A guard aimed at the wrong command is indistinguishable from a broken feature.**
 `luna artifact put` runs *inside* a stage's sandbox, where the log is deliberately out of

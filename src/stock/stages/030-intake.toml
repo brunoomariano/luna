@@ -1,5 +1,5 @@
 id       = "intake"
-role     = "analyst"
+role     = "maker"
 requires = ["task_id", "worktree"]
 produces = ["briefing", "kind"]
 

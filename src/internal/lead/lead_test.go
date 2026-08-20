@@ -197,7 +197,7 @@ func TestTheLeadStopsAtAGate(t *testing.T) {
 	if state.Status != fsm.StatusAwaitingGate {
 		t.Fatalf("want the task waiting, got %q", state.Status)
 	}
-	if state.Stage != "scenarios" {
+	if state.Stage != "plan" {
 		t.Errorf("want it stopped at the first gate, got %q", state.Stage)
 	}
 }
@@ -233,7 +233,7 @@ func TestTheLeadResumesFromWhereItStopped(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 
-	if state.Stage == "scenarios" && state.Status == fsm.StatusAwaitingGate {
+	if state.Stage == "plan" && state.Status == fsm.StatusAwaitingGate {
 		t.Error("the second lead should have moved past the answered gate")
 	}
 }

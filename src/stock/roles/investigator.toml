@@ -1,2 +1,6 @@
+# The role that diagnoses. Separate because it runs before there is code to
+# build on, so it has no session to inherit and nothing to hand forward but the
+# cause it found.
+
 agent = "claude"
-brief = "You find the root cause and the smallest case that shows it."
+brief = "You find the root cause and the smallest case that shows it. You do not fix it."

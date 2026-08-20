@@ -264,14 +264,11 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 		"code":        "the compiler is part of `make test`, and a non-empty diff proves nothing",
 		"dod_checked": "a checklist a person reads; recording it as a passing check is a lie about what ran",
 
-		// The reports. What each says is judgement — whether the QA found the right
-		// gaps, whether the review is fair — and a command can only ever prove that
-		// a file was written. They declare a path instead, so at least the writing
-		// is git's answer rather than the agent's.
-		"qa_report":       "a report: what it found is judgement, and only that it exists is checkable",
-		"review_report":   "a report: whether the review is right is not a thing a command decides",
-		"mutation_report": "a report: the mutation run is the agent's, and its reading is judgement",
-		"arch_report":     "a report: an assessment of structure, which no command computes",
+		// The report. What it says is judgement — whether the review is fair,
+		// whether it found the right gaps — and a command can only ever prove that
+		// a file was written. It is handed over instead, so at least the writing is
+		// Luna's answer rather than the agent's.
+		"review_report": "a report: whether the review is right is not a thing a command decides",
 
 		// Deliberately here rather than given a command, and the reason is worth
 		// writing down: `min_case` is a runnable reproduction, so a command *could*
@@ -279,6 +276,27 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 		// is true before the fix and false after it. A check that must fail at one
 		// end of the stage and pass at the other is two checks wearing one name.
 		"min_case": "a reproduction: running it proves the bug is present, which is not what the stage owes",
+	}
+
+	// The list is checked against the flow in both directions, because only one of
+	// them was for a long time. A name in `unprovable` that no stage produces is
+	// invisible to the loop below — it iterates over what is produced, so a dead
+	// exemption is simply never looked up. Three of them survived the review merge
+	// that way, and the sibling test could not see them either: it checks its own
+	// hand-written list, not this map. Verified by inversion — a dead name put
+	// back here fails this, and did not before.
+	produced := map[Artifact]bool{}
+	for _, stage := range DefaultFlow() {
+		for _, a := range append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...) {
+			produced[a] = true
+		}
+	}
+	for artifact := range unprovable {
+		if !produced[artifact] {
+			t.Errorf("%s is exempted from proof and no stage produces it — the exemption "+
+				"outlived the artifact, and the next artifact to take that name inherits "+
+				"an argument made for something else", artifact)
+		}
 	}
 
 	for _, stage := range DefaultFlow() {
@@ -318,7 +336,7 @@ func TestTheUnprovableListDescribesTheFlowItGuards(t *testing.T) {
 	for _, artifact := range []Artifact{
 		"worktree", "briefing", "kind", "root_cause", "scenarios",
 		"approach", "contract", "code", "dod_checked", "min_case",
-		"qa_report", "review_report", "mutation_report", "arch_report",
+		"review_report",
 	} {
 		if !produced[artifact] {
 			t.Errorf("%s is exempted from proof and no stage produces it — the exemption "+

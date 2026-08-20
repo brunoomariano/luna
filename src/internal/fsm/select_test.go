@@ -49,7 +49,7 @@ func TestNextStageFollowsDeclarationOrder(t *testing.T) {
 // TestUnsatisfiedConditionIsSkipped covers scenario D3.
 //
 // A stage whose condition does not hold is skipped, not blocked: on a feature,
-// diagnose simply does not exist in that flow, and scenarios comes right after
+// diagnose simply does not exist in that flow, and plan comes right after
 // intake.
 func TestUnsatisfiedConditionIsSkipped(t *testing.T) {
 	ctx := NewTaskContext(KindFeature)
@@ -59,37 +59,43 @@ func TestUnsatisfiedConditionIsSkipped(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("a skipped stage is not an error; got ok=%v err=%v", ok, err)
 	}
-	if next != "scenarios" {
-		t.Errorf("diagnose is bug-only, so scenarios should follow intake; got %q", next)
+	if next != "plan" {
+		t.Errorf("diagnose is bug-only, so plan should follow intake; got %q", next)
 	}
 }
 
 // TestSeveralConditionalsAreSkippedAtOnce covers scenario D4.
 //
-// Skipping is not one stage at a time. On a chore, qa is out by kind, so
-// code-review — which is only out on docs — is what follows verify: two stages
-// collapse into one step.
+// Skipping is not one stage at a time: a run of stages whose conditions all fail
+// collapses into a single step, and the walk does not stop at the first miss.
 //
-// The tail of the same flow skips three in a row: after code-review, harden is
-// out by kind and architecture is out for lack of the discovered fact, so commit
-// comes next.
+// The shipped flow no longer proves this on its own — merging qa, code-review,
+// harden and architecture into one `review` left `diagnose` and `review` as the
+// only conditionals, and they are never adjacent. The property is the engine's,
+// not the flow's, so it is exercised on a flow built here: a flow that grew a
+// second conditional tail tomorrow would need this to already hold.
 func TestSeveralConditionalsAreSkippedAtOnce(t *testing.T) {
+	flow := []Stage{
+		{ID: "build", Produces: []Artifact{"code"}},
+		{ID: "bug-only", When: IsBug, Requires: []Artifact{"code"}, Produces: []Artifact{"root_cause"}},
+		{ID: "docs-only", When: NotChore, Requires: []Artifact{"code"}, Produces: []Artifact{"report"}},
+		{ID: "always", Requires: []Artifact{"code"}, Produces: []Artifact{"done"}},
+	}
 	ctx := NewTaskContext(KindChore)
 
-	next, ok, err := NextStage(DefaultFlow(), "verify", ctx)
+	next, ok, err := NextStage(flow, "build", ctx)
 	if err != nil || !ok {
-		t.Fatalf("want a stage after verify; got ok=%v err=%v", ok, err)
+		t.Fatalf("want a stage after build; got ok=%v err=%v", ok, err)
 	}
-	if next != "code-review" {
-		t.Errorf("qa is out on a chore but code-review is not; want code-review, got %q", next)
+	if next != "always" {
+		t.Errorf("two conditionals are out on a chore, so always follows build; got %q", next)
 	}
 
-	// harden is feature-or-bug and architecture needs a discovered fact, so on a
-	// chore both are out — and since integration left Luna's scope, removing
-	// `commit`, code-review is the last stage that runs. Reaching the end is
-	// ok=false, not an error.
-	if _, ok, err := NextStage(DefaultFlow(), "code-review", ctx); ok || err != nil {
-		t.Errorf("a chore ends at code-review; got ok=%v err=%v", ok, err)
+	// And when the run of failures reaches the end of the flow, the same walk
+	// reports the end rather than the first stage it skipped.
+	tail := flow[:len(flow)-1]
+	if _, ok, err := NextStage(tail, "build", ctx); ok || err != nil {
+		t.Errorf("a tail of skipped stages ends the flow; got ok=%v err=%v", ok, err)
 	}
 }
 
@@ -100,12 +106,12 @@ func TestSeveralConditionalsAreSkippedAtOnce(t *testing.T) {
 func TestFlowEndsAfterTheLastStage(t *testing.T) {
 	ctx := NewTaskContext(KindFeature)
 
-	next, ok, err := NextStage(DefaultFlow(), "architecture", ctx)
+	next, ok, err := NextStage(DefaultFlow(), "review", ctx)
 	if err != nil {
 		t.Fatalf("reaching the end of the flow is not an error: %v", err)
 	}
 	if ok {
-		t.Errorf("nothing follows commit, got %q", next)
+		t.Errorf("nothing follows review, got %q", next)
 	}
 	if next != NoStage {
 		t.Errorf("want the zero StageID when the flow is over, got %q", next)
@@ -114,29 +120,45 @@ func TestFlowEndsAfterTheLastStage(t *testing.T) {
 
 // TestConditionIsEvaluatedAgainstTheCurrentContext covers scenario D6.
 //
-// The condition is checked when the transition happens, not once at the start.
-// architecture stays out until the build reveals the change touched the
-// structure; from then on it is in the flow.
+// The condition is checked when the transition happens, not once at the start. A
+// stage gated on a fact the run discovers stays out until the fact appears, and
+// is in the flow from then on.
 //
 // This is the scenario that justifies When taking the whole TaskContext: if the
-// condition were evaluated against the initial state, architecture could never
+// condition were evaluated against the initial state, such a stage could never
 // enter.
+//
+// It runs on a flow built here rather than on the shipped one. `TouchedStructure`
+// is still a condition a project flow can name — parse.go registers it — but the
+// merge that turned qa, code-review, harden and architecture into one `review`
+// left the shipped flow with no stage gated on a mid-run fact. The engine's
+// behaviour has to stay proven regardless of whether the default flow happens to
+// exercise it.
 func TestConditionIsEvaluatedAgainstTheCurrentContext(t *testing.T) {
+	flow := []Stage{
+		{ID: "build", Produces: []Artifact{"code"}},
+		{
+			ID:       "architecture",
+			When:     TouchedStructure,
+			Requires: []Artifact{"code"},
+			Produces: []Artifact{"arch_report"},
+		},
+	}
 	ctx := NewTaskContext(KindFeature)
 
-	next, _, err := NextStage(DefaultFlow(), "harden", ctx)
+	next, ok, err := NextStage(flow, "build", ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if next == "architecture" {
-		t.Fatal("without the discovered fact, architecture must stay out")
+	if ok {
+		t.Fatalf("without the discovered fact, architecture must stay out; got %q", next)
 	}
 
 	ctx.Facts[TouchesStructure] = true
 
-	next, ok, err := NextStage(DefaultFlow(), "harden", ctx)
+	next, ok, err = NextStage(flow, "build", ctx)
 	if err != nil || !ok {
-		t.Fatalf("want a stage after harden; got ok=%v err=%v", ok, err)
+		t.Fatalf("want a stage after build; got ok=%v err=%v", ok, err)
 	}
 	if next != "architecture" {
 		t.Errorf("once the fact is discovered architecture enters; got %q", next)

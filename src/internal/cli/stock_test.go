@@ -18,12 +18,10 @@ import (
 func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
 	roles := ShippedRoles()
 
-	// The twelve the shipped flow names. A flow whose role does not resolve stops
-	// loudly, so a missing file here is a stage that cannot run.
-	for _, name := range []fsm.RoleName{
-		"scout", "analyst", "investigator", "gherkin", "specifier", "implementer",
-		"cleaner", "verifier", "qa", "reviewer", "hardener", "architect",
-	} {
+	// The three the shipped flow names. A flow whose role does not resolve stops
+	// loudly, so a missing file here is a stage that cannot run. (`setup` names
+	// none: a worktree is git, and there is no judgement in making one.)
+	for _, name := range []fsm.RoleName{"maker", "critic", "investigator"} {
 		role, ok := roles[name]
 		if !ok {
 			t.Errorf("%s has no definition — the stage that names it cannot run", name)
@@ -37,28 +35,29 @@ func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
 		}
 	}
 
-	if len(roles) != 12 {
-		t.Errorf("got %d roles, want the 12 the flow names", len(roles))
+	if len(roles) != 3 {
+		t.Errorf("got %d roles, want the 3 the flow names", len(roles))
 	}
 }
 
-// TestTheReviewRolesStillCannotWrite is the write/review separation surviving the move.
+// TestTheReviewRoleStillCannotWrite is the write/review separation surviving the move.
 //
 // The denial used to be a Go value beside the brief; it is now a line in a file.
 // A file that lost it would leave the reviewer able to edit the work it judges,
 // and the brief saying otherwise is exactly the violation the invariant names.
-func TestTheReviewRolesStillCannotWrite(t *testing.T) {
+//
+// One role carries it now rather than four: `critic` is what `verify` and
+// `review` both name, so the denial it holds is the only one standing between a
+// review and the work it judges.
+func TestTheReviewRoleStillCannotWrite(t *testing.T) {
 	roles := ShippedRoles()
 
-	for _, name := range []fsm.RoleName{"qa", "reviewer", "hardener", "architect"} {
-		role := roles[name]
-		if !role.DeniesWriting() {
-			t.Errorf("%s can write: tools_deny = %v", name, role.ToolsDeny)
-		}
+	if role := roles["critic"]; !role.DeniesWriting() {
+		t.Errorf("critic can write: tools_deny = %v", role.ToolsDeny)
 	}
 
 	// And the ones that work still can.
-	for _, name := range []fsm.RoleName{"implementer", "cleaner"} {
+	for _, name := range []fsm.RoleName{"maker", "investigator"} {
 		if roles[name].Gated() {
 			t.Errorf("%s was denied a tool it needs: %v", name, roles[name].ToolsDeny)
 		}
@@ -211,20 +210,20 @@ func TestABrokenStockFileIsRefused(t *testing.T) {
 // config.toml is what changes it, and naming one role must not delete the rest.
 func TestAProjectStillOverridesTheStock(t *testing.T) {
 	cfg, err := parseConfig(`
-[role.reviewer]
+[role.critic]
 agent = "codex"
 `, "config.toml")
 	if err != nil {
 		t.Fatalf("parseConfig: %v", err)
 	}
 
-	if cfg.Roles["reviewer"].Agent != "codex" {
-		t.Errorf("the override did not take: %+v", cfg.Roles["reviewer"])
+	if cfg.Roles["critic"].Agent != "codex" {
+		t.Errorf("the override did not take: %+v", cfg.Roles["critic"])
 	}
-	if len(cfg.Roles) != 12 {
-		t.Errorf("got %d roles, want the other 11 still there", len(cfg.Roles))
+	if len(cfg.Roles) != 3 {
+		t.Errorf("got %d roles, want the other 2 still there", len(cfg.Roles))
 	}
-	if cfg.Roles["scout"].Brief == "" {
+	if cfg.Roles["maker"].Brief == "" {
 		t.Error("naming one role deleted another's brief")
 	}
 }

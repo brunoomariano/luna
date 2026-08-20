@@ -145,13 +145,13 @@ func TestAdvanceRefusesAStageMissingItsInputs(t *testing.T) {
 //
 // Reaching the end is the happy path, not a failure: the task becomes done.
 func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
-	// `commit` was the last stage until integration left Luna's scope. On a docs
-	// task the flow now ends after qa: code-review is not-docs, harden is
-	// feature-or-bug, and architecture needs a fact this task never discovered.
-	state := atStage(t, KindDocs, "qa")
-	stage := stageIn(DefaultFlow(), "qa")
+	// `commit` was the last stage until integration left Luna's scope. On a chore
+	// the flow now ends after verify: `review` is the only stage past it, and it
+	// is not-chore.
+	state := atStage(t, KindChore, "verify")
+	stage := stageIn(DefaultFlow(), "verify")
 
-	// qa owes only a human-read report, so the delivery has to include
+	// verify owes `dod_checked` to a human, so the delivery has to include
 	// ProducesForHuman — the exit check counts both fields (INV-3).
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	state, err := Reduce(state, Complete{
@@ -159,7 +159,7 @@ func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
 		Evidence:  passing(stage, owed),
 	})
 	if err != nil {
-		t.Fatalf("completing qa: %v", err)
+		t.Fatalf("completing verify: %v", err)
 	}
 	state, err = Reduce(state, Advance{Flow: DefaultFlow()})
 	if err != nil {
@@ -403,10 +403,10 @@ func TestGateApproveResumesTheStage(t *testing.T) {
 func TestGateAdjustReplacesThePayload(t *testing.T) {
 	state := readyTask(KindFeature)
 	state.Status = StatusAwaitingGate
-	state.Stage = "spec"
+	state.Stage = "plan"
 	state.Gate = &PendingGate{
 		Kind:     GateReviewArtifact,
-		Stage:    "spec",
+		Stage:    "plan",
 		Artifact: "contract",
 		Payload:  "the generated contract",
 	}
@@ -435,8 +435,8 @@ func TestGateAdjustReplacesThePayload(t *testing.T) {
 func TestGateRejectSendsTheStageBack(t *testing.T) {
 	state := readyTask(KindFeature)
 	state.Status = StatusAwaitingGate
-	state.Stage = "spec"
-	state.Gate = &PendingGate{Kind: GateReviewArtifact, Stage: "spec", Artifact: "contract"}
+	state.Stage = "plan"
+	state.Gate = &PendingGate{Kind: GateReviewArtifact, Stage: "plan", Artifact: "contract"}
 
 	state, err := Reduce(state, GateReject{Reason: "the approach does not hold"})
 	if err != nil {
@@ -446,7 +446,7 @@ func TestGateRejectSendsTheStageBack(t *testing.T) {
 	if state.Status != StatusRunning {
 		t.Errorf("want the stage running again, got %q", state.Status)
 	}
-	if state.Stage != "spec" {
+	if state.Stage != "plan" {
 		t.Errorf("the rejecting stage runs again; got %q", state.Stage)
 	}
 	if state.Context.HasArtifact("contract") {
@@ -463,7 +463,7 @@ func TestGateRejectSendsTheStageBack(t *testing.T) {
 // the stages downstream cannot be satisfied by a verification that ran against
 // code which no longer exists.
 func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
-	state := atStage(t, KindFeature, "code-review")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 
 	state, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "wrong boundary"})
@@ -484,7 +484,7 @@ func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
 // Out of scope becomes someone else's task. The flow carries on, and the green
 // stays valid because the code did not change.
 func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
-	state := atStage(t, KindFeature, "code-review")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 
 	state, err := Reduce(state, ReviewFinding{Aligned: false, Summary: "unrelated debt"})
@@ -492,7 +492,7 @@ func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Stage != "code-review" {
+	if state.Stage != "review" {
 		t.Errorf("an unaligned finding does not move the task, got %q", state.Stage)
 	}
 	if !state.Context.HasArtifact("ci_green") {
@@ -522,7 +522,7 @@ func TestFindingFromANonReviewStageIsRejected(t *testing.T) {
 // up here: a gate waits for a human with the history in view, a block reports an
 // anomaly.
 func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
-	state := atStage(t, KindFeature, "code-review")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 	state.Loop.Rounds = DefaultLoopLimits().MaxRounds
 
@@ -545,9 +545,9 @@ func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
 // simply going round again: one counter for both would let a productive loop and
 // a thrashing one hit the same limit.
 func TestOscillationIsCountedApartFromRounds(t *testing.T) {
-	state := atStage(t, KindFeature, "code-review")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
-	state.Loop.Visited = []StageID{"build", "code-review"}
+	state.Loop.Visited = []StageID{"build", "review"}
 
 	state, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "same spot again"})
 	if err != nil {

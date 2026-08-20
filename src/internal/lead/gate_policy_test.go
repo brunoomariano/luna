@@ -30,7 +30,7 @@ func TestAGateWaitsBecauseTheStageDeclaredSomething(t *testing.T) {
 		want fsm.GateWaited
 	}{
 		"criteria declared, so it waits": {
-			flow: flowWithCriticality(t, "scenarios", 5, "the plan names what it will change"),
+			flow: flowWithCriticality(t, "plan", 5, "the plan names what it will change"),
 			want: fsm.GateDecisionWaited,
 		},
 		"nothing declared, so it does not": {
@@ -68,7 +68,7 @@ func TestTheDecisionReachesTheLog(t *testing.T) {
 
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "scenarios", 5, "a criterion"),
+		Flow: flowWithCriticality(t, "plan", 5, "a criterion"),
 	}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -144,7 +144,7 @@ func flowWithCriticality(t *testing.T, stage fsm.StageID, level int, judge ...st
 // comes to: the same flow, the same policy, two knob settings, two different
 // facts in the log.
 func TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate(t *testing.T) {
-	flow := flowWithCriticality(t, "scenarios", 5, "the plan covers the acceptance criteria")
+	flow := flowWithCriticality(t, "plan", 5, "the plan covers the acceptance criteria")
 
 	cases := map[string]struct {
 		knob fsm.Knob
@@ -223,7 +223,7 @@ func firstGateDecision(t *testing.T, s *store.Store, id string) fsm.GateWaited {
 // a defer both land in front of somebody, because the gate is still open and
 // there is no path from here to sending work back.
 func TestWhatTheLeadAnswersDecidesTheGate(t *testing.T) {
-	flow := flowWithCriticality(t, "scenarios", 1, "the plan covers the acceptance criteria")
+	flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
 
 	cases := map[string]struct {
 		said string
@@ -287,7 +287,7 @@ func TestWithNoModelTheKnobCannotApproveAnything(t *testing.T) {
 
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "scenarios", 1, "a criterion"),
+		Flow: flowWithCriticality(t, "plan", 1, "a criterion"),
 		// No Ask: this is `luna run`.
 	}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
@@ -350,7 +350,7 @@ func TestAFailingCheckDoesNotReachTheLead(t *testing.T) {
 	asked := false
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "scenarios", 1, "a criterion"),
+		Flow: flowWithCriticality(t, "plan", 1, "a criterion"),
 		CheckGate: func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 			return fsm.GateChecksOutcome{Rejected: true}
 		},

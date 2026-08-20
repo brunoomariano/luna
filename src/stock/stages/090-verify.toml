@@ -2,7 +2,7 @@
 # both — and a role, because the artifact that needs one decides.
 
 id                 = "verify"
-role               = "verifier"
+role               = "critic"
 requires           = ["code", "scenarios"]
 produces           = ["ci_green"]
 produces_for_human = ["dod_checked"]

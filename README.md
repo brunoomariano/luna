@@ -53,7 +53,12 @@ tokens across six stages**. The work was good — five tests including a shellch
 idempotent repeated flags, exit 2 with a diagnostic on an unknown argument — but a single
 session would have done it for a fraction of that. The per-stage column is in
 `luna task show`, and it says the expense is in the stages *before* the code: scenarios
-and spec are $4.14 of the $6.78, build is $0.64. See [`docs/lessons.md`](docs/lessons.md).
+and spec are $4.14 of the $6.78, build is $0.64.
+
+That reading has since been acted on: the flow is eight stages instead of twelve and three
+roles instead of twelve, which is two cold starts in a run rather than twelve. Whether it
+is cheaper is the next thing to measure, not something to claim here. See
+[`docs/lessons.md`](docs/lessons.md).
 
 ## Installation
 

@@ -131,6 +131,11 @@ than assumed. One piece of it stays mandatory and lives in INV-3's separation in
 reviewer never inherits the session of whoever wrote the code, because independence of
 review is not substitutable by verification.
 
+That surviving piece is not decorative, and `AuditContextChain` earned its keep the first
+time the flow tried to use `live` in earnest: `plan` was declared live, and on a bug task
+`diagnose` runs immediately before it — so "continue the previous session" would have
+meant continuing the investigator's. The check refused it statically, before a task ran.
+
 **A prose summary never crosses the handoff.** Still true in the code — the payload is
 synthesized by Luna, and the agent fills structured fields. It is a design rule rather
 than an invariant: breaking it degrades quality, it does not make Luna stop being Luna.

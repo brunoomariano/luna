@@ -1,0 +1,33 @@
+# One review stage with four lenses, replacing four stages that were the same
+# stage with a different `when`: identical `[review]` block, identical verifier,
+# identical handover, all four producing only something a person reads.
+#
+# The four read the same material — the code and the green — so running them
+# apart paid to ingest one diff four times. They were never independent either:
+# same harness, same model, same denial, and each read the previous report out of
+# the store. If the lenses start agreeing with each other, `context = "fresh"`
+# restores the separation without touching the flow.
+#
+# The conditions the four carried collapse into one: a chore skips QA and
+# hardening, a docs change has no code to review, and structure is only worth
+# judging when it moved — none of which is worth a stage each when the brief can
+# say which lens applies.
+
+id                 = "review"
+role               = "critic"
+context            = "live"
+when               = "not-chore"
+requires           = ["code", "ci_green"]
+produces_for_human = ["review_report"]
+
+[review]
+sends_back_to = "build"
+# The green attested to code that no longer exists.
+invalidates   = ["ci_green", "tests_green"]
+
+[verify.review_report]
+# A report a person reads: what it says is judgement, and only that it exists is
+# checkable. The handover is what makes even that much come from Luna rather than
+# from the agent's own word.
+kind     = "existence"
+handover = "store"

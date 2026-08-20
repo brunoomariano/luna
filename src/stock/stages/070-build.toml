@@ -1,11 +1,13 @@
-# The contract belongs in requires, but only when `spec` entered the
-# flow. It stays out until the conditional-requires mechanism is chosen —
-# declaring it without that mechanism would stall every `chore` or `docs` task,
-# since `spec` is skipped in those.
+# `contract` is in requires now, which it could not be while it came from a
+# conditional stage: `spec` was skipped on a chore or a docs task, so requiring
+# its output would have stalled both. Merging it into the unconditional `plan`
+# closed that gap — the contract is always produced, so it can always be
+# required, and the conditional-requires mechanism is no longer owed anything.
 
 id       = "build"
-role     = "implementer"
-requires = ["scenarios", "approach", "worktree"]
+role     = "maker"
+context  = "live"
+requires = ["scenarios", "approach", "contract", "worktree"]
 produces = ["code", "tests_green"]
 
 [verify.tests_green]

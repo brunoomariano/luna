@@ -148,11 +148,12 @@ func TestAFindingWithNoIdStillCounts(t *testing.T) {
 	}
 }
 
-// TestTheReportIsFoundFromTheStagesOwnDeclaration. The four shipped review
-// stages produce four differently named reports, so a hardcoded name would work
-// for one and silently skip the rest.
+// TestTheReportIsFoundFromTheStagesOwnDeclaration. The report is read from what
+// the stage declares rather than from a name in the code, which is what let four
+// review stages collapse into one without touching this: a flow that renames its
+// report, or adds a second review stage under another name, still resolves.
 func TestTheReportIsFoundFromTheStagesOwnDeclaration(t *testing.T) {
-	for _, id := range []StageID{"qa", "code-review", "harden", "architecture"} {
+	for _, id := range []StageID{"review"} {
 		stage := stageIn(DefaultFlow(), id)
 
 		artifact, ok := ReviewedArtifact(stage)

@@ -223,12 +223,12 @@ skills = ["code-review", "security"]
 // `nightly` gone. Roles are the opposite: the flow names roles the config never
 // mentions, and deleting them would leave a stage with nothing to run.
 func TestNamingOneRoleKeepsTheOthers(t *testing.T) {
-	cfg := load(t, "[role.reviewer]\nagent = \"codex\"\n")
+	cfg := load(t, "[role.critic]\nagent = \"codex\"\n")
 
-	if role, _ := cfg.Role("reviewer"); role.Agent != "codex" {
+	if role, _ := cfg.Role("critic"); role.Agent != "codex" {
 		t.Errorf("the named role is replaced, got %q", role.Agent)
 	}
-	if _, ok := cfg.Role("implementer"); !ok {
+	if _, ok := cfg.Role("maker"); !ok {
 		t.Error("naming one role must not delete the others")
 	}
 }
@@ -334,10 +334,29 @@ func TestASectionWithNoNameIsRefused(t *testing.T) {
 // The invariant names the failure directly: "a role whose restriction exists only
 // as text in the prompt". Every role that judges someone else's work has to start
 // without the tools to change it.
+//
+// The roles are read out of the flow rather than listed here. A hardcoded list
+// held four names until four review stages became one, and a list like that only
+// ever covers the roles somebody remembered to add to it — the next reviewing
+// role would ship ungated and this test would still pass.
 func TestEveryReviewRoleShipsUnableToWrite(t *testing.T) {
 	roles := ShippedRoles()
 
-	for _, name := range []fsm.RoleName{"qa", "reviewer", "hardener", "architect"} {
+	judging := map[fsm.RoleName]bool{}
+	for _, stage := range fsm.DefaultFlow() {
+		// A stage that reviews, or one whose whole output is something a person
+		// reads: in both cases it is judging work it did not do.
+		if stage.Review != nil || len(stage.Produces) == 0 && len(stage.ProducesForHuman) > 0 {
+			if stage.Role != "" {
+				judging[fsm.RoleName(stage.Role)] = true
+			}
+		}
+	}
+	if len(judging) == 0 {
+		t.Fatal("no judging role found in the shipped flow — the check is covering nothing")
+	}
+
+	for name := range judging {
 		role, ok := roles[name]
 		if !ok {
 			t.Errorf("%q is a review role and must ship", name)
@@ -362,7 +381,7 @@ func TestEveryReviewRoleShipsUnableToWrite(t *testing.T) {
 func TestTheRolesThatWriteAreNotGated(t *testing.T) {
 	roles := ShippedRoles()
 
-	for _, name := range []fsm.RoleName{"implementer", "cleaner", "specifier"} {
+	for _, name := range []fsm.RoleName{"maker"} {
 		if role := roles[name]; role.Gated() {
 			t.Errorf("%q produces work and must keep its tools, got %v", name, role.ToolsDeny)
 		}

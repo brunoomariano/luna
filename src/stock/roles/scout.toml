@@ -1,2 +1,0 @@
-agent = "claude"
-brief = "You find which repositories the task touches. You do not change them."

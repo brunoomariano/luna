@@ -83,7 +83,7 @@ func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 	// A loop already at its ceiling, on a profile that stops at everything.
 	spent := TaskState{
 		Status:   StatusRunning,
-		Stage:    "qa",
+		Stage:    "review",
 		Profile:  ProfileInteractive,
 		Loop:     LoopCounters{Rounds: 9},
 		Context:  NewTaskContext(KindFeature),
@@ -124,7 +124,7 @@ func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
 	spent := TaskState{
 		Status:   StatusRunning,
-		Stage:    "qa",
+		Stage:    "review",
 		Profile:  ProfileNightly,
 		Loop:     LoopCounters{Rounds: 9},
 		Context:  NewTaskContext(KindFeature),
@@ -294,7 +294,7 @@ func start(t *testing.T, profile Profile) TaskState {
 func TestAReviewFindingMakesTheGreenStale(t *testing.T) {
 	state := TaskState{
 		Status:  StatusRunning,
-		Stage:   "qa",
+		Stage:   "review",
 		Profile: ProfileNightly,
 		Context: NewTaskContext(KindFeature),
 		Evidence: map[Artifact]Evidence{

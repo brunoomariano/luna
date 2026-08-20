@@ -17,7 +17,7 @@ func goFlow() []Stage {
 		},
 		{
 			ID:       "intake",
-			Role:     "analyst",
+			Role:     "maker",
 			Requires: []Artifact{TaskID, "worktree"},
 			Produces: []Artifact{"briefing", "kind"},
 		},
@@ -31,36 +31,30 @@ func goFlow() []Stage {
 			When:             IsBug,
 		},
 		{
-			ID:       "scenarios",
-			Role:     "gherkin",
-			Gate:     &GateSpec{Kind: GateConfirm, Reason: "approve the plan"},
+			ID:   "plan",
+			Role: "maker",
+			// Scenarios, approach and contract in one stage. The two it replaces
+			// were 61% of the first measured task's cost, and `contract` — the
+			// artifact the second existed to produce — was required by no stage.
+			Gate: &GateSpec{
+				Kind: GateReviewArtifact, Artifact: "contract",
+				Reason: "review the plan and its contract",
+			},
 			Requires: []Artifact{"briefing", "kind"},
-			Produces: []Artifact{"scenarios", "approach"},
+			Produces: []Artifact{"scenarios", "approach", "contract"},
 			Verifiers: map[Artifact]Verifier{
 				"scenarios": Existence{Handover: true},
 				"approach":  Existence{Handover: true},
+				"contract":  Existence{Handover: true},
 			},
-		},
-		{
-			ID:   "spec",
-			Role: "specifier",
-			Gate: &GateSpec{
-				Kind: GateReviewArtifact, Artifact: "contract", Reason: "review the contract",
-			},
-			Requires:  []Artifact{"approach"},
-			Produces:  []Artifact{"contract"},
-			Verifiers: map[Artifact]Verifier{"contract": Existence{Handover: true}},
-			When:      IsFeatureOrBug,
 		},
 		{
 			ID:   "build",
-			Role: "implementer",
-			// The contract belongs here, required only when `spec` entered the
-			// flow. It stays out until the conditional-requires mechanism is
-			// chosen — declaring it without that mechanism would stall every
-			// `chore` or `docs` task, since `spec` is skipped in those.
-			// See the note in docs/architecture.md.
-			Requires: []Artifact{"scenarios", "approach", "worktree"},
+			Role: "maker",
+			// `contract` can be required now that it comes from an unconditional
+			// stage. While `spec` was conditional, requiring its output would have
+			// stalled every chore and docs task.
+			Requires: []Artifact{"scenarios", "approach", "contract", "worktree"},
 			Produces: []Artifact{"code", "tests_green"},
 			Verifiers: map[Artifact]Verifier{
 				// Targeted rather than full: build runs the tests it touched, and
@@ -75,7 +69,7 @@ func goFlow() []Stage {
 		},
 		{
 			ID:       "refactor",
-			Role:     "cleaner",
+			Role:     "maker",
 			Requires: []Artifact{"code", "tests_green"},
 			Produces: []Artifact{"code", "tests_green"},
 			Verifiers: map[Artifact]Verifier{
@@ -90,7 +84,7 @@ func goFlow() []Stage {
 			// The pipeline is a command and the checklist is a judgement, so this
 			// stage has both — and a role, because the artifact that needs one
 			// decides.
-			Role:             "verifier",
+			Role:             "critic",
 			Requires:         []Artifact{"code", "scenarios"},
 			Produces:         []Artifact{"ci_green"},
 			ProducesForHuman: []Artifact{"dod_checked"},
@@ -104,59 +98,21 @@ func goFlow() []Stage {
 			},
 		},
 		{
-			ID: "qa",
+			ID: "review",
 			Review: &ReviewSpec{
 				SendsBackTo: "build",
 				// The green attested to code that no longer exists.
 				Invalidates: []Artifact{"ci_green", "tests_green"},
 			},
-			Role:             "qa",
-			Requires:         []Artifact{"ci_green", "briefing"},
-			ProducesForHuman: []Artifact{"qa_report"},
-			Verifiers:        map[Artifact]Verifier{"qa_report": Existence{Handover: true}},
-			When:             NotChore,
-		},
-		{
-			ID: "code-review",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists.
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "reviewer",
+			// One stage where four stood: identical review block, identical
+			// verifier, identical handover, four conditions. They read the same
+			// code and the same green, so running them apart paid to ingest one
+			// diff four times. The lenses live in the role's brief.
+			Role:             "critic",
 			Requires:         []Artifact{"code", "ci_green"},
 			ProducesForHuman: []Artifact{"review_report"},
 			Verifiers:        map[Artifact]Verifier{"review_report": Existence{Handover: true}},
-			When:             NotDocs,
-		},
-		{
-			ID: "harden",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists.
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "hardener",
-			Requires:         []Artifact{"tests_green", "code"},
-			ProducesForHuman: []Artifact{"mutation_report"},
-			Verifiers:        map[Artifact]Verifier{"mutation_report": Existence{Handover: true}},
-			When:             IsFeatureOrBug,
-		},
-		{
-			ID: "architecture",
-			Review: &ReviewSpec{
-				SendsBackTo: "build",
-				// The green attested to code that no longer exists.
-				Invalidates: []Artifact{"ci_green", "tests_green"},
-			},
-			Role:             "architect",
-			Requires:         []Artifact{"code"},
-			ProducesForHuman: []Artifact{"arch_report"},
-			Verifiers:        map[Artifact]Verifier{"arch_report": Existence{Handover: true}},
-			// Unlike the others, this condition is not about the nature of the
-			// task: whether the change touched the structure is only knowable
-			// after looking at what build produced.
-			When: TouchedStructure,
+			When:             NotChore,
 		},
 	}
 }
@@ -183,16 +139,23 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	// And the recorded value, so a change to *both* is still caught. Two things
 	// drifting together is exactly what a comparison between them cannot see.
 	//
-	// It has moved twice, both deliberately. Integration left Luna's scope, so
-	// `commit` went, and `discovery` went with it (a task is always about the
+	// It has moved three times, all deliberately. Integration left Luna's scope,
+	// so `commit` went, and `discovery` went with it (a task is always about the
 	// current repository). Then `refactor` gained `tests_green`: it rewrites code
 	// that was already green, so the green is earned again rather than inherited,
 	// and until then a stage whose whole purpose is rewriting working code closed
 	// without running anything (INV-1).
 	//
+	// The third is this one: twelve stages became eight and twelve roles became
+	// three. `scenarios` and `spec` merged into `plan`, and the four review
+	// stages into `review`. The argument is cost measured on a real task —
+	// the two planning stages were 61% of it — and the fact that both merges
+	// joined stages that already shared a role's denial, a session and their
+	// input. No task was open when it changed.
+	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
-	const shipped = "18464f834de0e0fd"
+	const shipped = "973859a43a216809"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)

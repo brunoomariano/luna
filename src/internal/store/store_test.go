@@ -301,7 +301,7 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 	if waiting[0].TaskID != "waiting" {
 		t.Errorf("want the task that stopped at a gate, got %q", waiting[0].TaskID)
 	}
-	if waiting[0].Stage != "scenarios" {
+	if waiting[0].Stage != "plan" {
 		t.Errorf("the listing says where it stopped; got %q", waiting[0].Stage)
 	}
 }

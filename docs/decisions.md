@@ -206,6 +206,38 @@ design and is stated plainly rather than left to be discovered.
 **`produces_for_human` is a contract field of its own** — checked on the way out, exempt
 from the static check, because no stage downstream will ever ask for it.
 
+**Three roles, not one per stage.** A role is worth splitting from another only when it
+denies a different tool, cannot inherit the previous session, or runs on a different
+harness. Twelve roles differed in none of those — only in a sentence describing the work,
+which Luna already generates per stage with the contract in it. `maker`, `critic` and
+`investigator` are what survives the test. *Rejected:* keeping a role per stage for
+readability (the stage file already names the work); collapsing to a single role (writing
+and judging must differ in tool denial and must not share a session).
+
+**Eight stages, not twelve.** `scenarios`+`spec` merged into `plan`; `qa`+`code-review`+
+`harden`+`architecture` merged into `review`. The argument is measured: the two planning
+stages were $4.14 of a $6.78 task, and `contract` was consumed by no stage; the four review
+stages had identical review blocks, verifiers and handovers, read the same two artifacts,
+and paid to ingest one diff four times. *Rejected:* merging `build` with `refactor` —
+`refactor` must re-earn `tests_green` after rewriting green code, and that boundary is what
+forces the proof (it once closed without running anything). *Rejected:* merging `verify`
+into `review` — `verify` produces `ci_green`, which the flow consumes, and is the only
+stage that earns `scope = "full"`.
+
+**`plan` starts fresh, even though the runtime would probably allow otherwise.** Sessions
+are keyed by role, so a live `plan` would resume the session `intake` left under `maker`,
+never the investigator's — the runtime is safe. But `AuditContextChain` reads the
+*declared* flow, where `diagnose` sits between them, and refuses it. The check stays as it
+is: it is a static proof, and trading one for a runtime argument about map keys is how a
+guarantee turns into a habit. The cost is one cold start on a bug task. *Rejected:*
+making the check role-aware so it follows the session key rather than the declared
+neighbour — worth doing if a flow ever needs it, not worth doing to recover one call.
+
+**The review lenses live in the role's brief, not the stage file.** The parser has no
+section for them and refuses unknown keys, which is the right refusal: an invented
+`[lenses]` table would have parsed as nothing. If lens-by-lens accounting is ever wanted,
+that is a stage-file feature to design, not a brief to grow.
+
 ---
 
 ## Rejected and removed

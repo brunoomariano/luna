@@ -41,17 +41,13 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		Role string
 	}{
 		{"setup", ""},
-		{"intake", "analyst"},
+		{"intake", "maker"},
 		{"diagnose", "investigator"},
-		{"scenarios", "gherkin"},
-		{"spec", "specifier"},
-		{"build", "implementer"},
-		{"refactor", "cleaner"},
-		{"verify", "verifier"},
-		{"qa", "qa"},
-		{"code-review", "reviewer"},
-		{"harden", "hardener"},
-		{"architecture", "architect"},
+		{"plan", "maker"},
+		{"build", "maker"},
+		{"refactor", "maker"},
+		{"verify", "critic"},
+		{"review", "critic"},
 	}
 
 	if len(flow) != len(want) {
@@ -74,18 +70,15 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 
 // TestAuditReportsAreNotFlowProducts covers INV-3 on the real flow.
 //
-// The assessments from qa, code-review, harden and architecture exist for a
-// person to read. If one of them became a Produces, it would start satisfying
-// another stage's Requires, and the distinction between a flow product and a
-// human-read report would lose its meaning in the flow that matters most.
+// The assessment the review stage writes exists for a person to read. If it
+// became a Produces, it would start satisfying another stage's Requires, and the
+// distinction between a flow product and a human-read report would lose its
+// meaning in the flow that matters most.
 func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 	reports := map[StageID]Artifact{
-		"qa":           "qa_report",
-		"code-review":  "review_report",
-		"harden":       "mutation_report",
-		"architecture": "arch_report",
-		"verify":       "dod_checked",
-		"diagnose":     "min_case",
+		"review":   "review_report",
+		"verify":   "dod_checked",
+		"diagnose": "min_case",
 	}
 
 	for _, stage := range DefaultFlow() {
@@ -116,16 +109,11 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 	}{
 		{"diagnose", KindBug, true},
 		{"diagnose", KindFeature, false},
-		{"spec", KindFeature, true},
-		{"spec", KindChore, false},
-		{"qa", KindChore, false},
-		{"qa", KindFeature, true},
-		{"code-review", KindDocs, false},
-		{"code-review", KindFeature, true},
-		{"harden", KindBug, true},
-		{"harden", KindDocs, false},
+		{"review", KindChore, false},
+		{"review", KindFeature, true},
+		{"review", KindBug, true},
 		{"build", KindDocs, true},
-		{"architecture", KindFeature, false}, // without the discovered fact, it stays out
+		{"plan", KindChore, true}, // planning is unconditional now that it carries the contract
 	}
 
 	byID := map[StageID]Stage{}
