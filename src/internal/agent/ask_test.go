@@ -172,3 +172,30 @@ func writeScript(t *testing.T, name, body string) string {
 	}
 	return path
 }
+
+// TestAskCanRunTheCommandsItIsToldToRun is what makes an unattended lead
+// possible at all.
+//
+// The lead's whole loop is Luna commands: `luna next` for the order, `luna done`
+// to report. Without this the harness asks a person to approve each one, and
+// there is no person — measured on TALLY-4, where the lead answered "the call
+// needs your approval before it can run" and the task never left `setup`. Luna's
+// own guard caught the stall correctly, which is how it was seen at all.
+//
+// What bounds the lead is not the harness's prompt. It is that no order gives it
+// more than one stage, and nothing it says moves the flow: a transition happens
+// because the reducer recorded one, never because the lead reported it. The
+// prompt was protecting against a decision the lead cannot make.
+func TestAskCanRunTheCommandsItIsToldToRun(t *testing.T) {
+	fake := newFakeHarness(t, "answered", 0)
+	h := Harness{Binary: fake.path()}
+
+	if _, err := h.Ask(context.Background(), "anything"); err != nil {
+		t.Fatalf("asking: %v", err)
+	}
+
+	argv := fake.argv(t)
+	if !strings.Contains(argv, "bypassPermissions") {
+		t.Errorf("a lead that cannot run `luna next` cannot conduct anything. argv was:\n%s", argv)
+	}
+}

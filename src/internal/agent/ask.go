@@ -49,8 +49,22 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 	asking, stop := context.WithTimeout(ctx, timeout)
 	defer stop()
 
+	// The lead's whole loop is Luna commands — `luna next` for the order, `luna
+	// done` to report — so a harness that stops to ask a person about each one
+	// cannot conduct an unattended task. Measured on TALLY-4: the lead answered
+	// "the call needs your approval before it can run" and the task never left
+	// setup. Luna's own guard caught the stall, which is how it was seen.
+	//
+	// This is not the stage's reasoning. A stage bypasses the prompt because the
+	// sandbox has already contained it, and the lead runs uncontained. What
+	// bounds the lead is the shape of what it is given: an order names one stage
+	// and no list of what follows, and nothing it says moves the flow — a
+	// transition happens because the reducer recorded one, never because the lead
+	// reported it. The prompt was guarding against a decision the lead has no
+	// path to make.
+	//
 	// #nosec G204 — the binary comes from the closed table above, not from input.
-	cmd := exec.CommandContext(asking, binary, "-p")
+	cmd := exec.CommandContext(asking, binary, "-p", "--permission-mode", "bypassPermissions")
 	cmd.Stdin = strings.NewReader(prompt)
 
 	// Its own process group, and the deadline kills the group — the same
