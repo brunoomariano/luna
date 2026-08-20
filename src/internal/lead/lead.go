@@ -216,6 +216,41 @@ func (l *Lead) land(ctx context.Context, state fsm.TaskState) {
 	}
 }
 
+// Enter opens the stage the order names, answering any gate on the way in.
+//
+// It exists because `luna lead` had no way to do this and therefore could not
+// conduct anything. The loop the lead is briefed on is `next` for the order, do
+// the work, `done` to report — but `next` reads and changes nothing by design,
+// so the task stayed `ready` and `done` answered "no running stage to finish",
+// on the first stage, every time. Measured on TALLY-4.
+//
+// Entering is not the lead's decision and is not offered to it: a task that is
+// not running has exactly one next step and the status says which. What *is* a
+// decision is the gate on the way in, and that goes through the same knob-aware
+// path `luna run` uses rather than a second copy of it — the reason this is a
+// method on Lead and not a helper in the CLI.
+func (l *Lead) Enter(ctx context.Context, taskID string) error {
+	flow := l.flow()
+
+	state, err := l.Store.Replay(taskID, flow)
+	if err != nil {
+		return err
+	}
+	// Nothing is entered past an ending. A gate was opened on the way *out* of the
+	// stage before this one and is waiting for whoever answers it; a block is
+	// waiting for a person; an abandoned or finished task has nowhere to go.
+	// Advancing through any of them would be answering by walking past, and the
+	// loop's own next pass reads the same state and stops there properly.
+	if state.Status != fsm.StatusReady && state.Status != fsm.StatusStageDone {
+		return nil
+	}
+
+	return l.record(taskID, fsm.Advance{
+		Flow:         flow,
+		GateDecision: l.decideGate(ctx, state, fsm.GateAhead(state, flow)),
+	})
+}
+
 // step performs exactly one transition and records it. Splitting it out keeps Run
 // a loop over outcomes rather than a loop with a body.
 func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flow []fsm.Stage) error {

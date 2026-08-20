@@ -31,8 +31,15 @@ func (o *obedientLead) ask(_ context.Context, prompt string) (string, error) {
 		return "", err
 	}
 
-	// What a real lead does: open the stage, then report what it produced.
-	enterStage(o.t, o.h, "LUNA-1")
+	// What a real lead does, and only that: report what the stage produced.
+	//
+	// This used to open the stage first, with `enterStage` — a test helper. That
+	// made the suite prove `luna lead` worked while the step it depended on
+	// existed nowhere but here: a real lead has no command that opens a stage,
+	// and `luna next` changes nothing by design. So every run stalled on the
+	// first stage with "no running stage to finish", and no test could see it.
+	// Measured on TALLY-4. Entering is the loop's job now, which is what a lead
+	// can actually rely on.
 	owed := strings.Join(artifactNames(order.Produces), ",")
 	if err := Run(o.h.env, []string{"done", "LUNA-1", "--delivered", owed}); err != nil {
 		return "", err
@@ -81,7 +88,6 @@ func TestALeadThatClaimsSuccessWithoutReportingMovesNothing(t *testing.T) {
 		return "Done. I completed every stage and the task is finished.", nil
 	}
 
-	before := mustState(t, h, "LUNA-1")
 	err := h.run(t, "lead", "LUNA-1")
 
 	if err == nil {
@@ -91,9 +97,21 @@ func TestALeadThatClaimsSuccessWithoutReportingMovesNothing(t *testing.T) {
 		t.Errorf("the refusal does not say what the lead failed to do: %v", err)
 	}
 
+	// The loop opens the first stage before asking — that is the engine's move,
+	// and it is what `luna done` needs to have something to close. What must not
+	// have happened is the flow going anywhere on the strength of what the lead
+	// said: it claimed every stage was finished, so the test is that the task is
+	// sitting in the *first* one, unfinished.
 	after := mustState(t, h, "LUNA-1")
-	if after.Seq != before.Seq || after.Stage != before.Stage {
-		t.Errorf("the task moved on the lead's word alone: %+v then %+v", before, after)
+	if after.Status != fsm.StatusRunning {
+		t.Errorf("want the first stage still open, got %q", after.Status)
+	}
+	if after.Stage != fsm.DefaultFlow()[0].ID {
+		t.Errorf("the task moved past the first stage on the lead's word alone, to %q",
+			after.Stage)
+	}
+	if len(after.Context.Artifacts) > 1 {
+		t.Errorf("a lead's claim delivered artifacts: %v", after.Context.Artifacts)
 	}
 }
 
@@ -198,13 +216,19 @@ func TestALeadThatWillNotAnswerStopsTheRun(t *testing.T) {
 		return "", context.DeadlineExceeded
 	}
 
-	before := mustState(t, h, "LUNA-1")
 	if err := h.run(t, "lead", "LUNA-1"); err == nil {
 		t.Fatal("a lead that never answered was treated as having conducted the stage")
 	}
 
-	if after := mustState(t, h, "LUNA-1"); after.Seq != before.Seq {
-		t.Error("the task moved even though the lead never answered")
+	// The loop opens the stage before asking, so the log has moved by one — what
+	// must not have happened is the stage *closing*. A lead that said nothing
+	// delivered nothing, and the stage it was handed is still open.
+	after := mustState(t, h, "LUNA-1")
+	if after.Status != fsm.StatusRunning {
+		t.Errorf("want the stage still open, got %q", after.Status)
+	}
+	if len(after.Context.Artifacts) > 1 {
+		t.Errorf("a lead that never answered delivered something: %v", after.Context.Artifacts)
 	}
 }
 
@@ -224,12 +248,10 @@ func TestALeadThatCannotFinishAStageStillTerminates(t *testing.T) {
 	turns := 0
 	h.env.Lead = func(context.Context, string) (string, error) {
 		turns++
-		if mustState(t, h, "LUNA-1").Status == fsm.StatusRunning {
-			_ = h.env.Store.AppendAction("LUNA-1", fsm.Fail{Reason: "not this time"})
-			return "failed it", nil
-		}
-		enterStage(t, h, "LUNA-1")
-		return "entered it", nil
+		// Every turn now finds a stage already open, because the loop opens it.
+		// Failing is the only thing this lead ever does, which is the point.
+		_ = h.env.Store.AppendAction("LUNA-1", fsm.Fail{Reason: "not this time"})
+		return "failed it", nil
 	}
 
 	out := h.mustRun(t, "lead", "LUNA-1")
@@ -281,5 +303,68 @@ func TestLeadRefusesACommandLineItCannotParse(t *testing.T) {
 		if err := h.run(t, args...); err == nil {
 			t.Errorf("%v was accepted", args)
 		}
+	}
+}
+
+// TestTheLeadCanCloseTheStageItWasHandedIsTheWholeLoop is the fix for a
+// conductor that could never conduct anything.
+//
+// The loop the lead is briefed on is `luna next` for the order, do the work,
+// `luna done` to report. But `next` reads and changes nothing by design, so the
+// task stayed `ready` and `done` answered "no running stage to finish" — every
+// time, on the first stage, for any task.
+//
+// Measured on TALLY-4 under `--autonomy 9`. The lead diagnosed it exactly,
+// declined to reach for `luna run` because choosing how far a task advances is
+// not its call, and escalated instead of retrying a deterministic failure. It
+// was right on all three counts, and there was nothing it could have done.
+//
+// Entering the stage is the engine's move, not the lead's: a task that is not
+// running has one next step and the status says which, so nothing is being
+// decided here that a model could get wrong.
+func TestTheLeadCanCloseTheStageItWasHandedIsTheWholeLoop(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+
+	state, err := h.env.replay("LUNA-1")
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if state.Status != fsm.StatusReady {
+		t.Fatalf("a new task is ready, got %q", state.Status)
+	}
+
+	// A lead that can do nothing but report. It is what a real one is: `luna next`
+	// changes nothing, and there is no command that opens a stage — so if the
+	// loop does not open it, `luna done` has nothing to close and this fails the
+	// way TALLY-4 did.
+	reported := 0
+	h.env.Lead = func(context.Context, string) (string, error) {
+		reported++
+		state := mustState(t, h, "LUNA-1")
+		order, err := fsm.NextOrder(state, fsm.DefaultFlow(), h.env.profiles().Roles)
+		if err != nil {
+			return "", err
+		}
+		owed := strings.Join(artifactNames(order.Produces), ",")
+		if err := Run(h.env, []string{"done", "LUNA-1", "--delivered", owed}); err != nil {
+			return "", err
+		}
+		return "carried out " + string(order.Stage), nil
+	}
+
+	if err := h.run(t, "lead", "LUNA-1"); err != nil {
+		t.Fatalf("a lead that reports what it produced must be able to conduct: %v", err)
+	}
+	if reported < 2 {
+		t.Fatalf("the loop stopped after %d turn(s) — the lead never got past one stage", reported)
+	}
+
+	after := mustState(t, h, "LUNA-1")
+	if after.Stage == "" {
+		t.Error("the task never entered a stage")
+	}
+	if len(after.Context.Artifacts) < 2 {
+		t.Errorf("nothing was delivered, so no stage ever closed: %v", after.Context.Artifacts)
 	}
 }

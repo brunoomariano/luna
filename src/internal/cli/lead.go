@@ -53,7 +53,23 @@ func leadCommand(env Env, args []string) error {
 			"flow without a model")
 	}
 
-	return conductTask(env, id, &lead.Agent{Ask: env.Lead, Knob: knob})
+	// The gate on the way into a stage goes through the same knob-aware path
+	// `luna run` uses, rather than a second copy of it. The knob it consults is
+	// the task's own, from the state where `luna autonomy` put it.
+	//
+	// So `--autonomy` here governs what the lead may decide about a *failure* and
+	// not which gates it may answer, which is a seam worth naming rather than
+	// leaving to be discovered: a flag and a recorded setting sharing one word.
+	// The recorded one wins for gates because a gate decision is history — it is
+	// replayed as a fact, and a flag on one invocation must not rewrite how a
+	// past run reads.
+	entering := &lead.Lead{
+		Store:     env.Store,
+		Ask:       env.Lead,
+		CheckGate: checkGateWith(env.Store, "."),
+	}
+
+	return conductTask(env, id, &lead.Agent{Ask: env.Lead, Knob: knob}, entering)
 }
 
 // conductTask is the loop: ask Luna for the order, give it to the lead, check
@@ -70,8 +86,17 @@ func leadCommand(env Env, args []string) error {
 // third failure blocks — and a task that stops for any reason returns an order
 // that is not OrderRun, which ends the loop above. A ceiling nothing can reach is
 // one that gets trusted without ever having held.
-func conductTask(env Env, id string, conductor *lead.Agent) error {
+func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead) error {
 	for {
+		// The stage is opened before the order is read, because `next` is a read
+		// and `done` reports a finish — the transition between them is the
+		// engine's, and without it the task never leaves `ready` and every `done`
+		// answers "no running stage to finish". A gate on the way in is answered
+		// here, through the knob.
+		if err := entering.Enter(context.Background(), id); err != nil {
+			return err
+		}
+
 		state, err := env.replay(id)
 		if err != nil {
 			return err

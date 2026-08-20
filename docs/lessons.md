@@ -106,6 +106,14 @@ real task to surface and none of them could have been found by a test of Luna's 
 because none of them *is* Luna's own code — they are what Luna asks of the things around
 it. The suite was never wrong; it was answering a different question.
 
+**A helper the test has and the product does not is a hole shaped exactly like the
+product.** The fake lead in the suite opened each stage itself, through a test helper, with
+the comment "what a real lead does" above it. A real lead has no such command: `luna next`
+reads and changes nothing by design, and nothing else opens a stage. So `luna lead` could
+never close its first stage — `luna done` answered "no running stage to finish", every
+time, for every task — while eight tests proved the loop worked. The helper was not
+standing in for the product; it was standing in for the part that was missing.
+
 **A fake that cannot be wrong the way the real thing is wrong proves nothing.** Every test
 of the agent transport passed `Sandbox: "/bin/sh"`. It ran, it recorded its arguments, the
 assertions held — and because `sh` refuses a leading long option, the whole suite
