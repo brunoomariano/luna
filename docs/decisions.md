@@ -238,6 +238,25 @@ section for them and refuses unknown keys, which is the right refusal: an invent
 `[lenses]` table would have parsed as nothing. If lens-by-lens accounting is ever wanted,
 that is a stage-file feature to design, not a brief to grow.
 
+**Luna drives no conversational interface.** `luna chat` had a model read what a person
+typed, pick one of seven Luna commands, and phrase the output back. The seven commands are
+a menu a person can learn, and the layer between them and the person was a model that
+could misread. It went, with `internal/interpret`, for the same reason the terminal
+transport went one level down: driving a human interface is not what this is for.
+
+What survives is the one thing that package really was — `Harness.Ask`, a subprocess with
+a prompt on stdin — moved to `internal/agent`, which already owned the harness table.
+*Rejected:* handing the conversation to the lead instead. The lead is per-task, its knob
+is that task's autonomy, and its brief is shaped so it never has a choice on the happy
+path; `luna gates` and `luna run <other-task>` are cross-task questions, and answering
+them through a task's lead widens exactly what `lead/agent.go` narrows.
+
+**`Ask` does not go through the sandbox, and `Run` refuses to start without one.** They
+look alike and the difference is load-bearing: `Run` starts an agent that will write code,
+`Ask` is the lead reading state to judge a gate, and it runs where Luna runs. Containing
+it would need the store reachable from inside the jail, which is what INV-4 keeps out.
+Stated as a test rather than a comment, because the two are one edit apart.
+
 ---
 
 ## Rejected and removed

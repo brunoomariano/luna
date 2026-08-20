@@ -180,6 +180,18 @@ type Harness struct {
 	// Binary overrides the executable looked up for a harness kind. Tests set
 	// it; production leaves it empty and the kind is the name.
 	Binary string
+
+	// Kind is which harness Ask puts its question to. Empty means DefaultAsk.
+	//
+	// Only Ask reads it: Run takes the kind from the Call, because which harness
+	// runs a stage is the role's decision and travels with the call. A question
+	// has no role, so it is configured here.
+	Kind string
+
+	// Deadline bounds one Ask. Zero means AskTimeout. Run has no equivalent —
+	// a stage is bounded by Call.Budget, which is per call rather than per
+	// harness.
+	Deadline time.Duration
 }
 
 // resolve checks a call before anything is started and answers with the harness

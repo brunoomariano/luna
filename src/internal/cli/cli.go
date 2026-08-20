@@ -52,14 +52,10 @@ type Env struct {
 	// and carry on rather than fail the run (INV-5).
 	Notify func(ctx context.Context, taskID, reason string) error
 
-	// Interpret is what turns plain language into commands for `luna chat`.
-	// Injected because Luna hosts no model, and nil means the command says so
-	// rather than pretending to work.
-	Interpret Interpreter
-
-	// Lead is the model that conducts a task for `luna lead`. Injected for the
-	// same reason as Interpret, and nil for the same reason: `luna run` drives
-	// the same flow without one.
+	// Lead is the model that judges a gate for `luna lead`. Injected because
+	// Luna hosts no model of its own, and nil because `luna run` drives the same
+	// flow without one — a machine with no harness still runs every task whose
+	// gates a person answers.
 	Lead func(ctx context.Context, prompt string) (string, error)
 
 	// Stock is the project's copy of the stages, roles and profiles —
@@ -91,7 +87,6 @@ func Run(env Env, args []string) error {
 		"task":     runTask,
 		"run":      runTaskCommand,
 		"unblock":  unblockCommand,
-		"chat":     chatCommand,
 		"gates":    runGates,
 		"gate":     runGate,
 		"flow":     runFlow,
@@ -169,11 +164,6 @@ luna — deterministic orchestration for AI agents
   luna flow check
         what flow this build carries, and whether anything is open.
         Changing the flow under an open task stops it replaying.
-
-  luna chat
-        say what you want in plain language. It runs Luna commands for you
-        and reads the answers back — it never decides a stage, and it asks
-        before approving a gate.
 
   luna gates [--json]
         every task waiting on a person

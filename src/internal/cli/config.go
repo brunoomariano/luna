@@ -22,8 +22,13 @@ type Config struct {
 	// like `code --wait`.
 	Editor string
 
-	// Interpreter is which official harness `luna chat` asks to understand what a
-	// person said. Empty means the house default.
+	// Interpreter is which official harness the lead asks when it judges a gate.
+	// Empty means the house default.
+	//
+	// The name outlived the command that gave it: `luna chat` had a model turn a
+	// person's words into a Luna command, and it is gone. The key stays spelled
+	// this way because it is in projects' config files already, and renaming a
+	// setting to match an internal history is a break somebody else pays for.
 	Interpreter string
 
 	// TurnBudget bounds how long the node waits on an agent that is not reacting.

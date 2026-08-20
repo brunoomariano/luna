@@ -96,6 +96,13 @@ exemption outlived the artifact") and could not see it either, because it checke
 hand-written list rather than the map. The fix was to walk the map as well as the flow,
 and the proof was inverting it: a dead name put back now fails, and did not before.
 
+**The same bug twice, because the second copy had no test that could see it.** `Run` was
+fixed months ago to give an agent its own process group and kill the group, after a stage
+with a 200ms budget ran its child for the full 30 seconds. The interpreter package had the
+same defect the whole time and nobody knew, because nothing there ever tested a deadline
+against a process that ignores it. Writing that test while moving the code took the
+package's suite from 60 seconds to 0.4 — the tests had been *waiting out* the bug.
+
 **Verify against the binary and invert the test.** Running the claim against the built
 artifact, and writing the test so it fails when the behaviour is absent, caught an error
 almost every time it was applied. Reasoning about whether code is correct is not the same

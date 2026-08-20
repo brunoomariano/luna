@@ -231,7 +231,6 @@ src/
   internal/node/     running a stage: worktree, sandbox, socket, verification
   internal/cli/      commands
   internal/lead/     conducting a task, and the model that judges a gate
-  internal/interpret/ turning plain language into commands for `luna chat`
   stock/             defaults: stages, roles, profiles (embedded TOML)
 docs/                this suite
 scripts/             lint helpers

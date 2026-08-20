@@ -12,9 +12,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/cli"
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/interpret"
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
@@ -153,9 +153,10 @@ func run(args []string) error {
 // safe, neither said why, and no test could see it while this was a literal
 // inside a function that also opens a database.
 func environment(s *store.Store, stockDir string, cfg cli.Config, root string) cli.Env {
-	// One harness, asked two ways: for an intent when a person types, and
-	// directly when the lead conducts or judges.
-	harness := interpret.Harness{Agent: cfg.Interpreter}
+	// The harness the lead asks when it judges a gate. It is not the one that
+	// runs a stage: that one is built per stage in the node layer, inside the
+	// sandbox, from the role's own kind.
+	harness := agent.Harness{Kind: cfg.Interpreter}
 
 	return cli.Env{
 		Store:  s,
@@ -165,11 +166,8 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 		Err:    os.Stderr,
 		In:     os.Stdin,
 		Edit:   cli.Editor(cfg),
-		// Luna hosts no model: the interpreter is one of the official harnesses
-		// run non-interactively.
-		Interpret: harness,
-		// The same harness, asked directly rather than for an intent. It is what
-		// `luna lead` conducts with and what judges a gate the knob reached.
+		// Luna hosts no model: judging a gate goes out to an official harness run
+		// non-interactively, the same way a stage does.
 		Lead: harness.Ask,
 
 		// A block is only a block once someone knows. An external terminal

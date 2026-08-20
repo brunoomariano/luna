@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -234,20 +235,28 @@ func TestEveryInjectedDependencyIsWired(t *testing.T) {
 
 	env := environment(nil, "/tmp/stock", cli.Config{}, "/tmp/root")
 
-	missing := map[string]bool{
-		"Out":       env.Out == nil,
-		"Err":       env.Err == nil,
-		"In":        env.In == nil,
-		"Edit":      env.Edit == nil,
-		"Interpret": env.Interpret == nil,
-		"Lead":      env.Lead == nil,
-		"Notify":    env.Notify == nil,
-	}
-
-	for field, absent := range missing {
-		if absent {
+	// Reflected rather than listed, because a hand-written list is the drift this
+	// test exists to catch: it would have to be updated by whoever adds a field,
+	// which is exactly the person who just forgot to wire one. It held a stale
+	// `Interpret` entry after that field was removed, and would have gone on
+	// passing while a newly added field sat nil.
+	//
+	// Only nilable kinds are asked about. A string or a struct has no nil to be,
+	// and `Store` is passed in by the caller rather than built here.
+	value := reflect.ValueOf(env)
+	for i := range value.NumField() {
+		field := value.Type().Field(i)
+		switch field.Type.Kind() {
+		case reflect.Func, reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
+		default:
+			continue
+		}
+		if field.Name == "Store" {
+			continue
+		}
+		if value.Field(i).IsNil() {
 			t.Errorf("Env.%s is nil in the real binary — the feature that reads it "+
-				"is off on every machine, and it fails safe so nothing says so", field)
+				"is off on every machine, and it fails safe so nothing says so", field.Name)
 		}
 	}
 }
