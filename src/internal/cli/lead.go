@@ -67,6 +67,15 @@ func leadCommand(env Env, args []string) error {
 		Store:     env.Store,
 		Ask:       env.Lead,
 		CheckGate: checkGateWith(env.Store, "."),
+		// The artifact itself rather than the evidence line naming it: a gate that
+		// asks the lead to judge a contract has to hand it the contract.
+		Artifact: func(taskID, artifact string) (string, bool) {
+			blob, err := env.Store.LatestBlob(taskID, "", artifact)
+			if err != nil {
+				return "", false
+			}
+			return string(blob.Body), true
+		},
 	}
 
 	// The stage budget, not the question timeout: conducting a stage means

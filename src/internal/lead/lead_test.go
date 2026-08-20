@@ -841,3 +841,47 @@ func TestEnterAnswersAGateTheKnobReaches(t *testing.T) {
 		t.Error("the task is still waiting at a gate the knob authorised the lead to answer")
 	}
 }
+
+// TestTheLeadJudgesTheArtifactRatherThanItsHash is the other half of a fix that
+// `luna gate show` already had and the lead did not.
+//
+// An artifact handed to Luna is in the store; the gate's payload carries the
+// evidence line that names it — "handed over to Luna, 9e727…". That is the right
+// thing for an audit record and useless to read: a hash contains no obligations,
+// so a lead asked to judge it says so, correctly, every time.
+//
+// Measured on TALLY-5, where the knob and the criticality both said the lead
+// should answer and the loop ended at "wait" anyway. `gate show` fetches the
+// blob for a person with a comment saying exactly this — "not something a person
+// can review". Neither is a model.
+func TestTheLeadJudgesTheArtifactRatherThanItsHash(t *testing.T) {
+	var judged string
+	l := &Lead{
+		Ask: func(_ context.Context, prompt string) (string, error) {
+			judged = prompt
+			return "APPROVE", nil
+		},
+		Artifact: func(string, string) (string, bool) {
+			return "# contract\n\n- `--avg` MUST print the mean.\n", true
+		},
+	}
+
+	spec := &fsm.GateSpec{
+		Kind: fsm.GateReviewArtifact, Artifact: "contract",
+		Judge: []string{"the contract states what is required"},
+	}
+	gate := &fsm.PendingGate{
+		Kind: fsm.GateReviewArtifact, Stage: "plan",
+		Artifact: "contract", Payload: "handed over to Luna, 9e72757f0fdc",
+	}
+
+	if got := l.judge(context.Background(), "LUNA-1", spec, gate); got != fsm.GateDecisionJudged {
+		t.Fatalf("the lead could not judge an artifact it was given, got %q", got)
+	}
+	if !strings.Contains(judged, "--avg` MUST print the mean") {
+		t.Errorf("the lead was asked to judge something other than the artifact:\n%s", judged)
+	}
+	if strings.Contains(judged, "handed over to Luna") {
+		t.Error("the evidence line reached the model as though it were the artifact")
+	}
+}

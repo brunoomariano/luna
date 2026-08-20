@@ -125,6 +125,16 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// reached still goes to a person, because authority to judge is not a
 		// judgement.
 		Ask: env.Lead,
+		// The artifact itself rather than the evidence line naming it: a gate that
+		// asks the lead to judge a contract has to hand it the contract.
+		Artifact: func(taskID, artifact string) (string, bool) {
+			blob, err := env.Store.LatestBlob(taskID, "", artifact)
+			if err != nil {
+				return "", false
+			}
+			return string(blob.Body), true
+		},
+
 		// `done` means ready to integrate, and this is what makes it true: the
 		// task's own branch is pointed at what it delivered.
 		Land: func(ctx context.Context, taskID, commit string) error {

@@ -142,6 +142,20 @@ type Lead struct {
 	// at.
 	Ask func(ctx context.Context, prompt string) (string, error)
 
+	// Artifact reads a handed-over artifact back, for a gate that asks the lead to
+	// judge one.
+	//
+	// The gate's payload carries the evidence line naming it — "handed over to
+	// Luna, 9e727…" — which is right for an audit record and impossible to review:
+	// a hash contains no obligations, so a lead asked to judge one declines, every
+	// time. Measured on TALLY-5. `luna gate show` fetches the body for a person
+	// with a comment saying exactly this; neither reader is served by the hash.
+	//
+	// A function rather than the store itself, for the reason the rest of this
+	// struct already draws: the lead does not own where artifacts live. Nil leaves
+	// the payload as it came, which is what a gate with nothing in the store has.
+	Artifact func(taskID, artifact string) (body string, found bool)
+
 	// Land points the task's branch at the commit it ended on.
 	//
 	// A function rather than a git call here for the reason the reducer's purity
@@ -525,7 +539,7 @@ func (l *Lead) answerDeclaredGate(
 	case fsm.AnswerChecks:
 		return fsm.GateDecisionChecked
 	case fsm.AnswerLead:
-		return l.judge(ctx, spec, gate)
+		return l.judge(ctx, state.ID, spec, gate)
 	case fsm.AnswerRejected, fsm.AnswerPerson:
 		return fsm.GateDecisionWaited
 	default:
@@ -547,7 +561,7 @@ func (l *Lead) answerDeclaredGate(
 // is no path from here to a rejection that sends work back. Recording a person's
 // wait is honest about that — the gate is still open, and what the lead concluded
 // belongs in front of whoever answers it.
-func (l *Lead) judge(ctx context.Context, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
+func (l *Lead) judge(ctx context.Context, taskID string, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
 	if l.Ask == nil {
 		// The knob authorised a judgement and there is nobody to make it. Asking a
 		// person is the only honest answer: the alternative is approving a gate
@@ -555,7 +569,7 @@ func (l *Lead) judge(ctx context.Context, spec *fsm.GateSpec, gate *fsm.PendingG
 		return fsm.GateDecisionWaited
 	}
 
-	said, err := l.Ask(ctx, JudgingBrief(spec, gate.Payload, ""))
+	said, err := l.Ask(ctx, JudgingBrief(spec, l.artifactFor(taskID, gate), ""))
 	if err != nil {
 		return fsm.GateDecisionWaited
 	}
@@ -564,6 +578,21 @@ func (l *Lead) judge(ctx context.Context, spec *fsm.GateSpec, gate *fsm.PendingG
 		return fsm.GateDecisionJudged
 	}
 	return fsm.GateDecisionWaited
+}
+
+// artifactFor is what the lead is actually asked to judge.
+//
+// The stored body when there is one, and the gate's payload otherwise — which is
+// what a `confirm` gate carries, and what a review gate carries before its
+// artifact was handed over.
+func (l *Lead) artifactFor(taskID string, gate *fsm.PendingGate) string {
+	if l.Artifact == nil || gate.Artifact == "" {
+		return gate.Payload
+	}
+	if body, found := l.Artifact(taskID, string(gate.Artifact)); found {
+		return body
+	}
+	return gate.Payload
 }
 
 // stall records a task that stopped making progress.
