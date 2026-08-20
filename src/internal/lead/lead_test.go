@@ -779,3 +779,65 @@ func TestAFailureToLandDoesNotFailTheTask(t *testing.T) {
 		t.Errorf("the failure was not reported: %q", warned)
 	}
 }
+
+// TestEnterAnswersAGateTheKnobReaches is the fix for an autonomy setting that
+// could not reach the only gate the flow has.
+//
+// A review gate opens on the way *out* of the stage that produced its artifact,
+// so the task sits at `awaiting_gate` and the decision is taken on the next
+// Advance. Enter refused to advance from that status — reasoning that a gate is
+// waiting for a person — which is true only when nobody is authorised to answer
+// it. With the knob at or above the gate's criticality, somebody is.
+//
+// Measured on TALLY-5: knob 9, gate criticality 9, `judge_by_reading` declared,
+// and the loop still ended at `wait: review the plan and its contract`. `luna
+// run` never had this — its own step advances from any non-running status.
+func TestEnterAnswersAGateTheKnobReaches(t *testing.T) {
+	s := newStore(t)
+	flow := fsm.DefaultFlow()
+
+	// Driven to the gate the way a run reaches it: stages deliver, and the review
+	// gate opens when the stage that produced its artifact closes.
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind: fsm.KindFeature, Flow: fsm.Fingerprint(flow),
+	}); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.Knob(9)}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	driver := &Lead{Store: s, Flow: flow, Node: &deliveringNode{}, Judge: &alwaysBlocks{}}
+	if _, err := driver.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("driving to the gate: %v", err)
+	}
+	if at, _ := s.Replay("LUNA-1", flow); at.Status != fsm.StatusAwaitingGate {
+		t.Fatalf("this test needs a task at a gate, got %q", at.Status)
+	}
+
+	asked := 0
+	l := &Lead{
+		Store: s,
+		Flow:  flow,
+		Ask: func(context.Context, string) (string, error) {
+			asked++
+			return "APPROVE\n\nevery criterion is met", nil
+		},
+	}
+
+	if err := l.Enter(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("entering past an answered gate: %v", err)
+	}
+
+	if asked == 0 {
+		t.Error("the knob reached the gate and no judgement was asked for")
+	}
+
+	after, err := s.Replay("LUNA-1", flow)
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if after.Status == fsm.StatusAwaitingGate {
+		t.Error("the task is still waiting at a gate the knob authorised the lead to answer")
+	}
+}

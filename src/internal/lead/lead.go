@@ -236,11 +236,34 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	// Nothing is entered past an ending. A gate was opened on the way *out* of the
-	// stage before this one and is waiting for whoever answers it; a block is
-	// waiting for a person; an abandoned or finished task has nowhere to go.
-	// Advancing through any of them would be answering by walking past, and the
-	// loop's own next pass reads the same state and stops there properly.
+	// A gate is entered past only when somebody is authorised to answer it, and
+	// decideGate is what asks: the knob decides, the declared checks run, and a
+	// gate nobody may answer records `waited` and stays open.
+	//
+	// This used to refuse `awaiting_gate` outright, on the reasoning that a gate
+	// waits for a person — true only when nobody else may answer. A review gate
+	// opens on the way *out* of the stage that produced its artifact, so the task
+	// sits at that status and the decision is taken on the next Advance. Refusing
+	// it meant the knob could not reach the only gate the shipped flow has:
+	// measured on TALLY-5 at knob 9 against a criticality-9 gate, where the loop
+	// ended at "wait" every time. `luna run` never had this, because its own step
+	// advances from any status that is not running.
+	//
+	// A block and a finished task are still endings: nothing authorises walking
+	// past those.
+	// An open gate is answered, not advanced past — the reducer refuses an Advance
+	// while one is pending, and it is right to: walking past a gate is not the
+	// same act as deciding it. Whether the lead may decide is decideGate's
+	// question, and a `waited` answer leaves the gate exactly where it was.
+	if state.Status == fsm.StatusAwaitingGate {
+		if l.decideGate(ctx, state, state.Gate) != fsm.GateDecisionJudged {
+			return nil
+		}
+		return l.record(taskID, fsm.GateApprove{})
+	}
+
+	// A block and a finished task are endings, and nothing authorises walking
+	// past those.
 	if state.Status != fsm.StatusReady && state.Status != fsm.StatusStageDone {
 		return nil
 	}
