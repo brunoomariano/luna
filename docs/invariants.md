@@ -109,7 +109,19 @@ handed over is an artifact nobody can find — which is the same as one that doe
 **What violates it.** An agent started outside the sandbox; an artifact written to an
 unrecorded path; the store trusting a stage name that came from the agent.
 
-**Covered by.** The socket boundary tests in `internal/node`; the ghost-store guard.
+**What containment must still let through.** Delegating containment means the sandbox
+decides what an agent can reach, and two of its defaults make a stage unable to deliver
+at all. The network is one: without it the harness blocks forever on a connection it
+cannot make, and never reaches a model. Git metadata is the other: a stage's checkout is
+a worktree whose `.git` points into the main repository, outside the jail, so without
+`--worktree` every git command answers `fatal: not a git repository` and the agent has
+no way to commit what it built. Both were found by a run rather than by a test — five
+stages of TALLY-5 billed $3.33 and left HEAD on the base commit — because a fake sandbox
+has no boundary to get this wrong. The identity a commit needs travels the same way, as
+environment, because the jail has no `~/.gitconfig` to read one from.
+
+**Covered by.** The socket boundary tests in `internal/node`; the ghost-store guard; the
+sandbox-invocation tests in `internal/agent` that assert what the jail is asked to allow.
 
 ---
 
@@ -130,8 +142,17 @@ listing; an exception swallowed between transitions.
 not covered. What exists bounds a turn; a task circling without converging never exceeds
 it. The failure still ends in a block once a budget runs out — just later than it should.
 
+**What the invariant reaches, and what it did not.** A stage that produces nothing has an
+account of why, and it is the agent's own reply. That reply was being discarded: it
+reached the runner and nothing read it, so five stages of TALLY-5 each recorded
+"delivered nothing" while the agent was saying, five times over, that git was unreachable
+inside the sandbox. The failure was loud at the boundary and silent in the log, which is
+the exact shape this rule exists to forbid. A stage that commits nothing on top of its
+base now reports what the agent said; a stage that delivered does not, because there the
+reply is the agent narrating a delivery that already speaks for itself.
+
 **Covered by.** Retry-exhaustion and budget tests in `internal/agent`; the gate listing
-test in `internal/cli`.
+test in `internal/cli`; the empty-delivery reporting tests in `internal/node`.
 
 ---
 

@@ -72,6 +72,26 @@ which either passed when it should have failed or broke a legitimate case. Two w
 only because a test that had nothing to do with the guard went red. The one that worked
 was the boring one: write an anchor file and read it back.
 
+**A fake of a boundary that has no boundary tests nothing.** Three bugs in a row stopped
+every stage from working and none was reachable by the suite: the sandbox was not asked
+for the network, then not asked for git worktree metadata, then given no identity to
+commit as. The tests used a fake sandbox that consumes its flags and execs the rest — it
+has no filesystem boundary, so a worktree is always visible to it and a missing flag
+never costs anything. The suite was at 96% and every one of these was found by a run.
+
+The general form: **when you fake an external boundary, the fake keeps the interface and
+drops the constraint** — and the constraint is the whole reason the boundary exists. What
+a fake can still hold is the *invocation*: asserting what the sandbox was asked to do
+catches a missing flag even when nothing can simulate its effect. That check costs a
+line, and it is the one that would have caught all three.
+
+**The reply is evidence when nothing else is.** Five stages produced no commit, cost
+$3.33, and reported "delivered nothing" — while each agent was saying, in a reply Luna
+read and threw away, that git was unreachable. The work was real: it was found afterwards
+in a directory the agents created because they could not use git. A failure can be loud
+at the boundary and silent in the log, and discarding the only channel that carries the
+reason is how that happens.
+
 **Never write over a file you did not create.** An early version of the trust helper wrote
 a config unconditionally; the sandbox binds the real `~/.claude.json` read-write, so it
 destroyed the user's actual credentials. The rule that came out of it is absolute: merge
