@@ -220,6 +220,34 @@ type GateReject struct {
 	Reason string `json:"reason"`
 }
 
+// GateJudged records that the lead looked at a gate and what it concluded.
+//
+// It changes no state, and that is the point: the gate stays exactly where it
+// was, and this is the reasoning that produced the answer being written down
+// beside it. A gate the lead approves is followed by GateApprove; one it does
+// not is followed by nothing, and without this event the reasoning is lost.
+//
+// Measured on TALLY-6. The lead found a real contradiction in a contract —
+// test.sh fixed at two pre-existing cases plus three appended, against an
+// obligation requiring six — reported it to a terminal, and the log recorded no
+// event at all. The next person to open that gate sees "waiting for review" and
+// none of the analysis that was already paid for, so they do it again.
+//
+// Separate from the decision it explains because the decision is a transition
+// and this is not: recording them as one action would make an approval and its
+// account inseparable, and the account is worth having for the answers that
+// change nothing.
+type GateJudged struct {
+	// Decision is what the lead concluded, in its own vocabulary: approve,
+	// reject or cannot-decide.
+	Decision string `json:"decision"`
+
+	// Reasoning is what it said, verbatim. Verbatim because a summary of a
+	// judgement is a second judgement, and the point of keeping it is that a
+	// person can check the working rather than take the verdict on trust.
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
 // ReviewFinding is what a review stage found. Aligned sends the work back to
 // build; out of scope becomes a separate task and the flow carries on. The
 // distinction is a judgement call, which is why it arrives as a decision rather
@@ -317,6 +345,7 @@ func (Fail) isAction()               {}
 func (GateApprove) isAction()        {}
 func (GateAdjust) isAction()         {}
 func (GateReject) isAction()         {}
+func (GateJudged) isAction()         {}
 func (ReviewFinding) isAction()      {}
 func (Block) isAction()              {}
 func (Unblock) isAction()            {}
@@ -355,6 +384,8 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 		return fail(state, a)
 	case GateApprove, GateAdjust, GateReject:
 		return answerGate(state, action)
+	case GateJudged:
+		return gateJudged(state, a)
 	case ReviewFinding:
 		return reviewFinding(state, a)
 	default:
@@ -1178,4 +1209,30 @@ func (s TaskState) TotalSpend() Spend {
 		total.Turns += stage.Turns
 	}
 	return total
+}
+
+// gateJudged records a judgement without acting on it.
+//
+// The only action in the engine that deliberately changes nothing. What it
+// writes is the account of a decision, and the decision itself arrives as its
+// own action — an approval as GateApprove, anything else as no action at all,
+// which is what leaves the gate open.
+//
+// It is refused when no gate is open, because a judgement about nothing is a
+// caller bug rather than a fact worth keeping: the reasoning would be filed
+// against a gate that is not there, and the next person to read the log would
+// have to work out which one it meant.
+func gateJudged(state TaskState, a GateJudged) (TaskState, error) {
+	if state.Gate == nil {
+		return state, fmt.Errorf("%w: %q judged with no gate open",
+			ErrIllegalTransition, a.Decision)
+	}
+
+	// Copied rather than mutated through the pointer: the gate is shared with the
+	// state this one was built from, and writing through it would edit history
+	// that a replay already produced.
+	judged := *state.Gate
+	judged.Judged, judged.Reasoning = a.Decision, a.Reasoning
+	state.Gate = &judged
+	return state, nil
 }

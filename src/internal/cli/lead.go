@@ -87,6 +87,22 @@ func leadCommand(env Env, args []string) error {
 	return conductTask(env, id, conductor, entering)
 }
 
+// reportEnding says why the loop stopped, and what the lead made of it.
+//
+// The reasoning is printed as well as recorded because a run that ends at a gate
+// otherwise puts one line on the terminal and takes the analysis with it —
+// measured on TALLY-6, where the lead found a real contradiction in a contract
+// and the whole visible output was `wait: review the plan and its contract`.
+func reportEnding(env Env, order fsm.Order, state fsm.TaskState) {
+	fmt.Fprintf(env.Out, "%s: %s\n", order.Kind, order.Reason)
+
+	if state.Gate == nil || state.Gate.Reasoning == "" {
+		return
+	}
+	fmt.Fprintf(env.Out, "\nthe lead judged this %s:\n\n%s\n",
+		state.Gate.Judged, state.Gate.Reasoning)
+}
+
 // conductTask is the loop: ask Luna for the order, give it to the lead, check
 // the task actually moved.
 //
@@ -126,7 +142,7 @@ func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead)
 		// push past. A gate is waiting on a person, a block is waiting on a
 		// person, and done is done.
 		if order.Kind != fsm.OrderRun {
-			fmt.Fprintf(env.Out, "%s: %s\n", order.Kind, order.Reason)
+			reportEnding(env, order, state)
 			return nil
 		}
 

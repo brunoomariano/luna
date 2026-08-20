@@ -165,6 +165,10 @@ func goldenCases() []struct {
 		{"fail", actionFail, fsm.Fail{Reason: "the node died"}},
 		{"gate-adjust", actionGateAdjust, fsm.GateAdjust{Payload: "the contract a human fixed"}},
 		{"gate-reject", actionGateReject, fsm.GateReject{Reason: "the scenarios miss a case"}},
+		{"gate-judged", actionGateJudged, fsm.GateJudged{
+			Decision:  "reject",
+			Reasoning: "obligation 7 wants six cases and the contract permits five",
+		}},
 		{"review-finding", actionReviewFinding, fsm.ReviewFinding{
 			Aligned: true, Summary: "the error path is unhandled",
 			Limits:       fsm.LoopLimits{MaxRounds: 3, NoProgress: 2, Oscillation: 2},

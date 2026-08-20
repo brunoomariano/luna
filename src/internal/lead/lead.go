@@ -561,6 +561,11 @@ func (l *Lead) answerDeclaredGate(
 // is no path from here to a rejection that sends work back. Recording a person's
 // wait is honest about that — the gate is still open, and what the lead concluded
 // belongs in front of whoever answers it.
+//
+// What it concluded is recorded whichever way it went, as a GateJudged event
+// that changes nothing. Without it the reasoning reaches a terminal and dies
+// there: measured on TALLY-6, where the lead found a real contradiction in a
+// contract and the log recorded no event at all.
 func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
 	if l.Ask == nil {
 		// The knob authorised a judgement and there is nobody to make it. Asking a
@@ -579,7 +584,23 @@ func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpe
 		return fsm.GateDecisionWaited
 	}
 
-	if ReadJudgement(said) == JudgedApprove {
+	judgement := ReadJudgement(said)
+
+	// Written before the decision it explains, and its failure does not change
+	// the decision: a gate the lead approved is still approved if the account of
+	// it could not be filed, and losing the approval over its own paperwork would
+	// be the worse of the two failures. The warning is what keeps it from being
+	// silent.
+	if l.Store != nil {
+		if err := l.record(state.ID, fsm.GateJudged{
+			Decision:  judgement.String(),
+			Reasoning: said,
+		}); err != nil {
+			l.warn("could not record what the lead concluded about %s's gate: %v", state.ID, err)
+		}
+	}
+
+	if judgement == JudgedApprove {
 		return fsm.GateDecisionJudged
 	}
 	return fsm.GateDecisionWaited

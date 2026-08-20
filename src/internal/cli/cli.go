@@ -811,6 +811,7 @@ func gateShow(env Env, state fsm.TaskState, flow []fsm.Stage) error {
 	fmt.Fprintf(env.Out, "  waiting %s\n", gate.Reason)
 
 	printGateCriteria(env, state, flow)
+	printGateJudgement(env, state)
 
 	if gate.Kind == fsm.GateReviewArtifact {
 		fmt.Fprintf(env.Out, "\n%s\n%s\n", gate.Artifact, gate.Payload)
@@ -862,6 +863,23 @@ func printGateCriteria(env Env, state fsm.TaskState, flow []fsm.Stage) {
 		fmt.Fprintf(env.Out, "\nnothing declared to answer this mechanically\n")
 		fmt.Fprintf(env.Out, "  luna gate checks %s --on %s --run <command>\n", state.ID, state.Gate.Kind)
 	}
+}
+
+// printGateJudgement shows what the lead concluded, when it was asked.
+//
+// The verdict alone would be worse than nothing here: a person who reads
+// "reject" and not why is being asked to take a model's word for it, which is
+// the opposite of what the criterion-by-criterion brief is for. So the working
+// is printed whole, and whoever is answering the gate can check it.
+func printGateJudgement(env Env, state fsm.TaskState) {
+	if state.Gate.Judged == "" {
+		return
+	}
+	fmt.Fprintf(env.Out, "\nthe lead judged this %s\n", state.Gate.Judged)
+	if state.Gate.Reasoning != "" {
+		fmt.Fprintf(env.Out, "\n%s\n", state.Gate.Reasoning)
+	}
+	fmt.Fprintf(env.Out, "\nit is a reading, not an answer — the gate is still yours\n")
 }
 
 // gateSpecFor finds the gate a stage declares, which is where the criteria live.

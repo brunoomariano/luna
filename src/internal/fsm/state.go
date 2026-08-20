@@ -172,6 +172,18 @@ type PendingGate struct {
 	// and the replacement is what enters the context.
 	Artifact Artifact
 	Payload  string
+
+	// Judged and Reasoning are what the lead concluded about this gate, when it
+	// was asked. Empty means nobody has looked — a knob too low to reach it, or a
+	// gate that opened and has not been judged yet.
+	//
+	// They are on the pending gate rather than in the log's tail because this is
+	// what a person opening the gate needs in front of them, and reaching back
+	// through the events to find it is what nobody does. A judgement about a
+	// *previous* opening of the same gate would be worse than none, so a
+	// rejection that sends the stage round again clears them with the gate.
+	Judged    string
+	Reasoning string
 }
 
 // LoopCounters tracks the three ceilings separately. One counter would

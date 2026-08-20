@@ -1,6 +1,9 @@
 package fsm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestARecordedDecisionOverridesTheShippedPolicy is the point of recording the
 // gate decision rather than the policy that produced it.
@@ -339,4 +342,60 @@ func gatedFlow() []Stage {
 		Produces: []Artifact{"thing"},
 		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
 	}}
+}
+
+// TestAJudgementIsRecordedAgainstTheGateItIsAbout covers the one action in the
+// engine that deliberately changes nothing.
+//
+// The gate stays where it was — that is the point. What it gains is the account
+// of a decision that would otherwise reach a terminal and die there.
+func TestAJudgementIsRecordedAgainstTheGateItIsAbout(t *testing.T) {
+	state := start(t, ProfileNightly)
+
+	state, err := Reduce(state, Advance{Flow: gatedFlow(), GateDecision: GateDecisionWaited})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Gate == nil {
+		t.Fatal("the flow under test opens no gate")
+	}
+
+	before := state.Status
+	judged, err := Reduce(state, GateJudged{
+		Decision:  "reject",
+		Reasoning: "obligation 7 wants six cases and the contract permits five",
+	})
+	if err != nil {
+		t.Fatalf("recording a judgement: %v", err)
+	}
+
+	if judged.Status != before {
+		t.Errorf("a judgement must not move the task: %q became %q", before, judged.Status)
+	}
+	if judged.Gate == nil {
+		t.Fatal("the gate was closed by an action that only describes it")
+	}
+	if judged.Gate.Judged != "reject" {
+		t.Errorf("gate decision: want reject, got %q", judged.Gate.Judged)
+	}
+	if !strings.Contains(judged.Gate.Reasoning, "six cases") {
+		t.Errorf("the reasoning did not reach the gate: %q", judged.Gate.Reasoning)
+	}
+
+	// And the state it was reduced from is untouched: a replay produces states
+	// that share a gate pointer, so writing through it would edit history.
+	if state.Gate.Judged != "" {
+		t.Error("the judgement was written into the state it was reduced from")
+	}
+}
+
+// TestAJudgementWithNoGateOpenIsRefused keeps reasoning from being filed against
+// nothing. A caller bug rather than a fact worth keeping: the next person to read
+// the log would have to work out which gate it meant.
+func TestAJudgementWithNoGateOpenIsRefused(t *testing.T) {
+	state := start(t, ProfileNightly)
+
+	if _, err := Reduce(state, GateJudged{Decision: "approve"}); err == nil {
+		t.Fatal("a judgement about no gate must be refused")
+	}
 }

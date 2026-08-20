@@ -20,6 +20,7 @@ const (
 	actionGateApprove   = "GateApprove"
 	actionGateAdjust    = "GateAdjust"
 	actionGateReject    = "GateReject"
+	actionGateJudged    = "GateJudged"
 	actionReviewFinding = "ReviewFinding"
 	actionBlock         = "Block"
 	actionUnblock       = "Unblock"
@@ -65,6 +66,8 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionGateAdjust, a)
 	case fsm.GateReject:
 		return withPayload(actionGateReject, a)
+	case fsm.GateJudged:
+		return withPayload(actionGateJudged, a)
 	case fsm.ReviewFinding:
 		return withPayload(actionReviewFinding, a)
 	case fsm.Block:
@@ -156,6 +159,7 @@ var fromPayload = map[string]func(string) (fsm.Action, error){
 	actionFail:        decodeJSON[fsm.Fail],
 	actionGateAdjust:  decodeJSON[fsm.GateAdjust],
 	actionGateReject:  decodeJSON[fsm.GateReject],
+	actionGateJudged:  decodeJSON[fsm.GateJudged],
 	actionAbandon:     decodeJSON[fsm.Abandon],
 	actionSetKnob:     decodeJSON[fsm.SetKnob],
 	actionBlock:       decodeJSON[fsm.Block],

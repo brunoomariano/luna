@@ -185,6 +185,19 @@ const (
 	JudgedReject
 )
 
+// String names the judgement in the vocabulary the brief asked for, so the
+// recorded decision reads as the same word the model was told to answer with.
+func (j Judgement) String() string {
+	switch j {
+	case JudgedApprove:
+		return "approve"
+	case JudgedReject:
+		return "reject"
+	default:
+		return "cannot-decide"
+	}
+}
+
 // ReadJudgement finds the verdict in what the lead said.
 //
 // The verdict is the first line, which is what the brief asks for — but an

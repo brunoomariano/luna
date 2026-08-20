@@ -368,3 +368,54 @@ func TestTheLeadCanCloseTheStageItWasHandedIsTheWholeLoop(t *testing.T) {
 		t.Errorf("nothing was delivered, so no stage ever closed: %v", after.Context.Artifacts)
 	}
 }
+
+// TestWhatTheLeadConcludedAboutAGateIsKept covers a judgement that cost a model
+// call and was thrown away.
+//
+// A gate the lead does not approve stays open, which is right. What was wrong is
+// that nothing recorded why: the reasoning went to the model, came back, was
+// printed to a terminal and left no event at all. Measured on TALLY-6, where the
+// lead found a real contradiction in a contract — an obligation requiring six
+// test cases against a permitted five — and a person opening that gate the next
+// day would have seen "waiting for review" and none of it.
+func TestWhatTheLeadConcludedAboutAGateIsKept(t *testing.T) {
+	h, obedient := leadHarness(t)
+	h.mustRun(t, "autonomy", "LUNA-1", "9", "measuring")
+
+	// The obedient lead carries out the stages, so the task actually reaches a
+	// gate; only the judging question is answered by this test.
+	const finding = "obligation 7 wants six cases and the contract permits five"
+	h.env.Lead = func(ctx context.Context, prompt string) (string, error) {
+		if strings.Contains(prompt, "You are answering a gate") {
+			return "REJECT\n\n" + finding, nil
+		}
+		return obedient.ask(ctx, prompt)
+	}
+
+	if err := h.run(t, "lead", "LUNA-1", "--autonomy", "9"); err != nil {
+		t.Fatalf("lead: %v", err)
+	}
+
+	state := mustState(t, h, "LUNA-1")
+	// Not a skip: a flow that reaches no gate makes every assertion below
+	// vacuous, and a test that passes by never arriving is the kind that gets
+	// trusted without having held.
+	if state.Gate == nil {
+		t.Fatal("the task never reached a gate, so nothing here was exercised")
+	}
+
+	if state.Gate.Judged != "reject" {
+		t.Errorf("the gate does not carry what the lead concluded, got %q", state.Gate.Judged)
+	}
+	if !strings.Contains(state.Gate.Reasoning, "six cases") {
+		t.Errorf("the reasoning was not kept: %q", state.Gate.Reasoning)
+	}
+
+	// And a person opening the gate is shown it, because a verdict without the
+	// working asks them to take a model's word for it.
+	h.out.Reset()
+	h.mustRun(t, "gate", "show", "LUNA-1")
+	if !strings.Contains(h.out.String(), finding) {
+		t.Errorf("`gate show` does not show what the lead concluded:\n%s", h.out.String())
+	}
+}
