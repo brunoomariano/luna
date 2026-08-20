@@ -111,7 +111,12 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		return "", fmt.Errorf("%s exited %d: %s", kind, exitErr.ExitCode(), tail(string(exitErr.Stderr)))
+		// Both streams, because either can carry the reason and these harnesses
+		// print theirs on stdout. Reporting stderr alone left "claude exited 1:"
+		// with nothing after the colon at the moment somebody needed to know why.
+		// Run had the same fault and the same fix; they were one edit apart.
+		return "", fmt.Errorf("%s exited %d: %s", kind, exitErr.ExitCode(),
+			firstNonEmpty(tail(string(exitErr.Stderr)), tail(string(out))))
 	}
 	if runErr != nil {
 		return "", fmt.Errorf("asking %s: %w", kind, runErr)
@@ -157,4 +162,15 @@ func (h Harness) asking() (kind, binary string, timeout time.Duration, err error
 		timeout = AskTimeout
 	}
 	return kind, binary, timeout, nil
+}
+
+// firstNonEmpty is the first of the diagnostics that says anything.
+//
+// A harness prints its reason on one stream or the other and rarely both; the
+// caller wants whichever is there, not a message with an empty half.
+func firstNonEmpty(first, second string) string {
+	if strings.TrimSpace(first) != "" {
+		return first
+	}
+	return second
 }

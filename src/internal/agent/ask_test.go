@@ -240,3 +240,25 @@ func TestAskDoesNotShortenADeadlineTheCallerAlreadySet(t *testing.T) {
 		t.Errorf("the caller's deadline was overridden by this package's default: %v", err)
 	}
 }
+
+// TestAnExitedAskReportsWhatTheHarnessSaidOnStdout keeps a diagnostic from being
+// thrown away at the moment somebody needs it.
+//
+// A harness that fails while explaining itself on stdout — which is where these
+// print — left "claude exited 1:" with nothing after the colon. Measured on
+// TALLY-4, where a run stopped and the log said only that. `Run` had the same
+// fault and was fixed earlier; this is its twin, and the two were one edit apart
+// the whole time.
+func TestAnExitedAskReportsWhatTheHarnessSaidOnStdout(t *testing.T) {
+	talkative := writeScript(t, "talkative-harness",
+		"#!/bin/sh\necho 'usage limit reached, resets at 3pm'\nexit 1\n")
+	h := Harness{Binary: talkative}
+
+	_, err := h.Ask(context.Background(), "anything")
+	if err == nil {
+		t.Fatal("a harness that exits non-zero must be an error")
+	}
+	if !strings.Contains(err.Error(), "usage limit reached") {
+		t.Errorf("the reason the harness gave was dropped, leaving nothing to act on: %q", err)
+	}
+}
