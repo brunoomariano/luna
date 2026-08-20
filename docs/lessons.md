@@ -106,6 +106,15 @@ real task to surface and none of them could have been found by a test of Luna's 
 because none of them *is* Luna's own code — they are what Luna asks of the things around
 it. The suite was never wrong; it was answering a different question.
 
+**A brief can promise a mechanism that does not exist, and nothing will say so.** The
+lead's brief said "the agent you start does the work — you do not do it yourself" from the
+beginning, and Luna had no command that starts an agent: `next` reads, `done` reports, and
+`run` drives the whole flow, which is the one thing the lead must not do. So the lead did
+the work itself, obediently and well, and every artifact was recorded as "reported by hand
+through `luna done`" — no cost, no handover, and a review gate whose artifact had never
+been attached to it. The sentence was true as a rule and empty as an instruction, and only
+a real run could tell the difference.
+
 **A helper the test has and the product does not is a hole shaped exactly like the
 product.** The fake lead in the suite opened each stage itself, through a test helper, with
 the comment "what a real lead does" above it. A real lead has no such command: `luna next`

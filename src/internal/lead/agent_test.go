@@ -280,3 +280,21 @@ func TestTheBriefSaysWhatDeliveredTakes(t *testing.T) {
 		}
 	}
 }
+
+// TestTheBriefNamesTheCommandThatStartsTheAgent closes the other half of the
+// gap `luna work` fills.
+//
+// The brief has always said "the agent you start does the work". Naming no way
+// to start one left the lead to do it with its own tools, which is what happened
+// on TALLY-4 — three stages conducted by hand, nothing recorded as spend, and a
+// gate whose artifact was never handed over.
+func TestTheBriefNamesTheCommandThatStartsTheAgent(t *testing.T) {
+	brief := Brief(AutonomyDecide)
+
+	if !strings.Contains(brief, "luna work") {
+		t.Errorf("the brief tells the lead to start an agent and does not say how:\n%s", brief)
+	}
+	if !strings.Contains(brief, "The agent you start does the work") {
+		t.Error("the rule the command serves went missing")
+	}
+}

@@ -1018,3 +1018,72 @@ func TestWhatWentWrongWithoutFailingTheStageReachesTheTerminal(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkRunsTheStageAgentAndNothingElse is the command the lead's brief always
+// assumed and Luna never had.
+//
+// The brief says "the agent you start does the work — you do not do it
+// yourself". There was no way to start one: `luna next` reads, `luna done`
+// reports, and `luna run` drives the whole flow, which is the one thing the lead
+// must not do. So on TALLY-4 the lead did three stages with its own tools and
+// every artifact was recorded as "reported by hand through `luna done`" — no
+// spend, no blobs, no handover, and a gate whose artifact was never attached.
+//
+// `luna work` is the missing half: it runs the agent for the stage that is
+// already open, records what the stage cost, and stops. It chooses no stage —
+// there is only the running one — so it takes nothing away from the FSM.
+func TestWorkRunsTheStageAgentAndNothingElse(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+
+	before := mustState(t, h, "LUNA-1")
+	if before.Status != fsm.StatusReady {
+		t.Fatalf("a new task is ready, got %q", before.Status)
+	}
+
+	// Nothing is running yet, so there is no stage to work — and the refusal has
+	// to be about that rather than about the command not existing.
+	err := Run(h.env, []string{"work", "LUNA-1"})
+	if err == nil {
+		t.Fatal("working a task with no open stage must be refused, not guessed at")
+	}
+	if errors.Is(err, ErrUsage) && strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("`luna work` does not exist: %v", err)
+	}
+	if !strings.Contains(err.Error(), "no running stage") {
+		t.Errorf("the refusal must say what is missing, got %q", err)
+	}
+
+	// And with a stage open, it dispatches to the node rather than reporting for
+	// it. A fake node stands in for the sandbox, which is what is under test here
+	// — that `work` runs the stage — not how the sandbox runs it.
+	entering := &lead.Lead{Store: h.env.Store}
+	if err := entering.Enter(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("opening a stage: %v", err)
+	}
+	if err := Run(h.env, []string{"work", "LUNA-1", "--dry-run"}); err != nil {
+		t.Fatalf("working the open stage: %v", err)
+	}
+
+	worked := mustState(t, h, "LUNA-1")
+	if worked.Stage != before.Stage && worked.Stage == "" {
+		t.Error("work left the task without a stage")
+	}
+}
+
+// TestWorkRefusesToChooseAStage is the boundary as a test.
+//
+// If `luna work` ever advanced, it would be `luna run` under another name and
+// the lead would have a path to flow control. It works the stage that is open
+// and refuses when none is.
+func TestWorkRefusesToChooseAStage(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+
+	_ = Run(h.env, []string{"work", "LUNA-1"})
+
+	after := mustState(t, h, "LUNA-1")
+	if after.Status != fsm.StatusReady || after.Stage != "" {
+		t.Errorf("work moved the flow: %q at %q", after.Status, after.Stage)
+	}
+}

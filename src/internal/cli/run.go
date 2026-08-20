@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -353,4 +354,99 @@ func unblockCommand(env Env, args []string) error {
 
 	fmt.Fprintf(env.Out, "%s unblocked — run it again with `luna run %s`\n", id, id)
 	return nil
+}
+
+// workCommand runs the agent for the stage that is already open, and stops.
+//
+// It is the half of `luna run` the lead needed and Luna did not have. The
+// lead's brief has always said "the agent you start does the work — you do not
+// do it yourself", and there was no way to start one: `next` reads, `done`
+// reports, and `run` drives the whole flow, which is the one thing the lead must
+// not do. So on TALLY-4 the lead did three stages with its own tools, and every
+// artifact was recorded as "reported by hand through `luna done`" — no spend, no
+// blobs, no handover, and a review gate whose artifact had never been attached.
+//
+// It chooses no stage. There is exactly one open, the status says so, and a task
+// with none is refused rather than advanced — otherwise this would be `luna run`
+// under another name and the lead would have a path to flow control.
+//
+// It does not close the stage either. Running the agent and reporting what it
+// delivered stay apart, because `luna done` is where the lead's report meets the
+// contract check, and that seam is what makes the lead's word cost nothing.
+func workCommand(env Env, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%w: work needs a task id", ErrUsage)
+	}
+	id := args[0]
+
+	opts, err := parseRunOptions(args[1:])
+	if err != nil {
+		return err
+	}
+
+	state, err := env.replay(id)
+	if err != nil {
+		return err
+	}
+	if state.Status != fsm.StatusRunning {
+		return fmt.Errorf("task %q has no running stage to work (it is %s)", id, state.Status)
+	}
+
+	conductor, cleanup, err := conduct(env, opts, state.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	var stage fsm.Stage
+	for _, candidate := range fsm.DefaultFlow() {
+		if candidate.ID == state.Stage {
+			stage = candidate
+		}
+	}
+	result, err := conductor.Node.Run(context.Background(), state, stage)
+	if err != nil {
+		return fmt.Errorf("working %s: %w", state.Stage, err)
+	}
+
+	// What the agent produced is reported, not recorded: closing the stage is
+	// `luna done`, and keeping them apart is what stops this command from
+	// becoming a way to finish a stage without the contract check.
+	reportWork(env, id, state.Stage, result)
+	return nil
+}
+
+// reportWork prints what the agent did, in the shape the next command wants.
+//
+// What it does not do is record any of it: closing the stage is `luna done`,
+// where the report meets the contract check. Printing the `done` line ready to
+// copy is the whole handoff between the two.
+func reportWork(env Env, id string, stage fsm.StageID, result lead.Result) {
+	fmt.Fprintf(env.Out, "%s ran %s\n", id, stage)
+	if result.Commit != "" {
+		fmt.Fprintf(env.Out, "  commit    %s\n", result.Commit)
+	}
+	if len(result.Delivered) > 0 {
+		fmt.Fprintf(env.Out, "  delivered %s\n", joinArtifactNames(result.Delivered))
+	}
+	if !result.Spent.Zero() {
+		fmt.Fprintf(env.Out, "  spent     %d tokens  $%.4f  %d turns\n",
+			result.Spent.Tokens(), result.Spent.CostUSD, result.Spent.Turns)
+	}
+
+	fmt.Fprintf(env.Out, "  report it with `luna done %s --delivered %s",
+		id, joinArtifactNames(result.Delivered))
+	if result.Commit != "" {
+		fmt.Fprintf(env.Out, " --commit %s", result.Commit)
+	}
+	fmt.Fprintf(env.Out, "`\n")
+}
+
+// joinArtifactNames renders a delivery for a person to copy into `luna done`.
+func joinArtifactNames(list []fsm.Artifact) string {
+	names := make([]string, 0, len(list))
+	for _, a := range list {
+		names = append(names, string(a))
+	}
+	return strings.Join(names, ",")
 }
