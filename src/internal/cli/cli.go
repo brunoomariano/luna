@@ -892,7 +892,17 @@ func gateAdjust(env Env, id string, state fsm.TaskState, args []string) error {
 		return fmt.Errorf("the gate on %q carries no artifact to adjust", id)
 	}
 
-	payload, err := adjustedPayload(env, state.Gate.Payload, args)
+	// The stored body, not the gate's payload: for an artifact handed over through
+	// the socket the payload is the evidence line naming it — "handed over to
+	// Luna, 9e727…" — so an editor or an `--append` would start from a hash
+	// instead of from the thing being adjusted. `luna gate show` already fetches
+	// the body for the same reason.
+	current := state.Gate.Payload
+	if blob, err := env.Store.LatestBlob(id, "", string(state.Gate.Artifact)); err == nil {
+		current = string(blob.Body)
+	}
+
+	payload, err := adjustedPayload(env, current, args)
 	if err != nil {
 		return err
 	}
@@ -900,9 +910,25 @@ func gateAdjust(env Env, id string, state fsm.TaskState, args []string) error {
 	// An adjustment that changes nothing is how someone says "never mind" —
 	// whether they left the editor untouched or passed an empty append. Reading it
 	// as approval would put words in their mouth.
-	if payload == state.Gate.Payload {
+	if payload == current {
 		fmt.Fprintln(env.Out, "unchanged — nothing was applied")
 		return nil
+	}
+
+	// The store is where the next stage reads it from, so the correction has to
+	// land there too. The reducer records the adjusted payload as evidence, which
+	// is the most a pure function can do — and it is not what `luna artifact get`
+	// serves. Measured on TALLY-5: a contract adjusted to turn a "should" into a
+	// "MUST", the exact weakness the gate had refused it for, and the store went
+	// on serving the "should".
+	if err := env.Store.PutBlob(store.Blob{
+		TaskID:   id,
+		Stage:    string(state.Gate.Stage),
+		Artifact: string(state.Gate.Artifact),
+		Seq:      state.Seq,
+		Body:     []byte(payload),
+	}); err != nil {
+		return fmt.Errorf("recording the adjusted %s: %w", state.Gate.Artifact, err)
 	}
 
 	return answer(env, id, fsm.GateAdjust{Payload: payload}, "adjusted")

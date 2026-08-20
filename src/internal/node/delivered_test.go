@@ -346,3 +346,45 @@ func TestHandoverTellsTheTwoApart(t *testing.T) {
 		t.Error("a directory that is not a repository must be an error")
 	}
 }
+
+// TestResolveCommitAsksGitRatherThanTheString is the guard against a delivery
+// that never happened.
+//
+// A lead found the hole by reading: "a stage can self-report a commit SHA that
+// Luna never verifies exists". Forty hex characters look exactly like a delivery
+// and prove nothing, and the value became the base every later stage branches
+// from.
+func TestResolveCommitAsksGitRatherThanTheString(t *testing.T) {
+	repo := repo(t)
+	ctx := context.Background()
+
+	t.Run("a commit that exists resolves to itself in full", func(t *testing.T) {
+		resolved, err := ResolveCommit(ctx, repo, "HEAD")
+		if err != nil {
+			t.Fatalf("HEAD must resolve: %v", err)
+		}
+		if len(resolved) != 40 {
+			t.Errorf("want the whole sha, got %q", resolved)
+		}
+	})
+
+	t.Run("forty plausible characters do not", func(t *testing.T) {
+		_, err := ResolveCommit(ctx, repo, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+		if err == nil {
+			t.Fatal("a commit that resolves to nothing was accepted")
+		}
+		if !strings.Contains(err.Error(), "deadbeef") {
+			t.Errorf("the refusal must name the value it refused, got %q", err)
+		}
+	})
+
+	t.Run("no commit is not an error", func(t *testing.T) {
+		resolved, err := ResolveCommit(ctx, repo, "")
+		if err != nil {
+			t.Errorf("an absent commit is a state, not a failure: %v", err)
+		}
+		if resolved != "" {
+			t.Errorf("nothing in, nothing out; got %q", resolved)
+		}
+	})
+}

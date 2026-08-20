@@ -1481,3 +1481,41 @@ type brokenPipe struct{}
 func (brokenPipe) Read([]byte) (int, error) {
 	return 0, errors.New("read |0: file already closed")
 }
+
+// TestAnAdjustedArtifactIsWhatTheNextStageReads closes the gap between where an
+// adjustment is recorded and where the next stage looks.
+//
+// `luna gate adjust` promises that "the adjusted version is what enters the
+// context", and the reducer keeps that promise the only way a pure function can:
+// it records the edited payload as evidence. But an artifact handed over through
+// the socket lives in the store, and the store is what `luna artifact get`
+// serves to the stage that consumes it. So the correction stayed in the log
+// while the next stage read the original.
+//
+// Measured on TALLY-5: a contract was adjusted to turn a "should" into a "MUST"
+// — the exact weakness the gate had refused it for — and the store went on
+// serving the version with the "should".
+func TestAnAdjustedArtifactIsWhatTheNextStageReads(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1")
+	seedAtFirstGate(t, h, "LUNA-1")
+
+	// The artifact as the stage handed it over.
+	if err := h.env.Store.PutBlob(store.Blob{
+		TaskID: "LUNA-1", Stage: "plan", Artifact: "contract",
+		Body: []byte("the build stage should be clean\n"),
+	}); err != nil {
+		t.Fatalf("seeding the artifact: %v", err)
+	}
+
+	h.edited = "the build stage MUST be clean\n"
+	h.mustRun(t, "gate", "adjust", "LUNA-1")
+
+	blob, err := h.env.Store.LatestBlob("LUNA-1", "", "contract")
+	if err != nil {
+		t.Fatalf("reading the artifact back: %v", err)
+	}
+	if !strings.Contains(string(blob.Body), "MUST") {
+		t.Errorf("the next stage still reads the version the gate refused:\n%s", blob.Body)
+	}
+}
