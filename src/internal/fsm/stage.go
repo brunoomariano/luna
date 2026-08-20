@@ -19,8 +19,7 @@ type StageID string
 type TaskKind string
 
 // The task kinds Luna ships with. They govern which conditional stages enter the
-// flow: diagnose is bug-only, spec and harden skip a chore, code-review skips
-// docs (see docs/architecture.md).
+// flow: diagnose is bug-only, and review skips a chore (see docs/architecture.md).
 const (
 	KindFeature TaskKind = "feature"
 	KindBug     TaskKind = "bug"
@@ -39,8 +38,10 @@ const TaskID Artifact = "task_id"
 type Fact string
 
 // TouchesStructure marks that the change altered the system's structure. It is
-// only knowable by looking at what build produced, and it is the entry condition
-// for the architecture stage.
+// only knowable by looking at what build produced, which is what makes it a Fact
+// rather than part of TaskKind. No shipped stage is gated on it since the review
+// merge; it stays because a project flow can gate one on it, and the mechanism
+// for a mid-run condition has no other example.
 const TouchesStructure Fact = "touches_structure"
 
 // TaskContext is what a stage condition consults to decide whether it enters the

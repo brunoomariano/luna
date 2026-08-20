@@ -229,8 +229,8 @@ type Retry struct {
 // write a contract stopped to ask a person instead — every time.
 //
 // The three fields are the registry's own, kept apart rather than flattened into
-// one blob so a stage can be told what it needs: `scenarios` and `spec` live on
-// Acceptance, while `build` mostly needs Description.
+// one blob so a stage can be told what it needs: `plan` lives on Acceptance,
+// while `build` mostly needs Description.
 type Statement struct {
 	// Description is what to build.
 	Description string

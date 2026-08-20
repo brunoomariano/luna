@@ -40,8 +40,9 @@ func (c Condition) Met(ctx TaskContext) bool {
 // The conditions the shipped flow uses.
 //
 // Declared here rather than inline in DefaultFlow so that two stages sharing a
-// rule share its name too — `spec` and `harden` both run only for a feature or a
-// bug, and a fingerprint should say that once.
+// rule share its name too, and a fingerprint says it once. The shipped flow uses
+// two of them since the merges; the rest stay registered because a project flow
+// can name any of them, and a condition nothing ships is still one somebody can.
 var (
 	// IsBug gates the stage that finds out why something broke.
 	IsBug = Condition{

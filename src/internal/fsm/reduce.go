@@ -974,9 +974,10 @@ func asksAboutWorkDone(gate *PendingGate) bool {
 //
 // It fills from the evidence because that is where the delivered content lives.
 // A gate whose artifact has not been produced yet keeps an empty payload rather
-// than inventing one: the gate for `spec` opens on entry, before `spec` has
-// written the contract, which is a timing bug of its own and is recorded
-// elsewhere rather than papered over here.
+// than inventing one. No shipped gate is in that position any more — the one
+// review-artifact gate asks about work already done, so the contract exists by
+// the time it opens — but a project flow can declare one that asks on the way
+// in, and inventing a payload for it would be worse than showing none.
 func withPayload(gate *PendingGate, evidence map[Artifact]Evidence) *PendingGate {
 	if gate.Kind != GateReviewArtifact || gate.Payload != "" {
 		return gate
