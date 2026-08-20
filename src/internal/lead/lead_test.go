@@ -875,7 +875,8 @@ func TestTheLeadJudgesTheArtifactRatherThanItsHash(t *testing.T) {
 		Artifact: "contract", Payload: "handed over to Luna, 9e72757f0fdc",
 	}
 
-	if got := l.judge(context.Background(), "LUNA-1", spec, gate); got != fsm.GateDecisionJudged {
+	state := fsm.TaskState{ID: "LUNA-1"}
+	if got := l.judge(context.Background(), state, spec, gate); got != fsm.GateDecisionJudged {
 		t.Fatalf("the lead could not judge an artifact it was given, got %q", got)
 	}
 	if !strings.Contains(judged, "--avg` MUST print the mean") {
@@ -883,5 +884,45 @@ func TestTheLeadJudgesTheArtifactRatherThanItsHash(t *testing.T) {
 	}
 	if strings.Contains(judged, "handed over to Luna") {
 		t.Error("the evidence line reached the model as though it were the artifact")
+	}
+}
+
+// TestTheLeadIsGivenTheTaskWhenItJudges covers the wiring rather than the brief.
+//
+// JudgingBrief can carry a statement and still never receive one: the caller had
+// only the task's id, and the statement lives on the state beside it. A test of
+// the brief alone passes either way, which is why this one goes through judge.
+func TestTheLeadIsGivenTheTaskWhenItJudges(t *testing.T) {
+	var judged string
+	l := &Lead{
+		Ask: func(_ context.Context, prompt string) (string, error) {
+			judged = prompt
+			return "APPROVE", nil
+		},
+		Artifact: func(string, string) (string, bool) {
+			return "# contract\n\n- `--avg` MUST print the mean.\n", true
+		},
+	}
+
+	spec := &fsm.GateSpec{
+		Kind: fsm.GateReviewArtifact, Artifact: "contract",
+		Judge: []string{"every acceptance criterion in the task appears as an obligation"},
+	}
+	gate := &fsm.PendingGate{
+		Kind: fsm.GateReviewArtifact, Stage: "plan", Artifact: "contract",
+	}
+	state := fsm.TaskState{
+		ID: "LUNA-2",
+		Statement: fsm.Statement{
+			Description: "add an --avg flag to tally.sh",
+			Acceptance:  "tally.sh --avg 1 2 3 prints 2",
+		},
+	}
+
+	if got := l.judge(context.Background(), state, spec, gate); got != fsm.GateDecisionJudged {
+		t.Fatalf("judging: got %q", got)
+	}
+	if !strings.Contains(judged, "tally.sh --avg 1 2 3 prints 2") {
+		t.Errorf("the lead was asked about the task's acceptance without being given it:\n%s", judged)
 	}
 }

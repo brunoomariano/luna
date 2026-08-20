@@ -539,7 +539,7 @@ func (l *Lead) answerDeclaredGate(
 	case fsm.AnswerChecks:
 		return fsm.GateDecisionChecked
 	case fsm.AnswerLead:
-		return l.judge(ctx, state.ID, spec, gate)
+		return l.judge(ctx, state, spec, gate)
 	case fsm.AnswerRejected, fsm.AnswerPerson:
 		return fsm.GateDecisionWaited
 	default:
@@ -561,7 +561,7 @@ func (l *Lead) answerDeclaredGate(
 // is no path from here to a rejection that sends work back. Recording a person's
 // wait is honest about that — the gate is still open, and what the lead concluded
 // belongs in front of whoever answers it.
-func (l *Lead) judge(ctx context.Context, taskID string, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
+func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
 	if l.Ask == nil {
 		// The knob authorised a judgement and there is nobody to make it. Asking a
 		// person is the only honest answer: the alternative is approving a gate
@@ -569,7 +569,12 @@ func (l *Lead) judge(ctx context.Context, taskID string, spec *fsm.GateSpec, gat
 		return fsm.GateDecisionWaited
 	}
 
-	said, err := l.Ask(ctx, JudgingBrief(spec, l.artifactFor(taskID, gate), ""))
+	said, err := l.Ask(ctx, JudgingBrief(spec, Evidence{
+		Artifact: l.artifactFor(state.ID, gate),
+		// The task's own words, so a criterion asking about the task has
+		// something to check against rather than the artifact's account of it.
+		Statement: state.Statement,
+	}))
 	if err != nil {
 		return fsm.GateDecisionWaited
 	}

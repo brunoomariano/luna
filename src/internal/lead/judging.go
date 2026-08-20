@@ -7,6 +7,63 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
+// Evidence is everything a gate's judgement is allowed to rest on.
+//
+// A struct rather than three string arguments because they are all strings and
+// the compiler would not catch a transposition — and because what belongs here
+// is a design question that should be answered in one place: a criterion can
+// only be settled by something in this struct.
+type Evidence struct {
+	// Artifact is what the gate is holding — the contract, the plan, whatever
+	// the stage produced and the gate is reviewing.
+	Artifact string
+
+	// Checkout is the delivered commit on disk, when the gate has one. Empty
+	// means the criteria are answered by reading rather than by running.
+	Checkout string
+
+	// Statement is what the task was opened with.
+	//
+	// It is here because a criterion can ask about the task rather than about
+	// the artifact — "every acceptance criterion in the task appears as an
+	// obligation" is the shipped flow's second criterion, and it asks whether
+	// the contract covers what was actually requested. Without the statement
+	// that question has no source to check against, so the honest answer is
+	// UNSUPPORTED and the gate falls to a person every time, at every knob.
+	//
+	// Measured on TALLY-6: the lead answered the other two criteria on the
+	// artifact's own lines and then wrote of this one, correctly, "the task was
+	// not given to me". A criterion nothing can satisfy is worse than no
+	// criterion, because it reads as a judgement about the artifact.
+	Statement fsm.Statement
+}
+
+// writeStatement puts the task's own words in front of the judgement.
+//
+// Marked as the task rather than merged into the artifact, because the whole
+// point of a criterion like "every acceptance criterion in the task appears as
+// an obligation" is comparing two documents. Blurring them would leave the
+// artifact vouching for itself, which is what rule 1 forbids.
+func writeStatement(b *strings.Builder, statement fsm.Statement) {
+	if statement.Description == "" && statement.Design == "" && statement.Acceptance == "" {
+		return
+	}
+
+	b.WriteString("\nThe task this was written from, in the words it was opened with.\n")
+	b.WriteString("A criterion that asks about the task is settled against this text,\n")
+	b.WriteString("not against what the artifact says the task wanted:\n\n")
+
+	if statement.Description != "" {
+		fmt.Fprintf(b, "  About: %s\n", statement.Description)
+	}
+	if statement.Design != "" {
+		fmt.Fprintf(b, "  Approach: %s\n", statement.Design)
+	}
+	if statement.Acceptance != "" {
+		fmt.Fprintf(b, "  Done when: %s\n", statement.Acceptance)
+	}
+}
+
 // JudgingBrief is what the lead is told when it judges a gate.
 //
 // The shape is the design's, not the caller's, and that is the measurement's
@@ -20,8 +77,9 @@ import (
 // So the three rules below are not advice to a prompt writer. Each one is a
 // measured failure that the instruction closed, and leaving their wording to
 // whoever wires this up would leave the result to chance.
-func JudgingBrief(gate *fsm.GateSpec, artifact, checkout string) string {
+func JudgingBrief(gate *fsm.GateSpec, evidence Evidence) string {
 	var b strings.Builder
+	artifact, checkout := evidence.Artifact, evidence.Checkout
 
 	b.WriteString(`You are answering a gate. A person set this run's autonomy high
 enough that this decision is yours, and it is recorded as yours.
@@ -75,6 +133,8 @@ Three rules, in order:
 	for i, criterion := range gate.Judge {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, criterion)
 	}
+
+	writeStatement(&b, evidence.Statement)
 
 	if artifact != "" {
 		b.WriteString("\nThe artifact:\n\n")
