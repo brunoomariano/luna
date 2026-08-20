@@ -565,3 +565,40 @@ func deliveredRepo(t *testing.T) (repo, commit string) {
 	}
 	return repo, strings.TrimSpace(sha)
 }
+
+// TestAStageThatDeliveredNothingNewIsNotProvenByItsBase is the hole left in the
+// first version of this guard.
+//
+// That one refused a command check when the stage had *no* commit. It does not
+// fire when the stage has one and it is the base it started from: `Handover`
+// reads HEAD of the worktree, which is the base until something is committed on
+// top. So the check runs over the code the stage was given, passes because that
+// code was already green, and records `targeted`.
+//
+// Measured on TALLY-5: build was billed $0.64 over 17 turns, its worktree ended
+// clean at the base with no `--avg` anywhere, and `tests_green` closed
+// `targeted` and `passed`. A stage that delivered nothing was proven by what it
+// was handed.
+func TestAStageThatDeliveredNothingNewIsNotProvenByItsBase(t *testing.T) {
+	repo := repoWithCommit(t)
+
+	base, err := git(context.Background(), repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("reading the base: %v", err)
+	}
+	at := strings.TrimSpace(base)
+
+	// The stage was given `at` and hands back `at`: nothing was added on top.
+	shell := Shell{Dir: repo, Commit: at, Base: at}
+
+	got, err := shell.Prove(context.Background(), fsm.Command{Run: "true", Scope: fsm.ScopeTargeted}, 4)
+	if err != nil {
+		t.Fatalf("a stage that delivered nothing is a failed delivery, not a broken machine: %v", err)
+	}
+	if got.Verdict == fsm.VerdictPassed {
+		t.Fatalf("the stage was proven by the code it started from (evidence: %+v)", got)
+	}
+	if !strings.Contains(got.Detail, "nothing on top of") {
+		t.Errorf("the evidence must say what was missing, got %q", got.Detail)
+	}
+}

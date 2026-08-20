@@ -194,7 +194,9 @@ func (r *Runner) verify(
 		return lead.Result{}, fmt.Errorf("reading what stage %q delivered: %w", stage.ID, err)
 	}
 
-	shell := Shell{Dir: r.Repo, Commit: commit}
+	// The base as well as the delivery, so a stage that handed back what it was
+	// given is told apart from one that built on it.
+	shell := Shell{Dir: r.Repo, Commit: commit, Base: state.Base}
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 
 	result := lead.Result{

@@ -63,6 +63,15 @@ type Shell struct {
 	// configuration and stale build output, which is the incoherence INV-1
 	// exists to keep out of the log.
 	OverWorkingTree bool
+
+	// Base is the commit the stage started from, when the caller knows it.
+	//
+	// It is what tells "delivered nothing" apart from "delivered something": a
+	// stage that adds no commit hands back the base, which exists and resolves,
+	// so a check over it passes on code the stage was given. Empty leaves that
+	// distinction unavailable and the check runs, which is the same cautious
+	// direction the rest of this takes.
+	Base string
 }
 
 // Prove runs a verifier and reports what it observed.
@@ -113,7 +122,7 @@ func (s Shell) Prove(ctx context.Context, v fsm.Verifier, seq int) (fsm.Evidence
 			Scope:      command.Proves(),
 			Verdict:    fsm.VerdictFailed,
 			Command:    command.Run,
-			Detail:     "the stage committed nothing, so there is no delivery to run it over",
+			Detail:     undeliveredDetail(s),
 			RecordedAt: seq,
 		}, nil
 	}
@@ -168,6 +177,14 @@ func (s Shell) whereToRun(ctx context.Context) (where string, checkout *Delivere
 			return "", nil, nil
 		}
 		return s.Dir, nil, nil
+	}
+
+	// A delivery that is the base is not a delivery. The stage was handed that
+	// commit and handed it straight back, so running the check over it proves
+	// what the *previous* stage delivered — and passes, because that code was
+	// already green when this stage received it.
+	if s.Base != "" && s.Commit == s.Base {
+		return "", nil, nil
 	}
 
 	delivered, err := CheckoutAt(ctx, s.Dir, s.Commit)
@@ -318,4 +335,16 @@ func summarise(output string, verdict fsm.Verdict) string {
 		cut--
 	}
 	return detail[:cut]
+}
+
+// undeliveredDetail says which way the delivery was missing.
+//
+// The two read differently to whoever finds them in the log: a stage with no
+// commit at all never wrote anything down, while a stage whose commit is its own
+// base ran, spent, and added nothing on top.
+func undeliveredDetail(s Shell) string {
+	if s.Commit == "" {
+		return "the stage committed nothing, so there is no delivery to run it over"
+	}
+	return "the stage committed nothing on top of " + short(s.Base) + ", so there is no delivery to run it over"
 }
