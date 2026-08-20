@@ -154,7 +154,7 @@ func statusCommand(env Env, args []string) error {
 		return writeJSON(env.Out, report)
 	}
 
-	fmt.Fprintf(env.Out, "%s  %s\n", report.TaskID, report.Status)
+	fmt.Fprintf(env.Out, "%s  %s%s\n", report.TaskID, report.Status, simulationNote(state))
 	if report.Base != "" {
 		fmt.Fprintf(env.Out, "  base   %s\n", report.Base)
 	}

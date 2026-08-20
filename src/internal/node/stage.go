@@ -425,7 +425,20 @@ func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Task %s (%s), stage %s.\n", state.ID, state.Context.Kind, stage.ID)
-	fmt.Fprintf(&b, "You are working in the directory you started in.\n\n")
+	fmt.Fprintf(&b, "You are working in the directory you started in.\n")
+
+	// What the agent is looking at is the sandbox, and it will describe it as
+	// though it were the machine. Measured twice: a stage concluded "shellcheck is
+	// not installed on this machine" and wrote it into a contract, and a later gate
+	// rejected an obligation as unverifiable on the strength of it. Both were
+	// wrong — shellcheck is installed, and the exit check runs outside the jail,
+	// where it is reachable.
+	//
+	// Saying so costs two lines and stops a tool's absence from being recorded as a
+	// fact about the project.
+	fmt.Fprintf(&b, "A tool missing here is missing from the sandbox, not from the "+
+		"machine. Luna runs the exit check outside it, so do not record an absence "+
+		"you observe here as a fact about the project.\n\n")
 
 	if statement := state.Statement.Description; statement != "" {
 		fmt.Fprintf(&b, "What the task is about: %s\n", statement)

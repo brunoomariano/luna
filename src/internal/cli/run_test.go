@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -109,7 +110,7 @@ func TestRunRejectsAnUnknownFlag(t *testing.T) {
 // the lead answer them instead of a person.
 func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
@@ -143,7 +144,7 @@ func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 // trail.
 func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
@@ -171,7 +172,7 @@ func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 // and nobody would learn why until they read the contract.
 func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
@@ -249,7 +250,7 @@ func TestRunSurfacesAMistypedFlagBeforeTouchingTheStore(t *testing.T) {
 // .
 func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1") // interactive by default
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated") // interactive by default
 
 	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
@@ -270,7 +271,7 @@ func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 // the first left it, every supervised task would need restarting from scratch.
 func TestAnsweringAGateLetsTheRunCarryOn(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
 	h.mustRun(t, "gate", "approve", "LUNA-1")
@@ -294,7 +295,12 @@ func blockedStore(t *testing.T, h *harness, id string) {
 	t.Helper()
 
 	for i, action := range []fsm.Action{
-		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(fsm.DefaultFlow())},
+		// Simulated, because the tests built on this seed drive it with --dry-run,
+		// and a dry run refuses a task that is not one.
+		fsm.TaskCreated{
+			Kind: fsm.KindFeature, Profile: fsm.ProfileNightly,
+			Flow: fsm.Fingerprint(fsm.DefaultFlow()), Simulated: true,
+		},
 		fsm.Advance{Flow: fsm.DefaultFlow()},  // into discovery, which owes repos
 		fsm.Complete{Flow: fsm.DefaultFlow()}, // delivered nothing
 	} {
@@ -405,7 +411,7 @@ func TestAnUnblockedTaskRunsAgain(t *testing.T) {
 // it is blocked and needs to hear what it is instead.
 func TestUnblockRefusesATaskThatIsNotBlocked(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run") // runs to done
@@ -693,7 +699,7 @@ func TestAMissingSandboxBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 // it would append events on top of a log nobody could read back.
 func TestRunRefusesToStartWhenTheStoreCannotAnswer(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--profile", "nightly")
 
 	if err := h.env.Store.Close(); err != nil {
 		t.Fatalf("closing the store: %v", err)
@@ -804,7 +810,7 @@ func TestATaskThatIsNotDoneDoesNotLand(t *testing.T) {
 // able to name what to merge.
 func TestStatusNamesTheBranchAFinishedTaskLandedOn(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
@@ -1061,13 +1067,59 @@ func TestWorkRunsTheStageAgentAndNothingElse(t *testing.T) {
 	if err := entering.Enter(context.Background(), "LUNA-1"); err != nil {
 		t.Fatalf("opening a stage: %v", err)
 	}
-	if err := Run(h.env, []string{"work", "LUNA-1", "--dry-run"}); err != nil {
+	if err := Run(h.env, []string{"work", "LUNA-1"}); err != nil {
 		t.Fatalf("working the open stage: %v", err)
 	}
 
 	worked := mustState(t, h, "LUNA-1")
 	if worked.Stage != before.Stage && worked.Stage == "" {
 		t.Error("work left the task without a stage")
+	}
+}
+
+// TestWorkOpensTheNextStageOfATaskInFlight covers the gap that routed a lead
+// around the part of Luna that checks.
+//
+// The lead's loop is `luna next` then `luna work`, and neither one opened a
+// stage: `next` is a read, and `work` required one already running. So a task
+// that had just closed a stage sat at `stage_done` while `next` named the stage
+// that logically followed and `work` refused it — twice, byte-identically,
+// because the retry could not clear a disagreement.
+//
+// Measured on TALLY-6, and the stall was not the cost. Given two commands that
+// contradicted each other and no third, the lead reached for
+// `luna run --dry-run` to understand the mechanism, and that walked the task to
+// `done` with `verify` and `review` recorded as passed against code nothing had
+// checked.
+func TestWorkOpensTheNextStageOfATaskInFlight(t *testing.T) {
+	h := newHarness(t)
+	// Simulated, so the stages run no agent and cut no worktree: what is under
+	// test is the transition between two `work` calls, not what a stage does.
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "feature", "--profile", "nightly")
+
+	// Into the first stage and out of it again, which is where the lead's loop
+	// got stuck: a closed stage, and the next one not open.
+	entering := &lead.Lead{Store: h.env.Store}
+	if err := entering.Enter(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("opening the first stage: %v", err)
+	}
+	if err := Run(h.env, []string{"work", "LUNA-1", "--dry-run"}); err != nil {
+		t.Fatalf("working the first stage: %v", err)
+	}
+
+	stalled := mustState(t, h, "LUNA-1")
+	if stalled.Status != fsm.StatusStageDone {
+		t.Fatalf("the setup for this test wants a closed stage, got %q", stalled.Status)
+	}
+
+	// The second `work` is the one that used to be refused.
+	if err := Run(h.env, []string{"work", "LUNA-1", "--dry-run"}); err != nil {
+		t.Fatalf("working the stage after a closed one: %v", err)
+	}
+
+	after := mustState(t, h, "LUNA-1")
+	if after.Stage == stalled.Stage {
+		t.Errorf("work did not open the next stage: still at %q", after.Stage)
 	}
 }
 
@@ -1107,7 +1159,7 @@ func TestWorkRefusesToChooseAStage(t *testing.T) {
 // the tool returned, not what anybody reported.
 func TestWorkRecordsTheEvidenceItEarned(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "feature", "--profile", "nightly")
 
 	entering := &lead.Lead{Store: h.env.Store}
 	if err := entering.Enter(context.Background(), "LUNA-1"); err != nil {
@@ -1128,5 +1180,77 @@ func TestWorkRecordsTheEvidenceItEarned(t *testing.T) {
 		if evidence.Detail == "reported by hand through `luna done`" {
 			t.Errorf("%s closed on a hand report from the command that ran the tool", artifact)
 		}
+	}
+}
+
+// TestADryRunIsRefusedOnARealTask is the guard on the flag that walked TALLY-6
+// to a false `done`.
+//
+// `--dry-run` records every stage as passed without running an agent. Pointed at
+// a task with real stages in it, that is not a rehearsal — it is four genuine
+// stages followed by two invented ones, in one history, with nothing saying
+// which were which. `verify` and `review` closed that way, and the log recorded
+// a green pipeline against code no command had seen.
+func TestADryRunIsRefusedOnARealTask(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
+
+	err := Run(h.env, []string{"run", "LUNA-1", "--dry-run"})
+	if err == nil {
+		t.Fatal("a dry run over a real task must be refused")
+	}
+	if !strings.Contains(err.Error(), "real task") {
+		t.Errorf("the refusal must say why, got %q", err)
+	}
+}
+
+// TestARealRunIsRefusedOnASimulatedTask is the same damage read backwards.
+//
+// Continuing a simulation for real would leave one history where some stages ran
+// and some did not — the state the refusal above exists to prevent, arriving
+// through the other door.
+func TestARealRunIsRefusedOnASimulatedTask(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "feature", "--profile", "nightly")
+
+	err := Run(h.env, []string{"run", "LUNA-1"})
+	if err == nil {
+		t.Fatal("a real run over a simulated task must be refused")
+	}
+	if !strings.Contains(err.Error(), "simulation") {
+		t.Errorf("the refusal must say why, got %q", err)
+	}
+}
+
+// TestASimulatedTaskSaysSoWhereItIsRead covers the half that TALLY-6 proved
+// matters most: not what was recorded, but what a person sees.
+//
+// The evidence a dry run records is true — the declared commands really run —
+// but nothing was built for them to run against. A green pipeline here says the
+// machinery works and nothing about any code, and the only thing standing
+// between those two readings is this line.
+func TestASimulatedTaskSaysSoWhereItIsRead(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "feature", "--profile", "nightly")
+
+	for _, view := range [][]string{
+		{"task", "show", "LUNA-1"},
+		{"status", "LUNA-1"},
+	} {
+		out := h.mustRun(t, view...)
+		if !strings.Contains(out, "simulation") {
+			t.Errorf("`luna %s` does not say the task is a simulation:\n%s",
+				strings.Join(view, " "), out)
+		}
+	}
+
+	// And in the structured view, which is read by the consumer most likely to
+	// treat a verdict as a measurement.
+	var report TaskReport
+	if err := json.Unmarshal([]byte(h.mustRun(t, "task", "show", "LUNA-1", "--json")), &report); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if !report.Simulated {
+		t.Error("the JSON view does not carry the simulation flag")
 	}
 }

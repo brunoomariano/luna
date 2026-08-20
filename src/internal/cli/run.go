@@ -45,6 +45,10 @@ func runTaskCommand(env Env, args []string) error {
 		return err
 	}
 
+	if err := agreeOnSimulation(id, state, opts.Dry); err != nil {
+		return err
+	}
+
 	conductor, cleanup, err := conduct(env, opts, state.Profile)
 	if err != nil {
 		return err
@@ -65,6 +69,87 @@ func runTaskCommand(env Env, args []string) error {
 	}
 
 	return reportRun(env, id, state)
+}
+
+// stageToWork resolves the task to a state with a stage actually open, or says
+// why there is none.
+//
+// The opening is here because neither command in the lead's loop did it: its
+// brief is `luna next` then `luna work`, `next` is a read, and `work` required a
+// stage already running. So a task sat at `stage_done` while `next` named the
+// stage that logically followed and `work` refused it — twice, byte-identically,
+// because a retry cannot clear a disagreement.
+//
+// Measured on TALLY-6, and the stall was not the cost. Given two commands that
+// contradicted each other and no third, the lead reached for
+// `luna run --dry-run` to understand the mechanism, and that walked the task to
+// `done` with `verify` and `review` recorded as passed. The gap did not block
+// the run; it routed around the part that checks.
+func stageToWork(env Env, id string, opts runOptions) (fsm.TaskState, error) {
+	state, err := env.replay(id)
+	if err != nil {
+		return state, err
+	}
+
+	if err := agreeOnSimulation(id, state, opts.Dry); err != nil {
+		return state, err
+	}
+
+	if state, err = openNextStage(env, id, state, opts.Repo); err != nil {
+		return state, err
+	}
+
+	// Still not running means there was nothing to open: a gate waiting on a
+	// person, a block, or a finished task. The status says which, and none of
+	// them is `work`'s to push past.
+	if state.Status != fsm.StatusRunning {
+		return state, fmt.Errorf("task %q has no running stage to work (it is %s)", id, state.Status)
+	}
+	return state, nil
+}
+
+// openNextStage opens the stage that follows a closed one, and returns the state
+// that results.
+//
+// Only for a task already in flight. A `ready` task has no stage yet, and
+// opening its first one would be `work` choosing where the flow starts — the one
+// thing this command must not do, and what `luna run` and `luna lead` are for.
+func openNextStage(env Env, id string, state fsm.TaskState, repo string) (fsm.TaskState, error) {
+	if state.Status != fsm.StatusStageDone {
+		return state, nil
+	}
+
+	entering := &lead.Lead{Store: env.Store, CheckGate: checkGateWith(env.Store, repo)}
+	if err := entering.Enter(context.Background(), id); err != nil {
+		return state, err
+	}
+	return env.replay(id)
+}
+
+// agreeOnSimulation refuses to mix a simulation with a real run.
+//
+// Both directions are refused, and neither is hypothetical. A dry run pointed at
+// a real task is what happened on TALLY-6: the flag walked a task with four
+// genuine stages to `done`, marking `verify` and `review` as passed without
+// running either agent, and the log said the pipeline was green against code no
+// command had seen. The other direction is the same damage read backwards — a
+// real run continuing a simulated task would leave one history where some stages
+// ran and some did not, with nothing saying which.
+//
+// The check is on the task rather than on each stage because that is the honest
+// unit: a run that simulated any part of itself is a simulation.
+func agreeOnSimulation(id string, state fsm.TaskState, dry bool) error {
+	if state.Simulated == dry {
+		return nil
+	}
+	if dry {
+		return fmt.Errorf("%q is a real task with %d events: a dry run would record "+
+			"stages as passed without running them. Open a separate task to exercise "+
+			"the flow", id, state.Seq)
+	}
+	return fmt.Errorf("%q was created as a simulation, and its stages recorded "+
+		"checks that never ran: it cannot be continued for real. Open a new task",
+		id)
 }
 
 // runOptions is how this run is driven.
@@ -394,12 +479,9 @@ func workCommand(env Env, args []string) error {
 		return err
 	}
 
-	state, err := env.replay(id)
+	state, err := stageToWork(env, id, opts)
 	if err != nil {
 		return err
-	}
-	if state.Status != fsm.StatusRunning {
-		return fmt.Errorf("task %q has no running stage to work (it is %s)", id, state.Status)
 	}
 
 	conductor, cleanup, err := conduct(env, opts, state.Profile)

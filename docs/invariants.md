@@ -142,6 +142,16 @@ listing; an exception swallowed between transitions.
 not covered. What exists bounds a turn; a task circling without converging never exceeds
 it. The failure still ends in a block once a budget runs out — just later than it should.
 
+**A simulation is not a result.** `--dry-run` exercises the machine with no agent, and
+its evidence used to claim the scope each contract declared — with the truth in a `Detail`
+field the CLI's own renderer never printed. So `luna task show` displayed
+`ci_green passed (full) make ci → 0` for a command nothing ran, and `luna status` drew the
+stage with the same `x` as any other. Worse, the flag could be pointed at a task with real
+stages in it: on TALLY-6 it walked a task with four genuine commits to `done`, inventing
+the two that check. A task is now marked as a simulation when it is created, both runners
+refuse to mix the two, and every view says so on the first line. A lie with the truth
+beside it is still the lie, once the reader only sees one of the two.
+
 **What the invariant reaches, and what it did not.** A stage that produces nothing has an
 account of why, and it is the agent's own reply. That reply was being discarded: it
 reached the runner and nothing read it, so five stages of TALLY-5 each recorded

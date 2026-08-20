@@ -946,3 +946,26 @@ func anyContains(list []string, want string) bool {
 	}
 	return false
 }
+
+// TestTheBriefSaysAnAbsentToolIsAbsentFromTheSandbox covers an agent describing
+// its jail as though it were the machine.
+//
+// Measured twice on one task. A `plan` agent could not run `shellcheck` inside
+// the sandbox and wrote "shellcheck is not installed on this machine" into the
+// contract as a fact about the project. The gate that followed then rejected an
+// obligation as unverifiable on the strength of it. Both were wrong: shellcheck
+// is installed, and Luna runs the exit check outside the jail where it is
+// reachable — the same `make ci` the contract called impossible passed on the
+// first try.
+//
+// The agent cannot know where the check runs, so the brief has to say.
+func TestTheBriefSaysAnAbsentToolIsAbsentFromTheSandbox(t *testing.T) {
+	brief := Brief(runningState("T-40"), fsm.Stage{ID: "plan", Role: "maker"}, fsm.Role{Agent: "claude"})
+
+	for _, want := range []string{"sandbox", "outside"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief does not warn about %q, so an agent records the jail's "+
+				"limits as the project's:\n%s", want, brief)
+		}
+	}
+}

@@ -26,6 +26,11 @@ type TaskReport struct {
 	Profile string `json:"profile"`
 	Stage   string `json:"stage,omitempty"`
 
+	// Simulated marks a task whose stages ran no agent. Present in the structured
+	// view as well as the printed one, because a consumer reading only the JSON
+	// is the reader most likely to treat a verdict as a measurement.
+	Simulated bool `json:"simulated,omitempty"`
+
 	// Blocked is why the task stopped, and is present exactly when the status is
 	// blocked — a task that halts without saying why is the silent failure
 	// INV-5 forbids.
@@ -122,6 +127,7 @@ func taskReport(cfg Config, state fsm.TaskState, events int) TaskReport {
 		Kind:           string(state.Context.Kind),
 		Profile:        string(state.Profile),
 		Stage:          string(state.Stage),
+		Simulated:      state.Simulated,
 		Blocked:        state.Blocked,
 		Events:         events,
 		ProfileDefined: defined,

@@ -323,6 +323,12 @@ type TaskState struct {
 	// Empty is normal — a task nobody described still runs every stage.
 	Statement Statement
 
+	// Simulated marks a task whose stages ran no agent — a `--dry-run`. It is set
+	// once, when the task is created, and never cleared: a run that simulated any
+	// part of itself is a simulation, and letting it become real later is how a
+	// simulated result gets read as a measured one.
+	Simulated bool
+
 	// GateChecks are the commands this task declared as the mechanical answer to
 	// each gate, keyed by gate kind.
 	//

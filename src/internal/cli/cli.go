@@ -115,7 +115,7 @@ func Usage() string {
 	return strings.TrimSpace(`
 luna — deterministic orchestration for AI agents
 
-  luna task new <id> --kind <kind> [--profile <profile>]
+  luna task new <id> --kind <kind> [--profile <profile>] [--simulated]
         [--about <what>] [--design <how>] [--acceptance <done when>]
         open a task's log, with what the task is about
 
@@ -303,6 +303,7 @@ func taskNew(env Env, args []string) error {
 		Profile:   opts.profile,
 		Flow:      flow,
 		Statement: opts.stated,
+		Simulated: opts.simulated,
 	}
 	if err := env.Store.AppendAction(id, created); err != nil {
 		return err
@@ -378,6 +379,11 @@ type taskOptions struct {
 	// stated is what the task is about, as it was given on the command line. It
 	// rides into the log with the task rather than into a registry.
 	stated fsm.Statement
+
+	// simulated opens a task for `--dry-run` to exercise. Declared here rather
+	// than inferred at run time because it is a property of the task, and a task
+	// cannot become a simulation after real stages have run in it.
+	simulated bool
 }
 
 // howToRun reads the flags that decide how the task is conducted, as opposed to
@@ -397,6 +403,8 @@ func howToRun(opts *taskOptions, cfg Config, name, value string) error {
 				ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
 		}
 		opts.profile = fsm.Profile(value)
+	case "simulated":
+		opts.simulated = true
 	default:
 		return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
 	}
@@ -644,7 +652,7 @@ func printLoop(env Env, loop fsm.LoopCounters) {
 // is a contract and this one is prose, and mixing their construction
 // is how they drift.
 func printTask(env Env, state fsm.TaskState, events int) {
-	fmt.Fprintf(env.Out, "%s  %s\n", state.ID, state.Status)
+	fmt.Fprintf(env.Out, "%s  %s%s\n", state.ID, state.Status, simulationNote(state))
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
 	// The knob rather than the profile: the profile decides nothing since
 	// retired with the profiles and is kept only so old logs replay, while the knob is what bounds
@@ -790,6 +798,22 @@ func answerOpenGate(env Env, sub, id string, rest []string) error {
 		// Unreachable: runGate already rejected anything else.
 		return fmt.Errorf("%w: unknown gate subcommand %q", ErrUsage, sub)
 	}
+}
+
+// simulationNote marks a task whose stages ran no agent.
+//
+// On the first line, next to the status, because that is the part a person
+// reads. The evidence below it is real — the declared commands did run — but
+// nothing was built for them to run against, so a green pipeline here says the
+// machinery works and nothing about any code.
+//
+// Measured on TALLY-6, where a dry run walked a real task to `done` and every
+// rendered line was indistinguishable from a genuine run.
+func simulationNote(state fsm.TaskState) string {
+	if !state.Simulated {
+		return ""
+	}
+	return "  [simulation — no agent ran]"
 }
 
 // gateShow is what a person reads before answering a gate.
@@ -1027,7 +1051,7 @@ func answer(env Env, id string, action fsm.Action, verb string) error {
 // valuelessFlags are the switches: present or absent, never `--flag value`.
 var valuelessFlags = map[string]bool{
 	"stdin": true, "dry-run": true, "json": true, "notify": true, "force": true,
-	"adopt": true,
+	"adopt": true, "simulated": true,
 }
 
 // parseFlags reads --name=value and --name value pairs.

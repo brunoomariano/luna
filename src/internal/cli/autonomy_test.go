@@ -124,7 +124,7 @@ func TestAutonomyNeedsATaskThatExists(t *testing.T) {
 // exists passes just as happily when no gate ever does.
 func TestMovingTheKnobSaysAnOpenGateIsUnaffected(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 
 	var opened bool
 	for range 12 {

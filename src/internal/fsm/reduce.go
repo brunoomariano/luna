@@ -34,6 +34,25 @@ type TaskCreated struct {
 	// runs — so a replay refuses it rather than reading it against the shipped one.
 	Flow FlowFingerprint `json:"flow,omitempty"`
 
+	// Simulated marks a task whose stages run no agent — a `--dry-run`.
+	//
+	// It belongs on the task rather than on each piece of evidence because it is
+	// a fact about the whole run, and because the alternative was tried and is
+	// worse: recording it per artifact means the scopes have to carry it, and a
+	// scope that says "nothing ran" either satisfies the contract (a lie) or
+	// satisfies nothing (and then no dry run can cross an agent stage).
+	//
+	// Marking the task keeps both properties. The exit check stays exactly as
+	// strict, every transition still happens, and no reader can mistake the
+	// result for a real one — `luna status` and `luna task show` say so on the
+	// first line, which is the part a person actually reads.
+	//
+	// Measured on TALLY-6, where a dry run walked a *real* task to `done` and
+	// left `ci_green passed (full) make ci → 0` in the log for code no command
+	// had seen. That the flag could be pointed at a task with real stages in it
+	// is the other half of the failure, and `luna run` now refuses it.
+	Simulated bool `json:"simulated,omitempty"`
+
 	// Statement is what a person said the task is about, recorded with the task
 	// rather than read from a registry.
 	//
@@ -456,6 +475,7 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 	// property of the whole replay.
 	state.Flow = a.Flow
 	state.Statement = a.Statement
+	state.Simulated = a.Simulated
 	return state, nil
 }
 

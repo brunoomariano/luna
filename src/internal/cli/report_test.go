@@ -40,7 +40,7 @@ func TestTaskShowAnswersStructure(t *testing.T) {
 // prevent.
 func TestTheStructuredViewCarriesTheScope(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1", "--profile", "nightly")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--profile", "nightly")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
 	var report TaskReport
@@ -73,7 +73,7 @@ func TestTheStructuredViewCarriesTheScope(t *testing.T) {
 // it waiting for".
 func TestAWaitingTaskCarriesItsGate(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1") // interactive: stops at the first gate
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated") // interactive: stops at the first gate
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
 	var report TaskReport
@@ -115,7 +115,7 @@ func TestGatesAnswersAnArrayEvenWhenEmpty(t *testing.T) {
 // TestTheStructuredGatesListNamesEachTask covers the populated case.
 func TestTheStructuredGatesListNamesEachTask(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun(t, "task", "new", "LUNA-1")
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	h.mustRun(t, "run", "LUNA-1", "--dry-run")
 
 	var report GatesReport
