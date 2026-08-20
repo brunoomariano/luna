@@ -96,6 +96,16 @@ exemption outlived the artifact") and could not see it either, because it checke
 hand-written list rather than the map. The fix was to walk the map as well as the flow,
 and the proof was inverting it: a dead name put back now fails, and did not before.
 
+**Coverage measures the code, not the environment it runs in.** Four faults shipped past a
+suite at ~96%, and every one of them was the transport rather than the logic: the sandbox
+started with no network, so no stage agent could reach a model at all; a stage killed
+mid-flight stranded a git registration that blocked the next stage of the same role; a
+stage that committed nothing was verified against the repository's own head; and the lead
+could not run `luna next`, the first command its own brief tells it to run. Each needed one
+real task to surface and none of them could have been found by a test of Luna's own code,
+because none of them *is* Luna's own code — they are what Luna asks of the things around
+it. The suite was never wrong; it was answering a different question.
+
 **A fake that cannot be wrong the way the real thing is wrong proves nothing.** Every test
 of the agent transport passed `Sandbox: "/bin/sh"`. It ran, it recorded its arguments, the
 assertions held — and because `sh` refuses a leading long option, the whole suite
