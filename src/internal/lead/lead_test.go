@@ -926,3 +926,52 @@ func TestTheLeadIsGivenTheTaskWhenItJudges(t *testing.T) {
 		t.Errorf("the lead was asked about the task's acceptance without being given it:\n%s", judged)
 	}
 }
+
+// TestFindingsThatDoNotBlockAreStillPutInFrontOfAPerson covers the other half of
+// a narrow blocking rule.
+//
+// Only a defect this change introduced sends the work back. That is deliberate:
+// blocking on inherited ones turns every task into an audit of the repository,
+// and the work reopens to fix legacy nobody asked about. But an inherited defect
+// is still a defect somebody verified against a named input, and leaving it in a
+// report nobody was told to open is how it is never read.
+//
+// Measured on TALLY-7: four real defects, every one of them true, and the only
+// place any of them existed was the report.
+func TestFindingsThatDoNotBlockAreStillPutInFrontOfAPerson(t *testing.T) {
+	// Driven through a real review rather than by calling the reporter: what was
+	// missing is that nothing on the path invoked it, and a test that calls it
+	// directly passes with the call site removed.
+	var warned []string
+	report := strings.Join([]string{
+		"[SHOULD-FIX] B1 tally.sh --avg -- 1 2 3 prints 0 at exit 0",
+		"[NIT] N1 the header comment could name the flag",
+		"[BLOCKING] B2 the acceptance criterion does not hold",
+	}, "\n")
+
+	runReviewWatching(t, report, func(format string, args ...any) {
+		warned = append(warned, fmt.Sprintf(format, args...))
+	})
+
+	if !anyContains(warned, "prints 0 at exit 0") {
+		t.Errorf("a should-fix finding never reached a person: %v", warned)
+	}
+	if !anyContains(warned, "could name the flag") {
+		t.Errorf("a nit never reached a person: %v", warned)
+	}
+
+	// The blocking one is not repeated here: it reopens the stage, and that is
+	// where it is read. Saying it twice trains a reader to skim both.
+	if anyContains(warned, "acceptance criterion does not hold") {
+		t.Errorf("a blocking finding was reported as though it were not: %v", warned)
+	}
+}
+
+func anyContains(list []string, want string) bool {
+	for _, got := range list {
+		if strings.Contains(got, want) {
+			return true
+		}
+	}
+	return false
+}

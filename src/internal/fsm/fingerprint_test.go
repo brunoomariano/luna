@@ -208,7 +208,15 @@ func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
 	//
 	// No open task was stranded: every store carrying the previous fingerprint held
 	// only test tasks, checked before the value moved.
-	const pinned FlowFingerprint = "973859a43a216809"
+	//
+	// Moved again when `verify` gained `contract` among its inputs. That stage is
+	// the one asked whether the delivery honours the contract and was not given
+	// it, so nothing in the flow ever compared the document against what was
+	// built — measured on TALLY-7, where the contract required a test pinning one
+	// of its own decisions, the test was never written, and verify reported that
+	// all three decisions were pinned. Checked again before moving: every open
+	// task was finished or abandoned.
+	const pinned FlowFingerprint = "3dbe4033624d42a3"
 
 	if got := Fingerprint(DefaultFlow()); got != pinned {
 		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+

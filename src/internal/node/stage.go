@@ -452,7 +452,10 @@ func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 
 	if len(stage.Requires) > 0 {
 		fmt.Fprintf(&b, "\nWhat you have: %s\n", join(stage.Requires))
+		fmt.Fprintf(&b, "Read one with `luna artifact get <name>`.\n")
 	}
+
+	writeContractDuty(&b, stage)
 
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	if len(owed) > 0 {
@@ -478,6 +481,33 @@ func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	// handoff — the next stage branches from it rather than from a description.
 	fmt.Fprintf(&b, "\nCommit what you produce. The commit is the handoff.\n")
 	return b.String()
+}
+
+// writeContractDuty tells a stage handed the contract what it is for.
+//
+// Naming it among the inputs is not enough, and the difference was measured: on
+// TALLY-7 the contract required a test pinning one of its own decisions, the
+// test was never written, and the stage with every means to notice reported the
+// opposite — that all three decisions were pinned by a test. Nothing had asked
+// it to compare the document against what was built.
+func writeContractDuty(b *strings.Builder, stage fsm.Stage) {
+	if !requires(stage, "contract") {
+		return
+	}
+	fmt.Fprintf(b, "\nThe contract is not background: it is what the delivery is judged against.\n")
+	fmt.Fprintf(b, "Read it, and check what was built against every obligation it states —\n")
+	fmt.Fprintf(b, "including the tests it says exist. An obligation you cannot find\n")
+	fmt.Fprintf(b, "satisfied is a finding, whatever the suite says.\n")
+}
+
+// requires reports whether a stage names an artifact among its inputs.
+func requires(stage fsm.Stage, artifact fsm.Artifact) bool {
+	for _, required := range stage.Requires {
+		if required == artifact {
+			return true
+		}
+	}
+	return false
 }
 
 func join(artifacts []fsm.Artifact) string {

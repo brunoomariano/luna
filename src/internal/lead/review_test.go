@@ -279,3 +279,28 @@ func TestAFindingWithNoIdStillNamesItself(t *testing.T) {
 		t.Errorf("a non-blocking finding reached the summary of what blocked: %q", got)
 	}
 }
+
+// runReviewWatching is runReview with somewhere for the warnings to go.
+//
+// Separate rather than a parameter on runReview, because every existing caller
+// asserts on the state and none of them cares about the reporting channel.
+func runReviewWatching(t *testing.T, report string, warn func(string, ...any)) fsm.TaskState {
+	t.Helper()
+
+	s := newStore(t)
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(reviewFlow()),
+	}); err != nil {
+		t.Fatalf("opening the task: %v", err)
+	}
+
+	conductor := &Lead{Store: s, Node: reportingNode{report: report}, Flow: reviewFlow(), Warn: warn}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("running: %v", err)
+	}
+	return state
+}

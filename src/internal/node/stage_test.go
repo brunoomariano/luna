@@ -969,3 +969,56 @@ func TestTheBriefSaysAnAbsentToolIsAbsentFromTheSandbox(t *testing.T) {
 		}
 	}
 }
+
+// TestAStageGivenTheContractIsToldToJudgeAgainstIt closes the gap between two
+// things that share a name.
+//
+// The stage contract — requires and produces — is checked by the engine. The
+// contract *artifact*, the document the plan stage wrote, was checked by nobody:
+// the gate judged whether it was coherent, and nothing afterwards asked whether
+// the delivery honoured it.
+//
+// Measured on TALLY-7. The contract required, in as many words, a test pinning
+// one of its own decisions. The test was never written, `build` closed green —
+// correctly, since its stage contract asked for `code` and `tests_green` and
+// both arrived — and `verify` then reported that all three decisions were pinned
+// by a test. It had every means to notice and had never been asked to compare
+// the two.
+func TestAStageGivenTheContractIsToldToJudgeAgainstIt(t *testing.T) {
+	stage := fsm.Stage{
+		ID: "verify", Role: "critic",
+		Requires: []fsm.Artifact{"code", "scenarios", "contract"},
+		Produces: []fsm.Artifact{"ci_green"},
+	}
+
+	brief := Brief(runningState("T-50"), stage, fsm.Role{Agent: "claude"})
+
+	for _, want := range []string{"judged against", "every obligation"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("a stage handed the contract is not told to judge against it (%q):\n%s", want, brief)
+		}
+	}
+
+	// And it is told how to read one, since naming an artifact it cannot open
+	// would be the same gap wearing a different hat.
+	if !strings.Contains(brief, "luna artifact get") {
+		t.Errorf("the brief names inputs without saying how to read them:\n%s", brief)
+	}
+}
+
+// TestAStageWithoutTheContractIsNotToldToJudgeIt is the other side.
+//
+// `build` writes code against the contract; it is not the stage that audits the
+// delivery against it. Telling every stage to judge would put the instruction
+// where it does not belong and cost tokens on every one of them.
+func TestAStageWithoutTheContractIsNotToldToJudgeIt(t *testing.T) {
+	stage := fsm.Stage{
+		ID: "intake", Role: "maker",
+		Requires: []fsm.Artifact{"task_id", "worktree"},
+		Produces: []fsm.Artifact{"briefing"},
+	}
+
+	if brief := Brief(runningState("T-51"), stage, fsm.Role{Agent: "claude"}); strings.Contains(brief, "judged against") {
+		t.Errorf("a stage that was not handed the contract is told to judge it:\n%s", brief)
+	}
+}

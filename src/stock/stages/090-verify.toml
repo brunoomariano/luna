@@ -3,7 +3,14 @@
 
 id                 = "verify"
 role               = "critic"
-requires           = ["code", "scenarios"]
+# The contract as well as the scenarios, because this stage is the one asked
+# whether the delivery honours it. It was absent, and the gap it left was
+# measured on TALLY-7: the contract required a test pinning one of its own
+# decisions, the test was never written, build closed green — correctly, since
+# the *stage* contract asks for `code` and `tests_green` and both arrived — and
+# verify then stated that all three decisions were pinned by a test. They were
+# not. Nothing in the flow compared the document against what was built.
+requires           = ["code", "scenarios", "contract"]
 produces           = ["ci_green"]
 produces_for_human = ["dod_checked"]
 

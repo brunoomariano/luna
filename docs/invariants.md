@@ -142,6 +142,26 @@ listing; an exception swallowed between transitions.
 not covered. What exists bounds a turn; a task circling without converging never exceeds
 it. The failure still ends in a block once a budget runs out — just later than it should.
 
+**A review that cannot be read sends nothing back.** The mechanism was complete at both
+ends and the vocabulary crossed neither way: `ReadReport` looks for `[BLOCKING]`,
+`[SHOULD-FIX]`, `[NIT]` and `[UNCERTAIN]`, the review stage declares `sends_back_to`, and
+nothing ever told the agent those tags existed. On TALLY-7 the critic found four real
+defects — every one verified against a named input — wrote them under a heading called
+"Findings" in prose, and the parser read nothing. The critic's brief teaches the tags now,
+and what may block is deliberately narrow: introduced by this change, or breaks a stated
+acceptance criterion. A defect that was already there is reported to a person rather than
+reopening the work, because blocking on inherited ones turns every task into an audit of
+the repository.
+
+**Two things are called the contract, and only one was checked.** The stage contract —
+`requires` and `produces` — is the engine's. The contract *artifact*, the document the
+plan stage writes, was checked by nobody: the gate judged whether it was coherent, and
+nothing afterwards asked whether the delivery honoured it. On TALLY-7 that document
+required a test pinning one of its own decisions, the test was never written, `build`
+closed green — correctly, since its stage contract was satisfied — and `verify` reported
+that all three decisions were pinned. `verify` now requires the contract and is told what
+it is for.
+
 **A simulation is not a result.** `--dry-run` exercises the machine with no agent, and
 its evidence used to claim the scope each contract declared — with the truth in a `Detail`
 field the CLI's own renderer never printed. So `luna task show` displayed

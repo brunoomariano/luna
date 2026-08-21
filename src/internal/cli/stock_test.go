@@ -227,3 +227,36 @@ agent = "codex"
 		t.Error("naming one role deleted another's brief")
 	}
 }
+
+// TestTheCriticIsTaughtTheVocabularyLunaReads is the transport that was missing
+// between two working ends.
+//
+// `fsm.ReadReport` looks for `[BLOCKING]`, `[SHOULD-FIX]`, `[NIT]` and
+// `[UNCERTAIN]`; a `[BLOCKING]` is what sends work back to build. The parser was
+// written, the stage declared `sends_back_to`, and nothing ever told the agent
+// the tags existed.
+//
+// Measured on TALLY-7: the critic found four real defects, wrote them under a
+// heading called "Findings" in prose, and the parser read nothing. The flow
+// carried on and four verified defects moved nothing.
+func TestTheCriticIsTaughtTheVocabularyLunaReads(t *testing.T) {
+	critic, ok := ShippedRoles()["critic"]
+	if !ok {
+		t.Fatal("the shipped stock has no critic role")
+	}
+
+	for _, severity := range fsm.KnownSeverities() {
+		if !strings.Contains(critic.Brief, "["+string(severity)+"]") {
+			t.Errorf("the critic is never told about [%s], so a finding it tags that way "+
+				"is one Luna cannot read", severity)
+		}
+	}
+
+	// And the rule for the one that sends work back, which is the whole reason
+	// the vocabulary is narrow: an agent told only that BLOCKING exists reaches
+	// for it on any defect it considers serious, and every inherited one reopens
+	// the work.
+	if !strings.Contains(critic.Brief, "introduced") {
+		t.Errorf("the critic is not told what may block, only that blocking exists:\n%s", critic.Brief)
+	}
+}

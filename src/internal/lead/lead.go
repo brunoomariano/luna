@@ -379,6 +379,15 @@ func (l *Lead) readReview(
 	// gate payload reads it from too — the node ran the tool, and what it
 	// saw arrives in the action).
 	findings := fsm.ReadReport(result.Evidence[artifact].Detail)
+
+	// What the review found and is not sending back. A defect the change did not
+	// introduce does not reopen the work — that would turn every task into an
+	// audit of the repository — but it is still a defect somebody verified, and
+	// leaving it to be discovered in the report is how it is never read.
+	//
+	// Said before the early return, so it is said whether or not anything blocks.
+	l.reportFindings(taskID, findings)
+
 	if !fsm.Blocks(findings) {
 		return nil
 	}
@@ -393,6 +402,22 @@ func (l *Lead) readReview(
 		// ordinary round leaves this absent and nothing is asked.
 		GateDecision: l.decideCeiling(ctx, state),
 	})
+}
+
+// reportFindings puts what the review found in front of a person.
+//
+// Only the ones that do not send work back, because the blocking ones already
+// reopen the stage and are read there. These are the other outcome: a real
+// defect, verified against a named input, that this change did not cause — on
+// TALLY-7 there were four, every one of them true, and the only place any of
+// them existed was a report nobody was told to open.
+func (l *Lead) reportFindings(taskID string, findings []fsm.Finding) {
+	for _, finding := range findings {
+		if finding.Severity == fsm.SeverityBlocking {
+			continue
+		}
+		l.warn("%s review [%s] %s", taskID, finding.Severity, finding.Text)
+	}
 }
 
 // decideCeiling is what the lead does about a loop that stopped converging:

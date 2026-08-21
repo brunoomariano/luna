@@ -27,6 +27,16 @@ const (
 	SeverityUncertain Severity = "UNCERTAIN"
 )
 
+// KnownSeverities is every tag a finding may carry.
+//
+// It exists so a caller can ask rather than repeat the list. The one that made
+// it necessary is the check that the critic's brief teaches all of them: written
+// with the names inline, that test would keep passing when a severity is added
+// and never taught — which is the exact failure it was written for, one level up.
+func KnownSeverities() []Severity {
+	return []Severity{SeverityBlocking, SeverityShouldFix, SeverityNit, SeverityUncertain}
+}
+
 // Finding is one entry in a review report.
 type Finding struct {
 	// ID is the handle for the conversation afterwards — B1, S2, N1.

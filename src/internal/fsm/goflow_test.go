@@ -84,8 +84,10 @@ func goFlow() []Stage {
 			// The pipeline is a command and the checklist is a judgement, so this
 			// stage has both — and a role, because the artifact that needs one
 			// decides.
-			Role:             "critic",
-			Requires:         []Artifact{"code", "scenarios"},
+			Role: "critic",
+			// The contract as well, because this stage is the one asked whether the
+			// delivery honours it — and it was not given it.
+			Requires:         []Artifact{"code", "scenarios", "contract"},
 			Produces:         []Artifact{"ci_green"},
 			ProducesForHuman: []Artifact{"dod_checked"},
 			Verifiers: map[Artifact]Verifier{
@@ -153,9 +155,18 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	// joined stages that already shared a role's denial, a session and their
 	// input. No task was open when it changed.
 	//
+	// The fourth is `verify` gaining `contract` among its inputs. The argument is
+	// a gap measured on TALLY-7: the contract required a test pinning one of its
+	// own decisions, the test was never written, `build` closed green — correctly,
+	// since the *stage* contract asks for `code` and `tests_green` and both
+	// arrived — and `verify` then reported that all three decisions were pinned by
+	// a test. Nothing in the flow compared the document against what was built,
+	// and the one stage positioned to do it had not been handed the document. No
+	// task was open when it changed.
+	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
-	const shipped = "973859a43a216809"
+	const shipped = "3dbe4033624d42a3"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)
