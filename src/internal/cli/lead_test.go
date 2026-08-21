@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -432,6 +433,80 @@ func TestWhatTheLeadConcludedAboutAGateIsKept(t *testing.T) {
 //
 // Asserted against the command's own wiring rather than by running a task,
 // because what was wrong is which fields the command sets.
+// TestConductTaskLandsAFinishedTask covers the call that was missing, not the
+// field that was set.
+//
+// `luna lead` runs its own loop — `conductTask`, not `Lead.Run` — and only
+// `Lead.Run` landed. A previous fix wired the Land field on this path and
+// nothing invoked it, so TALLY-8 finished six stages with its work reachable
+// only through the stage branches while `luna status` printed
+// `luna/TALLY-8/done` for a ref that did not exist.
+//
+// The earlier test asserted the field was non-nil, and passed throughout.
+func TestConductTaskLandsAFinishedTask(t *testing.T) {
+	var landed struct{ task, commit string }
+
+	conductor := leadFor(newHarness(t).env, ".")
+	conductor.Land = func(_ context.Context, taskID, commit string) error {
+		landed.task, landed.commit = taskID, commit
+		return nil
+	}
+
+	conductor.PointBranchIfDone(context.Background(), fsm.TaskState{
+		ID: "LUNA-1", Status: fsm.StatusDone, Base: "abc123",
+	})
+
+	if landed.task != "LUNA-1" || landed.commit != "abc123" {
+		t.Errorf("a finished task was not landed, got %+v", landed)
+	}
+
+	// And a task that has not finished is not landed, so a caller can hand any
+	// ending state to it.
+	landed.task = ""
+	conductor.PointBranchIfDone(context.Background(), fsm.TaskState{
+		ID: "LUNA-2", Status: fsm.StatusAwaitingGate, Base: "abc123",
+	})
+	if landed.task != "" {
+		t.Errorf("a task waiting at a gate was landed: %+v", landed)
+	}
+}
+
+// TestConductTaskLandsWhatTheLoopEndsOn is the same guarantee through the
+// command's own loop, which is where it broke.
+//
+// The test above holds with the call site removed — that is exactly the state
+// TALLY-8 shipped in, and why it shipped. This one runs `luna lead` against a
+// task that is already done and asks whether the loop lands it on the way out.
+// A done task gives the loop nothing to conduct, so it takes the ending branch
+// immediately, which is the branch that was missing the call.
+func TestConductTaskLandsWhatTheLoopEndsOn(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "chore", "--profile", "nightly")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
+
+	// Driven to done by the dry runner, which needs no agent.
+	_ = Run(h.env, []string{"run", "LUNA-1", "--dry-run"})
+	if state := mustState(t, h, "LUNA-1"); !state.IsTerminal() {
+		t.Skipf("the dry run did not finish the task (it is %q)", state.Status)
+	}
+
+	var landed string
+	h.env.Land = func(_ context.Context, taskID, _ string) error {
+		landed = taskID
+		return nil
+	}
+	h.env.Lead = func(context.Context, string) (string, error) {
+		return "", errors.New("the loop asked a model about a finished task")
+	}
+
+	if err := Run(h.env, []string{"lead", "LUNA-1", "--autonomy", "10"}); err != nil {
+		t.Fatalf("conducting a finished task: %v", err)
+	}
+	if landed != "LUNA-1" {
+		t.Error("`luna lead` ended on a finished task and never pointed its branch")
+	}
+}
+
 func TestTheLeadIsWiredToLandAndToWarn(t *testing.T) {
 	h, _ := leadHarness(t)
 	h.env.Lead = func(context.Context, string) (string, error) { return "stopping", nil }

@@ -142,6 +142,15 @@ listing; an exception swallowed between transitions.
 not covered. What exists bounds a turn; a task circling without converging never exceeds
 it. The failure still ends in a block once a budget runs out — just later than it should.
 
+**A wired field is not a called field.** The same landing broke twice, and the second
+break was caused by the fix for the first. `luna lead` built its lead without `Land`, so a
+finished task's work stayed on the stage branches; that was fixed and tested by asserting
+the field was non-nil. But `land` is only called by `Lead.Run`, and `luna lead` runs
+`conductTask` — a different loop, which still never called it. TALLY-8 finished six stages
+and `luna status` printed `luna/TALLY-8/done` for a ref that did not exist, with a green
+suite either side of the fix. A test that observes a dependency being *used* is worth
+several that observe it being *set*.
+
 **A refusal after the write is not a refusal.** `task abandon` skipped reading the state,
 on the reasoning that the reducer would reject an illegal one on the next read and that
 nobody would abandon a finished task by accident. The reducer rejecting it afterwards is

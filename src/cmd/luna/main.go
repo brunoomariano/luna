@@ -170,6 +170,13 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 		// non-interactively, the same way a stage does.
 		Lead: harness.Ask,
 
+		// Pointing a finished task's branch. Injected like the rest so a test can
+		// watch it happen: the landing broke twice without any test seeing it, once
+		// with the field unwired and once with it wired and no loop calling it.
+		Land: func(ctx context.Context, taskID, commit string) error {
+			return node.Land(ctx, ".", taskID, commit)
+		},
+
 		// A block is only a block once someone knows. An external terminal
 		// multiplexer already owns a notification layer and is already what a
 		// person is looking at, so this delegates rather than growing a transport

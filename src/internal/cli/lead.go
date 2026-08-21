@@ -75,6 +75,17 @@ func leadCommand(env Env, args []string) error {
 	return conductTask(env, id, conductor, entering)
 }
 
+// landingFor is how a finished task's branch gets pointed, with the injected one
+// winning so a test can watch without a repository.
+func landingFor(env Env, repo string) func(context.Context, string, string) error {
+	if env.Land != nil {
+		return env.Land
+	}
+	return func(ctx context.Context, taskID, commit string) error {
+		return node.Land(ctx, repo, taskID, commit)
+	}
+}
+
 // leadFor builds the lead `luna lead` conducts with.
 //
 // Extracted so a test can assert on the same construction the command uses. Two
@@ -100,9 +111,7 @@ func leadFor(env Env, repo string) *lead.Lead {
 		// here while `luna run` had it, so a task conducted by the lead finished
 		// with its work reachable only through the stage branches — and `luna
 		// status` printed the landing ref it had not created. Measured on TALLY-7.
-		Land: func(ctx context.Context, taskID, commit string) error {
-			return node.Land(ctx, repo, taskID, commit)
-		},
+		Land: landingFor(env, repo),
 
 		// And somewhere for that to be said. Without it the landing could fail
 		// and the run would end clean, which is the silent failure INV-5 forbids —
@@ -168,6 +177,11 @@ func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead)
 		// push past. A gate is waiting on a person, a block is waiting on a
 		// person, and done is done.
 		if order.Kind != fsm.OrderRun {
+			// A finished task's branch is pointed here, because this loop is not
+			// `Lead.Run` and does not go through its ending. The field was wired on
+			// this path and nothing called it: TALLY-8 finished six stages and left
+			// its work reachable only through the stage branches.
+			entering.PointBranchIfDone(context.Background(), state)
 			reportEnding(env, order, state)
 			return nil
 		}

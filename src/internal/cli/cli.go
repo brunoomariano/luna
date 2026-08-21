@@ -58,6 +58,16 @@ type Env struct {
 	// gates a person answers.
 	Lead func(ctx context.Context, prompt string) (string, error)
 
+	// Land points a finished task's branch at what it delivered. Injected so a
+	// test can observe the landing without a repository, and nil means the real
+	// one — the command supplies `node.Land` when this is unset.
+	//
+	// It exists because the landing broke twice in ways no test could see: once
+	// with the field unwired, once with it wired and no loop calling it. Both
+	// times the suite was green and `luna status` promised a branch that was
+	// never created.
+	Land func(ctx context.Context, taskID, commit string) error
+
 	// Stock is the project's copy of the stages, roles and profiles —
 	// `.luna/stock`. Empty, or a directory that has none, means the embedded copy
 	// is what runs, which is what a project that never ran `luna init` gets.

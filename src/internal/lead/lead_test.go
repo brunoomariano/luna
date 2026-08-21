@@ -927,6 +927,29 @@ func TestTheLeadIsGivenTheTaskWhenItJudges(t *testing.T) {
 	}
 }
 
+// TestABlockingFindingIsReadFromTheStoreNotTheEvidenceLine covers a report the
+// engine could not see.
+//
+// A report handed over the socket lives in the store, and its evidence carries
+// `handed over to Luna, <hash>` — not the text. `readReview` was parsing that
+// line, so a review with a real [BLOCKING] in it yielded no findings and sent
+// nothing back.
+//
+// Measured on TALLY-8: the critic tagged a regression the change had introduced,
+// the parser read it correctly when handed the body, and the flow finished
+// `done`. It is the same gap the gate had and closed — a caller reading the
+// evidence line where it needed the artifact.
+func TestABlockingFindingIsReadFromTheStoreNotTheEvidenceLine(t *testing.T) {
+	const report = "[BLOCKING] B1 a stray --avg silently corrupts the sum"
+
+	state := runReviewStoring(t, report)
+
+	// Back at build, which is where the review stage sends work.
+	if state.Stage != "build" {
+		t.Errorf("a blocking finding did not send the work back: the task is at %q", state.Stage)
+	}
+}
+
 // TestFindingsThatDoNotBlockAreStillPutInFrontOfAPerson covers the other half of
 // a narrow blocking rule.
 //

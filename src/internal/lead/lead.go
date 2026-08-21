@@ -209,8 +209,23 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 	}
 }
 
+// PointBranchIfDone lands a finished task, for a caller driving its own loop.
+//
+// Exported because two loops end a task and both have to do this. `Lead.Run`
+// drives `luna run` and calls the unexported one; `conductTask` drives `luna
+// lead` and had no way in — it finished six stages without ever pointing the
+// branch, while the status printed `luna/TALLY-8/done` for a ref nothing had
+// created. Measured on TALLY-8, one commit after a fix that wired the Land field
+// on that path and left nothing calling it.
+//
+// A task that is not done is not landed, so a caller may hand any ending state
+// to it.
+func (l *Lead) PointBranchIfDone(ctx context.Context, state fsm.TaskState) {
+	l.land(ctx, state)
+}
+
 // land points the task's branch at what it delivered, so `done` means what
-// what it means: ready to integrate, on a branch a person can name.
+// it means: ready to integrate, on a branch a person can name.
 //
 // It runs on the way out of the loop rather than at the last stage, because
 // "the task is finished" is a property of the state and not of any one stage —
@@ -375,10 +390,7 @@ func (l *Lead) readReview(
 		return nil
 	}
 
-	// The delivered content travels in the evidence's detail, which is where the
-	// gate payload reads it from too — the node ran the tool, and what it
-	// saw arrives in the action).
-	findings := fsm.ReadReport(result.Evidence[artifact].Detail)
+	findings := fsm.ReadReport(l.reportBody(taskID, artifact, result))
 
 	// What the review found and is not sending back. A defect the change did not
 	// introduce does not reopen the work — that would turn every task into an
@@ -402,6 +414,28 @@ func (l *Lead) readReview(
 		// ordinary round leaves this absent and nothing is asked.
 		GateDecision: l.decideCeiling(ctx, state),
 	})
+}
+
+// reportBody is the review report itself, wherever it ended up.
+//
+// The store first, because a report handed over the socket is not in the
+// evidence: what the detail carries there is `handed over to Luna, <hash>`, and
+// reading findings out of a hash finds none. The evidence's detail is the
+// fallback, for a report that was delivered some other way.
+//
+// Measured on TALLY-8. The critic tagged a real regression [BLOCKING] — a stray
+// `--avg` silently corrupting the sum, which the change had introduced — the
+// parser read it correctly when handed the body, and the flow finished `done`
+// without sending anything back, because this read the hash line instead. It is
+// the same gap the gate had and closed: a caller reading the evidence line where
+// it needed the artifact.
+func (l *Lead) reportBody(taskID string, artifact fsm.Artifact, result Result) string {
+	if l.Artifact != nil {
+		if body, found := l.Artifact(taskID, string(artifact)); found {
+			return body
+		}
+	}
+	return result.Evidence[artifact].Detail
 }
 
 // reportFindings puts what the review found in front of a person.

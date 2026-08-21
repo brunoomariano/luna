@@ -304,3 +304,53 @@ func runReviewWatching(t *testing.T, report string, warn func(string, ...any)) f
 	}
 	return state
 }
+
+// handoverNode delivers the review report the way the shipped flow does: the
+// body goes to the store and the evidence carries the hash line, not the text.
+//
+// The plain reportingNode puts the report in the evidence's detail, which is how
+// a report used to travel and no longer does — so every test built on it passed
+// while production read a hash and found no findings.
+type handoverNode struct{ report string }
+
+func (n handoverNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (Result, error) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, artifact := range owed {
+		e := fsm.Exists(0)
+		if artifact == "review_report" {
+			e.Detail = "handed over to Luna, 7ce9c924d46f"
+		}
+		evidence[artifact] = e
+	}
+	return Result{Delivered: owed, Evidence: evidence}, nil
+}
+
+// runReviewStoring drives a review whose report is in the store rather than in
+// the evidence, which is what the shipped flow does.
+func runReviewStoring(t *testing.T, report string) fsm.TaskState {
+	t.Helper()
+
+	s := newStore(t)
+	if err := s.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind:    fsm.KindFeature,
+		Profile: fsm.ProfileNightly,
+		Flow:    fsm.Fingerprint(reviewFlow()),
+	}); err != nil {
+		t.Fatalf("opening the task: %v", err)
+	}
+
+	conductor := &Lead{
+		Store: s, Node: handoverNode{report: report}, Flow: reviewFlow(),
+		Artifact: func(_, artifact string) (string, bool) {
+			return report, artifact == "review_report"
+		},
+	}
+
+	state, err := conductor.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("running: %v", err)
+	}
+	return state
+}
