@@ -49,10 +49,21 @@ criticality = 9
 #
 # The scenarios and the approach are still handed over and still readable with
 # `luna artifact get`. What is not claimed is that this gate reviewed them.
+# The third criterion asks only what the contract settles about itself. It read
+# "none is impossible to satisfy", and that is a question about code: whether an
+# obligation can be met depends on the script being modified, which this gate
+# does not show. The lead answered it honestly — "depends on what today's
+# tally.sh actually contains, which I cannot read" — and had to mark it
+# unsupported, which sends the gate to a person at any autonomy.
+#
+# It is the same lesson as the paragraph above, in a different criterion: asking
+# about what is not shown teaches whoever answers to guess. Whether the delivery
+# actually satisfies the contract is `verify`'s question now — that stage
+# requires the contract and has the code.
 judge = [
   "The contract states what is required and what is forbidden, with no suggestions",
   "Every acceptance criterion in the task appears as an obligation",
-  "No obligation contradicts another, and none is impossible to satisfy",
+  "No obligation contradicts another, and none contradicts the task",
 ]
 
 # All of them, because this gate asks about prose that has not become code yet:
@@ -65,5 +76,5 @@ judge = [
 judge_by_reading = [
   "The contract states what is required and what is forbidden, with no suggestions",
   "Every acceptance criterion in the task appears as an obligation",
-  "No obligation contradicts another, and none is impossible to satisfy",
+  "No obligation contradicts another, and none contradicts the task",
 ]

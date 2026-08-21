@@ -260,3 +260,40 @@ func TestTheCriticIsTaughtTheVocabularyLunaReads(t *testing.T) {
 		t.Errorf("the critic is not told what may block, only that blocking exists:\n%s", critic.Brief)
 	}
 }
+
+// TestThePlanGateAsksOnlyWhatItShows keeps a gate from asking a question its own
+// evidence cannot answer.
+//
+// The gate carries the contract and nothing else. Its third criterion read "none
+// is impossible to satisfy", which is a question about code: whether an
+// obligation can be met depends on the script being changed, and the gate never
+// shows it. Measured on TALLY-8, where the lead answered honestly — "depends on
+// what today's tally.sh actually contains, which I cannot read" — marked the
+// criterion unsupported, and the gate went to a person at knob 9.
+//
+// That is the same lesson the stage file already records for `scenarios`: asking
+// about what is not shown teaches whoever answers to guess. Whether the delivery
+// satisfies the contract belongs to `verify`, which requires the contract and
+// has the code.
+func TestThePlanGateAsksOnlyWhatItShows(t *testing.T) {
+	gate := fsm.GateSpecIn(fsm.DefaultFlow(), "plan")
+	if gate == nil {
+		t.Fatal("the shipped plan stage declares no gate")
+	}
+
+	for _, criterion := range gate.Judge {
+		if strings.Contains(criterion, "impossible to satisfy") {
+			t.Errorf("the gate asks whether an obligation is satisfiable, which needs the "+
+				"code it does not carry: %q", criterion)
+		}
+	}
+
+	// And every criterion stays answerable by reading, because that is what the
+	// gate hands over. One that is not exempt is one the lead must mark
+	// unsupported, and the gate goes to a person at every autonomy.
+	if len(gate.ReadableJudge) != len(gate.Judge) {
+		t.Errorf("the gate judges %d criteria and exempts %d — the difference can only "+
+			"be answered by a check this gate has nothing to run",
+			len(gate.Judge), len(gate.ReadableJudge))
+	}
+}

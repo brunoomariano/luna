@@ -993,7 +993,14 @@ func TestAStageGivenTheContractIsToldToJudgeAgainstIt(t *testing.T) {
 
 	brief := Brief(runningState("T-50"), stage, fsm.Role{Agent: "claude"})
 
-	for _, want := range []string{"judged against", "every obligation"} {
+	for _, want := range []string{
+		"judged against",
+		"every obligation",
+		// The half of the gate's question the gate could not answer: whether an
+		// obligation was possible at all depends on the code, and the gate carries
+		// only the document. This stage has both.
+		"impossible",
+	} {
 		if !strings.Contains(brief, want) {
 			t.Errorf("a stage handed the contract is not told to judge against it (%q):\n%s", want, brief)
 		}

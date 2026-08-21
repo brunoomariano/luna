@@ -498,6 +498,12 @@ func writeContractDuty(b *strings.Builder, stage fsm.Stage) {
 	fmt.Fprintf(b, "Read it, and check what was built against every obligation it states —\n")
 	fmt.Fprintf(b, "including the tests it says exist. An obligation you cannot find\n")
 	fmt.Fprintf(b, "satisfied is a finding, whatever the suite says.\n")
+	// The half of the gate's question that the gate could not answer. It asked
+	// whether an obligation was possible to satisfy, which depends on the code —
+	// and the gate is shown the contract and nothing else. Here the code exists,
+	// so the question is answerable for the first time.
+	fmt.Fprintf(b, "That includes whether an obligation turned out to be impossible:\n")
+	fmt.Fprintf(b, "the gate could not tell, having only the document.\n")
 }
 
 // requires reports whether a stage names an artifact among its inputs.
