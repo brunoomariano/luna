@@ -304,3 +304,63 @@ func TestAGateWithNoStatementSaysNothingAboutTheTask(t *testing.T) {
 		t.Errorf("a task with no statement must not announce one:\n%s", brief)
 	}
 }
+
+// TestASelfCorrectionTowardApprovalIsRead covers a gate that was approved and
+// recorded as a wait.
+//
+// The parser is asymmetric on purpose: a leading APPROVE is checked against the
+// body, a leading CANNOT-DECIDE was not. The reasoning holds — only an approval
+// keeps a person out, so only an approval earns the scrutiny — but the asymmetry
+// had a cost nobody had measured.
+//
+// Measured on TALLY-10: the lead opened CANNOT-DECIDE, worked all three criteria
+// to MET, and corrected itself in as many words. The gate went to a person while
+// its own author had withdrawn the hesitation. It is the same self-correction
+// that motivated `retracted`, arriving from the other direction.
+func TestASelfCorrectionTowardApprovalIsRead(t *testing.T) {
+	said := strings.Join([]string{
+		"CANNOT-DECIDE",
+		"",
+		"Working, criterion by criterion. All three are met on the text.",
+		"",
+		"So I should not hide behind CANNOT-DECIDE. Correcting my opening line:",
+		"",
+		"**APPROVE**",
+		"",
+		"All three criteria are settled by lines quoted above.",
+	}, "\n")
+
+	if got := ReadJudgement(said); got != JudgedApprove {
+		t.Errorf("a stated correction toward approval was not read: got %v, want %v", got, JudgedApprove)
+	}
+}
+
+// TestAnUncorrectedCannotDecideStaysOne is the guard on the change above.
+//
+// A reply that opens CANNOT-DECIDE and merely discusses approving has not
+// approved. Reading it as one would turn hesitation into a decision that keeps a
+// person out — the same damage `retracted` exists to prevent, from the other
+// side.
+func TestAnUncorrectedCannotDecideStaysOne(t *testing.T) {
+	for _, said := range []string{
+		"CANNOT-DECIDE\n\nI would APPROVE if the contract named the test.",
+		"CANNOT-DECIDE\n\nTwo criteria are met. I cannot settle the third, so I do not approve.",
+		"CANNOT-DECIDE\n\nAPPROVE would be wrong here: the evidence is a claim.",
+	} {
+		if got := ReadJudgement(said); got != JudgedCannotDecide {
+			t.Errorf("hesitation was read as a decision: %v for %q", got, said)
+		}
+	}
+}
+
+// TestACorrectionWithoutAVerdictLineIsNotAnApproval keeps both halves of the
+// rule load-bearing. Saying "my opening line was wrong" without naming the
+// replacement settles nothing, and guessing what it should have been is exactly
+// what this must not do.
+func TestACorrectionWithoutAVerdictLineIsNotAnApproval(t *testing.T) {
+	said := "CANNOT-DECIDE\n\nCorrecting my opening line: the third criterion is met after all."
+
+	if got := ReadJudgement(said); got != JudgedCannotDecide {
+		t.Errorf("a correction naming no verdict was read as %v", got)
+	}
+}

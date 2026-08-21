@@ -228,6 +228,9 @@ func ReadJudgement(said string) Judgement {
 	// if..." contains both, and the verdict is the one the model led with.
 	switch {
 	case strings.HasPrefix(first, "CANNOT-DECIDE"), strings.HasPrefix(first, "CANNOT DECIDE"):
+		if approvedInstead(rest) {
+			return JudgedApprove
+		}
 		return JudgedCannotDecide
 	case strings.HasPrefix(first, "APPROVE"):
 		if retracted(rest) {
@@ -239,6 +242,57 @@ func ReadJudgement(said string) Judgement {
 	default:
 		return JudgedCannotDecide
 	}
+}
+
+// approvedInstead reports whether the body of a reply withdraws a leading
+// CANNOT-DECIDE in favour of approving.
+//
+// The mirror of retracted, and deliberately much stricter. A missed retraction
+// records an approval nobody made, so that check is generous; a wrong reading
+// here does the same damage from the other side, turning hesitation into an
+// approval that keeps a person out. So this looks for the model saying it is
+// correcting its opening line AND naming approval as the replacement — not for
+// the word "approve", which appears in any reply that discusses approving.
+//
+// Measured on TALLY-10. The lead opened CANNOT-DECIDE, worked all three criteria
+// to MET, and wrote: "So I should not hide behind CANNOT-DECIDE. Correcting my
+// opening line: **APPROVE**". The gate went to a person while the judgement it
+// recorded had been withdrawn by its own author — the same self-correction that
+// motivated retracted, running the other way.
+func approvedInstead(body string) bool {
+	lowered := strings.ToLower(body)
+
+	// The correction has to be stated. A body that merely mentions approving is
+	// one discussing the decision, not one making it.
+	corrected := false
+	for _, phrase := range []string{
+		"correction to my first line",
+		"correcting my first line",
+		"correcting my opening line",
+		"correction to my opening line",
+		"my first line was wrong",
+		"my opening line was wrong",
+		"should not hide behind cannot-decide",
+	} {
+		if strings.Contains(lowered, phrase) {
+			corrected = true
+			break
+		}
+	}
+	if !corrected {
+		return false
+	}
+
+	// And the replacement has to be an approval standing alone on its line, the
+	// same shape the opening verdict takes. "I would approve if" does not qualify
+	// and must not: it is the conditional this function could otherwise turn into
+	// a decision.
+	for _, line := range strings.Split(body, "\n") {
+		if strings.ToUpper(strings.Trim(strings.TrimSpace(line), "*# ")) == "APPROVE" {
+			return true
+		}
+	}
+	return false
 }
 
 // retracted reports whether the body of a reply takes back a leading approval.
