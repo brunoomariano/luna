@@ -233,16 +233,21 @@ func runTask(env Env, args []string) error {
 
 // taskAbandon ends a task a person decided not to finish.
 //
-// It is the one command that does not replay before acting, and that is the whole
-// reason it exists. A task whose flow changed under it no longer replays at all,
-// so a command that read the state first could never end the tasks that most need
-// ending. It appends against the log's existence instead, and lets the reducer
-// refuse on the next read if the task had already finished.
+// It reads the state first like every other command, and then makes one
+// exception: a task whose flow changed under it no longer replays at all, and
+// those are exactly the tasks that most need ending. So `ErrFlowChanged` is not
+// a refusal here — it is the reason this command exists.
 //
-// The cost is accepted knowingly: abandoning an already-done task writes an event
-// that will fail to replay. That is a worse trade than it sounds only if it can
-// happen by accident, and it cannot — nothing reaches this without a person
-// typing the id and a reason.
+// Every other replay failure is. It used to skip the read entirely, on the
+// reasoning that the reducer would refuse on the next read and that abandoning a
+// finished task could not happen by accident. Both halves were wrong. The
+// reducer refusing *afterwards* is not a refusal, it is a corrupted log: the
+// event is already written, append-only, and the whole task becomes unreadable —
+// `task show`, `status` and `forget` all replay, so a task in that state can
+// neither be read nor be got rid of. And it happened by accident on the first
+// occasion anyone tried, abandoning TALLY-6 to note why its run was superseded,
+// three minutes after it had finished. Nineteen events of a completed run,
+// including what it cost, are unreachable behind the twentieth.
 func taskAbandon(env Env, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("%w: task abandon needs a task and a reason", ErrUsage)
@@ -257,11 +262,39 @@ func taskAbandon(env Env, args []string) error {
 		return fmt.Errorf("no task %q", id)
 	}
 
+	if err := abandonable(env, id); err != nil {
+		return err
+	}
+
 	if err := env.Store.AppendAction(id, fsm.Abandon{Reason: reason}); err != nil {
 		return err
 	}
 
 	fmt.Fprintf(env.Out, "%s abandoned: %s\n", id, reason)
+	return nil
+}
+
+// abandonable refuses to write an Abandon the reducer will reject on the way
+// back in.
+//
+// A task that no longer replays against this build is the case this command is
+// for, so that failure is passed over rather than reported. Anything else — and
+// a task that has already ended is the one that matters — is refused before the
+// write, because after it there is no way back: the log is append-only and every
+// command that reads the task replays it.
+func abandonable(env Env, id string) error {
+	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	if errors.Is(err, store.ErrFlowChanged) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if state.IsTerminal() {
+		return fmt.Errorf("%s already ended as %s — abandoning it would write an event "+
+			"that cannot be replayed, and the whole task would stop being readable. "+
+			"`luna task forget %s` removes a task that has ended", id, state.Status, id)
+	}
 	return nil
 }
 

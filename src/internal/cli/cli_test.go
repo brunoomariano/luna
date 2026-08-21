@@ -1519,3 +1519,67 @@ func TestAnAdjustedArtifactIsWhatTheNextStageReads(t *testing.T) {
 		t.Errorf("the next stage still reads the version the gate refused:\n%s", blob.Body)
 	}
 }
+
+// TestAbandoningAFinishedTaskIsRefusedBeforeItIsWritten covers a log that could
+// corrupt itself through a command that read nothing first.
+//
+// The reducer refuses an Abandon on a task that has ended. It used to do that on
+// the way back *in*, which is not a refusal at all: the event is already in an
+// append-only log, and every command that reads the task replays it — so `task
+// show`, `status` and even `forget` all fail, and the task can neither be read
+// nor got rid of.
+//
+// It was reasoned that this could not happen by accident. It happened on the
+// first occasion anyone tried: TALLY-6 was abandoned to record why its run had
+// been superseded, three minutes after it finished, and nineteen events of a
+// completed run — including what it cost — went behind the twentieth.
+func TestAbandoningAFinishedTaskIsRefusedBeforeItIsWritten(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "feature", "--profile", "nightly")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
+
+	// A task that has actually ended, rather than one seeded into the status:
+	// what is under test is the refusal, and a hand-built terminal state would
+	// not prove the command reaches it.
+	_ = Run(h.env, []string{"run", "LUNA-1", "--dry-run"})
+	state := mustState(t, h, "LUNA-1")
+	if !state.IsTerminal() {
+		t.Skipf("this flow did not reach a terminal state, got %q", state.Status)
+	}
+
+	before := state.Seq
+	err := Run(h.env, []string{"task", "abandon", "LUNA-1", "changed our minds"})
+	if err == nil {
+		t.Fatal("abandoning a finished task was accepted, and the log is now unreadable")
+	}
+	if !strings.Contains(err.Error(), "already ended") {
+		t.Errorf("the refusal must say why, got %q", err)
+	}
+
+	// And nothing was written: a refusal that appends first is the bug.
+	if after := mustState(t, h, "LUNA-1"); after.Seq != before {
+		t.Errorf("the refused abandon still wrote an event: seq %d became %d", before, after.Seq)
+	}
+}
+
+// TestATaskWhoseFlowChangedCanStillBeAbandoned is the exception the refusal must
+// not swallow.
+//
+// A task born under a flow this build does not have cannot be replayed at all,
+// and those are exactly the ones that most need ending — it is the reason this
+// command skipped the read in the first place. Refusing every replay failure
+// would close the only door they have.
+func TestATaskWhoseFlowChangedCanStillBeAbandoned(t *testing.T) {
+	h := newHarness(t)
+
+	stale := []fsm.Stage{{ID: "gone", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"x"}}}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.TaskCreated{
+		Kind: fsm.KindChore, Flow: fsm.Fingerprint(stale),
+	}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	if err := h.run(t, "task", "abandon", "LUNA-1", "the flow it ran under is gone"); err != nil {
+		t.Fatalf("a task that no longer replays could not be abandoned: %v", err)
+	}
+}
