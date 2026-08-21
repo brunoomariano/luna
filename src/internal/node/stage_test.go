@@ -1029,3 +1029,43 @@ func TestAStageWithoutTheContractIsNotToldToJudgeIt(t *testing.T) {
 		t.Errorf("a stage that was not handed the contract is told to judge it:\n%s", brief)
 	}
 }
+
+// TestAStageIsShownTheCriteriaItsArtifactWillBeJudgedOn closes a rule enforced
+// at one end of the flow and never stated at the other.
+//
+// The gate holds the contract to declared criteria. The stage that writes the
+// contract was never shown them, so it wrote to its own idea of what a contract
+// is — which is a reasonable one, and not the one being marked.
+//
+// Measured across four contracts: two were rejected for the same criterion, and
+// both times for a sentence the maker had no reason to think was forbidden.
+func TestAStageIsShownTheCriteriaItsArtifactWillBeJudgedOn(t *testing.T) {
+	stage := fsm.Stage{
+		ID: "plan", Role: "maker",
+		Produces: []fsm.Artifact{"contract"},
+		Gate: &fsm.GateSpec{
+			Kind:     fsm.GateReviewArtifact,
+			Artifact: "contract",
+			Judge:    []string{"the contract states what is required, with no suggestions"},
+		},
+	}
+
+	brief := Brief(runningState("T-60"), stage, fsm.Role{Agent: "claude"})
+
+	if !strings.Contains(brief, "with no suggestions") {
+		t.Errorf("the stage writing the artifact is not shown what it is judged on:\n%s", brief)
+	}
+	if !strings.Contains(brief, "opens a gate") {
+		t.Errorf("the brief does not say the artifact faces a gate:\n%s", brief)
+	}
+}
+
+// TestAStageWithNoGateIsShownNoCriteria is the other side: `build` produces code
+// that opens no gate, and listing criteria there would be noise on every stage.
+func TestAStageWithNoGateIsShownNoCriteria(t *testing.T) {
+	stage := fsm.Stage{ID: "build", Role: "maker", Produces: []fsm.Artifact{"code"}}
+
+	if brief := Brief(runningState("T-61"), stage, fsm.Role{Agent: "claude"}); strings.Contains(brief, "opens a gate") {
+		t.Errorf("a stage with no gate was told its artifact faces one:\n%s", brief)
+	}
+}

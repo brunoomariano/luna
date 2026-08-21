@@ -297,3 +297,24 @@ func TestThePlanGateAsksOnlyWhatItShows(t *testing.T) {
 			len(gate.Judge), len(gate.ReadableJudge))
 	}
 }
+
+// TestTheMakerIsToldAContractAdmitsNoRecommendation covers the rule the gate
+// enforces and nothing stated.
+//
+// Two contracts in a row were rejected for the same criterion — "with no
+// suggestions" — and neither was a lapse in writing. Both were otherwise
+// properly imperative, and both put the offending sentence in a section the
+// second one titled "Note for the maker". That is an agent being helpful in a
+// document with no room for help.
+func TestTheMakerIsToldAContractAdmitsNoRecommendation(t *testing.T) {
+	maker, ok := ShippedRoles()["maker"]
+	if !ok {
+		t.Fatal("the shipped stock has no maker role")
+	}
+
+	for _, want := range []string{"contract", "recommendation", "obligation"} {
+		if !strings.Contains(maker.Brief, want) {
+			t.Errorf("the maker is not told what a contract admits (%q):\n%s", want, maker.Brief)
+		}
+	}
+}

@@ -456,6 +456,7 @@ func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	}
 
 	writeContractDuty(&b, stage)
+	writeGateCriteria(&b, stage)
 
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	if len(owed) > 0 {
@@ -504,6 +505,35 @@ func writeContractDuty(b *strings.Builder, stage fsm.Stage) {
 	// so the question is answerable for the first time.
 	fmt.Fprintf(b, "That includes whether an obligation turned out to be impossible:\n")
 	fmt.Fprintf(b, "the gate could not tell, having only the document.\n")
+}
+
+// writeGateCriteria shows a stage the criteria its own artifact will be judged
+// on, when it produces one that opens a gate.
+//
+// The symmetric half of writeContractDuty: that one tells a stage what to judge
+// against, this one tells a stage what it will be judged by. Both close the same
+// kind of gap — a rule enforced at one end of the flow and never stated at the
+// other.
+//
+// Measured across four contracts. The gate rejected two of them for the same
+// criterion, and both times for a sentence the maker had no reason to think was
+// forbidden: "worth raising at close", and "either form satisfies the contract,
+// the guarded form is preferable". Both sat in a section the second contract
+// itself labelled "Note for the maker" — the natural instinct of an agent trying
+// to be useful. The rest of both documents was properly imperative, so this is
+// not an agent that cannot write obligations; it is one that was never told the
+// document admits nothing else.
+func writeGateCriteria(b *strings.Builder, stage fsm.Stage) {
+	if stage.Gate == nil || len(stage.Gate.Judge) == 0 {
+		return
+	}
+
+	fmt.Fprintf(b, "\nWhat you produce here opens a gate, and %s is judged on:\n",
+		stage.Gate.Artifact)
+	for _, criterion := range stage.Gate.Judge {
+		fmt.Fprintf(b, "  - %s\n", criterion)
+	}
+	fmt.Fprintf(b, "These are the words it is held to, so write to them.\n")
 }
 
 // requires reports whether a stage names an artifact among its inputs.
