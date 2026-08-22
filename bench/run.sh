@@ -31,6 +31,18 @@ mkdir -p "$work"
 # the same baseline genuinely admits both tasks, and a benchmark whose cases start
 # from different code cannot say whether a difference came from the flow or the
 # starting point.
+# What one variant may spend before it stops. There has to be a number here, and
+# the first run without one is the argument: the `full` flow found a real contract
+# violation at `review`, sent the work back exactly as designed, and went round
+# again — build $10.93, refactor $8.37, verify $7.23, review $5.80, $35.07 and
+# climbing on a case whose bare-agent baseline is $0.57. Nothing was broken. The
+# send-back is the mechanism working, and a mechanism that works without a ceiling
+# is how an unattended night bills like that.
+#
+# Generous rather than tight: the point is to stop a runaway, not to cut a flow off
+# mid-thought and then report it as expensive.
+per_task_budget=${BENCH_BUDGET_USD:-12}
+
 bench_case=${BENCH_CASE:-case}
 case_dir="$here/$bench_case"
 
@@ -161,7 +173,7 @@ run_luna() {
   # who answers a gate, and they open none.
   {
     ( cd "$dir" && "$luna" task new "$id" --kind "$(kindFor "$flow")" --flow "$flow" \
-        "${statement[@]}" )
+        --budget-usd "$per_task_budget" "${statement[@]}" )
     ( cd "$dir" && "$luna" autonomy "$id" 9 "unattended benchmark" )
     ( cd "$dir" && "$luna" run "$id" )
   } >>"$dir/run.log" 2>&1

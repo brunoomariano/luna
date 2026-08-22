@@ -78,6 +78,14 @@ bench/run.sh solo luna:fix      # two of them
 
 It spends real money and needs a real agent, so it is **never** part of `make ci`.
 
+Every variant is given a ceiling — `BENCH_BUDGET_USD`, $12 by default — and the
+first run without one is why. The `full` flow found a real contract violation at
+`review`, sent the work back exactly as designed, and went round again: build
+$10.93, refactor $8.37, verify $7.23, review $5.80, **$35.07 and climbing**, on a
+case whose bare-agent baseline is $0.57. Nothing was broken. A send-back loop is
+the mechanism working, and a mechanism that works without a ceiling is how an
+unattended night bills like that.
+
 ## What to compare
 
 Not Luna against a bare agent. That answer is known, it will not move, and it is
