@@ -34,6 +34,17 @@ type TaskCreated struct {
 	// runs — so a replay refuses it rather than reading it against the shipped one.
 	Flow FlowFingerprint `json:"flow,omitempty"`
 
+	// BudgetUSD is the most this task may spend before it stops, or zero for no
+	// ceiling.
+	//
+	// Zero means unbounded rather than "spend nothing", which is the one direction
+	// this default can safely go: a task opened by a caller that never heard of
+	// budgets has to run, and a ceiling of nothing would stop every one of them at
+	// the first stage. That is the opposite asymmetry to ParseKnob, and for the
+	// opposite reason — an absent knob makes a run *more* supervised, while an
+	// absent budget cannot make it cheaper, only broken.
+	BudgetUSD float64 `json:"budget_usd,omitempty"`
+
 	// FlowName is which flow that fingerprint belongs to, so a replay can go and
 	// load it.
 	//
@@ -367,7 +378,25 @@ type SetKnob struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// SetBudget changes what a task may spend, mid-run.
+//
+// The same shape as SetKnob and for the same reason: the change is a decision, and
+// a ceiling that moved with no record turns "why did this cost $40?" into a
+// question the log cannot answer.
+//
+// It is also the way a task that stopped on its budget carries on — raise the
+// ceiling, then unblock — which is why the ceiling is movable at all. A limit with
+// no way past it would make the cheapest failure unrecoverable.
+type SetBudget struct {
+	BudgetUSD float64 `json:"budget_usd"`
+
+	// Why the person moved it. Not required, and worth having: the log already
+	// says what changed, and this is the only place it can say what for.
+	Reason string `json:"reason,omitempty"`
+}
+
 func (TaskCreated) isAction()        {}
+func (SetBudget) isAction()          {}
 func (StatementRevised) isAction()   {}
 func (GateChecksDeclared) isAction() {}
 func (SetKnob) isAction()            {}
@@ -442,6 +471,8 @@ func reduceRunControl(state TaskState, action Action) (TaskState, error) {
 		return abandon(state, a)
 	case SetKnob:
 		return setKnob(state, a)
+	case SetBudget:
+		return setBudget(state, a)
 	default:
 		return state, fmt.Errorf("%w: unknown action %T", ErrIllegalTransition, action)
 	}
@@ -478,6 +509,7 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 	}
 
 	state.Context.Kind = a.Kind
+	state.BudgetUSD = a.BudgetUSD
 	state.Profile = a.Profile
 	if state.Profile == "" {
 		state.Profile = ProfileInteractive
@@ -574,8 +606,46 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 		return state, nil
 	}
 
+	// The ceiling is checked at the moment another stage would open, not at the
+	// moment the money was spent, and the position is what makes it recoverable:
+	// the stage that went over has already closed, and `state.Stage` above is the
+	// one about to start — so raising the budget and unblocking runs *that* stage
+	// rather than re-running and re-billing one that already delivered.
+	//
+	// It comes after the entry gate because a gate is already the stop the ceiling
+	// wanted, and a better one: a person is being asked, and can see what the task
+	// has spent. Blocking over it would lose the question and answer nothing.
+	//
+	// Overshoot of one stage is inherent and worth stating rather than hiding: the
+	// spend is reported by the harness after the call, so no ceiling can refuse a
+	// call before knowing what it costs.
+	if over := overspent(state); over != "" {
+		state.Status = StatusBlocked
+		state.Blocked = over
+		return state, nil
+	}
+
 	state.Status = StatusRunning
 	return state, nil
+}
+
+// overspent says why a task may not open another stage, or nothing.
+//
+// A zero budget is no ceiling rather than a ceiling of nothing. That direction is
+// the only safe one: a caller that never set a budget has to be able to run, and
+// reading its absence as "spend nothing" would stop every such task at its first
+// stage.
+func overspent(state TaskState) string {
+	if state.BudgetUSD <= 0 {
+		return ""
+	}
+	spent := state.TotalSpend().CostUSD
+	if spent <= state.BudgetUSD {
+		return ""
+	}
+	return fmt.Sprintf("over budget: spent $%.4f of $%.2f — raise it with "+
+		"`luna budget %s <amount>` and `luna unblock %s`, or abandon the task",
+		spent, state.BudgetUSD, state.ID, state.ID)
 }
 
 // flowFallback is the flow to check against when the action carried none.
@@ -882,6 +952,23 @@ func block(state TaskState, a Block) (TaskState, error) {
 // keeps needing one: it was already put in front of somebody, and having a
 // setting move it out from under them is worse than the cost of being asked once
 // more. Only gates that open after this see the new value.
+// setBudget moves the ceiling.
+//
+// A negative one is refused rather than clamped: it can only be a caller that
+// computed it wrong, and silently reading it as "no ceiling" would remove the
+// limit at exactly the moment somebody was trying to impose one.
+func setBudget(state TaskState, a SetBudget) (TaskState, error) {
+	if state.IsTerminal() {
+		return state, fmt.Errorf("%w: the task already ended as %q", ErrIllegalTransition, state.Status)
+	}
+	if a.BudgetUSD < 0 {
+		return state, fmt.Errorf("%w: a budget cannot be negative, got %v", ErrIllegalTransition, a.BudgetUSD)
+	}
+
+	state.BudgetUSD = a.BudgetUSD
+	return state, nil
+}
+
 func setKnob(state TaskState, a SetKnob) (TaskState, error) {
 	if state.IsTerminal() {
 		return state, fmt.Errorf("%w: the task already ended as %q", ErrIllegalTransition, state.Status)

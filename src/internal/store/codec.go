@@ -26,6 +26,7 @@ const (
 	actionUnblock       = "Unblock"
 	actionAbandon       = "Abandon"
 	actionSetKnob       = "SetKnob"
+	actionSetBudget     = "SetBudget"
 )
 
 // valueless are the actions that carry nothing but their name, so decoding them
@@ -106,6 +107,8 @@ func encodeRunControl(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionAbandon, a)
 	case fsm.SetKnob:
 		return withPayload(actionSetKnob, a)
+	case fsm.SetBudget:
+		return withPayload(actionSetBudget, a)
 	default:
 		return "", "", fmt.Errorf("%w: cannot record %T", ErrUnknownAction, action)
 	}
@@ -162,6 +165,7 @@ var fromPayload = map[string]func(string) (fsm.Action, error){
 	actionGateJudged:  decodeJSON[fsm.GateJudged],
 	actionAbandon:     decodeJSON[fsm.Abandon],
 	actionSetKnob:     decodeJSON[fsm.SetKnob],
+	actionSetBudget:   decodeJSON[fsm.SetBudget],
 	actionBlock:       decodeJSON[fsm.Block],
 }
 

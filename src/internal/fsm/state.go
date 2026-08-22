@@ -289,6 +289,13 @@ type TaskState struct {
 	// Empty is a task opened against no flow, which no build's flow agrees with.
 	Flow FlowFingerprint
 
+	// BudgetUSD is the most this task may spend, or zero for no ceiling.
+	//
+	// It is here rather than in configuration for the reason the knob is: the
+	// ceiling changes mid-run, the change is a decision, and a value re-read from a
+	// file at each step could not say when it moved or why.
+	BudgetUSD float64
+
 	// FlowName is which flow the fingerprint above identifies. A build running
 	// several flows needs the name to load one; the fingerprint stays the thing
 	// that says whether the loaded one is the one the task ran under.

@@ -107,6 +107,7 @@ func Run(env Env, args []string) error {
 		"stuck":    stuckCommand,
 		"lead":     leadCommand,
 		"autonomy": autonomyCommand,
+		"budget":   budgetCommand,
 		"init":     initCommand,
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
@@ -164,6 +165,13 @@ luna — deterministic orchestration for AI agents
         time and it carries them out. It never chooses a stage — the
         autonomy knob bounds which gates it may answer and what it may
         do about a failure. 0 judges nothing, and is the default.
+
+  luna budget <id> [<usd> [reason]]
+        show what the task may spend, or move the ceiling. A task that
+        stops on its budget carries on by raising it and unblocking —
+        a limit with no way past it makes the cheapest failure the one
+        you cannot recover from. Moving it writes an event, so the log
+        says when it changed and why. 0 is no ceiling.
 
   luna autonomy <id> [<0-10> [reason]]
         show the knob, or move it mid-run. Moving it writes an event, so
@@ -358,6 +366,7 @@ func taskNew(env Env, args []string) error {
 		Profile:   opts.profile,
 		Flow:      fingerprint,
 		FlowName:  opts.flow,
+		BudgetUSD: opts.budgetUSD,
 		Statement: opts.stated,
 		Simulated: opts.simulated,
 	}
@@ -433,6 +442,10 @@ type taskOptions struct {
 	kind    fsm.TaskKind
 	profile fsm.Profile
 
+	// budgetUSD is the most the task may spend before it stops. Zero is no
+	// ceiling, which is what a caller that never named one gets.
+	budgetUSD float64
+
 	// flow is which flow the task runs, by name. It is fixed at creation and
 	// never changes: the flow's identity goes into the opening event, and a task
 	// that could switch flows mid-run would be a log no replay could read.
@@ -465,6 +478,12 @@ func howToRun(opts *taskOptions, cfg Config, name, value string) error {
 				ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
 		}
 		opts.profile = fsm.Profile(value)
+	case "budget-usd":
+		budget, err := fsm.ParseBudgetUSD(value)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrUsage, err)
+		}
+		opts.budgetUSD = budget
 	case "flow":
 		// Refused here rather than at the first replay: the name is about to be
 		// written into an append-only log, and a task opened against a flow that
@@ -1210,4 +1229,12 @@ func printSpend(env Env, state fsm.TaskState, flow []fsm.Stage) {
 
 	total := state.TotalSpend()
 	fmt.Fprintf(env.Out, "  %-14s %8d tokens  $%.4f\n", "total", total.Tokens(), total.CostUSD)
+
+	// The ceiling beside the total, because a total on its own does not say whether
+	// the task can finish — which is the only question anybody reads this column for
+	// on a run nobody watched.
+	if state.BudgetUSD > 0 {
+		fmt.Fprintf(env.Out, "  %-14s %8s  $%.2f  ($%.4f left)\n",
+			"budget", "", state.BudgetUSD, state.BudgetUSD-total.CostUSD)
+	}
 }

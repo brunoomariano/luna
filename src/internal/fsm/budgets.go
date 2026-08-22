@@ -2,6 +2,7 @@ package fsm
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -54,4 +55,24 @@ func ParseBudget(value string) (time.Duration, error) {
 		return 0, fmt.Errorf("a budget must be positive, got %q", value)
 	}
 	return d, nil
+}
+
+// ParseBudgetUSD reads a spending ceiling from the command line.
+//
+// Refusing a negative one rather than clamping it: it can only be a caller that
+// computed it wrong, and reading it as "no ceiling" would remove the limit at
+// exactly the moment somebody was trying to impose one. Zero is accepted and
+// means no ceiling, which is what every task had before there were any.
+func ParseBudgetUSD(value string) (float64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	usd, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("a budget has to be an amount in dollars, got %q", value)
+	}
+	if usd < 0 {
+		return 0, fmt.Errorf("a budget cannot be negative, got %v", usd)
+	}
+	return usd, nil
 }

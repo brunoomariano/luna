@@ -105,6 +105,20 @@ plus recomputed replay would mean editing a profile rewrites how past tasks read
 **The log records when each event was written, and the reducer never reads it.** A state
 carrying a clock makes replay depend on when it ran.
 
+**A task carries a spending ceiling, and it is checked where the next stage would
+open.** `CostUSD` was recorded in the log and compared against nothing, so an unattended
+run had no limit at all. The check sits in `Advance` rather than where the money is
+recorded, and the position is what makes it recoverable: the stage that went over has
+already closed, so raising the ceiling and unblocking runs the stage that was *about* to
+open instead of re-billing one that already delivered. Overshoot of one stage is inherent
+and stated rather than hidden — the harness reports a call's cost after the call, so no
+ceiling can refuse one before knowing what it costs. Zero is no ceiling rather than a
+ceiling of nothing, which is the opposite asymmetry to `ParseKnob` and for the opposite
+reason: an absent knob makes a run more supervised, an absent budget cannot make it
+cheaper, only broken. *Rejected:* blocking at the `Complete` that spent the money — the
+delivery is real and paid for, and throwing it away to enforce a limit costs more than the
+limit saves.
+
 **A task carries its own statement of work in its log.**
 
 ## Verification
