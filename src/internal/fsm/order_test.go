@@ -98,7 +98,7 @@ func TestTheOrderOwesWhatTheContractOwes(t *testing.T) {
 
 	order, _ := NextOrder(state, orderFlow(), catalogue())
 
-	got := joinArtifacts(order.Produces)
+	got := JoinArtifacts(order.Produces)
 	if got != "report,verdict" {
 		t.Errorf("produces = %q, want report,verdict — ProducesForHuman counts (INV-3)", got)
 	}

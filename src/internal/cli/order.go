@@ -137,6 +137,18 @@ func doneCommand(env Env, args []string) error {
 		fmt.Fprintf(env.Out, "%s did not close: %s\n", state.Stage, after.Blocked)
 		return nil
 	}
+
+	// The middle outcome, and the one a caller most needs told: the stage came up
+	// short and is being asked again rather than given up on. Printing "closed"
+	// here would be the false success `done` exists to refuse, and printing
+	// nothing would leave a person to discover the shortfall from `task show`.
+	if len(after.StillOwed) > 0 {
+		fmt.Fprintf(env.Out, "%s did not close — still owed: %s\n",
+			state.Stage, fsm.JoinArtifacts(after.StillOwed))
+		fmt.Fprintf(env.Out, "  deliver those and report again; what you handed in is kept\n")
+		return nil
+	}
+
 	fmt.Fprintf(env.Out, "%s closed\n", state.Stage)
 	return nil
 }

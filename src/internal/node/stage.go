@@ -491,6 +491,7 @@ func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 		fmt.Fprintf(&b, "What you owe: %s\n", join(owed))
 		fmt.Fprintf(&b, "The stage does not close without all of them.\n")
 	}
+	writeOutstanding(&b, state)
 
 	// Which artifacts leave through the socket rather than the commit, named
 	// individually: an agent told only that "some artifacts are handed over"
@@ -510,6 +511,28 @@ func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
 	// handoff — the next stage branches from it rather than from a description.
 	fmt.Fprintf(&b, "\nCommit what you produce. The commit is the handoff.\n")
 	return b.String()
+}
+
+// writeOutstanding names what the previous attempt at this stage did not deliver.
+//
+// A retry that repeats the original contract reads as a first attempt, and the
+// agent is left to work out which half it already did — so it either redoes
+// everything or guesses. The engine knows exactly which artifacts are missing,
+// because the exit check is what compared them, and this is where that gets said.
+//
+// It also names the likeliest cause. Every artifact recorded this way is one the
+// stage owed, and the ones that go missing in practice are the handovers: an agent
+// that commits its work and forgets a socket call has done the work and not the
+// delivery.
+func writeOutstanding(b *strings.Builder, state fsm.TaskState) {
+	if len(state.StillOwed) == 0 {
+		return
+	}
+
+	fmt.Fprintf(b, "\nYou have been here before, and %s did not arrive.\n",
+		join(state.StillOwed))
+	fmt.Fprintf(b, "What you already delivered is kept, so deliver only what is listed above.\n")
+	fmt.Fprintf(b, "If it is handed over rather than committed, the command is the one named below.\n")
 }
 
 // writeContractDuty tells a stage handed the contract what it is for.

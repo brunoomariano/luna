@@ -211,6 +211,16 @@ the exact shape this rule exists to forbid. A stage that commits nothing on top 
 base now reports what the agent said; a stage that delivered does not, because there the
 reply is the agent narrating a delivery that already speaks for itself.
 
+**The retry budget was spent on the wrong failure.** A harness that would not start got
+two retries; an agent that delivered everything but one handover got none, and blocked on
+the first attempt with the budget untouched. The second is the more recoverable of the
+two — Luna knows exactly which artifact is missing, the socket is still open, and a stage
+declaring `context = "live"` resumes the session it already paid for. It is asked again
+now, and told by name what did not arrive and that its earlier work stands; only the
+attempt past the budget blocks. This is what killed a benchmark run whose code was
+otherwise correct: `verify` produced `ci_green` from a real `make ci` and forgot
+`dod_checked`.
+
 **Covered by.** Retry-exhaustion and budget tests in `internal/agent`; the gate listing
 test in `internal/cli`; the empty-delivery reporting tests in `internal/node`.
 

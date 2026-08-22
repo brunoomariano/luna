@@ -1147,3 +1147,51 @@ func TestAStageWithNoGateIsShownNoCriteria(t *testing.T) {
 		t.Errorf("a stage with no gate was told its artifact faces one:\n%s", brief)
 	}
 }
+
+// TestARetryIsToldWhatIsStillMissing. A retry briefed with the original contract
+// reads as a first attempt, and the agent is left to work out which half it
+// already did — so it either repeats everything or guesses.
+func TestARetryIsToldWhatIsStillMissing(t *testing.T) {
+	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
+	state.Stage = "verify"
+	state.StillOwed = []fsm.Artifact{"dod_checked"}
+
+	stage := fsm.Stage{
+		ID:               "verify",
+		Role:             "critic",
+		Produces:         []fsm.Artifact{"ci_green"},
+		ProducesForHuman: []fsm.Artifact{"dod_checked"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"ci_green":    fsm.Command{Run: "make ci", Scope: fsm.ScopeFull},
+			"dod_checked": fsm.Existence{Handover: true},
+		},
+	}
+
+	brief := Brief(state, stage, fsm.Role{Agent: "claude"})
+
+	if !strings.Contains(brief, "dod_checked did not arrive") {
+		t.Errorf("the retry is not told what is outstanding:\n%s", brief)
+	}
+	if !strings.Contains(brief, "already delivered is kept") {
+		t.Errorf("the retry is not told its earlier work stands:\n%s", brief)
+	}
+}
+
+// TestAFirstAttemptIsNotToldItHasBeenHereBefore is the other half: the section
+// only appears when there is a debt, or every stage would open by describing a
+// failure that has not happened.
+func TestAFirstAttemptIsNotToldItHasBeenHereBefore(t *testing.T) {
+	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
+	state.Stage = "build"
+
+	stage := fsm.Stage{
+		ID:        "build",
+		Role:      "maker",
+		Produces:  []fsm.Artifact{"code"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{"code": fsm.Existence{}},
+	}
+
+	if brief := Brief(state, stage, fsm.Role{Agent: "claude"}); strings.Contains(brief, "been here before") {
+		t.Errorf("a first attempt is told it is a retry:\n%s", brief)
+	}
+}

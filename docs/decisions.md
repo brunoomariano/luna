@@ -34,6 +34,14 @@ Luna compares the log position before and after.
 
 **Parallelism is between tasks, never inside one.** One worktree, one lead per task.
 
+**A stage that came up short is asked again, on the same budget as a failed node.** The
+two failures were treated oppositely and backwards: infrastructure got two retries,
+an incomplete delivery got none. The retry is briefed with what is missing by name and
+told that what it already handed in is kept, so it finishes its contract rather than
+starting over. *Rejected:* making the missing artifact non-blocking instead — the exit
+check is INV-3, and a contract that can be waived is not a contract; what was wrong was
+the number of chances, not the rule.
+
 **A failed node retries at most twice, then blocks with a notice.** "Go back a stage" was
 rejected as a third exit: it duplicates the review rollback while forgetting to invalidate
 the green, and two doors to the same place means one of them forgets.

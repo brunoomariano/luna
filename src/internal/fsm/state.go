@@ -289,6 +289,16 @@ type TaskState struct {
 	// Empty is a task opened against no flow, which no build's flow agrees with.
 	Flow FlowFingerprint
 
+	// StillOwed is what the running stage was asked for and did not hand over on
+	// its last attempt, or nothing.
+	//
+	// It exists so the next attempt can be told what is missing by name. A stage
+	// that delivered four artifacts and forgot the fifth used to block outright,
+	// and the brief for a retry would have repeated the original contract as
+	// though nothing had happened — leaving the agent to work out for itself
+	// which part it had already done.
+	StillOwed []Artifact
+
 	// BudgetUSD is the most this task may spend, or zero for no ceiling.
 	//
 	// It is here rather than in configuration for the reason the knob is: the

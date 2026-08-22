@@ -257,7 +257,7 @@ func (o Order) Text() string {
 	line("base", o.Base)
 	line("deny", joinCapabilities(o.Deny))
 	line("skills", strings.Join(o.Skills, ","))
-	line("produces", joinArtifacts(o.Produces))
+	line("produces", JoinArtifacts(o.Produces))
 	line("reason", o.Reason)
 
 	// The brief is last and shaped differently because it is the one field that is
@@ -284,10 +284,16 @@ func joinCapabilities(caps []Capability) string {
 	return strings.Join(names, ",")
 }
 
-// joinArtifacts sorts so that two runs over the same contract print the same
+// JoinArtifacts renders a list of artifact names for a person to read.
+//
+// Exported because two layers name the same list — the order this package writes
+// and the CLI's report of what a stage still owes — and two renderings of one
+// concept drift.
+//
+// It sorts so that two runs over the same contract print the same
 // line. The contract's declaration order is meaningful to a person reading the
 // stage, but an order is compared against another order.
-func joinArtifacts(list []Artifact) string {
+func JoinArtifacts(list []Artifact) string {
 	names := make([]string, 0, len(list))
 	for _, a := range list {
 		names = append(names, string(a))

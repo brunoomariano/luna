@@ -279,11 +279,83 @@ func TestCompleteRefusesAPartialDelivery(t *testing.T) {
 		t.Fatalf("a refused delivery is a state, not an error: %v", err)
 	}
 
-	if state.Status != StatusBlocked {
-		t.Errorf("want blocked on a partial delivery, got %q", state.Status)
+	// It does not close, which is the guarantee. What it does instead is ask
+	// again: the stage stays running and the next attempt is told what is missing.
+	if state.Status != StatusRunning {
+		t.Errorf("want the stage still running after a partial delivery, got %q", state.Status)
 	}
 	if state.Context.HasArtifact("code") {
 		t.Error("nothing enters the context when the stage does not close")
+	}
+	if len(state.StillOwed) == 0 {
+		t.Error("the next attempt is not told what is missing")
+	}
+}
+
+// TestAPartialDeliveryIsAskedAgainAndThenBlocks. The asymmetry this closes was
+// measured: a harness that would not start got two retries through Fail, and an
+// agent that delivered everything but one handover got none — straight to a block,
+// with the retry budget untouched and the socket still open.
+func TestAPartialDeliveryIsAskedAgainAndThenBlocks(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+
+	var err error
+	for attempt := 1; attempt <= state.Retry.Max; attempt++ {
+		if state, err = Reduce(state, Complete{Delivered: []Artifact{"code"}}); err != nil {
+			t.Fatalf("attempt %d: %v", attempt, err)
+		}
+		if state.Status != StatusRunning {
+			t.Fatalf("attempt %d ended as %q rather than being asked again", attempt, state.Status)
+		}
+		if len(state.StillOwed) != 1 || state.StillOwed[0] != "tests_green" {
+			t.Errorf("attempt %d does not name what is missing: %v", attempt, state.StillOwed)
+		}
+	}
+
+	// The budget is spent, so the next one stops the task rather than looping.
+	if state, err = Reduce(state, Complete{Delivered: []Artifact{"code"}}); err != nil {
+		t.Fatalf("the last attempt: %v", err)
+	}
+	if state.Status != StatusBlocked {
+		t.Fatalf("a stage that never completed its contract did not block: %q", state.Status)
+	}
+	if !strings.Contains(state.Blocked, "attempts") {
+		t.Errorf("the block does not say it was asked more than once: %s", state.Blocked)
+	}
+}
+
+// TestFinishingTheContractOnASecondAttemptCloses is the case the retry exists for:
+// a stage that committed its work and forgot one handover finishes it, and what it
+// delivered the first time is not thrown away.
+func TestFinishingTheContractOnASecondAttemptCloses(t *testing.T) {
+	state := atStage(t, KindFeature, "build")
+	stage := stageIn(DefaultFlow(), "build")
+
+	state, err := Reduce(state, Complete{
+		Delivered: []Artifact{"code"},
+		Evidence:  passing(stage, []Artifact{"code"}),
+	})
+	if err != nil {
+		t.Fatalf("the first attempt: %v", err)
+	}
+
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	if state, err = Reduce(state, Complete{
+		Delivered: owed,
+		Evidence:  passing(stage, owed),
+		Commit:    "cafe1234",
+	}); err != nil {
+		t.Fatalf("the second attempt: %v", err)
+	}
+
+	if state.Status != StatusStageDone {
+		t.Fatalf("the completed contract did not close the stage: %q — %s", state.Status, state.Blocked)
+	}
+	if len(state.StillOwed) != 0 {
+		t.Errorf("a paid debt is still recorded: %v", state.StillOwed)
+	}
+	if state.Retry.Attempts != 0 {
+		t.Errorf("the retry budget was not restored on a stage that closed: %d", state.Retry.Attempts)
 	}
 }
 
@@ -301,8 +373,11 @@ func TestCompleteRequiresTheHumanReport(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Status != StatusBlocked {
-		t.Errorf("want blocked without the audit report, got %q", state.Status)
+	if state.Status == StatusStageDone {
+		t.Error("a stage closed without the report only a person reads")
+	}
+	if len(state.StillOwed) != 1 || state.StillOwed[0] != "dod_checked" {
+		t.Errorf("the missing report is not named for the next attempt: %v", state.StillOwed)
 	}
 }
 

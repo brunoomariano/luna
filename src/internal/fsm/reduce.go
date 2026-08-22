@@ -591,6 +591,7 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 
 	state.Stage = next
 	state.Retry.Attempts = 0
+	state.StillOwed = nil
 
 	// Only the gates that ask about work not yet done open here. A `confirm`
 	// before a stage runs is a question about that stage; a `review-artifact`
@@ -670,6 +671,34 @@ func flowFallback(state TaskState) []Stage {
 	return flow
 }
 
+// askAgain puts a stage that came up short back in front of the agent, while its
+// retry budget lasts.
+//
+// The asymmetry this closes was measured: a harness that would not start got two
+// retries through Fail, and an agent that delivered everything but one handover
+// got none — straight to a block, with the budget untouched and the socket still
+// open. The second is the more recoverable of the two, because Luna knows exactly
+// which artifact is missing and a stage declaring `context = "live"` resumes the
+// session it already paid for.
+//
+// What arrived is absorbed rather than discarded, so the next attempt is a stage
+// finishing its contract rather than starting it over.
+func askAgain(state TaskState, a Complete, owed, missing []Artifact) TaskState {
+	absorb(state.Evidence, a.Evidence)
+
+	state.Retry.Attempts++
+	if state.Retry.Attempts <= state.Retry.Max {
+		state.StillOwed = missing
+		state.Status = StatusRunning
+		return state
+	}
+
+	state.Status = StatusBlocked
+	state.Blocked = fmt.Sprintf("stage %q declared %v and did not deliver %v after %d attempts",
+		state.Stage, owed, missing, state.Retry.Attempts)
+	return state
+}
+
 func complete(state TaskState, a Complete) (TaskState, error) {
 	if state.Status != StatusRunning {
 		return state, fmt.Errorf("%w: no stage is running", ErrIllegalTransition)
@@ -693,10 +722,14 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// (INV-3).
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	if missing := missingFromList(owed, a.Delivered); len(missing) > 0 {
-		state.Status = StatusBlocked
-		state.Blocked = fmt.Sprintf("stage %q declared %v but did not deliver %v", state.Stage, owed, missing)
-		return state, nil
+		return askAgain(state, a, owed, missing), nil
 	}
+
+	// The stage delivered everything it owed, so nothing is outstanding. Cleared
+	// here rather than on the way into the next stage, because the field describes
+	// *this* stage's last attempt and a reader between the two would otherwise see
+	// a debt that had been paid.
+	state.StillOwed = nil
 
 	// The verdict decides, not the delivery. A stage that produced an artifact
 	// whose check failed does not close: the node ran the real tool and it said

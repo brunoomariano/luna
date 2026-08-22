@@ -301,8 +301,12 @@ func blockedStore(t *testing.T, h *harness, id string) {
 			Kind: fsm.KindFeature, Profile: fsm.ProfileNightly,
 			Flow: fsm.Fingerprint(fsm.DefaultFlow()), Simulated: true,
 		},
-		fsm.Advance{Flow: fsm.DefaultFlow()},  // into discovery, which owes repos
-		fsm.Complete{Flow: fsm.DefaultFlow()}, // delivered nothing
+		fsm.Advance{Flow: fsm.DefaultFlow()}, // into the first stage, which owes a worktree
+		// Three empty deliveries, not one: a stage that comes up short is asked
+		// again while its retry budget lasts, and only the attempt past it blocks.
+		fsm.Complete{Flow: fsm.DefaultFlow()},
+		fsm.Complete{Flow: fsm.DefaultFlow()},
+		fsm.Complete{Flow: fsm.DefaultFlow()},
 	} {
 		if err := h.env.Store.AppendAction(id, action); err != nil {
 			t.Fatalf("seeding step %d: %v", i, err)

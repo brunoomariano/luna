@@ -143,8 +143,22 @@ func TestAStageThatDeliveredLessThanItOwedDoesNotClose(t *testing.T) {
 	if !strings.Contains(out, "did not close") {
 		t.Fatalf("a short delivery closed the stage: %s", out)
 	}
+	if !strings.Contains(out, "still owed") {
+		t.Errorf("the caller is not told what is outstanding: %s", out)
+	}
+	if state := mustState(t, h, "LUNA-1"); state.Status == fsm.StatusStageDone {
+		t.Error("a stage that delivered the wrong artifact closed")
+	}
+
+	// Repeating it spends the retry budget, and then the task stops. No flag on
+	// `done` closes a stage that never completed its contract.
+	h.mustRun(t, "done", "LUNA-1", "--delivered", "something-else")
+	last := h.mustRun(t, "done", "LUNA-1", "--delivered", "something-else")
+	if !strings.Contains(last, "did not close") {
+		t.Errorf("a stage that never delivered was allowed through: %s", last)
+	}
 	if state := mustState(t, h, "LUNA-1"); state.Status != fsm.StatusBlocked {
-		t.Errorf("status = %q, want blocked", state.Status)
+		t.Errorf("status = %q, want blocked once the budget is spent", state.Status)
 	}
 }
 
