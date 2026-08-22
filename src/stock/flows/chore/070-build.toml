@@ -1,0 +1,22 @@
+# The whole of the work, in one agent stage.
+#
+# This flow is for the class of task where the statement *is* the specification: a
+# dependency bump, a rename across files, a formatting pass, a mechanical upgrade.
+# There is nothing to diagnose because nothing broke, and nothing to plan because
+# the change has one shape.
+#
+# What keeps it from being "an agent with no supervision" is the stage after it:
+# `make ci` at full scope, over the delivered commit, run by Luna outside the
+# sandbox. The flow is short; the exit check is the same one `full` uses.
+
+id       = "build"
+role     = "maker"
+requires = ["task_id", "worktree"]
+produces = ["code", "tests_green"]
+
+[verify.tests_green]
+run   = "make test"
+scope = "targeted"
+
+[verify.code]
+kind = "existence"

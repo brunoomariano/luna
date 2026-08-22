@@ -47,6 +47,18 @@ edited away.
 Order is the filename prefix. Equivalence with the retired Go literals was proven by
 fingerprint, not by reading.
 
+**A task picks a flow by name, and several ship.** `full`, `fix` and `chore` —
+self-contained directories under `src/stock/flows/`, not a selection over a shared pool,
+because a lighter flow rewires what its surviving stages require rather than merely
+dropping some. The name goes into the opening event beside the fingerprint: the name is
+what a replay resolves, the fingerprint is what it verifies, and a wrong name therefore
+produces a refused replay rather than a wrong one. *Rejected:* a "lean profile" toggling
+stages within one flow — `requires`, `produces` and stage order are read by the reducer,
+so that is history, and one `Complete` closing under one setting and blocking under
+another is a log that no longer replays deterministically (INV-2). A lighter flow is a
+different fingerprint, and a task that ran without planning should not be auditable as
+though it had.
+
 **The core knows no issue tracker.** Tasks enter through `luna task new` or an import
 adapter outside the core. **CLI first. Go, for a static single binary. Defaults plus user
 customization everywhere.**
@@ -298,6 +310,10 @@ Kept because knowing what failed is worth more than knowing what shipped.
 | **The watchdog as an interface over state** | a replayed state carries no clock, so nothing but a test fake could implement it. It came back as a *query* (`luna stuck`), because a watchdog that needs a process running cannot catch the stall where everything has stopped |
 | **Reacting to the agent's terminal** | it is a view, not a signal; a person tidying their terminal would otherwise block a working task. It went entirely when the transport did |
 | **Fresh context as an invariant** | the mechanism was wrong, not the concern — see [invariants.md](invariants.md). Now a per-stage setting, to be measured |
+| **The knob as a scale of execution modes** | it bundles four independent axes into one number — executor, authority, topology, containment — so "maker and critic with every gate still mine" and "solo and unattended for a mechanical upgrade" both become unsayable. The knob is coherent as *authority* alone; which executor runs is already the command you invoke, and a mode carried in task state would be history, replayable, and would change what a past event means |
+| **Per-stage enforcement policy (`required`/`advisory`/`report-only`)** | `requires` and `produces` are read by the reducer, so one `Complete` would close under one policy and block under another, and the replay stops being deterministic (INV-2). A contract that can be waived is not a contract — that is what INV-3 is. The want behind it is answered by a leaner *flow*, which is a different fingerprint and honestly so |
+| **`produces_for_human` by severity, including `auto-summarize`** | the same boundary: the exit check reads it, so it is history and it is in the fingerprint — kept apart from `Produces` there precisely because moving an artifact between the two is already a different flow. And Luna writing the human's report out of Luna's own log is a document nobody wrote, satisfying a contract clause so the flow closes green |
+| **Smaller, cache-stable prompts as a cost lever** | measured and refuted: an 18-clause contract cost *less* at `plan` than 5040 bytes of prose, and the intake/plan spread across runs ($0.38–$0.53) is model variance. The brief is hundreds of bytes against stages of 240k–1.7M tokens — the cost is the agent's own turns, not what Luna sends. `context = "live"` is the lever that did move it: two cold starts a run instead of twelve |
 | **Driving the harness's human interface** | pty sizing, trust dialogs, ready-marker parsing — all of it disappeared with headless mode. See [lessons.md](lessons.md) |
 
 ---
@@ -392,3 +408,11 @@ sharpest point is that a tool with no measurement is an aesthetic preference.
 - **Notification channels.** The queryable state is the base and does not depend on
   anything external. Which channel to push through is left open until real use answers it.
 - **Token accounting.** Being added now that the transport reports usage.
+
+- **Skills that teach an agent to use Luna.** `Role.Skills` parses and `Order` carries it;
+  nothing reads it and `src/stock/skills/` is empty. What a skill would hold is what the
+  brief re-teaches at every single call — the handover (`luna artifact put`), the severity
+  tags, what a contract admits. Deferred on purpose until the flow has been run enough to
+  know what an agent actually gets wrong, because a skill written from a guess becomes a
+  second place for the brief to disagree with. Hooks for the same purpose are unevaluated.
+

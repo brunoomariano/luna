@@ -125,9 +125,12 @@ func Usage() string {
 	return strings.TrimSpace(`
 luna — deterministic orchestration for AI agents
 
-  luna task new <id> --kind <kind> [--profile <profile>] [--simulated]
-        [--about <what>] [--design <how>] [--acceptance <done when>]
-        open a task's log, with what the task is about
+  luna task new <id> --kind <kind> [--flow <flow>] [--profile <profile>]
+        [--simulated] [--about <what>] [--design <how>] [--acceptance <done when>]
+        open a task's log, with what the task is about. --flow picks which
+        flow it runs and cannot change afterwards: the flow's identity goes
+        into the opening event, so a task that switched flows mid-run would
+        be a log no replay could read. luna flow check lists them.
 
   luna task show <id> [--json]
         the task's current state and what it has produced
@@ -175,12 +178,16 @@ luna — deterministic orchestration for AI agents
         clear a block once whatever caused it is dealt with
 
   luna init [--force]
-        copy the stages, roles and profiles into .luna/stock so this
-        project can edit them. Until then the shipped ones run.
+        copy the flows, roles and profiles into .luna/stock so this
+        project can edit them. Until then the shipped ones run. A project's
+        flow replaces the shipped one of the same name and leaves the rest
+        alone, so editing one flow does not fork the others.
 
-  luna flow check
-        what flow this build carries, and whether anything is open.
-        Changing the flow under an open task stops it replaying.
+  luna flow check [--flow <flow>]
+        what flows this build carries, and whether anything is open.
+        Every flow by default — one that is never audited is one whose
+        contract nobody checked. Changing a flow under an open task stops
+        it replaying.
 
   luna gates [--json]
         every task waiting on a person
@@ -293,7 +300,7 @@ func taskAbandon(env Env, args []string) error {
 // write, because after it there is no way back: the log is append-only and every
 // command that reads the task replays it.
 func abandonable(env Env, id string) error {
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.Store.ReplayOwnFlow(id)
 	if errors.Is(err, store.ErrFlowChanged) {
 		return nil
 	}
@@ -338,13 +345,19 @@ func taskNew(env Env, args []string) error {
 		return fmt.Errorf("task %q already exists, with %d events", id, len(events))
 	}
 
-	// The flow the task is born under is recorded with it, so a later replay can
-	// tell it is being read against a different one.
-	flow := fsm.Fingerprint(fsm.DefaultFlow())
+	// The flow the task is born under is recorded with it — by name, so a later
+	// replay can load it, and by fingerprint, so it can tell it is being read
+	// against a different one.
+	stages, err := fsm.FlowNamed(opts.flow)
+	if err != nil {
+		return err
+	}
+	fingerprint := fsm.Fingerprint(stages)
 	created := fsm.TaskCreated{
 		Kind:      opts.kind,
 		Profile:   opts.profile,
-		Flow:      flow,
+		Flow:      fingerprint,
+		FlowName:  opts.flow,
 		Statement: opts.stated,
 		Simulated: opts.simulated,
 	}
@@ -352,7 +365,8 @@ func taskNew(env Env, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s flow=%s)\n", id, opts.kind, opts.profile, flow)
+	fmt.Fprintf(env.Out, "created %s (kind=%s profile=%s flow=%s/%s)\n",
+		id, opts.kind, opts.profile, opts.flow, fingerprint)
 	if opts.stated.Stated() {
 		fmt.Fprintf(env.Out, "  about: %s\n", opts.stated.Description)
 	}
@@ -393,7 +407,7 @@ func taskStatement(env Env, args []string) error {
 		return fmt.Errorf("no task %q", id)
 	}
 
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
@@ -418,6 +432,11 @@ func taskStatement(env Env, args []string) error {
 type taskOptions struct {
 	kind    fsm.TaskKind
 	profile fsm.Profile
+
+	// flow is which flow the task runs, by name. It is fixed at creation and
+	// never changes: the flow's identity goes into the opening event, and a task
+	// that could switch flows mid-run would be a log no replay could read.
+	flow string
 
 	// stated is what the task is about, as it was given on the command line. It
 	// rides into the log with the task rather than into a registry.
@@ -446,6 +465,14 @@ func howToRun(opts *taskOptions, cfg Config, name, value string) error {
 				ErrUsage, value, strings.Join(cfg.ProfileNames(), ", "))
 		}
 		opts.profile = fsm.Profile(value)
+	case "flow":
+		// Refused here rather than at the first replay: the name is about to be
+		// written into an append-only log, and a task opened against a flow that
+		// does not exist is one no command can read afterwards.
+		if _, err := fsm.FlowNamed(value); err != nil {
+			return fmt.Errorf("%w: %w", ErrUsage, err)
+		}
+		opts.flow = value
 	case "simulated":
 		opts.simulated = true
 	default:
@@ -475,7 +502,7 @@ func statedBy(stated *fsm.Statement, name, value string) bool {
 }
 
 func parseTaskOptions(cfg Config, args []string) (taskOptions, error) {
-	opts := taskOptions{kind: fsm.KindFeature, profile: fsm.ProfileInteractive}
+	opts := taskOptions{kind: fsm.KindFeature, profile: fsm.ProfileInteractive, flow: fsm.DefaultFlowName}
 
 	flags, err := parseFlags(args)
 	if err != nil {
@@ -524,7 +551,7 @@ func taskShow(env Env, args []string) error {
 		return fmt.Errorf("no task %q", id)
 	}
 
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
@@ -534,7 +561,11 @@ func taskShow(env Env, args []string) error {
 	}
 
 	printTask(env, state, len(events))
-	printSpend(env, state)
+	spendFlow, err := env.flowOf(id)
+	if err != nil {
+		return err
+	}
+	printSpend(env, state, spendFlow)
 	printHandedOver(env, id)
 	return nil
 }
@@ -585,7 +616,7 @@ func gateChecks(env Env, id string, args []string) error {
 		return fmt.Errorf("no task %q", id)
 	}
 
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
@@ -749,7 +780,7 @@ func runGates(env Env, args []string) error {
 		return err
 	}
 
-	waiting, err := env.Store.AwaitingGate(fsm.DefaultFlow())
+	waiting, err := env.Store.AwaitingGate()
 	if err != nil {
 		return err
 	}
@@ -820,7 +851,7 @@ func runGate(env Env, args []string) error {
 // declaring what will answer it — does not have to thread past a guard written
 // for the others.
 func answerOpenGate(env Env, sub, id string, rest []string) error {
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
@@ -830,7 +861,11 @@ func answerOpenGate(env Env, sub, id string, rest []string) error {
 
 	switch sub {
 	case "show":
-		return gateShow(env, state, fsm.DefaultFlow())
+		flow, err := env.flowOf(id)
+		if err != nil {
+			return err
+		}
+		return gateShow(env, state, flow)
 	case "approve":
 		return answer(env, id, fsm.GateApprove{}, "approved")
 	case "reject":
@@ -1072,7 +1107,7 @@ func readAll(env Env) (string, error) {
 // first and discovering the problem at replay would leave a log that cannot be
 // rebuilt.
 func answer(env Env, id string, action fsm.Action, verb string) error {
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
@@ -1157,14 +1192,14 @@ func sortedArtifacts(set map[fsm.Artifact]bool) []fsm.Artifact {
 // expensive and that is the part worth acting on. The context column is here for
 // the same reason: fresh and live differ by an order of magnitude, and a cost
 // nobody can attribute to a setting cannot settle which setting to use.
-func printSpend(env Env, state fsm.TaskState) {
+func printSpend(env Env, state fsm.TaskState, flow []fsm.Stage) {
 	if len(state.Spent) == 0 {
 		return
 	}
 
 	fmt.Fprintf(env.Out, "\nspent\n")
 	// Flow order rather than map order, so the column reads like the run.
-	for _, stage := range fsm.DefaultFlow() {
+	for _, stage := range flow {
 		spend, ran := state.Spent[stage.ID]
 		if !ran {
 			continue

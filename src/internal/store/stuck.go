@@ -51,7 +51,7 @@ func (s Stuck) String() string {
 // This is the watchdog's whole mechanism. It is a query, not a loop — whatever
 // wants to poll decides how often, and a query keeps the clock in exactly one
 // place.
-func (s *Store) Stalled(flow []fsm.Stage, patience time.Duration) ([]Stuck, error) {
+func (s *Store) Stalled(patience time.Duration) ([]Stuck, error) {
 	ids, err := s.Tasks()
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (s *Store) Stalled(flow []fsm.Stage, patience time.Duration) ([]Stuck, erro
 	var stuck []Stuck
 
 	for _, id := range ids {
-		state, err := s.Replay(id, flow)
+		state, err := s.ReplayOwnFlow(id)
 		// Same reasoning as AwaitingGate: an unreadable task must not hide every
 		// other one. `luna flow check` is where those surface by name.
 		if errors.Is(err, ErrFlowChanged) {

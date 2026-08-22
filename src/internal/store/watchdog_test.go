@@ -31,7 +31,7 @@ func TestOneUnreadableTaskDoesNotSilenceTheWatchdog(t *testing.T) {
 	blockedTask(t, s, "LUNA-2", "merge conflict on runner.go")
 	*now = now.Add(6 * time.Hour)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("one unreadable task must not fail the watchdog: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestACorruptLogStopsTheWatchdogRatherThanBeingSkipped(t *testing.T) {
 		t.Fatalf("seeding: %v", err)
 	}
 
-	if _, err := s.Stalled(fsm.DefaultFlow(), time.Hour); err == nil {
+	if _, err := s.Stalled(time.Hour); err == nil {
 		t.Error("a log that cannot be decoded must not be skipped in silence")
 	}
 }
@@ -74,7 +74,7 @@ func TestTheWatchdogFailsLoudlyWhenTheLogIsGone(t *testing.T) {
 		t.Fatalf("closing: %v", err)
 	}
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), 0)
+	stuck, err := s.Stalled(0)
 	if err == nil {
 		t.Fatalf("an unreadable store reported %d stalls instead of failing", len(stuck))
 	}

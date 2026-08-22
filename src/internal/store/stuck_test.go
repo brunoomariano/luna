@@ -42,7 +42,7 @@ func TestAFreshBlockIsNotYetStuck(t *testing.T) {
 
 	*now = now.Add(5 * time.Minute)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestABlockNobodyAnsweredBecomesStuck(t *testing.T) {
 
 	*now = now.Add(3 * time.Hour)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestAGateNobodyAnsweredIsAlsoStuck(t *testing.T) {
 
 	*now = now.Add(6 * time.Hour)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestATaskThatIsMovingIsNeverStuck(t *testing.T) {
 	}
 	*now = now.Add(9 * time.Hour)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestTheClockRunsFromTheLastEvent(t *testing.T) {
 
 	*now = now.Add(20 * time.Minute)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestTheClockRunsFromTheLastEvent(t *testing.T) {
 	}
 
 	// And with a patience it does exceed, it reports the shorter age.
-	stuck, _ = s.Stalled(fsm.DefaultFlow(), 10*time.Minute)
+	stuck, _ = s.Stalled(10 * time.Minute)
 	if len(stuck) != 1 {
 		t.Fatalf("got %d, want the task stuck for 20 minutes", len(stuck))
 	}
@@ -197,7 +197,7 @@ func TestALogWithoutTimestampsIsNotReportedStuck(t *testing.T) {
 	}
 	*now = now.Add(50 * time.Hour)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestZeroPatienceListsEverythingStopped(t *testing.T) {
 
 	*now = now.Add(time.Second)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), 0)
+	stuck, err := s.Stalled(0)
 	if err != nil {
 		t.Fatalf("Stalled: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestATaskWrittenUnderAnotherFlowDoesNotHideTheRest(t *testing.T) {
 
 	*now = now.Add(3 * time.Hour)
 
-	stuck, err := s.Stalled(fsm.DefaultFlow(), time.Hour)
+	stuck, err := s.Stalled(time.Hour)
 	if err != nil {
 		t.Fatalf("one unreadable task made the whole listing fail: %v", err)
 	}

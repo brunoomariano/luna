@@ -1,0 +1,22 @@
+# No role, and that is the point of this file.
+#
+# `ci_green` is proven by running `make ci`; nothing about it is a judgement, and
+# `judgement` in role.go does not list it — so the static check allows a stage
+# that produces only this to name no role, and a stage with no role runs no agent.
+# Measured against `full`, where the same stage id costs $1.62 because it also
+# owes `dod_checked`, which is a person's checklist and needs somebody to write
+# it.
+#
+# So this flow's exit check is free. What it does not buy is judgement: nothing
+# here asks whether the fix is a good one, only whether the pipeline is green over
+# what was delivered. A bug with a reproduction is the case where that trade is
+# honest — the reproduction is the acceptance criterion, and `make ci` runs it.
+# It is not honest for new behaviour, which is why `full` keeps the critic.
+
+id       = "verify"
+requires = ["code"]
+produces = ["ci_green"]
+
+[verify.ci_green]
+run   = "make ci"
+scope = "full"

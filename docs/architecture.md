@@ -53,9 +53,46 @@ That is what keeps a transition reproducible from the log and testable without
 infrastructure. Running things belongs to `internal/node`; deciding belongs to
 `internal/fsm`.
 
+## Flows
+
+Luna ships three, and a task picks one when it is created:
+
+| Flow | Stages | For |
+|---|---|---|
+| `full` | setup → intake → plan → build → refactor → verify → review | new behaviour, uncertain design; the only one with a gate |
+| `fix` | setup → diagnose → build → verify | a bug with a reproduction: the reproduction is the specification |
+| `chore` | setup → build → verify | mechanical work — a bump, a rename, a formatting pass |
+
+`luna task new FIX-1 --kind bug --flow fix`. The choice is fixed at creation and
+recorded in the opening event, by **name** so a later replay can load it and by
+**fingerprint** so it can tell it is being read against a different one. Both,
+because either alone lies in a different direction: a name whose flow was edited
+since resolves to something the task never ran, and a fingerprint with no name has
+nothing to compare against.
+
+A flow directory is self-contained rather than a selection over a shared pool of
+stages, and that is not duplication for its own sake — **a lighter flow rewires
+what the surviving stages require.** `build` asks for `contract` under `full` and
+for `root_cause` under `fix`; same stage id, different contract, so two files.
+
+Two consequences worth stating, because both were surprises:
+
+- **A lean flow's `verify` runs no agent at all.** `ci_green` is proven by running
+  `make ci`, and nothing about it is a judgement — `judgement` in `role.go` does
+  not list it — so a stage that owes only that names no role, and a stage with no
+  role starts no agent. Under `full` the same stage id costs a critic, because it
+  also owes `dod_checked`, which is a person's checklist.
+- **A lean flow is a different fingerprint, and that is the point.** Dropping
+  `plan` changes stage ids, order, `requires` and `produces` — all history. So a
+  task that ran without planning is not replayable as though it had planned, which
+  is the honest answer rather than an obstacle.
+
+`luna flow check` audits every flow, not one: a build that reports "the contract
+holds" about a third of what it runs is saying something true and useless.
+
 ## The stage contract
 
-A stage is a TOML file in `src/stock/stages/`. This is the whole shape:
+A stage is a TOML file in `src/stock/flows/<flow>/`. This is the whole shape:
 
 ```toml
 id                 = "verify"
@@ -216,10 +253,15 @@ recomputing one.
 Append-only SQLite. No `UPDATE`, no `DELETE`. The log is the state; anything else is a
 projection that can be rebuilt.
 
-The opening event carries a **fingerprint of the flow** the task was born under — stage
-ids in order, with what each requires and produces. Replaying against a different flow is
-refused, because a renamed stage used to replay as the new name and an inserted stage made
-a task redo finished work, both silently.
+The opening event carries the **name of the flow** the task was born under and a
+**fingerprint of its identity** — stage ids in order, with what each requires and produces.
+The name is what a replay resolves; the fingerprint is what it verifies. Replaying against a
+different flow is refused, because a renamed stage used to replay as the new name and an
+inserted stage made a task redo finished work, both silently.
+
+Every reader goes through `ReplayOwnFlow`, which resolves the task's flow before replaying
+it. `Replay(id, flow)` is the narrower door beneath it, and it is right for exactly one
+caller — `luna flow check`, which is asking what a *different* flow would do to this log.
 
 The flow itself stays editable; what is recorded is its *identity*, not its content.
 `luna flow check` reports whether anything is open before you change it.
@@ -238,7 +280,7 @@ src/
   internal/node/     running a stage: worktree, sandbox, socket, verification
   internal/cli/      commands
   internal/lead/     conducting a task, and the model that judges a gate
-  stock/             defaults: stages, roles, profiles (embedded TOML)
+  stock/             defaults: flows, roles, profiles (embedded TOML)
 docs/                this suite
 scripts/             lint helpers
 ```

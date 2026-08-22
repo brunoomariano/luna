@@ -24,7 +24,7 @@ func TestTaskShowReportsWhatTheTaskCost(t *testing.T) {
 		},
 	}
 
-	printSpend(env, state)
+	printSpend(env, state, fsm.DefaultFlow())
 	got := out.String()
 
 	for _, want := range []string{"spent", "build", "verify", "total", "fresh", "live"} {
@@ -47,7 +47,7 @@ func TestTaskShowReportsWhatTheTaskCost(t *testing.T) {
 // suggest a measurement that never happened.
 func TestATaskThatSpentNothingSaysNothing(t *testing.T) {
 	var out strings.Builder
-	printSpend(Env{Out: &out}, fsm.TaskState{ID: "T-2"})
+	printSpend(Env{Out: &out}, fsm.TaskState{ID: "T-2"}, fsm.DefaultFlow())
 
 	if got := out.String(); got != "" {
 		t.Errorf("want silence for a task that spent nothing, got:\n%s", got)
@@ -68,7 +68,7 @@ func TestTheReportReadsInFlowOrder(t *testing.T) {
 		},
 	}
 
-	printSpend(Env{Out: &out}, state)
+	printSpend(Env{Out: &out}, state, fsm.DefaultFlow())
 	got := out.String()
 
 	plan := strings.Index(got, "plan")

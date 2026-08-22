@@ -1,0 +1,23 @@
+# The fix, held to the cause rather than to a contract.
+#
+# `fresh`, and it has to be: the stage before it ran as `investigator`, and
+# AuditContextChain refuses a live stage whose predecessor holds a different role.
+# The cause crosses as an artifact instead, which is the handoff this project
+# prefers to a continued session anyway.
+
+id       = "build"
+role     = "maker"
+context  = "fresh"
+requires = ["root_cause", "worktree"]
+produces = ["code", "tests_green"]
+
+[verify.tests_green]
+# Targeted rather than full: build runs the tests it touched. `verify` is the
+# stage that earns full.
+run   = "make test"
+scope = "targeted"
+
+[verify.code]
+# No command proves `code` itself — the compiler is part of `make test`, and "the
+# diff is non-empty" proves nothing about it.
+kind = "existence"

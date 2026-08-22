@@ -123,49 +123,112 @@ func reportGates(env Env, flow []fsm.Stage) {
 	fmt.Fprintf(env.Out, "checks are declared per task — `luna gate checks <id> --on <gate>` — not here\n")
 }
 
-func flowCheck(env Env, args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("%w: flow check takes no arguments", ErrUsage)
+// flowsToCheck reads which flows the check was asked about.
+//
+// Every flow by default, because a build that runs several has no single "the
+// flow" and checking one of them would leave the others unaudited — which is the
+// state this command exists to prevent.
+func flowsToCheck(args []string) ([]string, error) {
+	flags, err := parseFlags(args)
+	if err != nil {
+		return nil, err
 	}
+	for name := range flags {
+		if name != "flow" {
+			return nil, fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		}
+	}
+	if only, asked := flags["flow"]; asked {
+		if _, err := fsm.FlowNamed(only); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrUsage, err)
+		}
+		return []string{only}, nil
+	}
+	return fsm.FlowNames(), nil
+}
 
-	flow := fsm.DefaultFlow()
-	fmt.Fprintf(env.Out, "flow %s (%d stages) %s\n",
-		fsm.Fingerprint(flow), len(flow), stockNote(env.Stock))
-
-	// Whether the flow holds together on paper, before whether anything is in
-	// flight. The two questions are different and this command was only asking
-	// the second: a flow can have every task finished and still be broken —
-	// a stage requiring an artifact nothing produces, a stage that needs
-	// judgement and names no role, a stage id long enough to truncate a task's
-	// agent name.
-	//
-	// It reports rather than refuses, like the rest of this command. Whoever
-	// typed it is the one who knows whether a gap matters.
-	reportFlowGaps(env, flow)
-	reportGates(env, flow)
-
-	ids, err := env.Store.Tasks()
+func flowCheck(env Env, args []string) error {
+	names, err := flowsToCheck(args)
 	if err != nil {
 		return err
 	}
+	if err := auditFlows(env, names); err != nil {
+		return err
+	}
 
-	var open, unreadable []string
+	open, unreadable, err := surveyTasks(env)
+	if err != nil {
+		return err
+	}
+	reportTaskSurvey(env, open, unreadable)
+	return nil
+}
+
+// auditFlows reports what each named flow is and whether it holds together.
+//
+// Whether a flow holds together on paper is a different question from whether
+// anything is in flight, and this command was only asking the second: a flow can
+// have every task finished and still be broken — a stage requiring an artifact
+// nothing produces, a stage that needs judgement and names no role, a stage id
+// long enough to truncate a task's agent name.
+//
+// It reports rather than refuses, like the rest of this command. Whoever typed it
+// is the one who knows whether a gap matters.
+func auditFlows(env Env, names []string) error {
+	for i, name := range names {
+		if i > 0 {
+			fmt.Fprintln(env.Out)
+		}
+		flow, err := fsm.FlowNamed(name)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Out, "flow %s/%s (%d stages) %s\n",
+			name, fsm.Fingerprint(flow), len(flow), stockNote(env.Stock))
+
+		reportFlowGaps(env, flow)
+		reportGates(env, flow)
+	}
+	return nil
+}
+
+// surveyTasks splits every task in the store into the ones still open and the
+// ones that no longer replay at all.
+//
+// Each against its own flow, which is what makes the listing true once a build
+// runs several: replaying every task against one of them would report every task
+// on any other flow as unreadable, and "unreadable" is the word this command uses
+// for a task somebody has to go and end.
+func surveyTasks(env Env) (open, unreadable []string, err error) {
+	ids, err := env.Store.Tasks()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	for _, id := range ids {
-		state, err := env.Store.Replay(id, flow)
+		state, err := env.Store.ReplayOwnFlow(id)
 		if errors.Is(err, store.ErrFlowChanged) {
 			unreadable = append(unreadable, id)
 			continue
 		}
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		if !state.IsTerminal() {
-			open = append(open, fmt.Sprintf("%s (%s)", id, state.Status))
+			open = append(open, fmt.Sprintf("%s (%s on %s)", id, state.Status, state.FlowName))
 		}
 	}
+	return open, unreadable, nil
+}
 
+// reportTaskSurvey prints what the survey found.
+//
+// Listed rather than refused: this command reports, and whoever runs it decides.
+// A guard that exited non-zero would be a gate, and the person who typed it is the
+// one who knows whether those tasks matter.
+func reportTaskSurvey(env Env, open, unreadable []string) {
 	if len(unreadable) > 0 {
-		fmt.Fprintf(env.Out, "\n%d task(s) no longer replay against this flow:\n", len(unreadable))
+		fmt.Fprintf(env.Out, "\n%d task(s) no longer replay against the flow they name:\n", len(unreadable))
 		for _, id := range unreadable {
 			fmt.Fprintf(env.Out, "  %s\n", id)
 		}
@@ -174,14 +237,10 @@ func flowCheck(env Env, args []string) error {
 
 	if len(open) == 0 {
 		fmt.Fprintf(env.Out, "\nno task is open — the flow can change\n")
-		return nil
+		return
 	}
 
-	// Listed rather than refused: this command reports, and whoever runs it
-	// decides. A guard that exits non-zero would be a gate, and the person who
-	// typed it is the one who knows whether those tasks matter.
 	fmt.Fprintf(env.Out, "\n%d task(s) still open:\n  %s\n", len(open), strings.Join(open, "\n  "))
 	fmt.Fprintf(env.Out, "\nfinish or abandon them before changing the flow — "+
 		"a task whose flow changes under it stops replaying\n")
-	return nil
 }

@@ -34,7 +34,12 @@ func nextCommand(env Env, args []string) error {
 		return err
 	}
 
-	order, err := fsm.NextOrder(state, fsm.DefaultFlow(), env.profiles().Roles)
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return err
+	}
+
+	order, err := fsm.NextOrder(state, flow, env.profiles().Roles)
 	if err != nil {
 		return err
 	}
@@ -58,6 +63,40 @@ func nextCommand(env Env, args []string) error {
 // action and the reducer decides whether the stage closed: a stage
 // that owed two artifacts and delivered one does not close, and no flag on this
 // command can make it.
+// handReportedCompletion assembles the Complete for a stage somebody finished by
+// hand.
+//
+// Nothing here judges the work: the evidence is the floor, and the reducer decides
+// whether that satisfies the contract. The flow comes from the task rather than
+// from the build, so a stage on a lean flow is checked against the lean contract.
+func handReportedCompletion(env Env, id string, state fsm.TaskState, flags map[string]string) (fsm.Complete, error) {
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return fsm.Complete{}, err
+	}
+
+	delivered, err := deliveredArtifacts(flags["delivered"])
+	if err != nil {
+		return fsm.Complete{}, err
+	}
+
+	// The commit is checked against git rather than taken on its word. It becomes
+	// the base the next stage branches from, so a value that resolves to nothing
+	// strands every stage after this one — and forty hex characters look exactly
+	// like a delivery.
+	commit, err := node.ResolveCommit(context.Background(), ".", flags["commit"])
+	if err != nil {
+		return fsm.Complete{}, err
+	}
+
+	return fsm.Complete{
+		Delivered: delivered,
+		Evidence:  handReportedEvidence(delivered, state.Seq),
+		Commit:    commit,
+		Flow:      flow,
+	}, nil
+}
+
 func doneCommand(env Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: done needs a task id", ErrUsage)
@@ -77,27 +116,9 @@ func doneCommand(env Env, args []string) error {
 		return fmt.Errorf("task %q has no running stage to finish (it is %s)", id, state.Status)
 	}
 
-	delivered, err := deliveredArtifacts(flags["delivered"])
+	action, err := handReportedCompletion(env, id, state, flags)
 	if err != nil {
 		return err
-	}
-
-	evidence := handReportedEvidence(delivered, state.Seq)
-
-	// The commit is checked against git rather than taken on its word. It becomes
-	// the base the next stage branches from, so a value that resolves to nothing
-	// strands every stage after this one — and forty hex characters look exactly
-	// like a delivery.
-	commit, err := node.ResolveCommit(context.Background(), ".", flags["commit"])
-	if err != nil {
-		return err
-	}
-
-	action := fsm.Complete{
-		Delivered: delivered,
-		Evidence:  evidence,
-		Commit:    commit,
-		Flow:      fsm.DefaultFlow(),
 	}
 
 	if err := env.Store.AppendActionAt(id, state.Seq, action); err != nil {
@@ -143,7 +164,12 @@ func statusCommand(env Env, args []string) error {
 		return err
 	}
 
-	report := statusReport(state, fsm.DefaultFlow())
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return err
+	}
+
+	report := statusReport(state, flow)
 	// Filled here rather than in statusReport, which is pure and takes no
 	// filesystem: reading a ref is a git call, and where the task landed is a
 	// fact about the repository rather than about the state.
@@ -262,7 +288,35 @@ func (e Env) replay(id string) (fsm.TaskState, error) {
 	if len(events) == 0 {
 		return fsm.TaskState{}, fmt.Errorf("no task %q", id)
 	}
-	return e.Store.Replay(id, fsm.DefaultFlow())
+
+	flow, err := e.flowOf(id)
+	if err != nil {
+		return fsm.TaskState{}, err
+	}
+	return e.Store.Replay(id, flow)
+}
+
+// flowOf loads the flow a task was opened under.
+//
+// Every command that reads a task goes through this rather than reaching for the
+// shipped flow, and that is the whole of what running several flows costs: a task
+// is replayed against its own contract, never against whichever one this build
+// calls default.
+//
+// A name this build no longer has is reported as itself. It is the same situation
+// ErrFlowChanged covers — a task whose contract went away underneath it — and the
+// remedy is the same, so the message names it.
+func (e Env) flowOf(id string) ([]fsm.Stage, error) {
+	name, err := e.Store.FlowNameOf(id)
+	if err != nil {
+		return nil, err
+	}
+	flow, err := fsm.FlowNamed(name)
+	if err != nil {
+		return nil, fmt.Errorf("%s ran under %w — `luna task abandon %s` ends a task "+
+			"whose flow is gone", id, err, id)
+	}
+	return flow, nil
 }
 
 // handReportedEvidence records the floor for a delivery somebody reported.

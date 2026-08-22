@@ -29,7 +29,7 @@ func TestInitWritesTheWholeStock(t *testing.T) {
 		t.Errorf("nothing was reported as written:\n%s", out)
 	}
 
-	stages, err := os.ReadDir(filepath.Join(h.env.Stock, "stages"))
+	stages, err := os.ReadDir(filepath.Join(h.env.Stock, "flows", fsm.DefaultFlowName))
 	if err != nil {
 		t.Fatalf("reading the written stages: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestInitWritesTheWholeStock(t *testing.T) {
 	// The copy is complete: a directory holding three of fourteen stages raises
 	// "does this replace the default or extend it?", and either answer is one
 	// somebody reads the other way.
-	for _, dir := range []string{"stages", "roles", "profiles"} {
+	for _, dir := range []string{"flows/" + fsm.DefaultFlowName, "roles", "profiles"} {
 		entries, err := os.ReadDir(filepath.Join(h.env.Stock, dir))
 		if err != nil || len(entries) == 0 {
 			t.Errorf("%s was not written", dir)
@@ -60,7 +60,7 @@ func TestWhatInitWritesIsWhatLunaRuns(t *testing.T) {
 		t.Fatal("what init wrote is not recognised as a stock")
 	}
 
-	flow, err := fsm.LoadFlow(files, "stages")
+	flow, err := fsm.LoadFlow(files, "flows/"+fsm.DefaultFlowName)
 	if err != nil {
 		t.Fatalf("the written stock does not parse: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestInitRefusesToDiscardEdits(t *testing.T) {
 	h := initHarness(t)
 	h.mustRun(t, "init")
 
-	edited := filepath.Join(h.env.Stock, "stages", "090-verify.toml")
+	edited := filepath.Join(h.env.Stock, "flows", fsm.DefaultFlowName, "090-verify.toml")
 	before, err := os.ReadFile(edited)
 	if err != nil {
 		t.Fatalf("reading a written stage: %v", err)
@@ -106,7 +106,7 @@ func TestForceReplacesTheStock(t *testing.T) {
 	h := initHarness(t)
 	h.mustRun(t, "init")
 
-	edited := filepath.Join(h.env.Stock, "stages", "090-verify.toml")
+	edited := filepath.Join(h.env.Stock, "flows", fsm.DefaultFlowName, "090-verify.toml")
 	if err := os.WriteFile(edited, []byte("# mine\n"), 0o600); err != nil {
 		t.Fatalf("editing: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestForceReplacesRatherThanOverwrites(t *testing.T) {
 	h.mustRun(t, "init")
 
 	// A stage that is not in the shipped flow, left behind by an older version.
-	stale := filepath.Join(h.env.Stock, "stages", "999-gone.toml")
+	stale := filepath.Join(h.env.Stock, "flows", fsm.DefaultFlowName, "999-gone.toml")
 	if err := os.WriteFile(stale, []byte("id = \"gone\"\nproduces = [\"x\"]\n"), 0o600); err != nil {
 		t.Fatalf("planting the stale stage: %v", err)
 	}

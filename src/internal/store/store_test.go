@@ -290,7 +290,7 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 		}
 	}
 
-	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
+	waiting, err := s.AwaitingGate()
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 func TestListingTasksWithNothingSuspended(t *testing.T) {
 	s := openTemp(t)
 
-	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
+	waiting, err := s.AwaitingGate()
 	if err != nil {
 		t.Fatalf("listing an empty store is not an error: %v", err)
 	}
@@ -537,7 +537,7 @@ func TestAnUnreadableTaskDoesNotHideTheOthers(t *testing.T) {
 	}
 	walkToGate(t, s, "LUNA-2")
 
-	waiting, err := s.AwaitingGate(fsm.DefaultFlow())
+	waiting, err := s.AwaitingGate()
 	if err != nil {
 		t.Fatalf("one unreadable task must not fail the listing: %v", err)
 	}
@@ -768,4 +768,69 @@ func walkToGate(t *testing.T, s *Store, id string) {
 		}
 	}
 	t.Fatalf("no stage in the shipped flow opens a gate")
+}
+
+// TestFlowNameOfReadsTheOpeningEventAlone is the chicken-and-egg a build with
+// several flows creates: replaying needs a flow, and which flow a task ran is in
+// its log. This is the one read that happens before the replay.
+func TestFlowNameOfReadsTheOpeningEventAlone(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendAction("T-1", fsm.TaskCreated{
+		Kind: fsm.KindBug, FlowName: "fix", Flow: "whatever",
+	}); err != nil {
+		t.Fatalf("creating the task: %v", err)
+	}
+
+	name, err := s.FlowNameOf("T-1")
+	if err != nil {
+		t.Fatalf("reading the flow name: %v", err)
+	}
+	if name != "fix" {
+		t.Errorf("FlowNameOf = %q, want %q", name, "fix")
+	}
+}
+
+// TestFlowNameOfDefaultsRatherThanFailing. The name only decides which flow gets
+// loaded; the fingerprint comparison in Replay still decides whether that was the
+// right one. So a log with nothing to read here answers with the default, and a
+// wrong guess comes back as a refused replay rather than a wrong one.
+func TestFlowNameOfDefaultsRatherThanFailing(t *testing.T) {
+	s := openTemp(t)
+
+	// A task nobody wrote to.
+	name, err := s.FlowNameOf("T-absent")
+	if err != nil {
+		t.Fatalf("an empty log is not an error: %v", err)
+	}
+	if name != fsm.DefaultFlowName {
+		t.Errorf("an empty log answered %q", name)
+	}
+
+	// A task opened before flows were named.
+	if err := s.AppendAction("T-2", fsm.TaskCreated{Kind: fsm.KindChore}); err != nil {
+		t.Fatalf("creating the task: %v", err)
+	}
+	if name, err = s.FlowNameOf("T-2"); err != nil || name != fsm.DefaultFlowName {
+		t.Errorf("a task naming no flow answered %q (%v)", name, err)
+	}
+}
+
+// TestReplayOwnFlowRefusesAFlowThisBuildLost. A task whose flow went away is the
+// situation ErrFlowChanged exists for, so it comes back as that — which is what
+// lets every listing that already skips those skip this one too, rather than one
+// unreadable task hiding every other.
+func TestReplayOwnFlowRefusesAFlowThisBuildLost(t *testing.T) {
+	s := openTemp(t)
+
+	if err := s.AppendAction("T-3", fsm.TaskCreated{
+		Kind: fsm.KindFeature, FlowName: "a-flow-nobody-ships",
+	}); err != nil {
+		t.Fatalf("creating the task: %v", err)
+	}
+
+	_, err := s.ReplayOwnFlow("T-3")
+	if !errors.Is(err, ErrFlowChanged) {
+		t.Errorf("want ErrFlowChanged for a flow this build lost, got %v", err)
+	}
 }

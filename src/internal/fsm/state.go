@@ -289,6 +289,11 @@ type TaskState struct {
 	// Empty is a task opened against no flow, which no build's flow agrees with.
 	Flow FlowFingerprint
 
+	// FlowName is which flow the fingerprint above identifies. A build running
+	// several flows needs the name to load one; the fingerprint stays the thing
+	// that says whether the loaded one is the one the task ran under.
+	FlowName string
+
 	// Base is the commit the last closed stage delivered, and the one the next
 	// stage branches from. It is the handoff: the next agent starts from the
 	// artifact rather than from a description of it.

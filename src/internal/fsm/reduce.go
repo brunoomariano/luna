@@ -34,6 +34,19 @@ type TaskCreated struct {
 	// runs — so a replay refuses it rather than reading it against the shipped one.
 	Flow FlowFingerprint `json:"flow,omitempty"`
 
+	// FlowName is which flow that fingerprint belongs to, so a replay can go and
+	// load it.
+	//
+	// The fingerprint alone was enough while a build ran one flow: there was
+	// nothing to choose between, and the identity was only ever compared. With
+	// several, the identity can no longer find its own contents — a hash says
+	// whether two flows are the same, never which file to read. So the name is
+	// what resolves and the fingerprint is still what verifies, and both are
+	// recorded because either one alone lies in a different direction: a name that
+	// was edited since resolves to a flow the task never ran, and a fingerprint
+	// with no name has nothing to compare against.
+	FlowName string `json:"flow_name,omitempty"`
+
 	// Simulated marks a task whose stages run no agent — a `--dry-run`.
 	//
 	// It belongs on the task rather than on each piece of evidence because it is
@@ -474,6 +487,7 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 	// job, because the reducer sees one action at a time and the mismatch is a
 	// property of the whole replay.
 	state.Flow = a.Flow
+	state.FlowName = a.FlowName
 	state.Statement = a.Statement
 	state.Simulated = a.Simulated
 	return state, nil
@@ -564,6 +578,28 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	return state, nil
 }
 
+// flowFallback is the flow to check against when the action carried none.
+//
+// The task's own, from its opening event, rather than whichever flow this build
+// calls default. While a build ran one flow those were the same value. With
+// several they are not, and defaulting would check a delivery against a contract
+// the task never ran — silently, because the stage ids overlap between flows, so
+// the wrong contract resolves to a real stage instead of to nothing.
+//
+// A name that does not resolve falls back to the default, which is the least-wrong
+// answer available: the state could not have been replayed at all if its flow were
+// missing, so this is unreachable from a real log.
+func flowFallback(state TaskState) []Stage {
+	if state.FlowName == "" {
+		return DefaultFlow()
+	}
+	flow, err := FlowNamed(state.FlowName)
+	if err != nil {
+		return DefaultFlow()
+	}
+	return flow
+}
+
 func complete(state TaskState, a Complete) (TaskState, error) {
 	if state.Status != StatusRunning {
 		return state, fmt.Errorf("%w: no stage is running", ErrIllegalTransition)
@@ -571,7 +607,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 
 	flow := a.Flow
 	if len(flow) == 0 {
-		flow = DefaultFlow()
+		flow = flowFallback(state)
 	}
 	stage := stageIn(flow, state.Stage)
 
@@ -726,7 +762,7 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	flow := a.Flow
 	if len(flow) == 0 {
-		flow = DefaultFlow()
+		flow = flowFallback(state)
 	}
 
 	// Only a review stage may send work back. This is whoever-writes-does-not-review

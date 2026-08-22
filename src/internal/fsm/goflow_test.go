@@ -194,12 +194,12 @@ func TestTheStockHasEveryStage(t *testing.T) {
 // flow" real: the stock a project edited is what Luna runs, not the one it was
 // built with.
 //
-// UseFlow is a package-level value set once at startup, which is a trade worth
+// UseFlows is a package-level value set once at startup, which is a trade worth
 // testing rather than trusting — the alternative was threading the flow through
 // fifteen call sites that would all pass the same thing.
 func TestAProjectsFlowReplacesTheShippedOne(t *testing.T) {
 	shipped := Fingerprint(DefaultFlow())
-	t.Cleanup(func() { UseFlow(nil) })
+	t.Cleanup(func() { UseFlows(nil) })
 
 	own := []Stage{{
 		ID:        "only",
@@ -208,7 +208,7 @@ func TestAProjectsFlowReplacesTheShippedOne(t *testing.T) {
 		Produces:  []Artifact{"code"},
 		Verifiers: map[Artifact]Verifier{"code": Existence{}},
 	}}
-	UseFlow(own)
+	UseFlows(map[string][]Stage{DefaultFlowName: own})
 
 	got := DefaultFlow()
 	if len(got) != 1 || got[0].ID != "only" {
@@ -221,7 +221,7 @@ func TestAProjectsFlowReplacesTheShippedOne(t *testing.T) {
 
 	// And putting it back restores the shipped one, so a process that never sets
 	// a flow is unaffected.
-	UseFlow(nil)
+	UseFlows(nil)
 	if Fingerprint(DefaultFlow()) != shipped {
 		t.Error("clearing the project's flow did not restore the shipped one")
 	}

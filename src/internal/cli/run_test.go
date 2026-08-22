@@ -529,7 +529,7 @@ var _ lead.Node = dryNode{}
 func TestConductBuildsADryConductorWithoutTouchingTheOutside(t *testing.T) {
 	h := newHarness(t)
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("a dry conductor needs nothing from the outside: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 	conductor, cleanup, err := conduct(h.env, runOptions{
 		Agent: "codex",
 		Repo:  "/some/repo",
-	}, fsm.ProfileNightly)
+	}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building the conductor: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 func TestTheAgentIsNeverStartedOutsideTheSandbox(t *testing.T) {
 	h := newHarness(t)
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building the conductor: %v", err)
 	}
@@ -741,7 +741,7 @@ func TestAFinishedTaskLandsOnItsOwnBranch(t *testing.T) {
 	var landed struct {
 		task, commit string
 	}
-	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("conduct: %v", err)
 	}
@@ -779,7 +779,7 @@ func TestATaskThatIsNotDoneDoesNotLand(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1")
 
 	landedAnyway := false
-	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileInteractive)
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true}, fsm.ProfileInteractive, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("conduct: %v", err)
 	}
@@ -873,7 +873,7 @@ func repoWithCommit(t *testing.T) string {
 func TestADryRunNeitherStartsAnAgentNorNeedsASandbox(t *testing.T) {
 	h := newHarness(t)
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true, Repo: t.TempDir()}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Dry: true, Repo: t.TempDir()}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building a dry conductor: %v", err)
 	}
@@ -889,7 +889,7 @@ func TestADryRunNeitherStartsAnAgentNorNeedsASandbox(t *testing.T) {
 func TestTheConductorCarriesTheMechanicalHalfOfAGate(t *testing.T) {
 	h := newHarness(t)
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileInteractive)
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileInteractive, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building the conductor: %v", err)
 	}
@@ -933,7 +933,7 @@ func TestTheHandoverIsProvenByTheStoreNotTheTree(t *testing.T) {
 		t.Fatalf("handing over: %v", err)
 	}
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building the conductor: %v", err)
 	}
@@ -969,7 +969,7 @@ func TestTheHandoverSocketIsOpenedPerTask(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1")
 	h.mustRun(t, "task", "new", "LUNA-2")
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building the conductor: %v", err)
 	}
@@ -1003,7 +1003,7 @@ func TestTheHandoverSocketIsOpenedPerTask(t *testing.T) {
 func TestWhatWentWrongWithoutFailingTheStageReachesTheTerminal(t *testing.T) {
 	h := newHarness(t)
 
-	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly)
+	conductor, cleanup, err := conduct(h.env, runOptions{Repo: t.TempDir()}, fsm.ProfileNightly, fsm.DefaultFlow())
 	if err != nil {
 		t.Fatalf("building the conductor: %v", err)
 	}

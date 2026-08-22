@@ -17,6 +17,7 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
+	"github.com/brunoomariano/luna/src/stock"
 )
 
 func main() {
@@ -130,15 +131,15 @@ func run(args []string) error {
 
 	// A project's own stages replace the shipped ones, if it has any.
 	// Decided here because this is where the repository is known: the engine may
-	// not read a filesystem, and the flow has to be settled before any
-	// command reads it.
+	// not read a filesystem, and the flows have to be settled before any
+	// command reads them.
 	stockDir := cli.StockDir(path)
 	if files, ok := cli.ProjectStock(stockDir); ok {
-		flow, err := fsm.LoadFlow(files, "stages")
+		flows, err := fsm.LoadFlows(files, stock.FlowsDir)
 		if err != nil {
 			return fmt.Errorf("%s: %w", stockDir, err)
 		}
-		fsm.UseFlow(flow)
+		fsm.UseFlows(flows)
 	}
 
 	return cli.Run(environment(s, stockDir, cfg, root), args)

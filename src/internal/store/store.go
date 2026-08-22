@@ -368,6 +368,65 @@ func (s *Store) Events(taskID string) ([]Event, error) {
 	return events, rows.Err()
 }
 
+// ReplayOwnFlow replays a task against the flow it was opened under.
+//
+// This is what every reader wants, and `Replay` is the narrower door beneath it:
+// passing a flow in is right for `luna flow check`, which is asking what a
+// *different* flow would do to this log, and wrong for everything else. While a
+// build ran one flow the two were the same call; with several, handing in the
+// default silently reads a task against a contract it never ran.
+//
+// A flow this build no longer carries comes back as ErrFlowChanged, which is what
+// it is — the task's contract went away underneath it — so every caller that
+// already tolerates that error tolerates this too.
+func (s *Store) ReplayOwnFlow(taskID string) (fsm.TaskState, error) {
+	name, err := s.FlowNameOf(taskID)
+	if err != nil {
+		return fsm.TaskState{}, err
+	}
+	flow, err := fsm.FlowNamed(name)
+	if err != nil {
+		return fsm.TaskState{}, fmt.Errorf("%w: %s ran under %w", ErrFlowChanged, taskID, err)
+	}
+	return s.Replay(taskID, flow)
+}
+
+// FlowNameOf reads which flow a task was opened under, without replaying it.
+//
+// The chicken-and-egg a build with several flows creates: replaying needs a flow,
+// and which flow this task ran is in the log. So the opening event is decoded on
+// its own, ahead of the replay, and only for its name.
+//
+// A name it cannot find is DefaultFlowName rather than an error, and that is safe
+// for a reason worth stating: the name only decides which flow gets *loaded*, and
+// the fingerprint comparison in Replay still decides whether that was the right
+// one. A wrong name cannot produce a wrong replay — only a refused one.
+func (s *Store) FlowNameOf(taskID string) (string, error) {
+	row := s.db.QueryRow(
+		`SELECT seq, action, payload FROM events WHERE task_id = ? ORDER BY seq LIMIT 1`, taskID,
+	)
+
+	var e Event
+	if err := row.Scan(&e.Seq, &e.Action, &e.Payload); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fsm.DefaultFlowName, nil
+		}
+		return "", fmt.Errorf("reading the opening event of %s: %w", taskID, err)
+	}
+
+	// Nil flow: only Advance, Complete and ReviewFinding need one injected, and
+	// none of them can be the opening event.
+	action, err := decodeAction(e, nil)
+	if err != nil {
+		return "", fmt.Errorf("reading the opening event of %s: %w", taskID, err)
+	}
+	created, opening := action.(fsm.TaskCreated)
+	if !opening || created.FlowName == "" {
+		return fsm.DefaultFlowName, nil
+	}
+	return created.FlowName, nil
+}
+
 // Tasks returns every task the store has heard of, sorted.
 func (s *Store) Tasks() ([]string, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT task_id FROM events ORDER BY task_id`)
@@ -442,7 +501,7 @@ func (s *Store) Replay(taskID string, flow []fsm.Stage) (fsm.TaskState, error) {
 // A suspended task released its slot, so no live process is left to remind anyone
 // it exists. Without a query like this it would wait forever — the second form of
 // silent failure.
-func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
+func (s *Store) AwaitingGate() ([]Waiting, error) {
 	ids, err := s.Tasks()
 	if err != nil {
 		return nil, err
@@ -450,7 +509,7 @@ func (s *Store) AwaitingGate(flow []fsm.Stage) ([]Waiting, error) {
 
 	var waiting []Waiting
 	for _, id := range ids {
-		state, err := s.Replay(id, flow)
+		state, err := s.ReplayOwnFlow(id)
 		// A task written under a different flow is skipped rather than fatal. It
 		// cannot be read, but the listing exists so nothing waits forever unseen,
 		// and returning an error here would let one unreadable task

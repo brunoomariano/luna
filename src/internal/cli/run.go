@@ -40,7 +40,11 @@ func runTaskCommand(env Env, args []string) error {
 	// its own log. Taking it from a fixed profile would give a nightly run the
 	// supervised timeout — backwards, since the run with nobody watching is the
 	// one whose watchdog is its only net.
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
+	if err != nil {
+		return err
+	}
+	flow, err := env.flowOf(id)
 	if err != nil {
 		return err
 	}
@@ -49,7 +53,7 @@ func runTaskCommand(env Env, args []string) error {
 		return err
 	}
 
-	conductor, cleanup, err := conduct(env, opts, state.Profile)
+	conductor, cleanup, err := conduct(env, opts, state.Profile, flow)
 	if err != nil {
 		return err
 	}
@@ -195,13 +199,13 @@ func parseRunOptions(args []string) (runOptions, error) {
 //
 // The node is chosen here and nowhere else: swapping how a stage is run is one
 // more branch in this function, not a change to the lead or the engine.
-func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(), error) {
+func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*lead.Lead, func(), error) {
 	cfg := env.profiles()
 	// The judge is what makes the retry budget real: without one the lead blocks on
 	// the first failure and the retry budget is never spent. This one
 	// carries no model — it reads the budget the task already has.
 	conductor := &lead.Lead{
-		Store: env.Store, Judge: lead.BudgetJudge{},
+		Store: env.Store, Judge: lead.BudgetJudge{}, Flow: flow,
 		// The mechanical half of a gate: what the task declared, run over what it
 		// delivered.
 		CheckGate: checkGateWith(env.Store, opts.Repo),
@@ -244,7 +248,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 		// The flow, so a stage declaring `context = "live"` can find which session
 		// its role was last in. The answer comes out of the task's log, and the
 		// flow is what says which stage belongs to which role.
-		Flow: fsm.DefaultFlow(),
+		Flow: flow,
 		Agent: agent.Harness{
 			// Which sandbox is deliberately not configurable: making it so would
 			// move the containment boundary into the file where `editor` lives.
@@ -297,7 +301,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile) (*lead.Lead, func(),
 // the same three-way answer it always was.
 func checkGateWith(s *store.Store, repo string) func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 	return func(ctx context.Context, taskID string, gate fsm.GateKind) fsm.GateChecksOutcome {
-		state, err := s.Replay(taskID, fsm.DefaultFlow())
+		state, err := s.ReplayOwnFlow(taskID)
 		if err != nil {
 			// The log could not be read, so nothing is known about what should have
 			// run. That is not "no checks declared" — it is not knowing, and the two
@@ -431,7 +435,7 @@ func unblockCommand(env Env, args []string) error {
 		return fmt.Errorf("no task %q", id)
 	}
 
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
@@ -483,15 +487,19 @@ func workCommand(env Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return err
+	}
 
-	conductor, cleanup, err := conduct(env, opts, state.Profile)
+	conductor, cleanup, err := conduct(env, opts, state.Profile, flow)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	var stage fsm.Stage
-	for _, candidate := range fsm.DefaultFlow() {
+	for _, candidate := range flow {
 		if candidate.ID == state.Stage {
 			stage = candidate
 		}
@@ -520,7 +528,7 @@ func workCommand(env Env, args []string) error {
 		Evidence:  result.Evidence,
 		Commit:    result.Commit,
 		Spent:     result.Spent,
-		Flow:      fsm.DefaultFlow(),
+		Flow:      flow,
 	}); err != nil {
 		return err
 	}

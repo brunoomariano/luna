@@ -54,7 +54,7 @@ src/
   internal/node/     running a stage: worktree, sandbox, socket, verification
   internal/cli/      commands
   internal/lead/     conducting a task, and the model that judges a gate
-  stock/             defaults: stages, roles, profiles (embedded TOML)
+  stock/             defaults: flows, roles, profiles (embedded TOML)
 docs/                four files, above
 scripts/             lint helpers
 ```

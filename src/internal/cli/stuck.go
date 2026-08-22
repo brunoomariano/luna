@@ -40,7 +40,7 @@ func stuckCommand(env Env, args []string) error {
 		}
 	}
 
-	stuck, err := env.Store.Stalled(fsm.DefaultFlow(), patience)
+	stuck, err := env.Store.Stalled(patience)
 	if err != nil {
 		return err
 	}

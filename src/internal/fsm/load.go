@@ -9,6 +9,39 @@ import (
 	"strings"
 )
 
+// LoadFlows reads every flow under a directory of flow directories.
+//
+// `flows/full/`, `flows/fix/` — the directory name is the flow's name, so the
+// name cannot disagree with its contents the way a `name =` field inside one of
+// the stage files could.
+//
+// A directory holding no stage files is an error rather than an empty flow, and
+// it comes back naming the directory: a flow that loads as nothing would pass
+// every static check and then run a task through no stages at all.
+func LoadFlows(files fs.FS, dir string) (map[string][]Stage, error) {
+	entries, err := fs.ReadDir(files, dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading the flow directory %s: %w", dir, err)
+	}
+
+	flows := map[string][]Stage{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		flow, err := LoadFlow(files, path.Join(dir, e.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("flow %q: %w", e.Name(), err)
+		}
+		flows[e.Name()] = flow
+	}
+
+	if len(flows) == 0 {
+		return nil, fmt.Errorf("no flows in %s: a build with no flow can open no task", dir)
+	}
+	return flows, nil
+}
+
 // LoadFlow reads a flow from a directory of stage files.
 //
 // One file per stage, ordered by filename — `010-discovery.toml`,

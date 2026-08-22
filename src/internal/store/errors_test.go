@@ -73,7 +73,7 @@ func TestOperationsOnAClosedStoreAreReported(t *testing.T) {
 		}
 	})
 	t.Run("AwaitingGate", func(t *testing.T) {
-		if _, err := s.AwaitingGate(fsm.DefaultFlow()); err == nil {
+		if _, err := s.AwaitingGate(); err == nil {
 			t.Error("listing gates on a closed store must fail")
 		}
 	})
@@ -115,7 +115,7 @@ func TestAwaitingGateSurfacesAReplayFailure(t *testing.T) {
 		t.Fatalf("appending: %v", err)
 	}
 
-	if _, err := s.AwaitingGate(fsm.DefaultFlow()); err == nil {
+	if _, err := s.AwaitingGate(); err == nil {
 		t.Error("a task that cannot be replayed must not vanish from the listing")
 	}
 }

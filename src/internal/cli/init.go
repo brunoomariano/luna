@@ -105,9 +105,9 @@ func ProjectStock(dir string) (fs.FS, bool) {
 	if dir == "" {
 		return nil, false
 	}
-	// The stages are what make a directory a stock. Roles and profiles have
+	// The flows are what make a directory a stock. Roles and profiles have
 	// working defaults; a flow does not.
-	if _, err := os.Stat(filepath.Join(dir, stock.StagesDir)); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, stock.FlowsDir)); err != nil {
 		return nil, false
 	}
 	return os.DirFS(dir), true
@@ -131,7 +131,11 @@ func stockNote(dir string) string {
 // Named subdirectories rather than the whole tree: `.luna` holds the log and
 // whatever else a project keeps there, and `--force` is about the stock.
 func clearStock(dir string) error {
-	for _, sub := range []string{"stages", "roles", "profiles"} {
+	// The constants rather than three literals: this function exists because a
+	// leftover file is a valid file, and a hand-written list of directories drifts
+	// from the stock exactly the way a hand-written list of stages did. `flows` is
+	// a directory of directories, and RemoveAll takes the tree.
+	for _, sub := range []string{stock.FlowsDir, stock.RolesDir, stock.ProfilesDir} {
 		path := filepath.Join(dir, sub)
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("clearing %s: %w", path, err)

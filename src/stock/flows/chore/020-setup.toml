@@ -1,0 +1,8 @@
+# Mechanical: a worktree is git, and paying a model to make one buys nothing.
+
+id       = "setup"
+requires = ["task_id"]
+produces = ["worktree"]
+
+[verify.worktree]
+kind = "existence"

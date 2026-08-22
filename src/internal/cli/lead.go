@@ -168,7 +168,12 @@ func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead)
 			return err
 		}
 
-		order, err := fsm.NextOrder(state, fsm.DefaultFlow(), env.profiles().Roles)
+		flow, err := env.flowOf(id)
+		if err != nil {
+			return err
+		}
+
+		order, err := fsm.NextOrder(state, flow, env.profiles().Roles)
 		if err != nil {
 			return err
 		}

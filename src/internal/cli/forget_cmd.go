@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-
-	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
 // taskForget removes the content a finished task's stages handed over.
@@ -24,7 +22,7 @@ func taskForget(env Env, args []string) error {
 	}
 	id := args[0]
 
-	state, err := env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := env.Store.ReplayOwnFlow(id)
 	if err != nil {
 		return err
 	}
