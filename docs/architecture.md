@@ -92,6 +92,32 @@ Two consequences worth stating, because both were surprises:
 `luna flow check` audits every flow, not one: a build that reports "the contract
 holds" about a third of what it runs is saying something true and useless.
 
+## Driving it by hand
+
+The same rails, with a person where the agent goes:
+
+```sh
+luna next  <id>   # what to do, how it will be checked, and the brief itself
+luna start <id>   # open it — `next` is a read and changes nothing
+luna done  <id> --delivered <a,b> --commit <sha>
+```
+
+`next` prints how each owed artifact is proven, beside what is owed, so nobody has
+to go and read the stage file to find out what they are held to. It carries the
+same brief the agent would get — contract duty, gate criteria, what is handed over
+rather than committed — rather than the role's own sentence about itself.
+
+`start` exists because nothing else opened a stage without also starting an agent,
+so the pair the help text called the hand-driven path failed on its first use. It
+is a separate verb rather than folding into `done`, because `done` refusing a task
+with no running stage is what makes a mistyped id a clean error instead of two
+events in a log nobody meant to touch.
+
+**What a hand-driven stage cannot do is launder a verdict.** `done` records
+`existence` for everything it is told, always and deliberately, so a stage whose
+contract declares a command does not close on it — `luna work` is what closes
+those, carrying what its verifiers actually observed.
+
 ## The stage contract
 
 A stage is a TOML file in `src/stock/flows/<flow>/`. This is the whole shape:

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/lead"
 	"github.com/brunoomariano/luna/src/internal/node"
 )
 
@@ -43,6 +44,7 @@ func nextCommand(env Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	order = fullyBriefed(order, state, flow, env.profiles())
 
 	if asJSON {
 		return writeJSON(env.Out, order)
@@ -349,4 +351,111 @@ func handReportedEvidence(delivered []fsm.Artifact, seq int) map[fsm.Artifact]fs
 		evidence[artifact] = e
 	}
 	return evidence
+}
+
+// fullyBriefed replaces the role's brief with the one the agent would actually be
+// given.
+//
+// `NextOrder` lives in the engine and cannot reach `node.Brief`, so it carried the
+// role's own sentence — which is what a role says about itself and not what a
+// stage says about this task. A person driving by hand therefore got strictly less
+// than the agent Luna starts for the same stage: no contract duty, no gate
+// criteria, no list of what is handed over rather than committed.
+//
+// Composed here because this is the layer that can see both packages. An order for
+// a mechanical stage keeps the empty brief it came with: there is no agent, and a
+// brief addressed to nobody is noise.
+func fullyBriefed(order fsm.Order, state fsm.TaskState, flow []fsm.Stage, cfg Config) fsm.Order {
+	if order.Kind != fsm.OrderRun {
+		return order
+	}
+
+	// One exit rather than three. A mechanical stage and a stage the flow does not
+	// contain both leave the order as it came — the first because there is no agent
+	// to address, the second because NextOrder only ever names a stage from this
+	// flow, so it is a branch no test can reach and none should have to.
+	for _, stage := range flow {
+		if stage.ID != order.Stage || stage.Mechanical() {
+			continue
+		}
+		role, _ := cfg.Role(fsm.RoleName(stage.Role))
+		order.Brief = node.Brief(state, stage, role)
+		break
+	}
+	return order
+}
+
+// startCommand opens the stage the order named, for somebody about to do the work
+// by hand.
+//
+// It exists because the hand-driven pair had no way to begin. `next` is a read and
+// changes nothing — deliberately, since a caller that crashed and restarted has to
+// be able to ask twice — and every other opener also starts an agent. So `luna
+// done`, which the help text calls the command for a stage carried out by hand,
+// answered "task has no running stage to finish" on every first use. It is the
+// same gap TALLY-6 found in the lead's loop, fixed there inside `luna work` and
+// never here.
+//
+// A separate verb rather than folding it into `done`: `done` refusing a task with
+// no running stage is what makes a mistyped id a clean error instead of two events
+// in the log of a task nobody meant to touch. The loop reads next, start, done —
+// what to do, I am doing it, I did it — and the middle one is a fact worth
+// recording, which is what Advance already is.
+func startCommand(env Env, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%w: start needs a task id", ErrUsage)
+	}
+	id := args[0]
+
+	state, err := openForHand(env, id)
+	if err != nil {
+		return err
+	}
+
+	switch state.Status {
+	case fsm.StatusRunning:
+		fmt.Fprintf(env.Out, "%s opened at %s — `luna next %s` says what it owes\n",
+			id, state.Stage, id)
+	case fsm.StatusAwaitingGate:
+		fmt.Fprintf(env.Out, "%s is waiting at a gate — `luna gate show %s`\n", id, id)
+	default:
+		return fmt.Errorf("task %q has no stage to open (it is %s)", id, state.Status)
+	}
+	return nil
+}
+
+// openForHand opens the stage the order named, or leaves the task alone.
+//
+// Opening from `ready` is safe in a way it is not for `work`: `work` starting the
+// first stage would be `work` choosing where the flow begins, and here the flow
+// has already chosen — `next` printed it, deterministically, and a person is
+// saying they are on it. A gate on the way in still stops the task, because Enter
+// is the same path every other caller takes.
+func openForHand(env Env, id string) (fsm.TaskState, error) {
+	state, err := env.replay(id)
+	if err != nil {
+		return state, err
+	}
+	if state.Status != fsm.StatusReady && state.Status != fsm.StatusStageDone {
+		return state, nil
+	}
+
+	// The task's own flow, not this build's default. A lead with no Flow replays
+	// against DefaultFlow, so a task on any other flow failed its fingerprint here
+	// and came back as "the flow changed under an open task" — a correct refusal
+	// answering a question nobody asked.
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return state, err
+	}
+
+	entering := &lead.Lead{
+		Store:     env.Store,
+		Flow:      flow,
+		CheckGate: checkGateWith(env.Store, "."),
+	}
+	if err := entering.Enter(context.Background(), id); err != nil {
+		return state, err
+	}
+	return env.replay(id)
 }

@@ -76,6 +76,16 @@ type Order struct {
 	// agent starts.
 	Brief string `json:"brief,omitempty"`
 
+	// Proves says how each owed artifact will be checked, one line each, in the
+	// order they are owed.
+	//
+	// The order named what to deliver and never what delivering would be measured
+	// by, which is fine for an agent Luna briefs itself and wrong for the reader
+	// this command exists for: a person driving by hand was told to produce
+	// `ci_green` and left to guess that the check is `make ci` at full scope. It
+	// is in the stage file either way — the point is not having to go and read it.
+	Proves []string `json:"proves,omitempty"`
+
 	// Deny names the capabilities the harness must withhold.
 	Deny []Capability `json:"deny,omitempty"`
 
@@ -192,7 +202,25 @@ func runOrder(state TaskState, stage Stage, catalogue map[RoleName]Role) Order {
 		Deny:     definition.ToolsDeny,
 		Skills:   definition.Skills,
 		Produces: append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...),
+		Proves:   provenBy(stage),
 	}
+}
+
+// provenBy renders how each owed artifact is checked.
+//
+// It reads the same declaration the exit check reads, so the two cannot disagree:
+// a stage whose contract says `make ci` at full scope says exactly that here, and
+// a reader who satisfies what this prints has satisfied what will run.
+func provenBy(stage Stage) []string {
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+
+	lines := make([]string, 0, len(owed))
+	for _, artifact := range owed {
+		verifier := VerifierFor(stage, artifact)
+		lines = append(lines, fmt.Sprintf("%s: %s (%s)",
+			artifact, verifier.Describe(), verifier.Proves()))
+	}
+	return lines
 }
 
 // WorktreeName is where a role works on a task.
@@ -258,6 +286,9 @@ func (o Order) Text() string {
 	line("deny", joinCapabilities(o.Deny))
 	line("skills", strings.Join(o.Skills, ","))
 	line("produces", JoinArtifacts(o.Produces))
+	for _, proof := range o.Proves {
+		fmt.Fprintf(&b, "  %s\n", proof)
+	}
 	line("reason", o.Reason)
 
 	// The brief is last and shaped differently because it is the one field that is

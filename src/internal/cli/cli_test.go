@@ -83,7 +83,7 @@ func (h *harness) mustRun(t *testing.T, args ...string) string {
 // what a command actually recorded rather than on what it printed.
 func (h *harness) replay(t *testing.T, id string) fsm.TaskState {
 	t.Helper()
-	state, err := h.env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := h.env.Store.ReplayOwnFlow(id)
 	if err != nil {
 		t.Fatalf("replaying %s: %v", id, err)
 	}
@@ -975,7 +975,7 @@ func planGateStore(t *testing.T, h *harness, id string) {
 		}
 	}
 
-	state, err := h.env.Store.Replay(id, fsm.DefaultFlow())
+	state, err := h.env.Store.ReplayOwnFlow(id)
 	if err != nil {
 		t.Fatalf("replaying the seed: %v", err)
 	}

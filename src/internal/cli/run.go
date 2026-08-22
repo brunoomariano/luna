@@ -128,7 +128,19 @@ func openNextStage(env Env, id string, state fsm.TaskState, repo string) (fsm.Ta
 		return state, nil
 	}
 
-	entering := &lead.Lead{Store: env.Store, CheckGate: checkGateWith(env.Store, repo)}
+	// The task's own flow, for the reason spelled out in openForHand: a lead with
+	// no Flow replays against DefaultFlow, and every task on any other flow is
+	// refused by its own fingerprint before it can open a stage.
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return state, err
+	}
+
+	entering := &lead.Lead{
+		Store:     env.Store,
+		Flow:      flow,
+		CheckGate: checkGateWith(env.Store, repo),
+	}
 	if err := entering.Enter(context.Background(), id); err != nil {
 		return state, err
 	}

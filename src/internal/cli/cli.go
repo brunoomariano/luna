@@ -102,6 +102,7 @@ func Run(env Env, args []string) error {
 		"gate":     runGate,
 		"flow":     runFlow,
 		"next":     nextCommand,
+		"start":    startCommand,
 		"done":     doneCommand,
 		"status":   statusCommand,
 		"stuck":    stuckCommand,
@@ -141,6 +142,12 @@ luna — deterministic orchestration for AI agents
         the order for this task: which stage, which role, which worktree,
         which base commit, what is denied. It is an instruction, not advice,
         and reading it changes nothing.
+
+  luna start <id>
+        open the stage the order names, for work you are about to do by
+        hand. next is a read and changes nothing, so this is what puts
+        a stage in front of you without also starting an agent — the
+        middle step of next, start, done.
 
   luna done <id> --delivered <a,b> [--commit <sha>]
         report the running stage finished, and hand in the commit it
