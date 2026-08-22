@@ -251,6 +251,18 @@ to review nothing. Measured twice: `luna gate show` printed a name and a blank l
 the lead correctly refused to judge — a capability that measured 6/6 in isolation had never
 once judged a real artifact.
 
+**A guard opens on what the delivery touched, and no autonomy setting gets past it.** Every
+other gate is a place in the flow; this one is a property of the work — a migration, a
+credential, a deploy pipeline. It carries no judgement criteria deliberately, because
+whether dropping a table was intended is not something a model can weigh, and a guard a
+knob could wave through would be protection in name only. The patterns are matched against
+the diff rather than the tree, by the node, and the match arrives inside the action: so
+they are policy, stay out of the fingerprint, and editing them cannot rewrite what stopped
+last week. *Rejected:* a glob language — a second syntax to learn and to get subtly wrong,
+where a substring is what somebody writing "migrations/" actually means. *Rejected:*
+failing open when the diff cannot be read — a guard that goes silent when it breaks is
+worse than no guard, so an unreadable diff counts as every pattern matched.
+
 **A gate waits because its stage declared something to answer it with; the knob decides who
 answers.** A gate with nothing declared never waits. That is a reversal from the original
 design and is stated plainly rather than left to be discovered.

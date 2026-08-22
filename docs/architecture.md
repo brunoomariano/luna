@@ -238,9 +238,31 @@ A gate waits only because its stage declared something to answer it with — jud
 criteria, or checks the task declared. A gate with neither was never going to put a
 question in front of anybody, so it does not wait.
 
-Three shapes: **confirmation** (yes/no), **artifact for review** (`luna gate show` prints
+Four shapes: **confirmation** (yes/no), **artifact for review** (`luna gate show` prints
 the blob; the human can approve, adjust or reject, and the adjusted version is what enters
-the context), and **flow decision** (a loop ceiling blew — continue, abort, change course).
+the context), **flow decision** (a loop ceiling blew — continue, abort, change course), and
+**guard**.
+
+A guard is the one gate that opens on what the delivery *contains* rather than on where the
+task stands. A stage declares the paths it will not land unattended:
+
+```toml
+[guard]
+paths  = ["migrations/", "secret", ".env", "deploy"]
+reason = "the delivery touches migrations, credentials or deployment"
+```
+
+It carries no judgement criteria on purpose, so **no autonomy setting gets past it**.
+Those changes are not likelier to be wrong than any other — they are the ones a person
+cannot undo by reading the next morning's report, and whether dropping a table was intended
+is not a thing Luna can weigh.
+
+The patterns are matched by the node against the *diff*, not the tree — a repository that
+has always held `migrations/` would otherwise stop every task forever — and the match
+arrives inside the action like every other verdict. So the patterns are policy and stay out
+of the fingerprint: editing the list changes what stops tomorrow and cannot rewrite what
+stopped last week. A diff that cannot be read counts as every pattern matched, which is the
+one place in the node where the cautious answer is the noisy one.
 
 Who answers is the autonomy knob, `0`–`10` per task. `0` sends every gate to a person;
 higher lets the lead judge gates at or below that criticality; declared checks are answered

@@ -134,6 +134,16 @@ type Stage struct {
 	// an implementer sending its own work back would be reviewing itself.
 	Review *ReviewSpec
 
+	// Guard stops a delivery that touched something too consequential to land
+	// unattended, whatever else the flow decided.
+	//
+	// Nil means nothing about this stage is worth guarding. It is the one gate
+	// that opens on what the work *contains* rather than on where the task is: a
+	// migration, a credential, a deploy pipeline. Those are not more likely to be
+	// wrong than any other change — they are the ones a person cannot undo by
+	// reading the next morning's report.
+	Guard *GuardSpec
+
 	// Context says whether this stage continues the previous stage's session or
 	// starts a clean one. The zero value is ContextFresh.
 	//
@@ -321,6 +331,23 @@ func (g *GateSpec) Resolved() int {
 // reaches it.
 func (g *GateSpec) AbsorbedBy(knob int) bool {
 	return knob >= g.Resolved()
+}
+
+// GuardSpec is what a stage refuses to land without a person looking.
+//
+// The patterns are read by the node layer and never by the reducer, which is what
+// keeps them out of the flow fingerprint: the *match* is computed outside and
+// arrives inside the action, so a replay reads whether a guard fired rather than
+// recomputing it against today's patterns. Editing the list changes what stops
+// tomorrow and cannot rewrite what stopped last week.
+type GuardSpec struct {
+	// Paths are matched against the paths the delivery touched. A plain substring,
+	// deliberately: a glob language is a second thing to learn and to get wrong,
+	// and "migrations/" is what somebody actually wants to write.
+	Paths []string
+
+	// Reason is what the person is told they are being asked about.
+	Reason string
 }
 
 // ReviewSpec is what a review stage does when its finding lands.

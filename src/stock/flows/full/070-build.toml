@@ -22,3 +22,22 @@ scope = "targeted"
 # "the diff is non-empty" proves nothing about it. It closes on existence, and
 # that is said rather than defaulted.
 kind = "existence"
+
+[guard]
+# A delivery touching any of these stops for a person, at every knob setting.
+#
+# Not because these changes are likelier to be wrong than any other — because
+# they are the ones a person cannot undo by reading the next morning's report. A
+# wrong function is a commit to revert; a dropped table, a leaked key and a
+# rewritten deploy pipeline are not.
+#
+# The gate this opens carries no judgement criteria on purpose. Whether dropping
+# a table was intended is not something Luna can weigh, so nothing here is
+# waveable by a high autonomy setting — a guard a knob could get past would be
+# protection in name only.
+#
+# Substrings, matched against the paths the delivery changed rather than against
+# the tree: a repository that has always held `migrations/` would otherwise stop
+# every task forever.
+paths  = ["migrations/", "migrate", "secret", "credential", ".env", "deploy", ".github/workflows/", "Dockerfile"]
+reason = "the delivery touches migrations, credentials or deployment"

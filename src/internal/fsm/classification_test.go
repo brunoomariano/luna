@@ -36,6 +36,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Verifiers":        "history", // partly: the scope it declares, never its command
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
 		"Review":           "history", // decides whether a past finding was legal, and where it went
+		"Guard":            "policy",  // the node matches it; the reducer reads only whether it fired
 		"Role":             "policy",  // only internal/node reads it
 		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
 		"Memory":           "policy",  // the same: what the agent knows walking in, not what it owes walking out

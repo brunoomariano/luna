@@ -99,7 +99,15 @@ func reportGates(env Env, flow []fsm.Stage) {
 	}
 
 	if len(gated) == 0 {
-		fmt.Fprintf(env.Out, "\nno stage opens a gate — nothing stops for a person\n")
+		// The two cases read differently, and telling them apart is the point: a
+		// flow with a guard does stop for a person, just not at a place the flow
+		// decides in advance.
+		if guarded(flow) {
+			fmt.Fprintf(env.Out, "\nno stage opens a gate on its own — only a guard stops this flow\n")
+		} else {
+			fmt.Fprintf(env.Out, "\nno stage opens a gate — nothing stops for a person\n")
+		}
+		reportGuards(env, flow)
 		return
 	}
 
@@ -121,6 +129,43 @@ func reportGates(env Env, flow []fsm.Stage) {
 		fmt.Fprintln(env.Out)
 	}
 	fmt.Fprintf(env.Out, "checks are declared per task — `luna gate checks <id> --on <gate>` — not here\n")
+	reportGuards(env, flow)
+}
+
+// reportGuards lists the stages that stop on what a delivery touched.
+//
+// Kept apart from the gate listing because it answers a different question. A
+// gate is a place the flow stops; a guard is a thing the flow stops *for*, and it
+// has no criticality to report because no knob setting gets past it.
+func reportGuards(env Env, flow []fsm.Stage) {
+	if !guarded(flow) {
+		return
+	}
+
+	var count int
+	for _, stage := range flow {
+		if stage.Guard != nil {
+			count++
+		}
+	}
+
+	fmt.Fprintf(env.Out, "\n%d guard(s), which no autonomy setting gets past:\n", count)
+	for _, stage := range flow {
+		if stage.Guard == nil {
+			continue
+		}
+		fmt.Fprintf(env.Out, "  %-12s %s\n", stage.ID, strings.Join(stage.Guard.Paths, " "))
+	}
+}
+
+// guarded reports whether any stage in the flow stops on what a delivery touched.
+func guarded(flow []fsm.Stage) bool {
+	for _, stage := range flow {
+		if stage.Guard != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // flowsToCheck reads which flows the check was asked about.

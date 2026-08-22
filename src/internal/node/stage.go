@@ -249,33 +249,13 @@ func (r *Runner) verify(
 		Commit:   commit,
 		Spent:    spend,
 	}
+	if stage.Guard != nil {
+		result.Guarded = Touched(ctx, wt.Path, state.Base, commit, stage.Guard.Paths)
+	}
 	for i, artifact := range owed {
-		verifier := stage.Verifiers[artifact]
-
-		// An artifact with no declared verifier closes on existence alone — the
-		// agent's word, and nothing more is claimed about it. The static check
-		// reports the omission so the floor stays a choice; here it must not be a
-		// nil dereference, which is what it was until a test asked for it.
-		if verifier == nil {
-			verifier = fsm.Existence{}
-		}
-
-		// An artifact handed to Luna is not in the commit, so the tree is the
-		// wrong place to look for it — neither the contract's assumption nor the
-		// agent's word can vouch for it. The store answers, and it answers with a
-		// hash, which is the location the handoff has to carry.
-		if existence, ok := verifier.(fsm.Existence); ok && existence.Handover {
-			evidence := r.proveHandover(state, stage, artifact)
-			result.Evidence[artifact] = evidence
-			if evidence.Verdict == fsm.VerdictPassed {
-				result.Delivered = append(result.Delivered, artifact)
-			}
-			continue
-		}
-
-		evidence, err := shell.Prove(ctx, verifier, i)
+		evidence, err := r.prove(ctx, state, stage, shell, artifact, i)
 		if err != nil {
-			return lead.Result{}, fmt.Errorf("proving %q for stage %q: %w", artifact, stage.ID, err)
+			return lead.Result{}, err
 		}
 		result.Evidence[artifact] = evidence
 		if evidence.Verdict == fsm.VerdictPassed {
@@ -283,6 +263,40 @@ func (r *Runner) verify(
 		}
 	}
 	return result, nil
+}
+
+// prove observes one owed artifact, through whichever witness its contract names.
+func (r *Runner) prove(
+	ctx context.Context,
+	state fsm.TaskState,
+	stage fsm.Stage,
+	shell Shell,
+	artifact fsm.Artifact,
+	i int,
+) (fsm.Evidence, error) {
+	verifier := stage.Verifiers[artifact]
+
+	// An artifact with no declared verifier closes on existence alone — the
+	// agent's word, and nothing more is claimed about it. The static check
+	// reports the omission so the floor stays a choice; here it must not be a
+	// nil dereference, which is what it was until a test asked for it.
+	if verifier == nil {
+		verifier = fsm.Existence{}
+	}
+
+	// An artifact handed to Luna is not in the commit, so the tree is the
+	// wrong place to look for it — neither the contract's assumption nor the
+	// agent's word can vouch for it. The store answers, and it answers with a
+	// hash, which is the location the handoff has to carry.
+	if existence, ok := verifier.(fsm.Existence); ok && existence.Handover {
+		return r.proveHandover(state, stage, artifact), nil
+	}
+
+	evidence, err := shell.Prove(ctx, verifier, i)
+	if err != nil {
+		return fsm.Evidence{}, fmt.Errorf("proving %q for stage %q: %w", artifact, stage.ID, err)
+	}
+	return evidence, nil
 }
 
 func owesCommit(stage fsm.Stage) bool {

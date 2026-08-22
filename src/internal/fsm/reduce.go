@@ -3,6 +3,7 @@ package fsm
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrIllegalTransition is returned when an action makes no sense for the current
@@ -165,6 +166,16 @@ type Complete struct {
 	// is the action that reaches it, and the decision is history while the policy
 	// behind it is not.
 	GateDecision GateWaited `json:"gate_decision,omitempty"`
+
+	// Guarded is the guarded paths this delivery touched, computed outside and
+	// carried in like every other verdict.
+	//
+	// The reducer opens a gate when this is non-empty and never looks at the
+	// stage's patterns, which is what keeps them out of the fingerprint: editing
+	// the list changes what stops tomorrow and cannot rewrite what stopped last
+	// week, because a replay reads whether a guard fired rather than recomputing
+	// it against today's rules.
+	Guarded []string `json:"guarded,omitempty"`
 
 	// Commit is what the stage delivered, as a git object. It becomes the next
 	// stage's base, which is what makes the handoff the artifact itself rather
@@ -702,6 +713,39 @@ func askAgain(state TaskState, a Complete, owed, missing []Artifact) TaskState {
 	return state
 }
 
+// refuseTheEvidence applies the two checks that judge what came back, rather than
+// whether it came back at all.
+//
+// Both block, both keep the evidence — the audit needs to show what failed, not
+// only that something did — and both are about the verdict rather than the
+// delivery, which is why they sit together and apart from the contract check.
+func refuseTheEvidence(state TaskState, a Complete, stage Stage, owed []Artifact) (TaskState, bool) {
+	// The verdict decides, not the delivery. A stage that produced an artifact
+	// whose check failed does not close: the node ran the real tool and it said
+	// no, and closing anyway is the self-reported completion Luna rejects.
+	if failed := notPassing(owed, a.Evidence); len(failed) > 0 {
+		state.Status = StatusBlocked
+		state.BlockedBy = BlockCheck
+		state.Blocked = fmt.Sprintf("stage %q delivered %v but its verification did not pass", state.Stage, failed)
+		absorb(state.Evidence, a.Evidence)
+		return state, true
+	}
+
+	// Passing is not enough — it has to be the check the contract asked for. An
+	// artifact declared with a command that comes back proven by existence alone
+	// has not been verified, it has been delivered, and closing on that is the
+	// laundering the scopes exist to prevent (INV-1).
+	if weak := underProven(stage, owed, a.Evidence); len(weak) > 0 {
+		state.Status = StatusBlocked
+		state.BlockedBy = BlockCheck
+		state.Blocked = fmt.Sprintf("stage %q proved %v with a weaker check than its contract declared", state.Stage, weak)
+		absorb(state.Evidence, a.Evidence)
+		return state, true
+	}
+
+	return state, false
+}
+
 func complete(state TaskState, a Complete) (TaskState, error) {
 	if state.Status != StatusRunning {
 		return state, fmt.Errorf("%w: no stage is running", ErrIllegalTransition)
@@ -734,29 +778,8 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// a debt that had been paid.
 	state.StillOwed = nil
 
-	// The verdict decides, not the delivery. A stage that produced an artifact
-	// whose check failed does not close: the node ran the real tool and it said
-	// no, and closing anyway is the self-reported completion Luna rejects.
-	if failed := notPassing(owed, a.Evidence); len(failed) > 0 {
-		state.Status = StatusBlocked
-		state.BlockedBy = BlockCheck
-		state.Blocked = fmt.Sprintf("stage %q delivered %v but its verification did not pass", state.Stage, failed)
-		// The evidence is recorded even so: the audit needs to show what failed,
-		// not just that something did.
-		absorb(state.Evidence, a.Evidence)
-		return state, nil
-	}
-
-	// Passing is not enough — it has to be the check the contract asked for. An
-	// artifact declared with a command that comes back proven by existence alone
-	// has not been verified, it has been delivered, and closing on that is the
-	// laundering the scopes exist to prevent (INV-1).
-	if weak := underProven(stage, owed, a.Evidence); len(weak) > 0 {
-		state.Status = StatusBlocked
-		state.BlockedBy = BlockCheck
-		state.Blocked = fmt.Sprintf("stage %q proved %v with a weaker check than its contract declared", state.Stage, weak)
-		absorb(state.Evidence, a.Evidence)
-		return state, nil
+	if stopped, refused := refuseTheEvidence(state, a, stage, owed); refused {
+		return stopped, nil
 	}
 
 	// Only flow products enter the context. Letting an audit report in would make
@@ -794,8 +817,36 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		gateWaits(a.GateDecision) {
 		state.Status = StatusAwaitingGate
 		state.Gate = withPayload(gate, state.Evidence)
+		return state, nil
+	}
+
+	// The guard is last, and it is the one gate that opens on what the work
+	// *contains* rather than on where the task stands. It carries no judgement
+	// criteria on purpose, so it reaches a person at every knob setting — whether
+	// dropping a table was intended is not a thing Luna can weigh, and a guard a
+	// high knob could wave through would be protection in name only.
+	if len(a.Guarded) > 0 {
+		state.Status = StatusAwaitingGate
+		state.Gate = &PendingGate{
+			Kind:   GateGuard,
+			Stage:  state.Stage,
+			Reason: guardReason(stage, a.Guarded),
+		}
 	}
 	return state, nil
+}
+
+// guardReason says what was touched, and why that stops here.
+//
+// The paths as well as the stage's own wording, because "the delivery touches
+// something consequential" is a sentence somebody approves without looking, and
+// "it touches migrations/002_drop_sessions.sql" is one they read.
+func guardReason(stage Stage, touched []string) string {
+	reason := "the delivery touched something that does not land unattended"
+	if stage.Guard != nil && stage.Guard.Reason != "" {
+		reason = stage.Guard.Reason
+	}
+	return fmt.Sprintf("%s: %s", reason, strings.Join(touched, ", "))
 }
 
 func fail(state TaskState, a Fail) (TaskState, error) {

@@ -101,6 +101,7 @@ func ParseStage(content, where string) (Stage, error) {
 		section string
 		gate    GateSpec
 		review  ReviewSpec
+		guard   GuardSpec
 		verify  = map[Artifact]Verifier{}
 		partial = map[Artifact]*verifierSpec{}
 	)
@@ -131,7 +132,7 @@ func ParseStage(content, where string) (Stage, error) {
 		}
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 
-		if err := assignStage(&stage, &gate, &review, partial, section, key, value, at); err != nil {
+		if err := assignStage(&stage, &gate, &review, &guard, partial, section, key, value, at); err != nil {
 			return Stage{}, err
 		}
 	}
@@ -144,7 +145,7 @@ func ParseStage(content, where string) (Stage, error) {
 		verify[artifact] = verifier
 	}
 
-	return finish(stage, gate, review, verify, where)
+	return finish(stage, gate, review, guard, verify, where)
 }
 
 // verifierSpec is a `[verify.<artifact>]` block before it becomes a Verifier.
@@ -248,7 +249,7 @@ func (s *verifierSpec) handedOver(artifact Artifact, where string) (bool, error)
 
 // assignStage puts one key into the stage being built.
 func assignStage(
-	stage *Stage, gate *GateSpec, review *ReviewSpec,
+	stage *Stage, gate *GateSpec, review *ReviewSpec, guard *GuardSpec,
 	verify map[Artifact]*verifierSpec,
 	section, key, value, at string,
 ) error {
@@ -263,6 +264,8 @@ func assignStage(
 		return assignGate(gate, key, value, at)
 	case "review":
 		return assignReview(review, key, value, at)
+	case "guard":
+		return assignGuard(guard, key, value, at)
 	default:
 		return fmt.Errorf("%s: unknown section [%s]", at, section)
 	}
@@ -434,6 +437,22 @@ func splitQuoted(inner string) []string {
 	return items
 }
 
+func assignGuard(guard *GuardSpec, key, value, at string) error {
+	switch key {
+	case "paths":
+		list, err := parseStrings(value, at)
+		if err != nil {
+			return err
+		}
+		guard.Paths = list
+	case "reason":
+		guard.Reason = unquote(value)
+	default:
+		return fmt.Errorf("%s: unknown key %q in [guard]", at, key)
+	}
+	return nil
+}
+
 func assignReview(review *ReviewSpec, key, value, at string) error {
 	switch key {
 	case "sends_back_to":
@@ -473,7 +492,7 @@ func assignVerify(spec *verifierSpec, key, value, at string) error {
 }
 
 // finish assembles the stage and checks what only the whole file can answer.
-func finish(stage Stage, gate GateSpec, review ReviewSpec, verify map[Artifact]Verifier, where string) (Stage, error) {
+func finish(stage Stage, gate GateSpec, review ReviewSpec, guard GuardSpec, verify map[Artifact]Verifier, where string) (Stage, error) {
 	if stage.ID == "" {
 		return Stage{}, fmt.Errorf("%s: the stage declares no id", where)
 	}
@@ -482,6 +501,11 @@ func finish(stage Stage, gate GateSpec, review ReviewSpec, verify map[Artifact]V
 	}
 	if review.SendsBackTo != "" || len(review.Invalidates) > 0 {
 		stage.Review = &review
+	}
+	// Paths rather than a reason: a guard with a reason and nothing to match on
+	// would stop nothing while reading like protection.
+	if len(guard.Paths) > 0 {
+		stage.Guard = &guard
 	}
 	if len(verify) > 0 {
 		stage.Verifiers = verify

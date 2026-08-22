@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -209,6 +210,61 @@ func Handover(ctx context.Context, worktree string) (commit, message string, err
 		return head, "", nil
 	}
 	return head, body, nil
+}
+
+// Touched lists the guarded paths a delivery actually changed.
+//
+// It reads the diff rather than the tree: the question is what *this* stage did,
+// and a repository that has always contained `migrations/` would otherwise stop
+// every task forever.
+//
+// The match is a plain substring, deliberately. A glob language is a second thing
+// to learn and a second thing to get subtly wrong, and what somebody writing this
+// list actually types is "migrations/".
+//
+// A diff that cannot be read comes back as every pattern matched, not as none.
+// This is the one place in the node where the cautious answer is the noisy one:
+// failing open would let a migration land unattended because git hiccupped, and a
+// guard that is silent when it breaks is worse than no guard.
+func Touched(ctx context.Context, worktree, base, commit string, patterns []string) []string {
+	if len(patterns) == 0 || commit == "" {
+		return nil
+	}
+
+	span := commit
+	if base != "" && base != commit {
+		span = base + ".." + commit
+	}
+	out, err := git(ctx, worktree, "diff", "--name-only", span)
+	if err != nil {
+		return append([]string(nil), patterns...)
+	}
+
+	return matching(strings.Split(out, "\n"), patterns)
+}
+
+// matching is the paths that contain any of the patterns, each named once.
+func matching(paths, patterns []string) []string {
+	var hit []string
+	seen := map[string]bool{}
+
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			continue
+		}
+		for _, pattern := range patterns {
+			if pattern == "" || !strings.Contains(path, pattern) {
+				continue
+			}
+			seen[path] = true
+			hit = append(hit, path)
+			break
+		}
+	}
+
+	sort.Strings(hit)
+	return hit
 }
 
 // ResolveCommit reports whether a commit exists in the repository, and what it

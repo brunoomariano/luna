@@ -157,6 +157,12 @@ const (
 	// converging is a decision to make, not a node failure — hence a gate rather
 	// than a block.
 	GateLoopCeiling GateKind = "loop-ceiling"
+
+	// GateGuard is a delivery that touched something a person has to see before
+	// it lands. It carries no judgement criteria on purpose: whether dropping a
+	// table is intended is not a thing Luna can weigh, so this gate reaches a
+	// person at every knob setting, which is what makes it worth having.
+	GateGuard GateKind = "guard"
 )
 
 // PendingGate is what a suspended task is waiting on. It is what `luna gates`
