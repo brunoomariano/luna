@@ -696,6 +696,20 @@ func parseGateChecks(args []string) (fsm.GateKind, []string, error) {
 	return gate, checks, nil
 }
 
+// blockNote names which kind of block stopped the task, in brackets after the
+// operational verdict.
+//
+// The kind rather than the prose, because this line is the one a person scans: a
+// listing where every stopped task says "stopped" answers nothing, and the four
+// shapes sort a morning's work — one needs a person, one needs the environment
+// fixed, one needs a bigger ceiling, one needs the code to change.
+func blockNote(state fsm.TaskState) string {
+	if state.BlockedBy == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (%s)", state.BlockedBy)
+}
+
 // knobNote says what a knob setting means, because a bare number does not.
 //
 // The two ends are the ones worth naming: 0 is the default and sends every gate
@@ -750,6 +764,13 @@ func printLoop(env Env, loop fsm.LoopCounters) {
 // is how they drift.
 func printTask(env Env, state fsm.TaskState, events int) {
 	fmt.Fprintf(env.Out, "%s  %s%s\n", state.ID, state.Status, simulationNote(state))
+
+	// Two verdicts, side by side and never summed. A task can deliver code that
+	// passes every check and still stop badly, and for a run nobody watched that
+	// is a failure of the machinery with a good product inside it — which is
+	// exactly the distinction one column would hide.
+	fmt.Fprintf(env.Out, "  product  %s\n", state.Product())
+	fmt.Fprintf(env.Out, "  flow     %s%s\n", state.Operation(), blockNote(state))
 	fmt.Fprintf(env.Out, "  kind     %s\n", state.Context.Kind)
 	// The knob rather than the profile: the profile decides nothing since
 	// retired with the profiles and is kept only so old logs replay, while the knob is what bounds

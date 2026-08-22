@@ -113,6 +113,20 @@ plus recomputed replay would mean editing a profile rewrites how past tasks read
 **The log records when each event was written, and the reducer never reads it.** A state
 carrying a clock makes replay depend on when it ran.
 
+**A task reports two verdicts, never summed: what the work is, and what the flow did.**
+A run can deliver code that passes every check and still stop on a missing artifact, and
+for an unattended fleet that is a failure of the machinery with a good product inside it.
+One column has to call that either a success or a failure and both readings are wrong.
+`Product` is deliberately not a score — Luna cannot judge whether code is good, only
+report what its own checks proved — and a simulation is its own value rather than
+`verified` with a note beside it, because a reader sees the word and not the note.
+
+**A block records which shape it is, beside the prose and not inside it.** Six kinds:
+contract, failed-check, over-budget, tooling, failed-node, no-progress. Parsing the
+message back out would silently reclassify every task that hit it the next time somebody
+reworded one, and the grouping is the whole value — one needs a person, one needs the
+environment fixed, one needs a bigger ceiling, one needs the code to change.
+
 **A task carries a spending ceiling, and it is checked where the next stage would
 open.** `CostUSD` was recorded in the log and compared against nothing, so an unattended
 run had no limit at all. The check sits in `Advance` rather than where the money is

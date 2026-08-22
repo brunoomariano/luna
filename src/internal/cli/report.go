@@ -36,6 +36,18 @@ type TaskReport struct {
 	// INV-5 forbids.
 	Blocked string `json:"blocked,omitempty"`
 
+	// BlockedBy is which shape that block is, from a closed set, so a reader can
+	// group by it without parsing the prose above.
+	BlockedBy string `json:"blocked_by,omitempty"`
+
+	// Product and Flow are the two verdicts, never summed. A task can deliver code
+	// that passes every check and still stop badly, and one column would hide it.
+	//
+	// Product is deliberately not a score: Luna cannot judge whether code is good,
+	// only report what its own checks proved.
+	Product   string `json:"product"`
+	Operation string `json:"operation"`
+
 	// Gate is what the task is waiting on, present only when it is waiting.
 	Gate *GateReport `json:"gate,omitempty"`
 
@@ -169,6 +181,9 @@ func taskReport(cfg Config, state fsm.TaskState, events int, flow []fsm.Stage) T
 		Stage:          string(state.Stage),
 		Simulated:      state.Simulated,
 		Blocked:        state.Blocked,
+		BlockedBy:      string(state.BlockedBy),
+		Product:        string(state.Product()),
+		Operation:      string(state.Operation()),
 		Events:         events,
 		ProfileDefined: defined,
 		Flow:           state.FlowName,

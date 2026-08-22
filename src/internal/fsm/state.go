@@ -289,6 +289,15 @@ type TaskState struct {
 	// Empty is a task opened against no flow, which no build's flow agrees with.
 	Flow FlowFingerprint
 
+	// BlockedBy is which of the handful of shapes the block is, present exactly
+	// when Blocked is.
+	//
+	// Beside the prose rather than parsed back out of it: a message somebody
+	// reworded would silently reclassify every task that hit it, and grouping by
+	// what a report needs — a person, a machine, a bigger ceiling — is the whole
+	// value of having it.
+	BlockedBy BlockKind
+
 	// StillOwed is what the running stage was asked for and did not hand over on
 	// its last attempt, or nothing.
 	//

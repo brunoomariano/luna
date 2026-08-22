@@ -585,6 +585,7 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	// failure would look like the model being dumb (INV-3).
 	if missing := MissingFor(stage, state.Context); len(missing) > 0 {
 		state.Status = StatusBlocked
+		state.BlockedBy = BlockContract
 		state.Blocked = fmt.Sprintf("stage %q requires %v, which the context does not hold", next, missing)
 		return state, nil
 	}
@@ -622,6 +623,7 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	// call before knowing what it costs.
 	if over := overspent(state); over != "" {
 		state.Status = StatusBlocked
+		state.BlockedBy = BlockBudget
 		state.Blocked = over
 		return state, nil
 	}
@@ -694,6 +696,7 @@ func askAgain(state TaskState, a Complete, owed, missing []Artifact) TaskState {
 	}
 
 	state.Status = StatusBlocked
+	state.BlockedBy = BlockContract
 	state.Blocked = fmt.Sprintf("stage %q declared %v and did not deliver %v after %d attempts",
 		state.Stage, owed, missing, state.Retry.Attempts)
 	return state
@@ -736,6 +739,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// no, and closing anyway is the self-reported completion Luna rejects.
 	if failed := notPassing(owed, a.Evidence); len(failed) > 0 {
 		state.Status = StatusBlocked
+		state.BlockedBy = BlockCheck
 		state.Blocked = fmt.Sprintf("stage %q delivered %v but its verification did not pass", state.Stage, failed)
 		// The evidence is recorded even so: the audit needs to show what failed,
 		// not just that something did.
@@ -749,6 +753,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// laundering the scopes exist to prevent (INV-1).
 	if weak := underProven(stage, owed, a.Evidence); len(weak) > 0 {
 		state.Status = StatusBlocked
+		state.BlockedBy = BlockCheck
 		state.Blocked = fmt.Sprintf("stage %q proved %v with a weaker check than its contract declared", state.Stage, weak)
 		absorb(state.Evidence, a.Evidence)
 		return state, nil
@@ -804,6 +809,7 @@ func fail(state TaskState, a Fail) (TaskState, error) {
 	}
 
 	state.Status = StatusBlocked
+	state.BlockedBy = BlockNode
 	state.Blocked = fmt.Sprintf("stage %q failed %d times: %s", state.Stage, state.Retry.Attempts, a.Reason)
 	return state, nil
 }
@@ -945,6 +951,7 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 		// This was unreachable until a review could send work back: the ceilings
 		// counted rounds that never happened, so the hole was real and invisible.
 		state.Status = StatusBlocked
+		state.BlockedBy = BlockNoProgress
 		state.Blocked = reason
 		state.Gate = nil
 	}
@@ -964,6 +971,11 @@ func block(state TaskState, a Block) (TaskState, error) {
 	}
 
 	state.Status = StatusBlocked
+	// A Block action arrives from the node layer, and the one thing that gets
+	// there is infrastructure: `luna run` blocks on ErrInfrastructure without
+	// consulting anyone, because there is no judgement to make about a binary that
+	// is missing. Anything the *work* did wrong is one of the cases above.
+	state.BlockedBy = BlockTooling
 	state.Blocked = a.Reason
 	state.Gate = nil
 	return state, nil
@@ -1043,6 +1055,7 @@ func unblock(state TaskState) (TaskState, error) {
 	// old count spent would burn it again on the first attempt.
 	state.Retry.Attempts = 0
 	state.Blocked = ""
+	state.BlockedBy = ""
 	state.Status = StatusRunning
 	return state, nil
 }
