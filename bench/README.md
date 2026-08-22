@@ -49,8 +49,30 @@ solo row stays as the baseline so the multiple remains visible and honest.
 
 The comparisons worth running are:
 
-- **flow against flow** — what does `full` buy over `fix` on the same case?
+- **flow against flow, among the flows this case is a candidate for** — what does
+  `full` buy over `chore` on the same words?
 - **this build against the last** — did a change to the flow move cost, time or
   the product score, and in which direction?
 
 A change that improves nothing on all three is a change with no argument for it.
+
+**Only candidate flows.** `fix` is not in the default set, and leaving it out is
+the correction to a measurement rather than a gap. This case is a feature; running
+it through the flow built for a bug with a reproduction measured the mismatch and
+not the flow — `diagnose` spent $2.88 across 48 turns looking for the root cause of
+something that was not broken, 78% of that variant's entire bill, and the flow
+still closed clean at 8/8. Reporting that number in the same table invites the
+reading that `fix` is expensive, when what is expensive is asking it the wrong
+question. A bug case belongs here and does not exist yet; `fix` returns with it.
+
+## Measured so far
+
+Against the same words, on one machine, with Claude Opus 5:
+
+| variant | product | flow | seconds | usd | tokens |
+|---|---|---|---|---|---|
+| `luna:chore` | 8/8 | clean | 110 | $0.6681 | 424k |
+
+For reference, a bare agent on this case measured 100/100 in 100s at $0.5657 — so
+the lean flow bought a full evidence trail, a sandbox and a log for about a fifth
+more. Rows are added as they are run; a row nobody has run is not in the table.

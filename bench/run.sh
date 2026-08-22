@@ -20,8 +20,33 @@ work=${BENCH_WORK:-$(mktemp -d)}
 results="$work/results.tsv"
 mkdir -p "$work"
 
-all_variants="solo luna:chore luna:fix luna:full"
+# The flows this case is a candidate for, and it is deliberately not all of them.
+#
+# Comparing flows only means something when the flows are candidates for the same
+# task, and `fix` is for a bug with a reproduction. Running this case — a feature —
+# through it measured the mismatch rather than the flow: `diagnose` spent $2.88 in
+# 48 turns looking for the root cause of something that was not broken, 78% of that
+# variant's whole bill, and the flow still closed clean at 8/8. A benchmark that
+# reports that number beside the others invites the conclusion that `fix` is
+# expensive, when what is expensive is asking it the wrong question.
+#
+# A bug case belongs here and does not exist yet; `fix` comes back with it.
+all_variants="solo luna:chore luna:full"
 variants=${*:-$all_variants}
+
+# kindFor is the task kind each flow is built around.
+#
+# `luna task new --kind` and `--flow` are different axes — kind drives the
+# conditional stages inside a flow, the flow decides its shape — but a benchmark
+# that pinned every variant to `feature` was quietly running each flow against a
+# task class it was not written for.
+kindFor() {
+  case "$1" in
+    chore) echo chore ;;
+    fix)   echo bug ;;
+    *)     echo feature ;;
+  esac
+}
 
 if [ ! -x "$luna" ]; then
   echo "build it first: make build" >&2
@@ -111,7 +136,7 @@ run_luna() {
   # numbers for a night where no agent started at all, because every one of these
   # was going to /dev/null — and a benchmark that cannot say why it measured
   # nothing is worse than one that does not run.
-  ( cd "$dir" && "$luna" task new "$id" --kind feature --flow "$flow" \
+  ( cd "$dir" && "$luna" task new "$id" --kind "$(kindFor "$flow")" --flow "$flow" \
       "${statement[@]}" ) >>"$dir/run.log" 2>&1
   ( cd "$dir" && "$luna" run "$id" ) >>"$dir/run.log" 2>&1
 
