@@ -32,6 +32,29 @@ fi
 # A benchmark whose variants are briefed differently measures the briefing.
 mapfile -t statement < "$here/case/statement.txt"
 
+# jailConfig is the sandbox configuration each seed carries.
+#
+# The variants run in scratch repositories, and a scratch repository has no
+# `.ai-jail` — so the sandbox falls back to defaults that, on this machine, cannot
+# reach the harness at all. The first real run of this script measured nothing for
+# exactly that reason: `ai-jail-mise: exec: claude: not found`, exit 127, every
+# variant.
+#
+# `no_mise` is what fixes it here, and the direction is machine-specific rather
+# than universal. The harness is installed by mise, the jail masks mise's own
+# installs directory, and the jail's mise integration therefore resolves nothing;
+# turning the integration off lets the binary be found on PATH instead. A machine
+# where the integration is what makes the harness reachable wants the opposite,
+# which is why this is one overridable variable and not a line in Luna.
+#
+# It is committed into the seed rather than left beside it, and that took a second
+# run to get right: the agent works in a worktree Luna creates as a *sibling* of
+# the seed, ai-jail reads the config from the working directory and does not search
+# upwards, so a file that is not in the git content never reaches the agent. Which
+# is the honest shape anyway — a real project running Luna keeps its `.ai-jail`
+# committed at its root, and a seed without one was the artificial case.
+jail_config=${BENCH_AI_JAIL_CONFIG:-'no_mise = true'}
+
 # seed lays down a fresh git repository holding the case, so no variant inherits
 # another's work.
 seed() {
@@ -39,11 +62,40 @@ seed() {
   mkdir -p "$dir"
   cp "$here/case/seed/tally.sh" "$here/case/seed/Makefile" "$dir/"
   chmod +x "$dir/tally.sh"
+  printf '%s\n' "$jail_config" > "$dir/.ai-jail"
   git -C "$dir" init -q
   git -C "$dir" config user.email bench@luna
   git -C "$dir" config user.name bench
   git -C "$dir" add -A
+  # Forced past the ignore rules, and that is the point rather than a workaround:
+  # `.ai-jail` is conventionally untracked — this machine's global gitignore
+  # excludes it — and the seed needs it *in the git content*, because the agent
+  # works in a worktree branched from this commit and reads its sandbox config
+  # from there.
+  git -C "$dir" add -f .ai-jail
   git -C "$dir" commit -qm "the case, before anything touched it"
+}
+
+# field reads one value out of a JSON reply, by dotted path.
+#
+# A parser rather than a grep, and the difference cost a run to find: the first
+# version matched `"cost_usd":[0-9.]*`, Go's encoder writes `"cost_usd": 0.42`
+# with a space, and the pattern therefore matched the key and no digits. Every
+# variant came back costing nothing, which the runner then reported as "no agent
+# was billed" — a false alarm on a run that had worked perfectly.
+field() {
+  printf '%s' "$1" | python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for key in sys.argv[1].split("."):
+    if not isinstance(value, dict) or key not in value:
+        sys.exit(0)
+    value = value[key]
+print(value)
+' "$2" 2>/dev/null
 }
 
 # score reports "<passed> <total>" for whatever is in the directory now.
@@ -90,15 +142,15 @@ for variant in $variants; do
   case "$variant" in
     solo)
       out=$(run_solo "$dir")
-      usd=$(printf '%s' "$out" | grep -o '"total_cost_usd":[0-9.]*' | cut -d: -f2)
+      usd=$(field "$out" total_cost_usd)
       tokens=""
       status="n/a"
       ;;
     luna:*)
       out=$(run_luna "$dir" "${variant#luna:}")
-      usd=$(printf '%s' "$out" | grep -o '"cost_usd":[0-9.]*' | head -1 | cut -d: -f2)
-      tokens=$(printf '%s' "$out" | grep -o '"tokens":[0-9]*' | head -1 | cut -d: -f2)
-      status=$(printf '%s' "$out" | grep -o '"status":"[a-z_]*"' | head -1 | cut -d'"' -f4)
+      usd=$(field "$out" spend.cost_usd)
+      tokens=$(field "$out" spend.tokens)
+      status=$(field "$out" operation)
       ;;
     *)
       echo "unknown variant: $variant" >&2
