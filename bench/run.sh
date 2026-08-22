@@ -20,18 +20,35 @@ work=${BENCH_WORK:-$(mktemp -d)}
 results="$work/results.tsv"
 mkdir -p "$work"
 
-# The flows this case is a candidate for, and it is deliberately not all of them.
+# Which case is being run. Each one is a directory holding a statement, a scorer
+# and the flows it is a candidate for.
 #
-# Comparing flows only means something when the flows are candidates for the same
-# task, and `fix` is for a bug with a reproduction. Running this case — a feature —
-# through it measured the mismatch rather than the flow: `diagnose` spent $2.88 in
-# 48 turns looking for the root cause of something that was not broken, 78% of that
-# variant's whole bill, and the flow still closed clean at 8/8. A benchmark that
-# reports that number beside the others invites the conclusion that `fix` is
-# expensive, when what is expensive is asking it the wrong question.
+# Two ship. `case` is a feature — add a flag — and `case-bug` is a defect with a
+# reproduction, where bash reads a leading zero as octal and the script prints a
+# wrong total, writes a diagnostic and still exits 0.
 #
-# A bug case belongs here and does not exist yet; `fix` comes back with it.
-all_variants="solo luna:chore luna:full"
+# They share one seed script, which is the honest arrangement rather than a saving:
+# the same baseline genuinely admits both tasks, and a benchmark whose cases start
+# from different code cannot say whether a difference came from the flow or the
+# starting point.
+bench_case=${BENCH_CASE:-case}
+case_dir="$here/$bench_case"
+
+if [ ! -d "$case_dir" ]; then
+  echo "no such case: $bench_case" >&2
+  exit 1
+fi
+
+# The flows this case is a candidate for, declared by the case and not by the
+# runner. Comparing flows only means something among flows that could each take
+# the same task, and the cost of getting that wrong is measured: run through the
+# feature case, `fix` spent $2.88 across 48 turns in `diagnose` looking for the
+# root cause of something that was not broken — 78% of its bill — and still closed
+# clean at 8/8. The number was real and it was not what `fix` costs.
+#
+# Comparisons are within a case. A row from one case does not belong in a table
+# with a row from another.
+all_variants=$(tr '\n' ' ' < "$case_dir/variants")
 variants=${*:-$all_variants}
 
 # kindFor is the task kind each flow is built around.
@@ -55,7 +72,7 @@ fi
 
 # The statement is one file so that every variant is given exactly the same words.
 # A benchmark whose variants are briefed differently measures the briefing.
-mapfile -t statement < "$here/case/statement.txt"
+mapfile -t statement < "$case_dir/statement.txt"
 
 # jailConfig is the sandbox configuration each seed carries.
 #
@@ -85,7 +102,7 @@ jail_config=${BENCH_AI_JAIL_CONFIG:-'no_mise = true'}
 seed() {
   local dir=$1
   mkdir -p "$dir"
-  cp "$here/case/seed/tally.sh" "$here/case/seed/Makefile" "$dir/"
+  cp "$here/case/seed/tally.sh" "$here/case/seed/Makefile" "$dir/"  # one baseline, both cases
   chmod +x "$dir/tally.sh"
   printf '%s\n' "$jail_config" > "$dir/.ai-jail"
   git -C "$dir" init -q
@@ -125,7 +142,7 @@ print(value)
 
 # score reports "<passed> <total>" for whatever is in the directory now.
 score() {
-  bash "$here/case/score.sh" "$1" 2>/dev/null | tail -1
+  bash "$case_dir/score.sh" "$1" 2>/dev/null | tail -1
 }
 
 run_luna() {
@@ -136,9 +153,18 @@ run_luna() {
   # numbers for a night where no agent started at all, because every one of these
   # was going to /dev/null — and a benchmark that cannot say why it measured
   # nothing is worse than one that does not run.
-  ( cd "$dir" && "$luna" task new "$id" --kind "$(kindFor "$flow")" --flow "$flow" \
-      "${statement[@]}" ) >>"$dir/run.log" 2>&1
-  ( cd "$dir" && "$luna" run "$id" ) >>"$dir/run.log" 2>&1
+  # Autonomy, or a flow with a gate can never finish here. A task is created at 0,
+  # which sends every gate with criteria to a person — correct as a default and
+  # wrong for a benchmark, where there is nobody to ask. The `full` flow gates its
+  # contract at criticality 9, so an unset knob stopped it there with $2.74 spent
+  # and seven stages never reached. Gateless flows are unaffected: the knob bounds
+  # who answers a gate, and they open none.
+  {
+    ( cd "$dir" && "$luna" task new "$id" --kind "$(kindFor "$flow")" --flow "$flow" \
+        "${statement[@]}" )
+    ( cd "$dir" && "$luna" autonomy "$id" 9 "unattended benchmark" )
+    ( cd "$dir" && "$luna" run "$id" )
+  } >>"$dir/run.log" 2>&1
 
   # The status and the bill both come out of the log, through the structured view
   # rather than the printed one — a benchmark parsing a column written for a
@@ -205,7 +231,7 @@ done
 echo
 column -t -s "$(printf '\t')" "$results"
 echo
-echo "work kept in $work"
+echo "case $bench_case, work kept in $work"
 
 # The exit code is the whole point of this block. A benchmark that measures
 # nothing and reports success is the shape of failure this project refuses

@@ -18,7 +18,31 @@ They are separate because a run can be 8/8 on the first and blocked on the secon
 and for an unattended fleet that is a failure. Collapsing them into one score
 hides exactly the difference worth knowing.
 
-## The case
+## The cases
+
+Two, each a directory holding a statement, a scorer and the flows it is a
+candidate for. `bench/run.sh` runs one; `BENCH_CASE=case-bug bench/run.sh` runs
+the other.
+
+Both start from the same `tally.sh`. That is the honest arrangement rather than a
+saving: one baseline genuinely admits both tasks, and a benchmark whose cases
+start from different code cannot say whether a difference came from the flow or
+from the starting point.
+
+| Case | Task | Candidate flows | Seed scores |
+|---|---|---|---|
+| `case` | add an `--avg` flag — a feature | `solo`, `luna:chore`, `luna:full` | 4/8 |
+| `case-bug` | a leading zero is read as octal — a defect with a reproduction | `solo`, `luna:fix`, `luna:full` | 5/9 |
+
+**Comparisons are within a case.** A row from one does not belong in a table with
+a row from the other, and the candidate list is declared by the case rather than
+by the runner — because a flow measured against a task class it was not built for
+produces a real number that means nothing. Measured: run through the feature case,
+`fix` spent $2.88 across 48 turns in `diagnose` looking for the root cause of
+something that was not broken, 78% of its whole bill, and still closed clean at
+8/8.
+
+## The feature case
 
 `tally.sh` sums the numbers given to it. The task is to add `--avg`, keeping the
 summing behaviour and handling an empty list. `case/score.sh` grades the result
@@ -29,6 +53,20 @@ the judge.
 One of the eight is a trap, and it is there because a real cycle failed it:
 `tally.sh 1 --avg 2` must print `1`. A delivery that reads the flag once before
 the loop passes every other case and gets this wrong. The seed scores 4/8.
+
+## The bug case
+
+The same `tally.sh` has a real defect: bash arithmetic reads a leading zero as
+octal, so `./tally.sh 1 08 3` prints `1`, writes a diagnostic to stderr, and
+**exits 0**. The wrongness is invisible to a caller reading the exit code, which
+is what makes the reproduction the specification and the task a `fix`.
+
+`010` is the nastier variant — it prints `8`, silently, with nothing on stderr,
+because octal 010 is 8. The scorer checks stdout, stderr and the exit status
+together for that reason: the baseline already prints *a* number.
+
+Four of the nine assertions are the defect, four are what must not regress, and
+one is shellcheck. The seed scores 5/9.
 
 ## Running it
 
