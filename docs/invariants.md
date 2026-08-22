@@ -140,9 +140,13 @@ suspension is invisible by construction — the process is not there to remind y
 **What violates it.** Retry with no ceiling; a suspended task that does not appear in the
 listing; an exception swallowed between transitions.
 
-**Known gap, stated rather than hidden.** An agent that is busy and achieving nothing is
-not covered. What exists bounds a turn; a task circling without converging never exceeds
-it. The failure still ends in a block once a budget runs out — just later than it should.
+**Known gap, narrowed rather than closed.** An agent that is busy and achieving nothing
+is still not detected as such. What bounds it now is money: a task carries a spending
+ceiling, checked where the next stage would open, so a task circling without converging
+stops when it has cost what it was allowed to. That is a bound and not a detector — the
+task still spends its whole ceiling before anything notices — and the thing that would
+actually close this is a signal the runner does not produce: telling an agent that is
+thinking from one that is stuck.
 
 **A rule enforced at one end has to be stated at the other.** The gate holds the contract
 to declared criteria; the stage that writes the contract was never shown them. Four
@@ -222,7 +226,9 @@ otherwise correct: `verify` produced `ci_green` from a real `make ci` and forgot
 `dod_checked`.
 
 **Covered by.** Retry-exhaustion and budget tests in `internal/agent`; the gate listing
-test in `internal/cli`; the empty-delivery reporting tests in `internal/node`.
+test in `internal/cli`; the empty-delivery reporting tests in `internal/node`; the spending
+ceiling tests in `internal/fsm`; and, for the fleet, the tests that a blocked task is not
+retried nightly and that a task which no longer replays is reported rather than skipped.
 
 ---
 
