@@ -18,6 +18,7 @@ root=$(cd -- "$here/.." && pwd)
 luna="$root/bin/luna"
 work=${BENCH_WORK:-$(mktemp -d)}
 results="$work/results.tsv"
+mkdir -p "$work"
 
 all_variants="solo luna:chore luna:fix luna:full"
 variants=${*:-$all_variants}
@@ -54,27 +55,35 @@ run_luna() {
   local dir=$1 flow=$2 id
   id="BENCH-${flow}"
 
+  # Kept, never discarded. The first run of this script reported a table of
+  # numbers for a night where no agent started at all, because every one of these
+  # was going to /dev/null — and a benchmark that cannot say why it measured
+  # nothing is worse than one that does not run.
   ( cd "$dir" && "$luna" task new "$id" --kind feature --flow "$flow" \
-      "${statement[@]}" >/dev/null 2>&1 )
-  ( cd "$dir" && "$luna" run "$id" >/dev/null 2>&1 )
+      "${statement[@]}" ) >>"$dir/run.log" 2>&1
+  ( cd "$dir" && "$luna" run "$id" ) >>"$dir/run.log" 2>&1
 
   # The status and the bill both come out of the log, through the structured view
   # rather than the printed one — a benchmark parsing a column written for a
   # person breaks on every rewording.
-  ( cd "$dir" && "$luna" task show "$id" --json 2>/dev/null )
+  ( cd "$dir" && "$luna" task show "$id" --json 2>>"$dir/run.log" )
 }
 
 run_solo() {
   local dir=$1
   # One agent, one prompt, no flow. The baseline the whole comparison is against.
   ( cd "$dir" && claude -p --output-format json \
-      "$(printf '%s\n' "${statement[@]}")" 2>/dev/null )
+      "$(printf '%s\n' "${statement[@]}")" ) 2>>"$dir/run.log"
 }
 
 printf 'variant\tproduct\tflow\tseconds\tusd\ttokens\n' > "$results"
+ran_nothing=''
 
 for variant in $variants; do
-  dir="$work/$variant"
+  # The colon in `luna:fix` cannot become a directory name: it ends up in the
+  # worktree Luna derives from it, and a path component with a colon in it is a
+  # problem somebody debugs at the wrong layer.
+  dir="$work/${variant/:/-}"
   seed "$dir"
 
   start=$(date +%s)
@@ -103,6 +112,14 @@ for variant in $variants; do
   git -C "$dir" checkout -q "luna/BENCH-${variant#luna:}/done" 2>/dev/null || true
   read -r passed total <<< "$(score "$dir")"
 
+  # A variant that cost nothing ran no agent, whatever else it printed. Said here
+  # rather than left for a reader to infer from a zero, because the zero is what
+  # a cheap success and a total failure have in common.
+  if [ "${usd:-0}" = "0" ] || [ -z "${usd:-}" ]; then
+    ran_nothing="$ran_nothing $variant"
+    status="${status}/no-agent"
+  fi
+
   printf '%s\t%s/%s\t%s\t%s\t%s\t%s\n' \
     "$variant" "${passed:-0}" "${total:-0}" "$status" "$seconds" "${usd:-0}" "${tokens:-}" \
     >> "$results"
@@ -112,3 +129,20 @@ echo
 column -t -s "$(printf '\t')" "$results"
 echo
 echo "work kept in $work"
+
+# The exit code is the whole point of this block. A benchmark that measures
+# nothing and reports success is the shape of failure this project refuses
+# everywhere else: a well-formed answer describing something that did not happen.
+if [ -n "$ran_nothing" ]; then
+  echo
+  echo "MEASURED NOTHING:$ran_nothing"
+  echo "no agent was billed, so the scores above are the seed's and not a result."
+  for variant in $ran_nothing; do
+    log="$work/${variant/:/-}/run.log"
+    [ -s "$log" ] || continue
+    echo
+    echo "--- $variant ---"
+    tail -5 "$log"
+  done
+  exit 1
+fi
