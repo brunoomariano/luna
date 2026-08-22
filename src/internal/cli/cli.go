@@ -576,7 +576,11 @@ func taskShow(env Env, args []string) error {
 	}
 
 	if asJSON {
-		return writeJSON(env.Out, taskReport(env.profiles(), state, len(events)))
+		flow, err := env.flowOf(id)
+		if err != nil {
+			return err
+		}
+		return writeJSON(env.Out, taskReport(env.profiles(), state, len(events), flow))
 	}
 
 	printTask(env, state, len(events))

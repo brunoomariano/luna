@@ -352,6 +352,18 @@ Kept because knowing what failed is worth more than knowing what shipped.
 
 ---
 
+**The benchmark lives in the repository, and it compares flows rather than Luna against a
+bare agent.** That second comparison is known and will not move: a strong model in a
+simple loop delivers a coherent case well, and orchestration buys containment, evidence
+and a log rather than a better diff. The solo row stays as a baseline so the multiple is
+visible, and the comparisons worth running are flow against flow and this build against
+the last. Product and flow are separate columns, because a run can be 8/8 on the code and
+blocked on the machinery, and for an unattended fleet that is a failure. Scoring is
+objective — an input and an exact expected line per case — since a benchmark whose product
+score is a judgement measures the judge. It spends real money and never runs in CI.
+
+---
+
 ## Where the ideas came from
 
 Sources studied before building, and what each one settled. Kept here rather than in a

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -163,5 +164,75 @@ func TestABlockedTaskIsToldRaisingIsNotResuming(t *testing.T) {
 	out := h.mustRun(t, "budget", "B-6", "10")
 	if !strings.Contains(out, "unblock") {
 		t.Errorf("raising the ceiling does not say the task is still stopped:\n%s", out)
+	}
+}
+
+// TestTheStructuredViewCarriesTheFlowAndTheBill. The printed view has shown what
+// a task cost since the transport started reporting usage; the JSON one did not,
+// so every consumer that reads it — a dashboard, the benchmark, a morning report —
+// had to shell out and parse a column written for a person.
+func TestTheStructuredViewCarriesTheFlowAndTheBill(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "J-1", "--kind", "chore", "--flow", "chore", "--budget-usd", "3")
+
+	out := h.mustRun(t, "task", "show", "J-1", "--json")
+
+	var report TaskReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("the structured view does not parse: %v\n%s", err, out)
+	}
+	if report.Flow != "chore" {
+		t.Errorf("the flow is missing from the structured view: %q", report.Flow)
+	}
+	if report.Spend == nil {
+		t.Fatalf("the bill is missing from the structured view:\n%s", out)
+	}
+	if report.Spend.BudgetUSD != 3 {
+		t.Errorf("the ceiling is missing: %v", report.Spend.BudgetUSD)
+	}
+}
+
+// TestATaskThatCostNothingReportsNoBill. Absent rather than zeroed, because a
+// reader seeing `"cost_usd": 0` cannot tell "nothing was spent" from "nothing is
+// recorded", and only one of those is a fact about the run.
+func TestATaskThatCostNothingReportsNoBill(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "J-2", "--kind", "chore", "--flow", "chore")
+
+	var report TaskReport
+	if err := json.Unmarshal([]byte(h.mustRun(t, "task", "show", "J-2", "--json")), &report); err != nil {
+		t.Fatalf("the structured view does not parse: %v", err)
+	}
+	if report.Spend != nil {
+		t.Errorf("a task that has cost nothing reports a bill: %+v", report.Spend)
+	}
+}
+
+// TestTheBillIsBrokenDownInFlowOrder. How much is half the question; where it
+// went is the other half, and map order would make two runs of the same task
+// print the stages differently.
+func TestTheBillIsBrokenDownInFlowOrder(t *testing.T) {
+	flow := fsm.DefaultFlow()
+	state := fsm.TaskState{
+		ID: "J-3",
+		Spent: map[fsm.StageID]fsm.Spend{
+			"verify": {CostUSD: 2, InputTokens: 20, Turns: 3, Context: "fresh"},
+			"build":  {CostUSD: 1, InputTokens: 10, Turns: 2, Context: "live"},
+		},
+	}
+
+	report := spendReport(state, flow)
+	if report == nil || len(report.Stages) != 2 {
+		t.Fatalf("want two stages in the breakdown, got %+v", report)
+	}
+	if report.Stages[0].Stage != "build" || report.Stages[1].Stage != "verify" {
+		t.Errorf("the breakdown is not in flow order: %s then %s",
+			report.Stages[0].Stage, report.Stages[1].Stage)
+	}
+	if report.CostUSD != 3 {
+		t.Errorf("the total is %v, want 3", report.CostUSD)
+	}
+	if report.Stages[1].Context != "fresh" {
+		t.Errorf("whether the call resumed is missing: %+v", report.Stages[1])
 	}
 }

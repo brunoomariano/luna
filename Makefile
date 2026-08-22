@@ -4,7 +4,7 @@
 # ignore the process.
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap doctor ci ci-check test lint lint-docs lint-language \
-        fmt fmt-check cover race vuln mod deadcode crap cyclo mutation build clean
+        fmt fmt-check cover race vuln mod deadcode crap cyclo mutation build clean bench
 
 help: ## list the targets
 	@grep -E '^[a-z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -124,3 +124,6 @@ build: ## build the binary
 clean: ## remove build artifacts
 	@rm -f luna coverage.out
 	@rm -rf dist/ bin/luna
+
+bench: ## run the benchmark — real agents, real money, never in CI
+	@bench/run.sh

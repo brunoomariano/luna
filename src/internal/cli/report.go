@@ -57,6 +57,46 @@ type TaskReport struct {
 	// longer has. The task still replays — its decisions are in its log — but a
 	// reader should be able to say so.
 	ProfileDefined bool `json:"profile_defined"`
+
+	// Flow is which flow the task runs, by name. A reader that cannot tell a task
+	// on the lean flow from one on the full flow cannot compare their cost, and
+	// comparing their cost is the reason both exist.
+	Flow string `json:"flow,omitempty"`
+
+	// Spend is what the task cost, per stage and in total.
+	//
+	// The printed view has carried this since the transport started reporting
+	// usage; the structured one did not, so every consumer that reads JSON — a
+	// dashboard, a benchmark, the morning report — had to shell out and parse a
+	// column written for a person. What a run costs is the measurement the whole
+	// orchestration is judged on, and it belongs in the answer a machine reads.
+	Spend *SpendReport `json:"spend,omitempty"`
+}
+
+// SpendReport is what a task cost and what it may still spend.
+type SpendReport struct {
+	CostUSD float64 `json:"cost_usd"`
+	Tokens  int     `json:"tokens"`
+	Turns   int     `json:"turns"`
+
+	// BudgetUSD is the ceiling, absent when there is none.
+	BudgetUSD float64 `json:"budget_usd,omitempty"`
+
+	// Stages is the same numbers per stage, in flow order, so a reader can see
+	// where the money went rather than only how much of it there was.
+	Stages []StageSpendReport `json:"stages,omitempty"`
+}
+
+// StageSpendReport is one stage's bill.
+type StageSpendReport struct {
+	Stage   string  `json:"stage"`
+	CostUSD float64 `json:"cost_usd"`
+	Tokens  int     `json:"tokens"`
+	Turns   int     `json:"turns"`
+
+	// Context says whether the call started cold or resumed, which is most of why
+	// two stages with the same work cost differently.
+	Context string `json:"context,omitempty"`
 }
 
 // LoopReport is a convergence loop's position, for a reader that wants to know
@@ -118,7 +158,7 @@ type WaitingReport struct {
 }
 
 // taskReport builds the machine-readable view of a task.
-func taskReport(cfg Config, state fsm.TaskState, events int) TaskReport {
+func taskReport(cfg Config, state fsm.TaskState, events int, flow []fsm.Stage) TaskReport {
 	defined := cfg.Defines(state.Profile)
 
 	report := TaskReport{
@@ -131,6 +171,8 @@ func taskReport(cfg Config, state fsm.TaskState, events int) TaskReport {
 		Blocked:        state.Blocked,
 		Events:         events,
 		ProfileDefined: defined,
+		Flow:           state.FlowName,
+		Spend:          spendReport(state, flow),
 	}
 
 	if state.Loop.Rounds > 0 {
@@ -224,4 +266,39 @@ func wantsJSON(args []string) (bool, error) {
 
 	_, asJSON := flags["json"]
 	return asJSON, nil
+}
+
+// spendReport is what the task cost, or nothing when it has not cost anything.
+//
+// Absent rather than zeroed for a task that never ran a stage: a reader seeing
+// `"cost_usd": 0` cannot tell "nothing was spent" from "nothing is recorded", and
+// only one of those is a fact about the run.
+func spendReport(state fsm.TaskState, flow []fsm.Stage) *SpendReport {
+	if len(state.Spent) == 0 && state.BudgetUSD == 0 {
+		return nil
+	}
+
+	total := state.TotalSpend()
+	report := &SpendReport{
+		CostUSD:   total.CostUSD,
+		Tokens:    total.Tokens(),
+		Turns:     total.Turns,
+		BudgetUSD: state.BudgetUSD,
+	}
+
+	// Flow order rather than map order, so the list reads like the run did.
+	for _, stage := range flow {
+		spend, ran := state.Spent[stage.ID]
+		if !ran {
+			continue
+		}
+		report.Stages = append(report.Stages, StageSpendReport{
+			Stage:   string(stage.ID),
+			CostUSD: spend.CostUSD,
+			Tokens:  spend.Tokens(),
+			Turns:   spend.Turns,
+			Context: spend.Context,
+		})
+	}
+	return report
 }
