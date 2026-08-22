@@ -39,8 +39,10 @@ commit reached `CheckoutAt`, which read it as `HEAD` and resolved it against the
 repository — so the command ran over whatever was already committed there and exited zero.
 Measured on TALLY-3: `build` recorded `make test → 0` while its branch sat on the base
 commit with a clean worktree. The green was true, and it was true about code the stage did
-not write. A stage with a base to build on that adds no commit now fails; a repository with
-no commit at all is still the first stage of the first task, and still verifies its tree.
+not write. A stage that owes a committed artifact and adds no commit now fails; a pure
+verification stage is different because the commit it received is the thing it is asked to
+prove. A repository with no commit at all is still the first stage of the first task, and
+still verifies its tree.
 
 The other half of it took a second run to find. That guard asked whether a commit
 *existed*, and a stage that adds none hands back the base — which exists, and resolves. So

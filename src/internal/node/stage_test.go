@@ -633,6 +633,75 @@ func TestAStageProvesEveryArtifactItOwes(t *testing.T) {
 	}
 }
 
+func TestAVerificationStageCanProveTheCommitItReceived(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "ci is green"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
+	}
+
+	state := runningState("T-33")
+	state.Base = head(t, repo)
+	stage := fsm.Stage{
+		ID:       "verify",
+		Role:     "qa",
+		Produces: []fsm.Artifact{"ci_green"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"ci_green": fsm.Command{Run: "true", Scope: fsm.ScopeFull},
+		},
+	}
+
+	result, err := r.Run(context.Background(), state, stage)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	evidence := result.Evidence["ci_green"]
+	if evidence.Verdict != fsm.VerdictPassed || evidence.Scope != fsm.ScopeFull {
+		t.Fatalf("want ci_green proven full over the incoming commit, got %+v", evidence)
+	}
+	if !containsArtifact(result.Delivered, "ci_green") {
+		t.Fatalf("ci_green was proven but not delivered: %+v", result.Delivered)
+	}
+}
+
+func TestAStageThatOwesCodeStillCannotProveTheBase(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "nothing changed"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
+	}
+
+	state := runningState("T-34")
+	state.Base = head(t, repo)
+	stage := fsm.Stage{
+		ID:       "build",
+		Role:     "implementer",
+		Produces: []fsm.Artifact{"code", "tests_green"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"tests_green": fsm.Command{Run: "true", Scope: fsm.ScopeTargeted},
+		},
+	}
+
+	result, err := r.Run(context.Background(), state, stage)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if result.Evidence["tests_green"].Verdict == fsm.VerdictPassed {
+		t.Fatalf("tests_green was proven by the code the stage received: %+v", result.Evidence["tests_green"])
+	}
+	if containsArtifact(result.Delivered, "tests_green") {
+		t.Fatalf("tests_green must not be delivered when the stage added no code: %+v", result.Delivered)
+	}
+}
+
 // TestTheBriefCanBeReplacedWithoutTouchingTheRunner covers the seam a test uses
 // to drive a stage with a known instruction, and that a project would use to say
 // something the shipped brief does not.
@@ -941,6 +1010,15 @@ func (c *committingAgent) Run(ctx context.Context, call agent.Call) (agent.Resul
 func anyContains(list []string, want string) bool {
 	for _, got := range list {
 		if strings.Contains(got, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsArtifact(list []fsm.Artifact, want fsm.Artifact) bool {
+	for _, got := range list {
+		if got == want {
 			return true
 		}
 	}

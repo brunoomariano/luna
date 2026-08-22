@@ -148,6 +148,9 @@ func (r *Runner) reportEmptyDelivery(state fsm.TaskState, stage fsm.Stage, resul
 	if said == "" {
 		return
 	}
+	if !owesCommit(stage) {
+		return
+	}
 	if result.Commit != "" && result.Commit != state.Base {
 		return
 	}
@@ -231,9 +234,14 @@ func (r *Runner) verify(
 		return lead.Result{}, fmt.Errorf("reading what stage %q delivered: %w", stage.ID, err)
 	}
 
-	// The base as well as the delivery, so a stage that handed back what it was
-	// given is told apart from one that built on it.
-	shell := Shell{Dir: r.Repo, Commit: commit, Base: state.Base}
+	// The base as well as the delivery, so a stage that owed a commit and handed
+	// back what it was given is told apart from one that built on it. A pure
+	// verification stage is different: the commit it received is the subject.
+	base := state.Base
+	if !owesCommit(stage) {
+		base = ""
+	}
+	shell := Shell{Dir: r.Repo, Commit: commit, Base: base}
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 
 	result := lead.Result{
@@ -275,6 +283,26 @@ func (r *Runner) verify(
 		}
 	}
 	return result, nil
+}
+
+func owesCommit(stage fsm.Stage) bool {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	if len(owed) == 0 {
+		return true
+	}
+	for _, artifact := range owed {
+		verifier := stage.Verifiers[artifact]
+		switch typed := verifier.(type) {
+		case fsm.Command:
+			continue
+		case fsm.Existence:
+			if typed.Handover {
+				continue
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // proveHandover asks the store whether the artifact arrived, and records the
