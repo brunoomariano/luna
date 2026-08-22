@@ -274,3 +274,59 @@ func TestTheFallbackContractIsTheTasksOwn(t *testing.T) {
 		t.Errorf("a state naming a missing flow fell back to %s", got)
 	}
 }
+
+// TestNoModelReadsCodeThePipelineHasNotAccepted is the property the split exists
+// for, and it is a property of the contract rather than of an ordering.
+//
+// Putting the command in front of the critic would only reorder two files; making
+// the critic *require* what the command produces is what enforces it, because the
+// entry check refuses a stage whose inputs are not in the context. So there is no
+// path — no knob, no retry, no send-back — on which a model is paid to read a
+// delivery the compiler has not accepted.
+func TestNoModelReadsCodeThePipelineHasNotAccepted(t *testing.T) {
+	flow := DefaultFlow()
+
+	pipeline, carried := findStage(flow, "pipeline")
+	if !carried {
+		t.Fatal("the shipped flow has no pipeline stage")
+	}
+	if !pipeline.Mechanical() {
+		t.Errorf("the pipeline stage pays a model (role %q)", pipeline.Role)
+	}
+	if !containsArtifact(pipeline.Produces, "ci_green") {
+		t.Fatalf("the pipeline stage does not produce ci_green: %v", pipeline.Produces)
+	}
+
+	// Every stage that names a role and comes after the pipeline reads the code,
+	// and each has to require the green rather than merely follow it.
+	seen := false
+	for _, stage := range flow {
+		if stage.ID == "pipeline" {
+			seen = true
+			continue
+		}
+		if !seen || stage.Mechanical() {
+			continue
+		}
+		if !containsArtifact(stage.Requires, "ci_green") {
+			t.Errorf("stage %q runs a model after the pipeline and does not require ci_green: %v",
+				stage.ID, stage.Requires)
+		}
+	}
+}
+
+// TestTheJudgementHalfOwesNoCommand. What is left in `verify` after the split is
+// the question no command answers, and if it ever owed one again the split would
+// have quietly undone itself.
+func TestTheJudgementHalfOwesNoCommand(t *testing.T) {
+	verify, carried := findStage(DefaultFlow(), "verify")
+	if !carried {
+		t.Fatal("the shipped flow has no verify stage")
+	}
+
+	for artifact, verifier := range verify.Verifiers {
+		if _, isCommand := verifier.(Command); isCommand {
+			t.Errorf("verify proves %q with a command, which belongs in the pipeline stage", artifact)
+		}
+	}
+}

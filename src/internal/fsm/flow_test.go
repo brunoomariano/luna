@@ -33,9 +33,10 @@ func TestDefaultFlowHasNoContractGap(t *testing.T) {
 func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	flow := DefaultFlow()
 
-	// The empty role is how the table writes "—": setup is the only mechanical
-	// stage, and any second one would be a change to the contract. `commit` was
-	// the other until integration left Luna's scope.
+	// The empty role is how the table writes "—". There are two mechanical stages:
+	// `setup`, because a worktree is git, and `pipeline`, because `ci_green` is a
+	// command's verdict and nothing about it is a judgement. A third would be a
+	// change to the contract. `commit` was one until integration left Luna's scope.
 	want := []struct {
 		ID   StageID
 		Role string
@@ -46,6 +47,7 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		{"plan", "maker"},
 		{"build", "maker"},
 		{"refactor", "maker"},
+		{"pipeline", ""},
 		{"verify", "critic"},
 		{"review", "critic"},
 	}

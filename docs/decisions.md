@@ -248,6 +248,18 @@ which Luna already generates per stage with the contract in it. `maker`, `critic
 readability (the stage file already names the work); collapsing to a single role (writing
 and judging must differ in tool denial and must not share a session).
 
+**The pipeline is a stage of its own, in front of the stage that judges.** `verify` owed
+`ci_green` and `dod_checked` — a command's verdict and a person's checklist — and the
+agent ran before either was checked, so a delivery that could not compile was read and
+reported on by a model before anything asked the compiler. Measured at $1.62 a cycle,
+every cent spent ahead of the pipeline. The command half is now a stage with no role,
+which costs nothing, and the judgement half *requires* what it produces. Requiring it is
+the part that enforces anything: ordering two files would only reorder them, while the
+entry check refuses the critic outright until the green is in the context. *Rejected:*
+sending a red pipeline straight back to `build` — `sends_back_to` is driven by a parsed
+review report, and wiring an exit code into it is a second mechanism for the same
+transition; a red pipeline blocks, which is a notified ending (INV-5).
+
 **Eight stages, not twelve.** `scenarios`+`spec` merged into `plan`; `qa`+`code-review`+
 `harden`+`architecture` merged into `review`. The argument is measured: the two planning
 stages were $4.14 of a $6.78 task, and `contract` was consumed by no stage; the four review

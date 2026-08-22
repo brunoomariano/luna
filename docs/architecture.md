@@ -59,7 +59,7 @@ Luna ships three, and a task picks one when it is created:
 
 | Flow | Stages | For |
 |---|---|---|
-| `full` | setup → intake → plan → build → refactor → verify → review | new behaviour, uncertain design; the only one with a gate |
+| `full` | setup → intake → plan → build → refactor → pipeline → verify → review | new behaviour, uncertain design; the only one with a gate |
 | `fix` | setup → diagnose → build → verify | a bug with a reproduction: the reproduction is the specification |
 | `chore` | setup → build → verify | mechanical work — a bump, a rename, a formatting pass |
 
@@ -77,11 +77,13 @@ for `root_cause` under `fix`; same stage id, different contract, so two files.
 
 Two consequences worth stating, because both were surprises:
 
-- **A lean flow's `verify` runs no agent at all.** `ci_green` is proven by running
-  `make ci`, and nothing about it is a judgement — `judgement` in `role.go` does
-  not list it — so a stage that owes only that names no role, and a stage with no
-  role starts no agent. Under `full` the same stage id costs a critic, because it
-  also owes `dod_checked`, which is a person's checklist.
+- **The command runs before the model, everywhere.** `ci_green` is proven by
+  running `make ci`, and nothing about it is a judgement — `judgement` in
+  `role.go` does not list it — so the stage that owes it names no role and starts
+  no agent. Under `full` that is the `pipeline` stage, and `verify` *requires*
+  what it produces: the entry check refuses the critic until the pipeline has
+  passed, so no model is ever paid to read code the compiler has not accepted.
+  The lean flows have the same stage without the critic after it.
 - **A lean flow is a different fingerprint, and that is the point.** Dropping
   `plan` changes stage ids, order, `requires` and `produces` — all history. So a
   task that ran without planning is not replayable as though it had planned, which
@@ -182,6 +184,7 @@ tools_deny = ["Edit", "Write"]
 | `maker` | intake, plan, build, refactor | — |
 | `critic` | verify, review | `Edit`, `Write` |
 | `investigator` | diagnose | — |
+| — | setup, pipeline | mechanical: no agent runs |
 
 The stage names its role, not the reverse — the flow is the single place that decides who
 runs what. Separation is by negation: whoever writes does not review.

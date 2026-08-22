@@ -1,8 +1,11 @@
-# The pipeline is a command and the checklist is a judgement, so this stage has
-# both — and a role, because the artifact that needs one decides.
-
-id                 = "verify"
-role               = "critic"
+# The judgement half. What is left here is the question no command answers:
+# does the delivery honour the contract that was written for it?
+#
+# It requires `ci_green` now, which is what makes the split enforce anything
+# rather than merely reorder two files — the entry check refuses this stage until
+# the pipeline has passed, so there is no path on which a model is paid to read
+# code the compiler has not accepted.
+#
 # The contract as well as the scenarios, because this stage is the one asked
 # whether the delivery honours it. It was absent, and the gap it left was
 # measured on TALLY-7: the contract required a test pinning one of its own
@@ -10,15 +13,11 @@ role               = "critic"
 # the *stage* contract asks for `code` and `tests_green` and both arrived — and
 # verify then stated that all three decisions were pinned by a test. They were
 # not. Nothing in the flow compared the document against what was built.
-requires           = ["code", "scenarios", "contract"]
-produces           = ["ci_green"]
-produces_for_human = ["dod_checked"]
 
-[verify.ci_green]
-# The one artifact in the flow that earns full: `make ci` is the whole gate, and
-# the contract wants it run rather than claimed.
-run   = "make ci"
-scope = "full"
+id                 = "verify"
+role               = "critic"
+requires           = ["code", "scenarios", "contract", "ci_green"]
+produces_for_human = ["dod_checked"]
 
 [verify.dod_checked]
 # A checklist a person reads. Recording it as a passing check would be the lie

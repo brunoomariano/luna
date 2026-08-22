@@ -1,0 +1,28 @@
+# The command half of what `verify` used to be, split out and moved in front of
+# it.
+#
+# The old file's own first line was the argument for this: *"the pipeline is a
+# command and the checklist is a judgement, so this stage has both"*. Having both
+# meant the critic was called first and `make ci` ran after it — so a delivery
+# that could not compile was read, weighed and reported on by a model before
+# anything asked the compiler. Measured on a full cycle: `verify` billed $1.62,
+# and every cent of it was spent before the pipeline had said anything.
+#
+# Now the command runs first, in a stage with no role, which costs nothing. A red
+# pipeline stops the task here and the critic is never started; a green one is an
+# artifact the judgement stage can require, so it reads a delivery that already
+# compiles and passes.
+#
+# It commits nothing, and does not have to: `ci_green` is proven by running a
+# command over the commit this stage was *given*, which is the one case where a
+# delivery equal to the base is the subject rather than a failure.
+
+id       = "pipeline"
+requires = ["code"]
+produces = ["ci_green"]
+
+[verify.ci_green]
+# The one artifact in the flow that earns full: `make ci` is the whole gate, and
+# the contract wants it run rather than claimed.
+run   = "make ci"
+scope = "full"

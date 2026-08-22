@@ -80,20 +80,29 @@ func goFlow() []Stage {
 			},
 		},
 		{
-			ID: "verify",
-			// The pipeline is a command and the checklist is a judgement, so this
-			// stage has both — and a role, because the artifact that needs one
-			// decides.
-			Role: "critic",
-			// The contract as well, because this stage is the one asked whether the
-			// delivery honours it — and it was not given it.
-			Requires:         []Artifact{"code", "scenarios", "contract"},
-			Produces:         []Artifact{"ci_green"},
-			ProducesForHuman: []Artifact{"dod_checked"},
+			// The command half, in front of the judgement half and with no role, so
+			// a red pipeline stops the task before a model is paid to read code the
+			// compiler has not accepted.
+			ID:       "pipeline",
+			Requires: []Artifact{"code"},
+			Produces: []Artifact{"ci_green"},
 			Verifiers: map[Artifact]Verifier{
 				// The one artifact in the flow that earns ScopeFull: `make ci` is
 				// the whole gate, and INV-1 wants it run rather than claimed.
 				"ci_green": Command{Run: "make ci", Scope: ScopeFull},
+			},
+		},
+		{
+			ID: "verify",
+			// The checklist is a judgement, so this half keeps the role.
+			Role: "critic",
+			// The contract as well, because this stage is the one asked whether the
+			// delivery honours it — and it was not given it. `ci_green` too, which
+			// is what makes the split enforce something rather than merely reorder
+			// two files: the entry check refuses this stage until the pipeline passed.
+			Requires:         []Artifact{"code", "scenarios", "contract", "ci_green"},
+			ProducesForHuman: []Artifact{"dod_checked"},
+			Verifiers: map[Artifact]Verifier{
 				// A checklist a person reads. Recording it as a passing check would
 				// be a lie about what ran.
 				"dod_checked": Existence{Handover: true},
@@ -166,7 +175,7 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
-	const shipped = "3dbe4033624d42a3"
+	const shipped = "3d5ec1f8f1890cb5"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)
