@@ -32,7 +32,11 @@ Luna compares the log position before and after.
 > is strictly stronger, and a ceiling nothing can reach gets trusted without ever having
 > held.
 
-**Parallelism is between tasks, never inside one.** One worktree, one lead per task.
+**Parallelism is between tasks, never inside one.** One worktree, one lead per task. The
+fleet is what finally uses it: `luna fleet run` drives every eligible task at a bounded
+concurrency, and needed no new isolation because the isolation was already the design.
+A blocked task is not eligible — it stopped for a reason a person has to deal with, and
+retrying it nightly would turn a notified block into a nightly bill.
 
 **A stage that came up short is asked again, on the same budget as a failed node.** The
 two failures were treated oppositely and backwards: infrastructure got two retries,

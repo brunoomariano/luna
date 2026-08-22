@@ -74,7 +74,7 @@ func (s *Store) Stalled(patience time.Duration) ([]Stuck, error) {
 			continue
 		}
 
-		at, err := s.lastEventAt(id)
+		at, err := s.LastEventAt(id)
 		if err != nil {
 			return nil, err
 		}
@@ -101,9 +101,13 @@ func (s *Store) Stalled(patience time.Duration) ([]Stuck, error) {
 	return stuck, nil
 }
 
-// lastEventAt is when the task last moved. A zero time means there is no log to
+// LastEventAt is when the task last moved.
+//
+// Exported because a replayed state carries no clock: "how old is this" is a
+// question only the log can answer, and both the watchdog and the fleet report
+// ask it. A zero time means there is no log to
 // read it from — an id nobody has written to.
-func (s *Store) lastEventAt(taskID string) (time.Time, error) {
+func (s *Store) LastEventAt(taskID string) (time.Time, error) {
 	var at int64
 	row := s.db.QueryRow(`SELECT COALESCE(MAX(at), 0) FROM events WHERE task_id = ?`, taskID)
 	if err := row.Scan(&at); err != nil {

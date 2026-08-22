@@ -285,9 +285,9 @@ func TestAStoreReopensWithoutLosingItsColumns(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = second.Close() })
 
-	got, err := second.lastEventAt("LUNA-1")
+	got, err := second.LastEventAt("LUNA-1")
 	if err != nil {
-		t.Fatalf("lastEventAt: %v", err)
+		t.Fatalf("LastEventAt: %v", err)
 	}
 	if !got.Equal(at) {
 		t.Errorf("the timestamp did not survive the reopen: %s", got)
@@ -337,14 +337,14 @@ func TestABlockedTaskWithNoRecordedReasonStillReports(t *testing.T) {
 }
 
 // TestTheAgeIsReadFromTheLogNotTheState is the boundary the watchdog lives on.
-// lastEventAt is the only clock reader in the path, and a task nobody has
+// LastEventAt is the only clock reader in the path, and a task nobody has
 // written to has no age rather than an age of zero seconds ago.
 func TestTheAgeIsReadFromTheLogNotTheState(t *testing.T) {
 	s, _ := clockedStore(t)
 
-	at, err := s.lastEventAt("NEVER-WRITTEN")
+	at, err := s.LastEventAt("NEVER-WRITTEN")
 	if err != nil {
-		t.Fatalf("lastEventAt on an unknown task: %v", err)
+		t.Fatalf("LastEventAt on an unknown task: %v", err)
 	}
 	if !at.IsZero() {
 		t.Errorf("a task with no log reported an age: %s", at)
@@ -358,9 +358,9 @@ func TestTheLogRecordsWhenItWasWritten(t *testing.T) {
 	s, now := clockedStore(t)
 	blockedTask(t, s, "LUNA-1", "blocked")
 
-	at, err := s.lastEventAt("LUNA-1")
+	at, err := s.LastEventAt("LUNA-1")
 	if err != nil {
-		t.Fatalf("lastEventAt: %v", err)
+		t.Fatalf("LastEventAt: %v", err)
 	}
 	if !at.Equal(*now) {
 		t.Errorf("the log says %s, the clock said %s", at, *now)

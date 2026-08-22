@@ -251,6 +251,35 @@ Changing the knob changes what happens from here on and leaves the past alone �
 advance records what its gate actually decided, so a replay reads a fact instead of
 recomputing one.
 
+## The fleet
+
+`luna run` drives one task. `luna fleet run` drives every eligible one, several at a time:
+
+```sh
+luna fleet run --flow fix --budget-usd 20 --concurrency 4
+luna fleet report --since 12h
+```
+
+**Eligible** means not finished, not called off, not waiting on a person and not blocked. A
+blocked task is deliberately excluded — it stopped for a reason somebody has to deal with,
+and a fleet that retried it every night would turn a notified block into a nightly bill.
+`luna unblock` is how it becomes eligible again.
+
+The fleet's ceiling stops it **starting** rather than stops it running, and the slot is
+taken before the ceiling is weighed. That ordering is the correctness of the loop: checking
+first would decide while the previous task was still going, against a total that did not yet
+include it, so a fleet of one would always start one task too many.
+
+Parallelism between tasks is not a fleet decision — it is the property everything else
+rests on. One worktree and one lead per task is what makes two tasks unable to see each
+other's work, and the store has been proven safe for concurrent appends across tasks since
+before there was a fleet to need it.
+
+`luna fleet report` is the morning's product rather than a side effect of it: every task
+grouped by what has to happen to it next, with both verdicts and the bill. A task that no
+longer replays is *reported* rather than skipped, because it is exactly the one that would
+otherwise sit unnoticed forever.
+
 ## State
 
 Append-only SQLite. No `UPDATE`, no `DELETE`. The log is the state; anything else is a

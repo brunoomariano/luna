@@ -108,6 +108,7 @@ func Run(env Env, args []string) error {
 		"lead":     leadCommand,
 		"autonomy": autonomyCommand,
 		"budget":   budgetCommand,
+		"fleet":    runFleet,
 		"init":     initCommand,
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
@@ -196,6 +197,20 @@ luna — deterministic orchestration for AI agents
         Every flow by default — one that is never audited is one whose
         contract nobody checked. Changing a flow under an open task stops
         it replaying.
+
+  luna fleet run [--flow <flow>] [--budget-usd <usd>]
+        [--concurrency <n>] [--agent <kind>] [--dry-run]
+        drive every eligible task, several at a time. Eligible means not
+        finished, not called off, not waiting on a person and not blocked
+        — a block stopped for a reason somebody has to deal with, and a
+        fleet that retried it nightly would turn a notified block into a
+        nightly bill. The ceiling stops starting new tasks; one already
+        under way is holding a worktree and an agent, and killing it
+        mid-stage would spend the money and throw away the delivery.
+
+  luna fleet report [--since <duration>] [--json]
+        what every task is, grouped by what has to happen to it next.
+        This is the morning's product rather than a side effect of it.
 
   luna gates [--json]
         every task waiting on a person

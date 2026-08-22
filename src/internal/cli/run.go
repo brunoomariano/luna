@@ -28,12 +28,30 @@ func runTaskCommand(env Env, args []string) error {
 		return err
 	}
 
-	events, err := env.Store.Events(id)
+	state, err := driveTask(context.Background(), env, id, opts)
 	if err != nil {
 		return err
 	}
+	return reportRun(env, id, state)
+}
+
+// driveTask runs one task to its next stopping point and returns where it landed.
+//
+// Split out of the command so the fleet can drive many of these at once without a
+// second copy of the wiring. Everything about one task stays here; what the fleet
+// adds is which tasks and how many at a time.
+//
+// The machinery breaking does not surface as an error, and the absence is the
+// design rather than an omission: the lead records a block and the run ends
+// normally, so the task appears in `luna gates` with a reason instead of the
+// caller erroring and leaving nothing behind.
+func driveTask(ctx context.Context, env Env, id string, opts runOptions) (fsm.TaskState, error) {
+	events, err := env.Store.Events(id)
+	if err != nil {
+		return fsm.TaskState{}, err
+	}
 	if len(events) == 0 {
-		return fmt.Errorf("no task %q — create it with `luna task new %s`", id, id)
+		return fsm.TaskState{}, fmt.Errorf("no task %q — create it with `luna task new %s`", id, id)
 	}
 
 	// The budget comes from the profile this task was created under, read from
@@ -42,37 +60,24 @@ func runTaskCommand(env Env, args []string) error {
 	// one whose watchdog is its only net.
 	state, err := env.replay(id)
 	if err != nil {
-		return err
+		return fsm.TaskState{}, err
 	}
 	flow, err := env.flowOf(id)
 	if err != nil {
-		return err
+		return fsm.TaskState{}, err
 	}
 
 	if err := agreeOnSimulation(id, state, opts.Dry); err != nil {
-		return err
+		return fsm.TaskState{}, err
 	}
 
 	conductor, cleanup, err := conduct(env, opts, state.Profile, flow)
 	if err != nil {
-		return err
+		return fsm.TaskState{}, err
 	}
 	defer cleanup()
 
-	// The machinery breaking does not surface here, and the absence is the
-	// design rather than an omission: the lead records a block and the run ends
-	// normally, so the task appears in `luna gates` with a reason instead of the
-	// command erroring and leaving nothing behind.
-	//
-	// A branch here that reported ErrInfrastructure was removed as unreachable —
-	// the lead absorbs it, and a message that can never print is one somebody
-	// eventually maintains for nothing.
-	state, err = conductor.Run(context.Background(), id)
-	if err != nil {
-		return err
-	}
-
-	return reportRun(env, id, state)
+	return conductor.Run(ctx, id)
 }
 
 // stageToWork resolves the task to a state with a stage actually open, or says

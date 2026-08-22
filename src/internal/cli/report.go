@@ -317,3 +317,32 @@ func spendReport(state fsm.TaskState, flow []fsm.Stage) *SpendReport {
 	}
 	return report
 }
+
+// FleetReport is what `luna fleet report --json` answers: the morning's state of
+// everything, rather than one task's.
+type FleetReport struct {
+	// Tasks is never null: a reader looping over it should not have to
+	// distinguish "no tasks" from "the field was absent".
+	Tasks []FleetTaskReport `json:"tasks"`
+
+	// Unreadable names the tasks that no longer replay against the flow they were
+	// written under. They are reported rather than skipped, because a task nobody
+	// can read is exactly the one that would otherwise sit unnoticed forever.
+	Unreadable []string `json:"unreadable,omitempty"`
+
+	// CostUSD is what everything in Tasks has cost, together.
+	CostUSD float64 `json:"cost_usd"`
+}
+
+// FleetTaskReport is one task as a fleet reads it: the two verdicts, the bill,
+// and what has to happen next.
+type FleetTaskReport struct {
+	ID        string  `json:"id"`
+	Flow      string  `json:"flow,omitempty"`
+	Product   string  `json:"product"`
+	Operation string  `json:"operation"`
+	BlockedBy string  `json:"blocked_by,omitempty"`
+	Blocked   string  `json:"blocked,omitempty"`
+	CostUSD   float64 `json:"cost_usd"`
+	Tokens    int     `json:"tokens"`
+}
