@@ -100,20 +100,6 @@ func ParseCapability(name string) (Capability, error) {
 // Gated reports whether this role must be started with something denied.
 func (r Role) Gated() bool { return len(r.ToolsDeny) > 0 }
 
-// DeniesWriting reports whether the role is barred from changing the worktree.
-//
-// It is the question the coarse harnesses can actually answer: codex denies
-// writing wholesale with a sandbox mode and takes no tool names, so a role that
-// denies both Edit and Write maps onto it exactly, and one that denies only Edit
-// does not.
-func (r Role) DeniesWriting() bool {
-	denied := map[Capability]bool{}
-	for _, capability := range r.ToolsDeny {
-		denied[capability] = true
-	}
-	return denied[CapEdit] && denied[CapWrite]
-}
-
 func capabilityList() string {
 	names := make([]string, 0, len(KnownCapabilities()))
 	for _, capability := range KnownCapabilities() {

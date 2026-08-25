@@ -179,9 +179,9 @@ Three things follow from the transport:
 
   **The shipped flow uses it, and that is what collapsing the roles bought.** While the
   flow had twelve roles for twelve stages, every stage started cold by construction and
-  the setting had nowhere to apply. With three roles, `build` and `refactor` continue the
-  session `plan` opened, and `review` continues `verify`'s — two cold starts in a run
-  instead of twelve.
+  the setting had nowhere to apply. Three roles brought it to two cold starts a run; one
+  role brings it to one — every agent stage after the first continues the session before
+  it, except `audit`, which is deliberately `fresh`.
 
   One of those cold starts is not an economy to be recovered. `plan` is `fresh` because
   on a bug task `diagnose` runs immediately before it, and continuing "the previous
@@ -382,9 +382,12 @@ remembered:
 - **Token accounting** — being added now that the transport reports usage.
 - **Skills** — `src/stock/skills/` is empty. A role declares an agent and a brief; the
   skill set is parsed and read by nothing.
-- **A second harness.** All three roles name `claude`. The transport supports four and
+- **A second harness.** The one role names `claude`. The transport supports four and
   `CanGate` knows which of them can deny a tool, but no shipped role exercises another,
   so "harness-agnostic" is built and unmeasured.
+- **Tool denial.** `tools_deny` parses, reaches the harness and is removed from the
+  request — and no shipped role sets it, because the one role must be able to edit. A
+  config can still deny a tool; the stock does not.
 
 Three things read as gaps and are not:
 

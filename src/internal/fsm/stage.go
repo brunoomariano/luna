@@ -323,16 +323,6 @@ func (g *GateSpec) Resolved() int {
 	return g.Criticality
 }
 
-// AbsorbedBy reports whether a knob at this setting lets the lead judge this
-// gate.
-//
-// The comparison is the whole knob: both scales are the same numbers, so a
-// project writing `criticality = 7` beside a gate knows exactly which setting
-// reaches it.
-func (g *GateSpec) AbsorbedBy(knob int) bool {
-	return knob >= g.Resolved()
-}
-
 // GuardSpec is what a stage refuses to land without a person looking.
 //
 // The patterns are read by the node layer and never by the reducer, which is what
@@ -362,21 +352,6 @@ type ReviewSpec struct {
 	// Invalidates are the artifacts that stop being true once the work goes back —
 	// the green attested to code that no longer exists.
 	Invalidates []Artifact
-}
-
-// ProducesArtifact reports whether the stage delivers the artifact for the flow
-// to consume. ProducesForHuman does not count: an audit report satisfies nobody's
-// Requires (INV-3).
-func (s Stage) ProducesArtifact(a Artifact) bool {
-	return containsArtifact(s.Produces, a)
-}
-
-// ProducesForHumanArtifact reports whether the stage delivers the artifact for a
-// person to read. Separate from ProducesArtifact because the question differs:
-// this one is not about availability to the flow, but about whether the stage
-// committed to delivering an assessment.
-func (s Stage) ProducesForHumanArtifact(a Artifact) bool {
-	return containsArtifact(s.ProducesForHuman, a)
 }
 
 // containsArtifact is a linear scan because a stage contract's lists hold half a

@@ -42,15 +42,6 @@ type Usage struct {
 	Model string `json:"model,omitempty"`
 }
 
-// Total is every token that crossed the wire, cached or not.
-//
-// Cache reads are counted because they are billed and because leaving them out
-// makes a resumed session look free — which is the exact comparison this type
-// exists to make honest.
-func (u Usage) Total() int {
-	return u.InputTokens + u.OutputTokens + u.CacheRead + u.CacheWrite
-}
-
 // Result is one completed agent call.
 type Result struct {
 	// Text is what the agent replied. Luna prints it and does not parse it: a

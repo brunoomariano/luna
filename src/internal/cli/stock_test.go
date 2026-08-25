@@ -78,8 +78,8 @@ tools_deny = ["Edit", "Write"]
 	if roles["reviewer"].Agent != "codex" {
 		t.Errorf("agent = %q, want codex", roles["reviewer"].Agent)
 	}
-	if !roles["reviewer"].DeniesWriting() {
-		t.Error("the denial did not survive the parse")
+	if len(roles["reviewer"].ToolsDeny) != 2 {
+		t.Errorf("the denial did not survive the parse: %v", roles["reviewer"].ToolsDeny)
 	}
 }
 

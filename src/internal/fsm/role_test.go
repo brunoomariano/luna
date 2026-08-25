@@ -122,32 +122,6 @@ func TestGatedReportsWhetherAnythingWasDenied(t *testing.T) {
 	}
 }
 
-// TestDeniesWritingNeedsBothCapabilities covers the question the coarse harnesses
-// can answer.
-//
-// codex denies writing wholesale and takes no tool names, so a role that denies
-// both maps onto it exactly and one that denies only Edit does not — it could
-// still create a file, which is not "cannot change the work it judges"
-// .
-func TestDeniesWritingNeedsBothCapabilities(t *testing.T) {
-	cases := []struct {
-		denied []Capability
-		want   bool
-	}{
-		{[]Capability{CapEdit, CapWrite}, true},
-		{[]Capability{CapWrite, CapEdit}, true}, // order does not matter
-		{[]Capability{CapEdit}, false},
-		{[]Capability{CapWrite}, false},
-		{nil, false},
-	}
-
-	for _, c := range cases {
-		if got := (Role{ToolsDeny: c.denied}).DeniesWriting(); got != c.want {
-			t.Errorf("denying %v: want %v, got %v", c.denied, c.want, got)
-		}
-	}
-}
-
 // TestParseCapabilityRefusesWhatItDoesNotKnow covers the direction a typo fails
 // in.
 //

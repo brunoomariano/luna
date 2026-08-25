@@ -88,10 +88,10 @@ func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 		if !isReport {
 			continue
 		}
-		if stage.ProducesArtifact(report) {
+		if containsArtifact(stage.Produces, report) {
 			t.Errorf("%q: %q is an audit artifact and should not be in Produces", stage.ID, report)
 		}
-		if !stage.ProducesForHumanArtifact(report) {
+		if !containsArtifact(stage.ProducesForHuman, report) {
 			t.Errorf("%q: want %q in ProducesForHuman, got %v", stage.ID, report, stage.ProducesForHuman)
 		}
 	}

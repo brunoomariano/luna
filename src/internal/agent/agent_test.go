@@ -125,16 +125,6 @@ func TestRunReportsWhatTheAgentSaidAndWhatItCost(t *testing.T) {
 	}
 }
 
-// TestTotalCountsCachedTokens covers the field that decides whether the fresh
-// versus live comparison is honest. Leaving cache reads out would make a resumed
-// session look free when it is billed.
-func TestTotalCountsCachedTokens(t *testing.T) {
-	u := Usage{InputTokens: 1, OutputTokens: 2, CacheRead: 4, CacheWrite: 8}
-	if got := u.Total(); got != 15 {
-		t.Errorf("want every token counted (15), got %d", got)
-	}
-}
-
 // TestTheAgentIsNeverStartedWithoutASandbox is containment as a refusal rather
 // than an intention. A blank field must not become "run it uncontained".
 func TestTheAgentIsNeverStartedWithoutASandbox(t *testing.T) {

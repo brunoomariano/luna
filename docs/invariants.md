@@ -154,8 +154,8 @@ contracts went through, two rejected for the same criterion — "with no suggest
 neither was a lapse in writing: both documents were properly imperative throughout, and
 both put the offending sentence in a section the second one titled "Note for the maker".
 An agent being helpful in a document that has no room for help. The stage producing a
-judged artifact now sees the criteria it will be judged on, and the maker is told a
-contract admits no recommendation.
+judged artifact now sees the criteria it will be judged on, and the brief says a contract
+admits no recommendation.
 
 **A wired field is not a called field.** The same landing broke twice, and the second
 break was caused by the fix for the first. `luna lead` built its lead without `Land`, so a
@@ -178,10 +178,11 @@ replayed and most needs ending.
 
 **A review that cannot be read sends nothing back.** The mechanism was complete at both
 ends and the vocabulary crossed neither way: `ReadReport` looks for `[BLOCKING]`,
-`[SHOULD-FIX]`, `[NIT]` and `[UNCERTAIN]`, the review stage declares `sends_back_to`, and
-nothing ever told the agent those tags existed. On TALLY-7 the critic found four real
-defects — every one verified against a named input — wrote them under a heading called
-"Findings" in prose, and the parser read nothing. The critic's brief teaches the tags now,
+`[SHOULD-FIX]`, `[NIT]` and `[UNCERTAIN]`, the judging stage declares `sends_back_to`, and
+nothing ever told the agent those tags existed. On TALLY-7 the critic — a separate role,
+back then — found four real defects, every one verified against a named input, wrote them
+under a heading called "Findings" in prose, and the parser read nothing. The brief teaches
+the tags now,
 and what may block is deliberately narrow: introduced by this change, or breaks a stated
 acceptance criterion. A defect that was already there is reported to a person rather than
 reopening the work, because blocking on inherited ones turns every task into an audit of
@@ -240,19 +241,35 @@ the flow is INV-1, not the agent's amnesia. An agent with live context that drif
 caught by the same wall that catches a fresh agent that is simply bad.
 
 Context is now a per-stage setting (`fresh` or `live`), and the choice is measured rather
-than assumed. One piece of it stays mandatory and lives in INV-3's separation instead: a
-reviewer never inherits the session of whoever wrote the code, because independence of
-review is not substitutable by verification.
+than assumed. One piece of it stays mandatory: the stage that judges delivered work never
+inherits the session that produced it. With separate roles that was half of what made a
+review independent; with one agent it is *all* of what is left, and that is why `audit`
+declares `fresh` rather than inheriting like every other stage after the first.
 
-That surviving piece is not decorative, and `AuditContextChain` earned its keep the first
-time the flow tried to use `live` in earnest: `plan` was declared live, and on a bug task
-`diagnose` runs immediately before it — so "continue the previous session" would have
-meant continuing the investigator's. The check refused it statically, before a task ran.
+`AuditContextChain` earned its keep the first time the flow tried to use `live` in
+earnest: `plan` was declared live, and on a bug task `diagnose` ran immediately before it —
+so "continue the previous session" would have meant continuing the investigation's. It
+refused that statically, before a task ran. With one role it has nothing left to refuse and
+it stays anyway, for the day the packs come back.
 
 **A prose summary never crosses the handoff.** Still true in the code — the payload is
 synthesized by Luna, and the agent fills structured fields. It is a design rule rather
 than an invariant: breaking it degrades quality, it does not make Luna stop being Luna.
 
-**Whoever writes does not review.** Structural in the flow, and it holds. Demoted from the
-invariant list because its enforcement floor is honest but soft: tool gating removes named
-tools, not the shell. The separation is real; the containment behind it is INV-4's.
+**Whoever writes does not review.** It was demoted from the invariant list because its
+enforcement floor was honest but soft — tool gating removes named tools, not the shell —
+and it is now gone altogether. With one agent doing every stage, the same agent that writes
+the code judges it: `tools_deny` cannot separate writing from judging when the same agent
+must do both, and there is no second role whose session it could be kept out of.
+
+What replaced it is smaller and true. The judging stage is called `audit` rather than
+`review`, because a review is independent or it is not one, and the name would claim a
+property this design does not have. It runs `fresh`, which is the one half of independence
+a single agent can still have. And the half that never depended on who was asking is
+untouched: a command that runs over the delivered commit does not care who wrote it.
+
+**What is unmeasured, and stated rather than assumed.** On the one full cycle that reached
+it, the judging stage — a separate role then — found a genuine violation of the contract's
+own clause and sent the work back, the first time that mechanism ever fired. Whether it
+still finds that when auditing its own work is not known. The stage was kept rather than
+deleted so the question can be answered by a run instead of by argument.

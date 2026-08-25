@@ -47,7 +47,7 @@ func TestStageSeparatesTheThreeFields(t *testing.T) {
 func TestAuditArtifactIsNotAFlowProduct(t *testing.T) {
 	qa := auditOnlyStage()
 
-	if qa.ProducesArtifact("qa_report") {
+	if containsArtifact(qa.Produces, "qa_report") {
 		t.Error("qa_report is an audit artifact and should not count as a flow product")
 	}
 	if len(qa.ProducesForHuman) != 1 || qa.ProducesForHuman[0] != "qa_report" {

@@ -18,27 +18,31 @@ func TestAGateDeclaringNothingIsTheMostCritical(t *testing.T) {
 	}
 
 	for knob := 0; knob < DefaultCriticality; knob++ {
-		if gate.AbsorbedBy(knob) {
+		if Knob(knob).Judges(gate.Resolved()) {
 			t.Errorf("knob %d absorbed a gate that declared no criticality", knob)
 		}
 	}
-	if !gate.AbsorbedBy(DefaultCriticality) {
+	if !Knob(DefaultCriticality).Judges(gate.Resolved()) {
 		t.Error("the highest knob did not absorb an undeclared gate")
 	}
 }
 
 // TestTheKnobAbsorbsUpToTheDeclaredLevel covers the comparison the whole feature
-// turns on.
+// turns on — through `Knob.Judges`, which is what `ResolveGate` calls.
+//
+// It used to go through `GateSpec.AbsorbedBy`, a second implementation of the same
+// comparison that nothing in production reached. One comparison, one
+// implementation, and the test now covers the one that decides.
 func TestTheKnobAbsorbsUpToTheDeclaredLevel(t *testing.T) {
 	gate := &GateSpec{Kind: GateReviewArtifact, Criticality: 7}
 
 	for knob := 0; knob <= 6; knob++ {
-		if gate.AbsorbedBy(knob) {
+		if Knob(knob).Judges(gate.Resolved()) {
 			t.Errorf("knob %d absorbed a gate of criticality 7", knob)
 		}
 	}
 	for knob := 7; knob <= 10; knob++ {
-		if !gate.AbsorbedBy(knob) {
+		if !Knob(knob).Judges(gate.Resolved()) {
 			t.Errorf("knob %d did not absorb a gate of criticality 7", knob)
 		}
 	}
@@ -52,7 +56,7 @@ func TestTheKnobAbsorbsUpToTheDeclaredLevel(t *testing.T) {
 func TestKnobZeroJudgesNothing(t *testing.T) {
 	for level := 1; level <= DefaultCriticality; level++ {
 		gate := &GateSpec{Kind: GateConfirm, Criticality: level}
-		if gate.AbsorbedBy(0) {
+		if Knob(0).Judges(gate.Resolved()) {
 			t.Errorf("knob 0 absorbed a gate of criticality %d", level)
 		}
 	}

@@ -372,8 +372,14 @@ tools_deny = ["Edit", "Write"]
 	if !ok {
 		t.Fatal("want the configured role")
 	}
-	if !role.DeniesWriting() {
+	if len(role.ToolsDeny) != 2 {
 		t.Errorf("want both capabilities denied, got %v", role.ToolsDeny)
+	}
+	// The path stays live even though no shipped role uses it: a config may still
+	// deny a tool, and the harness removes it from the request rather than
+	// discouraging it in a brief.
+	if !role.Gated() {
+		t.Error("a role that denies tools is not reported as gated")
 	}
 }
 

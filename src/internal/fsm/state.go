@@ -120,26 +120,6 @@ func (d GateWaited) Waits() (waited, recorded bool) {
 	}
 }
 
-// AnsweredBy names what settled the gate, for an audit reading the log.
-//
-// It exists so that "who answered this?" has one implementation rather than a
-// switch at each reader, and so that adding a fourth answerer later has one place
-// to change.
-func (d GateWaited) AnsweredBy() string {
-	switch d {
-	case GateDecisionWaited:
-		return "a person"
-	case GateDecisionChecked:
-		return "the declared checks"
-	case GateDecisionJudged:
-		return "the lead"
-	case GateDecisionPassed:
-		return "nobody: the gate declared nothing to answer it with"
-	default:
-		return "unrecorded"
-	}
-}
-
 // GateKind names why a gate stopped the task, which decides what the human is
 // being asked for.
 type GateKind string

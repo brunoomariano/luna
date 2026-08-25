@@ -220,25 +220,6 @@ func TestWaitsReportsWhetherAnythingWasRecorded(t *testing.T) {
 	}
 }
 
-// TestEveryAnswererIsDistinguishable is the point of adding two values rather
-// than reusing `passed`.
-//
-// The requirement is an audit one: a run where the lead judged three gates has to
-// be reviewable afterwards, and it stops being reviewable the moment two
-// different answerers render identically. Asserting distinctness rather than
-// exact wording keeps the test about that property instead of about the prose.
-func TestEveryAnswererIsDistinguishable(t *testing.T) {
-	seen := map[string]GateWaited{}
-
-	for _, decision := range KnownGateDecisions() {
-		answerer := decision.AnsweredBy()
-		if other, clash := seen[answerer]; clash {
-			t.Errorf("%q and %q both answer %q", decision, other, answerer)
-		}
-		seen[answerer] = decision
-	}
-}
-
 // TestAJudgedGateIsNeverRecordedAsHuman is the falsification this design must
 // not commit.
 //
