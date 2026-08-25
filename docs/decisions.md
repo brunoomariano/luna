@@ -55,7 +55,7 @@ condition decides which stages a task walked through, which makes it history. An
 predicate in a file is a flow whose past cannot be reconstructed once the predicate is
 edited away.
 
-**The flow is data — embedded TOML in `src/stock/`, copied into a project by `luna init`.**
+**The flow is data — embedded TOML in `src/stock/`.**
 Order is the filename prefix. Equivalence with the retired Go literals was proven by
 fingerprint, not by reading.
 
@@ -70,6 +70,16 @@ so that is history, and one `Complete` closing under one setting and blocking un
 another is a log that no longer replays deterministically (INV-2). A lighter flow is a
 different fingerprint, and a task that ran without planning should not be auditable as
 though it had.
+
+**The flows come from the binary, and a project cannot override them.** `luna init` copied
+the stock into `.luna/stock/` and from then on the copy was what ran. It went because the
+thing it enabled is the thing that produces drift — two projects on one Luna running
+different contracts, with nothing saying so — and the binary already gives what the
+override was reaching for: one build, one set of flows, every repository the same, changed
+atomically and under review because the flows are code. A project needing a different shape
+gets a new named flow in the stock, where everyone can see it. *Rejected:* a central
+registry the daemon serves — it solves the same drift and costs version control, which is
+the wrong trade for a system whose product is an audit.
 
 **The core knows no issue tracker.** Tasks enter through `luna task new` or an import
 adapter outside the core. **CLI first. Go, for a static single binary. Defaults plus user
@@ -87,6 +97,14 @@ type system stops a caller fabricating a verdict.
 **The log lives in the main repository and Luna is its only writer.** Resolved with
 `git rev-parse --git-common-dir`; `--show-toplevel` is the call everyone reaches for, and
 it returns the worktree — the one answer that must not decide where shared state lives.
+
+**The ghost-store guard is one marker, in the git directory.** There were two: a file
+beside the log saying "Luna wrote this store", and one in `.git` saying "the log is over
+there". Only the second is legible to a contained process, and only the second ever
+detected anything — the first was a shortcut past the check, and the contained case creates
+its database and its marker together on the same tmpfs, so the pair is always consistent
+from inside anyway. Removing it costs one stat and one read per command and takes a file
+out of every project that runs Luna.
 
 **`TaskCreated` records a fingerprint of the flow's identity, and replay refuses a
 mismatch.** `luna task abandon` is the escape hatch. Airflow rendered historical runs
@@ -270,25 +288,25 @@ design and is stated plainly rather than left to be discovered.
 **`produces_for_human` is a contract field of its own** — checked on the way out, exempt
 from the static check, because no stage downstream will ever ask for it.
 
-**Three roles, not one per stage.** A role is worth splitting from another only when it
-denies a different tool, cannot inherit the previous session, or runs on a different
-harness. Twelve roles differed in none of those — only in a sentence describing the work,
-which Luna already generates per stage with the contract in it. `maker`, `critic` and
-`investigator` are what survives the test. *Rejected:* keeping a role per stage for
-readability (the stage file already names the work); collapsing to a single role (writing
-and judging must differ in tool denial and must not share a session).
+**One role, and it is the lead itself.** There were three, and the decision that made them
+carried its own test: *a role is worth splitting from another only when it denies a
+different tool, cannot inherit the previous session, or runs on a different harness.* With
+one agent conducting and doing the work, none of the three applies, so the test yields one.
+The split is not overruled — it is run again against a different design and comes back with
+a different number. *Rejected:* keeping `critic` for the judging stages — `tools_deny`
+cannot separate writing from judging when the same agent must do both, and a role that
+denies nothing is a name.
 
-**The pipeline is a stage of its own, in front of the stage that judges.** `verify` owed
-`ci_green` and `dod_checked` — a command's verdict and a person's checklist — and the
-agent ran before either was checked, so a delivery that could not compile was read and
-reported on by a model before anything asked the compiler. Measured at $1.62 a cycle,
-every cent spent ahead of the pipeline. The command half is now a stage with no role,
-which costs nothing, and the judgement half *requires* what it produces. Requiring it is
-the part that enforces anything: ordering two files would only reorder them, while the
-entry check refuses the critic outright until the green is in the context. *Rejected:*
-sending a red pipeline straight back to `build` — `sends_back_to` is driven by a parsed
-review report, and wiring an exit code into it is a second mechanism for the same
-transition; a red pipeline blocks, which is a notified ending (INV-5).
+**What that costs is named rather than hidden: whoever writes now reviews.** The judging
+stage is called `audit`, not `review`, because a review is independent or it is not a
+review, and calling it one afterwards would claim a property the design no longer has. What
+survives is `context = "fresh"` — the same model re-reading its own work with no memory of
+writing it, which is the one half of independence a single agent can have. What is
+untouched is the half that never depended on who was asking: a command that runs over the
+delivered commit does not care who wrote it. *Rejected:* deleting the stage — on the one
+full cycle that reached it, it found a genuine violation of the contract's own clause and
+sent the work back, the first time that mechanism ever fired. Whether it still finds that
+when auditing itself is unmeasured, and the honest move is to keep the stage and measure.
 
 **Eight stages, not twelve.** `scenarios`+`spec` merged into `plan`; `qa`+`code-review`+
 `harden`+`architecture` merged into `review`. The argument is measured: the two planning
@@ -378,6 +396,8 @@ Kept because knowing what failed is worth more than knowing what shipped.
 | **Per-stage enforcement policy (`required`/`advisory`/`report-only`)** | `requires` and `produces` are read by the reducer, so one `Complete` would close under one policy and block under another, and the replay stops being deterministic (INV-2). A contract that can be waived is not a contract — that is what INV-3 is. The want behind it is answered by a leaner *flow*, which is a different fingerprint and honestly so |
 | **`produces_for_human` by severity, including `auto-summarize`** | the same boundary: the exit check reads it, so it is history and it is in the fingerprint — kept apart from `Produces` there precisely because moving an artifact between the two is already a different flow. And Luna writing the human's report out of Luna's own log is a document nobody wrote, satisfying a contract clause so the flow closes green |
 | **Smaller, cache-stable prompts as a cost lever** | measured and refuted: an 18-clause contract cost *less* at `plan` than 5040 bytes of prose, and the intake/plan spread across runs ($0.38–$0.53) is model variance. The brief is hundreds of bytes against stages of 240k–1.7M tokens — the cost is the agent's own turns, not what Luna sends. `context = "live"` is the lever that did move it: two cold starts a run instead of twelve |
+| **`luna init` and the project stock** | the thing it enabled is the thing that produces drift: two projects on one Luna running different contracts, with nothing saying so. The binary already gives what it reached for — one build, one set of flows, under review because flows are code |
+| **The anchor beside the log** | it was a shortcut past the guard's own check and detected nothing on its own; the marker in `.git` is what catches a contained process, because it is the one place legible from both sides |
 | **Driving the harness's human interface** | pty sizing, trust dialogs, ready-marker parsing — all of it disappeared with headless mode. See [lessons.md](lessons.md) |
 
 ---

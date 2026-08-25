@@ -216,7 +216,7 @@ func TestTheShippedFlowFingerprintIsPinned(t *testing.T) {
 	// of its own decisions, the test was never written, and verify reported that
 	// all three decisions were pinned. Checked again before moving: every open
 	// task was finished or abandoned.
-	const pinned FlowFingerprint = "3d5ec1f8f1890cb5"
+	const pinned FlowFingerprint = "9f1e8cf1fb2cbdb3"
 
 	if got := Fingerprint(DefaultFlow()); got != pinned {
 		t.Errorf("the shipped flow fingerprints %s, and this test says %s.\n\n"+

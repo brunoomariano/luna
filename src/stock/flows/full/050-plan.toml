@@ -11,7 +11,7 @@
 # session and the lower of the two gates.
 
 id       = "plan"
-role     = "maker"
+role     = "lead"
 # Fresh, not live, and the static check is what said so: on a bug task
 # `diagnose` runs immediately before this, so continuing "the previous session"
 # would mean continuing the investigator's. AuditContextChain refuses a live

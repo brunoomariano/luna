@@ -18,49 +18,26 @@ import (
 func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
 	roles := ShippedRoles()
 
-	// The three the shipped flow names. A flow whose role does not resolve stops
-	// loudly, so a missing file here is a stage that cannot run. (`setup` names
-	// none: a worktree is git, and there is no judgement in making one.)
-	for _, name := range []fsm.RoleName{"maker", "critic", "investigator"} {
-		role, ok := roles[name]
-		if !ok {
-			t.Errorf("%s has no definition — the stage that names it cannot run", name)
-			continue
-		}
-		if role.Agent != "claude" {
-			t.Errorf("%s runs on %q, want claude", name, role.Agent)
-		}
-		if role.Brief == "" {
-			t.Errorf("%s has no brief", name)
-		}
+	// The one the shipped flow names. A flow whose role does not resolve stops
+	// loudly, so a missing file here is a stage that cannot run. (`setup` and
+	// `pipeline` name none: a worktree is git and `ci_green` is a command's
+	// verdict, and there is no judgement in either.)
+	role, ok := roles["lead"]
+	if !ok {
+		t.Fatal("lead has no definition — every stage that names it cannot run")
+	}
+	if role.Agent != "claude" {
+		t.Errorf("lead runs on %q, want claude", role.Agent)
+	}
+	if role.Brief == "" {
+		t.Error("lead has no brief")
 	}
 
-	if len(roles) != 3 {
-		t.Errorf("got %d roles, want the 3 the flow names", len(roles))
-	}
-}
-
-// TestTheReviewRoleStillCannotWrite is the write/review separation surviving the move.
-//
-// The denial used to be a Go value beside the brief; it is now a line in a file.
-// A file that lost it would leave the reviewer able to edit the work it judges,
-// and the brief saying otherwise is exactly the violation the invariant names.
-//
-// One role carries it now rather than four: `critic` is what `verify` and
-// `review` both name, so the denial it holds is the only one standing between a
-// review and the work it judges.
-func TestTheReviewRoleStillCannotWrite(t *testing.T) {
-	roles := ShippedRoles()
-
-	if role := roles["critic"]; !role.DeniesWriting() {
-		t.Errorf("critic can write: tools_deny = %v", role.ToolsDeny)
-	}
-
-	// And the ones that work still can.
-	for _, name := range []fsm.RoleName{"maker", "investigator"} {
-		if roles[name].Gated() {
-			t.Errorf("%s was denied a tool it needs: %v", name, roles[name].ToolsDeny)
-		}
+	// One, and the number is the point rather than an accident. Three roles became
+	// one when the same agent started doing every stage, and a second file
+	// appearing here is a design change that has to be argued rather than typed.
+	if len(roles) != 1 {
+		t.Errorf("got %d roles, want the 1 the flow names", len(roles))
 	}
 }
 
@@ -206,29 +183,40 @@ func TestABrokenStockFileIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProjectStillOverridesTheStock. The stock is the default; a project's
-// config.toml is what changes it, and naming one role must not delete the rest.
-func TestAProjectStillOverridesTheStock(t *testing.T) {
+// TestAProjectStillOverridesTheRole. The stock is the default; a project's
+// config.toml is what changes it, and naming one field must not clear the rest.
+//
+// This is the last override a project has, now that flows come only from the
+// binary. It is narrower than it looks: it changes which harness runs a stage or
+// what it is told, and it cannot change what the stage owes or how that is proven.
+func TestAProjectStillOverridesTheRole(t *testing.T) {
 	cfg, err := parseConfig(`
-[role.critic]
+[role.lead]
 agent = "codex"
+
+[role.scribe]
+agent = "claude"
+brief = "You write things down."
 `, "config.toml")
 	if err != nil {
 		t.Fatalf("parseConfig: %v", err)
 	}
 
-	if cfg.Roles["critic"].Agent != "codex" {
-		t.Errorf("the override did not take: %+v", cfg.Roles["critic"])
+	if cfg.Roles["lead"].Agent != "codex" {
+		t.Errorf("the override did not take: %+v", cfg.Roles["lead"])
 	}
-	if len(cfg.Roles) != 3 {
-		t.Errorf("got %d roles, want the other 2 still there", len(cfg.Roles))
+	// The other role is untouched. A config that names one role must not clear the
+	// rest: the flow names roles a config never mentions, and deleting them would
+	// leave a stage with nothing to run.
+	if cfg.Roles["scribe"].Brief == "" {
+		t.Error("naming one role cleared another's brief")
 	}
-	if cfg.Roles["maker"].Brief == "" {
-		t.Error("naming one role deleted another's brief")
+	if len(cfg.Roles) != 2 {
+		t.Errorf("got %d roles, want both", len(cfg.Roles))
 	}
 }
 
-// TestTheCriticIsTaughtTheVocabularyLunaReads is the transport that was missing
+// TestTheLeadIsTaughtTheVocabularyLunaReads is the transport that was missing
 // between two working ends.
 //
 // `fsm.ReadReport` looks for `[BLOCKING]`, `[SHOULD-FIX]`, `[NIT]` and
@@ -239,10 +227,10 @@ agent = "codex"
 // Measured on TALLY-7: the critic found four real defects, wrote them under a
 // heading called "Findings" in prose, and the parser read nothing. The flow
 // carried on and four verified defects moved nothing.
-func TestTheCriticIsTaughtTheVocabularyLunaReads(t *testing.T) {
-	critic, ok := ShippedRoles()["critic"]
+func TestTheLeadIsTaughtTheVocabularyLunaReads(t *testing.T) {
+	critic, ok := ShippedRoles()["lead"]
 	if !ok {
-		t.Fatal("the shipped stock has no critic role")
+		t.Fatal("the shipped stock has no lead role")
 	}
 
 	for _, severity := range fsm.KnownSeverities() {
@@ -298,7 +286,7 @@ func TestThePlanGateAsksOnlyWhatItShows(t *testing.T) {
 	}
 }
 
-// TestTheMakerIsToldAContractAdmitsNoRecommendation covers the rule the gate
+// TestTheLeadIsToldAContractAdmitsNoRecommendation covers the rule the gate
 // enforces and nothing stated.
 //
 // Two contracts in a row were rejected for the same criterion — "with no
@@ -306,15 +294,50 @@ func TestThePlanGateAsksOnlyWhatItShows(t *testing.T) {
 // properly imperative, and both put the offending sentence in a section the
 // second one titled "Note for the maker". That is an agent being helpful in a
 // document with no room for help.
-func TestTheMakerIsToldAContractAdmitsNoRecommendation(t *testing.T) {
-	maker, ok := ShippedRoles()["maker"]
+func TestTheLeadIsToldAContractAdmitsNoRecommendation(t *testing.T) {
+	maker, ok := ShippedRoles()["lead"]
 	if !ok {
-		t.Fatal("the shipped stock has no maker role")
+		t.Fatal("the shipped stock has no lead role")
 	}
 
 	for _, want := range []string{"contract", "recommendation", "obligation"} {
 		if !strings.Contains(maker.Brief, want) {
 			t.Errorf("the maker is not told what a contract admits (%q):\n%s", want, maker.Brief)
+		}
+	}
+}
+
+// TestTheAuditStageDoesNotClaimIndependence is what replaced two tests whose
+// property died with the roles.
+//
+// They asserted that the judging role could not write — `tools_deny` on a second
+// role, refused a session with the first. With one agent, neither is available:
+// the agent that must edit cannot be denied Edit, and there is no other session
+// to keep it out of. So the claim goes, and the stage is named for what it is.
+//
+// What survives is `context = "fresh"`. It is the one half of independence a
+// single agent can still have — the same model, re-reading its own work with no
+// memory of having written it — and without it the stage reads its own reasoning
+// back and confirms it, which is the failure a review exists to prevent.
+func TestTheAuditStageDoesNotClaimIndependence(t *testing.T) {
+	var judging []fsm.Stage
+	for _, stage := range fsm.DefaultFlow() {
+		if stage.Review != nil {
+			judging = append(judging, stage)
+		}
+	}
+	if len(judging) == 0 {
+		t.Fatal("no judging stage in the shipped flow — this check covers nothing")
+	}
+
+	for _, stage := range judging {
+		if stage.ID == "review" {
+			t.Errorf("a stage still calls itself %q, which claims an independence "+
+				"one agent cannot have", stage.ID)
+		}
+		if stage.Context != fsm.ContextFresh {
+			t.Errorf("stage %q judges delivered work with context %q — it would read "+
+				"back the session that produced it", stage.ID, stage.Context)
 		}
 	}
 }

@@ -62,9 +62,9 @@ func TestTheReportReadsInFlowOrder(t *testing.T) {
 	state := fsm.TaskState{
 		ID: "T-3",
 		Spent: map[fsm.StageID]fsm.Spend{
-			"review": {InputTokens: 1, CostUSD: 0.01},
-			"build":  {InputTokens: 1, CostUSD: 0.01},
-			"plan":   {InputTokens: 1, CostUSD: 0.01},
+			"audit": {InputTokens: 1, CostUSD: 0.01},
+			"build": {InputTokens: 1, CostUSD: 0.01},
+			"plan":  {InputTokens: 1, CostUSD: 0.01},
 		},
 	}
 
@@ -73,7 +73,7 @@ func TestTheReportReadsInFlowOrder(t *testing.T) {
 
 	plan := strings.Index(got, "plan")
 	build := strings.Index(got, "build")
-	review := strings.Index(got, "review")
+	review := strings.Index(got, "audit")
 	if plan >= build || build >= review {
 		t.Errorf("want the stages in flow order, got:\n%s", got)
 	}

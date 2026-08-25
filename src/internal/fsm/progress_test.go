@@ -6,7 +6,7 @@ import "testing"
 func reviewing(t *testing.T) TaskState {
 	t.Helper()
 
-	state := atStage(t, KindFeature, "review")
+	state := atStage(t, KindFeature, "audit")
 	state.Context.Artifacts["ci_green"] = true
 	return state
 }
@@ -30,7 +30,7 @@ func TestTwoRoundsDeliveringTheSameThingCountAsNoProgress(t *testing.T) {
 
 	// Back to the review stage, delivering the same commit.
 	second := first
-	second.Stage = "review"
+	second.Stage = "audit"
 	second.Status = StatusRunning
 
 	after, err := Reduce(second, ReviewFinding{Aligned: true, Progress: "abc123"})
@@ -103,7 +103,7 @@ func TestTheNoProgressCeilingFiresOnRepeatedWork(t *testing.T) {
 
 	// One more round than the ceiling allows, all delivering the same thing.
 	for round := 0; round <= limit; round++ {
-		state.Stage = "review"
+		state.Stage = "audit"
 		state.Status = StatusRunning
 
 		var err error

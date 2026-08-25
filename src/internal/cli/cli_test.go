@@ -102,7 +102,7 @@ func (h *harness) loop(t *testing.T, id string, want fsm.LoopCounters) {
 	for round := range want.Rounds {
 		// A finding is legal from the stage a review loop returns to, so the task
 		// is walked there before each one.
-		h.walkTo(t, id, "review")
+		h.walkTo(t, id, "audit")
 
 		// The same signal every round is what NoProgress counts, and a distinct one
 		// resets it — which is how a count smaller than the round total is made.

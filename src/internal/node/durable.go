@@ -11,13 +11,6 @@ import (
 // ErrGhostStore is a store that answers every read and write and keeps nothing.
 var ErrGhostStore = errors.New("the log is on a filesystem that will not keep it")
 
-// anchorName is the file Luna leaves beside the log to recognise it later.
-//
-// It sits next to `luna.db` rather than inside it because the check has to happen
-// *before* the database is opened: opening one creates it, and a store that was
-// created by the very check meant to catch it proves nothing.
-const anchorName = ".luna-anchor"
-
 // EnsureDurable refuses a log directory that will not survive the process.
 //
 // It exists because of a failure measured against a real `ai-jail` 1.17.0. An
@@ -45,48 +38,28 @@ const anchorName = ".luna-anchor"
 // wrong is narrower: **a log that exists outside is invisible from inside**, and
 // the anchor measures exactly that.
 //
-// Two things are checked, because the failure has two shapes.
-//
-// **The anchor** catches a directory that already holds a log Luna did not write.
-// **The hollow root** catches the case measured above, where the log directory does
-// not exist from inside at all — so there is no anchor to be missing and nothing
-// looks wrong. There the tell is the repository itself: `git` answers from the
-// worktree's own `.git`, so the main repository's HEAD resolves normally, while
-// its working tree is not there. A real checkout always has its own files beside
-// its `.git`; a path invented by a container has only what the container made.
+// One thing is checked, and it is the git directory. There the tell is the
+// repository itself: `git` answers from the worktree's own `.git`, so the main
+// repository's HEAD resolves normally while its working tree is not there. A real
+// checkout always has its own files beside its `.git`; a path invented by a
+// container has only what the container made.
 //
 // A directory Luna has never seen, in a root that is really there, is not refused:
 // a first run has to be able to create one.
+//
+// There used to be a second marker, a file beside the log saying "Luna wrote this
+// store". It was only ever a shortcut — present, accept and skip the git check —
+// and it caught nothing on its own: the code below is what detects the failure,
+// and the contained case creates its database and its marker together on the same
+// tmpfs, so the pair is always consistent from inside anyway. Removing it costs
+// one stat and one read per command, and takes a file out of every project that
+// runs Luna.
 func EnsureDurable(dir string) error {
-	anchor := filepath.Join(dir, anchorName)
-
-	if _, err := os.Stat(anchor); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		// Unreadable for some other reason — a permission, a broken mount. That is
-		// a real error and must not be reported as a ghost: blaming containment
-		// for a filesystem fault would send someone looking in the wrong place.
-		return fmt.Errorf("reading the log's anchor in %s: %w", dir, err)
-	}
-
-	// No anchor: either a store from before the anchor existed, a genuine first
-	// run, or a root that only exists inside this process. Only the last one is
-	// refused, and the git directory is what tells it apart — it is the one place
-	// visible from both sides of a sandbox, so an anchor there naming a log this
-	// process cannot see is a contradiction nothing legitimate produces.
-	//
-	// A database with no anchor beside it is deliberately *not* the signal. It
-	// looked like one — "the log was created by something that could not see the
-	// real anchor" — and refused every store written before the anchor existed:
-	// measured on this project's own log, which predates the guard and is as real
-	// as a log gets. The contained case it meant to catch creates its database
-	// and its anchor together on the same tmpfs, so the pair is always consistent
-	// from inside anyway, and the git anchor is what actually catches it.
 	if hollow, why := hollowRoot(dir); hollow {
 		return fmt.Errorf("%w: %s", ErrGhostStore, why)
 	}
 
-	return writeAnchor(dir, anchor)
+	return recordLogLocation(dir)
 }
 
 // hollowRoot reports whether the log's directory is one this process cannot
@@ -151,19 +124,11 @@ func hollowRoot(dir string) (bool, string) {
 // without the main repository's git directory, so the jail exposes it.
 const gitAnchorName = "luna-log-location"
 
-// writeAnchor records that Luna has seen this directory.
-//
-// Two files, because they answer different questions. The one beside the log says
-// "Luna wrote this store"; the one in the git directory says "the log is over
-// there" — and only the second is legible to a contained process.
-func writeAnchor(dir, anchor string) error {
+// recordLogLocation writes down where the log lives, in the one place a contained
+// process can also read.
+func recordLogLocation(dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
-	}
-	const note = "Luna wrote this to recognise its own log directory. Do not delete it:\n" +
-		"without it, a contained process cannot tell this log from one it invented.\n"
-	if err := os.WriteFile(anchor, []byte(note), 0o600); err != nil {
-		return fmt.Errorf("writing the log's anchor in %s: %w", dir, err)
 	}
 
 	// Best effort: a repository Luna cannot write to still gets a working log, and

@@ -6,7 +6,7 @@
 # prefers to a continued session anyway.
 
 id       = "build"
-role     = "maker"
+role     = "lead"
 context  = "fresh"
 requires = ["root_cause", "worktree"]
 produces = ["code", "tests_green"]

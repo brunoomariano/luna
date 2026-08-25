@@ -67,11 +67,6 @@ type Env struct {
 	// times the suite was green and `luna status` promised a branch that was
 	// never created.
 	Land func(ctx context.Context, taskID, commit string) error
-
-	// Stock is the project's copy of the stages, roles and profiles —
-	// `.luna/stock`. Empty, or a directory that has none, means the embedded copy
-	// is what runs, which is what a project that never ran `luna init` gets.
-	Stock string
 }
 
 // Run dispatches a command line. args excludes the program name.
@@ -110,7 +105,6 @@ func Run(env Env, args []string) error {
 		"autonomy": autonomyCommand,
 		"budget":   budgetCommand,
 		"fleet":    runFleet,
-		"init":     initCommand,
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
 	}
@@ -193,14 +187,10 @@ luna — deterministic orchestration for AI agents
   luna unblock <id>
         clear a block once whatever caused it is dealt with
 
-  luna init [--force]
-        copy the flows, roles and profiles into .luna/stock so this
-        project can edit them. Until then the shipped ones run. A project's
-        flow replaces the shipped one of the same name and leaves the rest
-        alone, so editing one flow does not fork the others.
-
   luna flow check [--flow <flow>]
         what flows this build carries, and whether anything is open.
+        They come from the binary and a project cannot override them —
+        one build, one set of flows, every repository the same.
         Every flow by default — one that is never audited is one whose
         contract nobody checked. Changing a flow under an open task stops
         it replaying.

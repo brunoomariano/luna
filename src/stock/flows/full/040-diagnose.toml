@@ -1,7 +1,7 @@
 # Bug-only: there is no root cause to find when nothing broke.
 
 id                 = "diagnose"
-role               = "investigator"
+role               = "lead"
 when               = "is-bug"
 requires           = ["briefing"]
 produces           = ["root_cause"]

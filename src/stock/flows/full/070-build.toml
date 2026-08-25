@@ -5,7 +5,7 @@
 # required, and the conditional-requires mechanism is no longer owed anything.
 
 id       = "build"
-role     = "maker"
+role     = "lead"
 context  = "live"
 requires = ["scenarios", "approach", "contract", "worktree"]
 produces = ["code", "tests_green"]

@@ -14,10 +14,8 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/cli"
-	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
-	"github.com/brunoomariano/luna/src/stock"
 )
 
 func main() {
@@ -98,7 +96,7 @@ func run(args []string) error {
 		return runInsideAStage(args)
 	}
 
-	s, cfg, path, err := openStore(ctx)
+	s, cfg, _, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -129,20 +127,10 @@ func run(args []string) error {
 		fmt.Fprintf(os.Stderr, "note: this is a worktree; the log and registry are %s\n", root)
 	}
 
-	// A project's own stages replace the shipped ones, if it has any.
-	// Decided here because this is where the repository is known: the engine may
-	// not read a filesystem, and the flows have to be settled before any
-	// command reads them.
-	stockDir := cli.StockDir(path)
-	if files, ok := cli.ProjectStock(stockDir); ok {
-		flows, err := fsm.LoadFlows(files, stock.FlowsDir)
-		if err != nil {
-			return fmt.Errorf("%s: %w", stockDir, err)
-		}
-		fsm.UseFlows(flows)
-	}
-
-	return cli.Run(environment(s, stockDir, cfg, root), args)
+	// Nothing is read from the project here any more. The flows are the ones
+	// embedded in this binary, and a repository cannot override them — which is
+	// what keeps every project on the same contract.
+	return cli.Run(environment(s, cfg, root), args)
 }
 
 // environment assembles what every command is given.
@@ -153,7 +141,7 @@ func run(args []string) error {
 // raised past a gate's criticality quietly sent it to a person. Both failed
 // safe, neither said why, and no test could see it while this was a literal
 // inside a function that also opens a database.
-func environment(s *store.Store, stockDir string, cfg cli.Config, root string) cli.Env {
+func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 	// The harness the lead asks when it judges a gate. It is not the one that
 	// runs a stage: that one is built per stage in the node layer, inside the
 	// sandbox, from the role's own kind.
@@ -161,7 +149,6 @@ func environment(s *store.Store, stockDir string, cfg cli.Config, root string) c
 
 	return cli.Env{
 		Store:  s,
-		Stock:  stockDir,
 		Config: cfg,
 		Out:    os.Stdout,
 		Err:    os.Stderr,

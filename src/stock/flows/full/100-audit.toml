@@ -1,0 +1,43 @@
+# `review` until the roles collapsed, and the rename is the honest part of that.
+#
+# A review is independent or it is not a review. With one agent the thing that
+# made it independent is gone: `tools_deny` cannot separate writing from judging
+# when the same agent must do both, and there is no second role whose session it
+# could be kept out of. Calling it `review` afterwards would claim a property the
+# design no longer has — the same shape of lie the evidence scopes exist to refuse,
+# arriving through a stage name.
+#
+# What it still is: the same agent re-reading its own work with no memory of
+# writing it. `context = "fresh"` is not decoration here — it is the one half of
+# independence that survives a single agent, and without it the stage reads its own
+# reasoning back and confirms it.
+#
+# It stays in the flow rather than being deleted, and the reason is measured: on
+# the one full cycle that reached it, this stage found a genuine violation of the
+# contract's own clause — a pattern match where a byte comparison was required —
+# named the file, the line and a reproducing command, and sent the work back. That
+# was the first time the send-back mechanism ever fired. Whether it still finds
+# that when auditing itself is unmeasured, and the honest move is to keep the stage
+# and go and measure it.
+#
+# The four lenses live in the role's brief rather than here: a stage file has no
+# section for them and the parser refuses a key it does not know.
+
+id                 = "audit"
+role               = "lead"
+context            = "fresh"
+when               = "not-chore"
+requires           = ["code", "ci_green"]
+produces_for_human = ["audit_report"]
+
+[review]
+sends_back_to = "build"
+# The green attested to code that no longer exists.
+invalidates   = ["ci_green", "tests_green"]
+
+[verify.audit_report]
+# A report a person reads: what it says is judgement, and only that it exists is
+# checkable. The handover is what makes even that much come from Luna rather than
+# from the agent's own word.
+kind     = "existence"
+handover = "store"

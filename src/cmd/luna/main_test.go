@@ -233,7 +233,7 @@ func TestEveryInjectedDependencyIsWired(t *testing.T) {
 	// to ask: is the field wired, rather than is this machine set up.
 	t.Setenv("EDITOR", "true")
 
-	env := environment(nil, "/tmp/stock", cli.Config{}, "/tmp/root")
+	env := environment(nil, cli.Config{}, "/tmp/root")
 
 	// Reflected rather than listed, because a hand-written list is the drift this
 	// test exists to catch: it would have to be updated by whoever adds a field,
@@ -275,7 +275,7 @@ func TestWithNoEditorConfiguredEditIsAbsent(t *testing.T) {
 		t.Setenv(name, "")
 	}
 
-	env := environment(nil, "/tmp/stock", cli.Config{}, "/tmp/root")
+	env := environment(nil, cli.Config{}, "/tmp/root")
 
 	if env.Edit != nil {
 		t.Error("Env.Edit is wired with nothing configured — `gate adjust` would " +

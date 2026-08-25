@@ -538,7 +538,7 @@ func TestGateRejectSendsTheStageBack(t *testing.T) {
 // the stages downstream cannot be satisfied by a verification that ran against
 // code which no longer exists.
 func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
-	state := atStage(t, KindFeature, "review")
+	state := atStage(t, KindFeature, "audit")
 	state.Context.Artifacts["ci_green"] = true
 
 	state, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "wrong boundary"})
@@ -559,7 +559,7 @@ func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
 // Out of scope becomes someone else's task. The flow carries on, and the green
 // stays valid because the code did not change.
 func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
-	state := atStage(t, KindFeature, "review")
+	state := atStage(t, KindFeature, "audit")
 	state.Context.Artifacts["ci_green"] = true
 
 	state, err := Reduce(state, ReviewFinding{Aligned: false, Summary: "unrelated debt"})
@@ -567,7 +567,7 @@ func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Stage != "review" {
+	if state.Stage != "audit" {
 		t.Errorf("an unaligned finding does not move the task, got %q", state.Stage)
 	}
 	if !state.Context.HasArtifact("ci_green") {
@@ -597,7 +597,7 @@ func TestFindingFromANonReviewStageIsRejected(t *testing.T) {
 // up here: a gate waits for a human with the history in view, a block reports an
 // anomaly.
 func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
-	state := atStage(t, KindFeature, "review")
+	state := atStage(t, KindFeature, "audit")
 	state.Context.Artifacts["ci_green"] = true
 	state.Loop.Rounds = DefaultLoopLimits().MaxRounds
 
@@ -620,9 +620,9 @@ func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
 // simply going round again: one counter for both would let a productive loop and
 // a thrashing one hit the same limit.
 func TestOscillationIsCountedApartFromRounds(t *testing.T) {
-	state := atStage(t, KindFeature, "review")
+	state := atStage(t, KindFeature, "audit")
 	state.Context.Artifacts["ci_green"] = true
-	state.Loop.Visited = []StageID{"build", "review"}
+	state.Loop.Visited = []StageID{"build", "audit"}
 
 	state, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "same spot again"})
 	if err != nil {

@@ -246,14 +246,14 @@ func TestTheLastSessionOfARoleIsWhatALiveStageContinues(t *testing.T) {
 		},
 	}
 
-	// maker ran intake and then plan; the live one continues the later.
-	if got := state.SessionOf(DefaultFlow(), "maker"); got != "sess-plan" {
-		t.Errorf("maker's session is the last one it opened, got %q", got)
+	// The lead ran intake, then plan, then verify; a live stage continues the
+	// latest of them. With one role this is the whole of what the lookup does —
+	// and it still has to walk the flow rather than the map, because map order
+	// would make "the last one" mean whatever Go felt like.
+	if got := state.SessionOf(DefaultFlow(), "lead"); got != "sess-verify" {
+		t.Errorf("the lead's session is the last one it opened, got %q", got)
 	}
-	if got := state.SessionOf(DefaultFlow(), "critic"); got != "sess-verify" {
-		t.Errorf("critic's session is its own, got %q", got)
-	}
-	if got := state.SessionOf(DefaultFlow(), "investigator"); got != "" {
+	if got := state.SessionOf(DefaultFlow(), "nobody"); got != "" {
 		t.Errorf("a role that has not run has no session to continue, got %q", got)
 	}
 }

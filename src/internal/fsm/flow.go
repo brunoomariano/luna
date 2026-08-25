@@ -19,19 +19,10 @@ const DefaultFlowName = "full"
 
 // FlowNamed returns the stages of one named flow.
 //
-// A project's own copy wins over the embedded one, per name — so a repository can
-// replace `full`, add a flow the stock never had, and leave the rest shipped.
-// That is finer-grained than the all-or-nothing it replaced, and it is what makes
-// `luna init` survivable: editing one flow does not fork the others.
-//
 // An unknown name is an error naming what was asked and what exists, because the
 // alternative is a task silently opened against the default when somebody meant
 // something else.
 func FlowNamed(name string) ([]Stage, error) {
-	if flow, ok := project[name]; ok {
-		return append([]Stage(nil), flow...), nil
-	}
-
 	flow, ok := mustShippedFlows()[name]
 	if !ok {
 		return nil, fmt.Errorf("no flow named %q: this build runs %v", name, FlowNames())
@@ -41,18 +32,12 @@ func FlowNamed(name string) ([]Stage, error) {
 	return append([]Stage(nil), flow...), nil
 }
 
-// FlowNames is every flow this build can run, a project's own included.
+// FlowNames is every flow this build can run.
 func FlowNames() []string {
-	seen := map[string]bool{}
-	for name := range mustShippedFlows() {
-		seen[name] = true
-	}
-	for name := range project {
-		seen[name] = true
-	}
+	shipped := mustShippedFlows()
 
-	names := make([]string, 0, len(seen))
-	for name := range seen {
+	names := make([]string, 0, len(shipped))
+	for name := range shipped {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -84,8 +69,7 @@ func DefaultFlow() []Stage {
 	// The error is discarded rather than handled, and that is safe for one reason
 	// stated rather than assumed: DefaultFlowName resolves in the embedded stock,
 	// which TestTheDefaultFlowIsTheHeaviest and every other test in this file walk.
-	// A project cannot remove it either — its flows are merged over the shipped
-	// ones by name, never instead of them.
+	// Nothing can remove it: the embedded stock is the only source there is.
 	flow, _ := FlowNamed(DefaultFlowName)
 	return flow
 }
@@ -113,22 +97,16 @@ func mustShippedFlows() map[string][]Stage {
 	return flows
 }
 
-// project holds the flows a project defined, by name, when it has any.
+// The flows a build runs come from the embedded stock and nowhere else.
 //
-// A package-level value rather than a parameter threaded through fifteen call
-// sites, and that is a trade worth naming: the flows are a property of the
-// repository Luna is pointed at, and every one of those callers would be passing
-// the same value down. What keeps it from being a mutable global is UseFlows —
-// set once, at startup, before anything reads it.
-var project map[string][]Stage
-
-// UseFlows makes a project's own stages the flows Luna runs.
+// There used to be a project override: `luna init` copied the stock into
+// `.luna/stock/` and from then on the copy was what ran. It went because the
+// thing it enabled — a project editing its own flow — is the thing that produces
+// drift, and the binary already gives what the override was reaching for. One
+// build, one set of flows, every repository the same. Changing a flow for
+// everybody is an edit to `src/stock/flows/` and a rebuild, which keeps the flow
+// where a flow belongs: in version control, under review, changed atomically.
 //
-// Called once from main, after reading `.luna/stock/`, and before any command
-// runs. A project without one never calls it and gets the embedded copies, which
-// is what a repository that never ran `luna init` should get.
-//
-// It exists because the flows have to be decided where the repository is known,
-// and that is the process boundary — not the engine, which must not read a
-// filesystem.
-func UseFlows(flows map[string][]Stage) { project = flows }
+// A project that genuinely needs a different shape gets a new named flow in the
+// stock rather than a private copy of an existing one — the difference is that
+// the first is visible to everyone and the second was visible to nobody.

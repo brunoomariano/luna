@@ -42,14 +42,14 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		Role string
 	}{
 		{"setup", ""},
-		{"intake", "maker"},
-		{"diagnose", "investigator"},
-		{"plan", "maker"},
-		{"build", "maker"},
-		{"refactor", "maker"},
+		{"intake", "lead"},
+		{"diagnose", "lead"},
+		{"plan", "lead"},
+		{"build", "lead"},
+		{"refactor", "lead"},
 		{"pipeline", ""},
-		{"verify", "critic"},
-		{"review", "critic"},
+		{"verify", "lead"},
+		{"audit", "lead"},
 	}
 
 	if len(flow) != len(want) {
@@ -78,7 +78,7 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 // meaning in the flow that matters most.
 func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 	reports := map[StageID]Artifact{
-		"review":   "review_report",
+		"audit":    "audit_report",
 		"verify":   "dod_checked",
 		"diagnose": "min_case",
 	}
@@ -111,9 +111,9 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 	}{
 		{"diagnose", KindBug, true},
 		{"diagnose", KindFeature, false},
-		{"review", KindChore, false},
-		{"review", KindFeature, true},
-		{"review", KindBug, true},
+		{"audit", KindChore, false},
+		{"audit", KindFeature, true},
+		{"audit", KindBug, true},
 		{"build", KindDocs, true},
 		{"plan", KindChore, true}, // planning is unconditional now that it carries the contract
 	}

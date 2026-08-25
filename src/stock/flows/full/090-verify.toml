@@ -15,7 +15,7 @@
 # not. Nothing in the flow compared the document against what was built.
 
 id                 = "verify"
-role               = "critic"
+role               = "lead"
 requires           = ["code", "scenarios", "contract", "ci_green"]
 produces_for_human = ["dod_checked"]
 

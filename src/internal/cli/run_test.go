@@ -182,8 +182,8 @@ func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 		t.Fatalf("replaying: %v", err)
 	}
 
-	// review_report is ProducesForHuman only; verify owes dod_checked the same way.
-	for _, owed := range []fsm.Artifact{"review_report", "dod_checked"} {
+	// audit_report is ProducesForHuman only; verify owes dod_checked the same way.
+	for _, owed := range []fsm.Artifact{"audit_report", "dod_checked"} {
 		if _, ok := state.Evidence[owed]; !ok {
 			t.Errorf("want %q delivered, got evidence for %v", owed, state.Evidence)
 		}
@@ -608,7 +608,7 @@ func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 	if runner.Roles == nil {
 		t.Fatal("the runner needs roles to resolve")
 	}
-	if role, ok := runner.Roles("maker"); !ok || role.Agent != "codex" {
+	if role, ok := runner.Roles("lead"); !ok || role.Agent != "codex" {
 		t.Errorf("want the override applied to every role, got %+v (found=%v)", role, ok)
 	}
 	if runner.Repo != "/some/repo" {

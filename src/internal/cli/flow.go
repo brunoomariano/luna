@@ -228,8 +228,8 @@ func auditFlows(env Env, names []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(env.Out, "flow %s/%s (%d stages) %s\n",
-			name, fsm.Fingerprint(flow), len(flow), stockNote(env.Stock))
+		fmt.Fprintf(env.Out, "flow %s/%s (%d stages)\n",
+			name, fsm.Fingerprint(flow), len(flow))
 
 		reportFlowGaps(env, flow)
 		reportGates(env, flow)

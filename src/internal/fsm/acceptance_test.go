@@ -268,7 +268,7 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 		// whether it found the right gaps — and a command can only ever prove that
 		// a file was written. It is handed over instead, so at least the writing is
 		// Luna's answer rather than the agent's.
-		"review_report": "a report: whether the review is right is not a thing a command decides",
+		"audit_report": "a report: whether the review is right is not a thing a command decides",
 
 		// Deliberately here rather than given a command, and the reason is worth
 		// writing down: `min_case` is a runnable reproduction, so a command *could*
@@ -336,7 +336,7 @@ func TestTheUnprovableListDescribesTheFlowItGuards(t *testing.T) {
 	for _, artifact := range []Artifact{
 		"worktree", "briefing", "kind", "root_cause", "scenarios",
 		"approach", "contract", "code", "dod_checked", "min_case",
-		"review_report",
+		"audit_report",
 	} {
 		if !produced[artifact] {
 			t.Errorf("%s is exempted from proof and no stage produces it — the exemption "+

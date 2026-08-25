@@ -1,7 +1,6 @@
 package fsm
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -112,8 +111,8 @@ func TestAnUnknownFlowIsRefusedByName(t *testing.T) {
 // quietly making the lean flow the heavy one.
 func TestTheLeanFlowsSkipTheStagesTheyExistToSkip(t *testing.T) {
 	for name, absent := range map[string][]StageID{
-		"fix":   {"intake", "plan", "refactor", "review"},
-		"chore": {"intake", "diagnose", "plan", "refactor", "review"},
+		"fix":   {"intake", "plan", "refactor", "audit"},
+		"chore": {"intake", "diagnose", "plan", "refactor", "audit"},
 	} {
 		flow, err := FlowNamed(name)
 		if err != nil {
@@ -207,46 +206,6 @@ func TestLoadFlowsRefusesAnUnreadableDirectory(t *testing.T) {
 	}
 }
 
-// TestAProjectFlowWinsPerName is what makes `luna init` survivable: a repository
-// that edits one flow keeps the shipped copies of the others, rather than forking
-// the whole stock to change one file.
-func TestAProjectFlowWinsPerName(t *testing.T) {
-	t.Cleanup(func() { UseFlows(nil) })
-
-	own := []Stage{{
-		ID:        "only",
-		Role:      "maker",
-		Requires:  []Artifact{TaskID},
-		Produces:  []Artifact{"code"},
-		Verifiers: map[Artifact]Verifier{"code": Existence{}},
-	}}
-	UseFlows(map[string][]Stage{"fix": own})
-
-	replaced, err := FlowNamed("fix")
-	if err != nil {
-		t.Fatalf("the project's flow does not resolve: %v", err)
-	}
-	if len(replaced) != 1 || replaced[0].ID != "only" {
-		t.Errorf("the project's flow did not take: %d stages", len(replaced))
-	}
-
-	// And the one it did not replace is still the shipped one.
-	untouched, err := FlowNamed(DefaultFlowName)
-	if err != nil {
-		t.Fatalf("the shipped default stopped resolving: %v", err)
-	}
-	if len(untouched) < 2 {
-		t.Errorf("replacing one flow changed another: %d stages", len(untouched))
-	}
-
-	// A project's own name that the stock never had is still listed, because the
-	// listing is what an error message offers the reader.
-	UseFlows(map[string][]Stage{"invented": own})
-	if !slices.Contains(FlowNames(), "invented") {
-		t.Errorf("a flow only the project defines is not listed: %v", FlowNames())
-	}
-}
-
 // TestTheFallbackContractIsTheTasksOwn. An action that carried no flow used to
 // fall back to the shipped one, which was the same value while a build ran one
 // flow. With several it is a silent substitution: the stage ids overlap, so the
@@ -328,5 +287,33 @@ func TestTheJudgementHalfOwesNoCommand(t *testing.T) {
 		if _, isCommand := verifier.(Command); isCommand {
 			t.Errorf("verify proves %q with a command, which belongs in the pipeline stage", artifact)
 		}
+	}
+}
+
+// TestAProjectCannotOverrideAFlow is the property that replaced the override.
+//
+// `luna init` used to copy the stock into a repository, and from then on the copy
+// was what ran. It went because the thing it enabled is the thing that produces
+// drift: two projects on the same Luna running different contracts, with nothing
+// saying so. The binary is the definition now — one build, one set of flows — and
+// a project that needs a different shape gets a new named flow in the stock, where
+// everybody can see it.
+func TestAProjectCannotOverrideAFlow(t *testing.T) {
+	// Every name resolves to the embedded stock, and there is no seam to inject
+	// through: no exported setter, and no unexported one either.
+	for _, name := range FlowNames() {
+		flow, err := FlowNamed(name)
+		if err != nil {
+			t.Fatalf("flow %q does not load: %v", name, err)
+		}
+		if len(flow) == 0 {
+			t.Errorf("flow %q loaded empty", name)
+		}
+	}
+
+	// And the set is exactly what the stock ships — a name nobody embedded is a
+	// name nobody can run.
+	if _, err := FlowNamed("a-flow-nobody-embedded"); err == nil {
+		t.Error("a flow outside the embedded stock resolved")
 	}
 }

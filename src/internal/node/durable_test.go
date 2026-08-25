@@ -18,31 +18,50 @@ func TestAFirstRunAdoptsTheDirectory(t *testing.T) {
 		t.Fatalf("a directory Luna has never seen must be adopted, got %v", err)
 	}
 	if err := node.EnsureDurable(dir); err != nil {
-		t.Fatalf("the second run must recognise its own anchor, got %v", err)
+		t.Fatalf("the second run must recognise the directory, got %v", err)
 	}
 }
 
-// TestAStoreFromBeforeTheAnchorIsAdopted is the regression for the guard's
-// second false positive: a database with no anchor beside it is every store
-// written before the anchor existed — measured on this project's own log — and
-// refusing it refuses adoption itself. The contained case creates its database
-// and its anchor together on the same tmpfs, so "db without anchor" never
-// describes it from inside; the git anchor is what actually catches it.
-func TestAStoreFromBeforeTheAnchorIsAdopted(t *testing.T) {
+// TestAnExistingStoreIsAdopted is the regression for the guard's second false
+// positive: "a database with nothing beside it" describes every store written
+// before the guard existed — measured on this project's own log — and refusing
+// that refuses adoption itself. What decides is the git directory, never the
+// presence of the database.
+func TestAnExistingStoreIsAdopted(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".luna")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("setting up: %v", err)
 	}
-	// A real, pre-guard store: database present, anchor never written.
 	if err := os.WriteFile(filepath.Join(dir, "luna.db"), []byte("real history"), 0o600); err != nil {
 		t.Fatalf("setting up the old store: %v", err)
 	}
 
 	if err := node.EnsureDurable(dir); err != nil {
-		t.Fatalf("a store from before the anchor existed must be adopted, got %v", err)
+		t.Fatalf("an existing store must be adopted, got %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".luna-anchor")); err != nil {
-		t.Errorf("adoption writes the anchor it found missing, got %v", err)
+}
+
+// TestNothingIsLeftBesideTheLog. The guard used to drop a marker next to
+// `luna.db` as a shortcut past its own check. It caught nothing on its own — the
+// git directory is what detects the failure — so it was a file in every project
+// for no guarantee.
+func TestNothingIsLeftBesideTheLog(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o750); err != nil {
+		t.Fatalf("setting up the repository: %v", err)
+	}
+	dir := filepath.Join(root, ".luna")
+
+	if err := node.EnsureDurable(dir); err != nil {
+		t.Fatalf("the first run: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the log directory: %v", err)
+	}
+	for _, entry := range entries {
+		t.Errorf("the guard left %q beside the log", entry.Name())
 	}
 }
 
@@ -124,24 +143,19 @@ func TestAPlainDirectoryIsNotRefused(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableAnchorIsReportedAsItself pins the distinction between "this log
+// TestABrokenDirectoryIsReportedAsItself pins the distinction between "this log
 // is unreachable" and "this directory is broken". Blaming containment for a
 // permission fault would send someone looking in the wrong place.
-func TestAnUnreadableAnchorIsReportedAsItself(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".luna")
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		t.Fatalf("setting up: %v", err)
-	}
-	// Unsearchable, so stating the anchor inside fails with a permission error
-	// rather than with "not there".
-	if err := os.Chmod(dir, 0o000); err != nil {
+func TestABrokenDirectoryIsReportedAsItself(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o500); err != nil {
 		t.Skipf("cannot drop permissions here: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 
-	err := node.EnsureDurable(dir)
+	err := node.EnsureDurable(filepath.Join(root, ".luna"))
 	if err == nil {
-		t.Fatal("an unreadable anchor must be reported")
+		t.Fatal("a directory that cannot be created must be reported")
 	}
 	if errors.Is(err, node.ErrGhostStore) {
 		t.Errorf("a permission fault is not a ghost store, got %v", err)
@@ -214,9 +228,12 @@ func TestTheAnchorSurvivesAnUnwritableGitDirectory(t *testing.T) {
 	}
 }
 
-// TestAnchoredAndVisibleIsTheOrdinaryCase covers the path every real run takes on
-// its second command: the anchor names this directory and the directory is there.
-func TestAnchoredAndVisibleIsTheOrdinaryCase(t *testing.T) {
+// TestRecordedAndVisibleIsTheOrdinaryCase covers the path every real run takes on
+// its second command: the git directory names this log and the log is there.
+//
+// It reaches the comparison on every command now rather than skipping past it,
+// which is the whole cost of removing the shortcut — one stat and one read.
+func TestRecordedAndVisibleIsTheOrdinaryCase(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o750); err != nil {
 		t.Fatalf("setting up the repository: %v", err)
@@ -226,14 +243,7 @@ func TestAnchoredAndVisibleIsTheOrdinaryCase(t *testing.T) {
 	if err := node.EnsureDurable(dir); err != nil {
 		t.Fatalf("the first run: %v", err)
 	}
-	// The anchor beside the log short-circuits, so remove it to reach the
-	// git-directory comparison deliberately. The log directory is still there and
-	// the git anchor still names it, which is the visible-and-anchored case.
-	if err := os.Remove(filepath.Join(dir, ".luna-anchor")); err != nil {
-		t.Fatalf("setting up the second run: %v", err)
-	}
-
 	if err := node.EnsureDurable(dir); err != nil {
-		t.Fatalf("an anchored directory that is visible must pass, got %v", err)
+		t.Fatalf("a recorded directory that is visible must pass, got %v", err)
 	}
 }

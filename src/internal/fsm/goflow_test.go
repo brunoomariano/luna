@@ -109,7 +109,7 @@ func goFlow() []Stage {
 			},
 		},
 		{
-			ID: "review",
+			ID: "audit",
 			Review: &ReviewSpec{
 				SendsBackTo: "build",
 				// The green attested to code that no longer exists.
@@ -121,8 +121,8 @@ func goFlow() []Stage {
 			// diff four times. The lenses live in the role's brief.
 			Role:             "critic",
 			Requires:         []Artifact{"code", "ci_green"},
-			ProducesForHuman: []Artifact{"review_report"},
-			Verifiers:        map[Artifact]Verifier{"review_report": Existence{Handover: true}},
+			ProducesForHuman: []Artifact{"audit_report"},
+			Verifiers:        map[Artifact]Verifier{"audit_report": Existence{Handover: true}},
 			When:             NotChore,
 		},
 	}
@@ -175,7 +175,7 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
-	const shipped = "3d5ec1f8f1890cb5"
+	const shipped = "9f1e8cf1fb2cbdb3"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)
@@ -196,42 +196,5 @@ func TestTheStockHasEveryStage(t *testing.T) {
 		if stock[i].ID != engine[i].ID {
 			t.Errorf("stage %d: stock has %q, the engine shipped %q", i, stock[i].ID, engine[i].ID)
 		}
-	}
-}
-
-// TestAProjectsFlowReplacesTheShippedOne is what makes "a project brings its own
-// flow" real: the stock a project edited is what Luna runs, not the one it was
-// built with.
-//
-// UseFlows is a package-level value set once at startup, which is a trade worth
-// testing rather than trusting — the alternative was threading the flow through
-// fifteen call sites that would all pass the same thing.
-func TestAProjectsFlowReplacesTheShippedOne(t *testing.T) {
-	shipped := Fingerprint(DefaultFlow())
-	t.Cleanup(func() { UseFlows(nil) })
-
-	own := []Stage{{
-		ID:        "only",
-		Role:      "implementer",
-		Requires:  []Artifact{TaskID},
-		Produces:  []Artifact{"code"},
-		Verifiers: map[Artifact]Verifier{"code": Existence{}},
-	}}
-	UseFlows(map[string][]Stage{DefaultFlowName: own})
-
-	got := DefaultFlow()
-	if len(got) != 1 || got[0].ID != "only" {
-		t.Fatalf("the project's flow did not take: %d stages", len(got))
-	}
-	if Fingerprint(got) == shipped {
-		t.Error("a different flow produced the shipped fingerprint, so a task " +
-			"written under one would replay under the other")
-	}
-
-	// And putting it back restores the shipped one, so a process that never sets
-	// a flow is unaffected.
-	UseFlows(nil)
-	if Fingerprint(DefaultFlow()) != shipped {
-		t.Error("clearing the project's flow did not restore the shipped one")
 	}
 }
