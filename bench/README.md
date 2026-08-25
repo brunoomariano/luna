@@ -115,10 +115,25 @@ question. A bug case belongs here and does not exist yet; `fix` returns with it.
 
 Against the same words, on one machine, with Claude Opus 5:
 
+**`case` — the feature**
+
 | variant | product | flow | seconds | usd | tokens |
 |---|---|---|---|---|---|
 | `luna:chore` | 8/8 | clean | 110 | $0.6681 | 424k |
 
 For reference, a bare agent on this case measured 100/100 in 100s at $0.5657 — so
 the lean flow bought a full evidence trail, a sandbox and a log for about a fifth
-more. Rows are added as they are run; a row nobody has run is not in the table.
+more.
+
+**`case-bug` — the defect**
+
+| variant | product | flow | seconds | usd | tokens |
+|---|---|---|---|---|---|
+| `luna:fix` | 9/9 | clean | 491 | $2.2621 | 1.25M |
+
+`diagnose` was $0.8847 over 19 turns and `build` $1.3773 over 13. That first number
+is the one worth keeping: the same stage, given the feature case it was not built
+for, cost $2.8826 over 48 turns. **The stage is not expensive; asking it for the
+root cause of something that is not broken is** — 3.3×, measured both ways.
+
+Rows are added as they are run; a row nobody has run is not in the table.
