@@ -13,9 +13,21 @@ import (
 // AskTimeout bounds one question to a harness.
 //
 // Shorter than a stage's budget because something is waiting on the answer: the
-// lead is deciding whether a gate passes, not building. A model that has not
-// answered in two minutes is not about to.
-const AskTimeout = 2 * time.Minute
+// lead is deciding whether a gate passes, not building.
+//
+// It was two minutes, on the reasoning that a model which has not answered by
+// then is not about to. Measured against the one gate the shipped flow has, and
+// that reasoning is wrong: judging an 820-word contract against three criteria
+// took 68s and 85s over two samples, at 5 and 7 turns — the harness reads before
+// it answers, so the time scales with the artifact, not with how hard the
+// question is. The first real run at knob 9 went past two minutes and the gate
+// recorded `could-not-ask`.
+//
+// The margin is wide because a timeout does not stop the spend, it only discards
+// what was already paid for: those two samples cost $0.55 and $0.47, billed
+// whether or not Luna waited for them. TestAskTimeoutClearsWhatJudgingMeasured
+// holds the value to that measurement.
+const AskTimeout = 10 * time.Minute
 
 // DefaultAsk is the harness asked when none is configured.
 const DefaultAsk = "claude"

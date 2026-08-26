@@ -526,3 +526,33 @@ func TestTheLeadIsWiredToLandAndToWarn(t *testing.T) {
 		t.Error("the lead has nowhere to report a landing that failed")
 	}
 }
+
+// TestTheAccountIsInTheJSONAndNotOnlyInTheProse covers the reader that is not a
+// person.
+//
+// `gate show` printed what the lead concluded and `task show --json` did not, so
+// anything reading Luna through its machine surface — a dashboard, a fleet, a
+// script deciding which gate to put in front of somebody — saw a gate with
+// nothing said about it, and the two surfaces disagreed about the same gate.
+func TestTheAccountIsInTheJSONAndNotOnlyInTheProse(t *testing.T) {
+	state := fsm.TaskState{
+		ID:     "LUNA-1",
+		Status: fsm.StatusAwaitingGate,
+		Gate: &fsm.PendingGate{
+			Kind: fsm.GateReviewArtifact, Stage: "plan", Artifact: "contract",
+			Judged:    "reject",
+			Reasoning: "obligation 7 wants six cases and the contract permits five",
+		},
+	}
+
+	report := taskReport(Config{}, state, 0, fsm.DefaultFlow())
+	if report.Gate == nil {
+		t.Fatal("an open gate is missing from the report")
+	}
+	if report.Gate.Judged != "reject" {
+		t.Errorf("the verdict is not in the JSON: %q", report.Gate.Judged)
+	}
+	if !strings.Contains(report.Gate.Reasoning, "six cases") {
+		t.Errorf("the reasoning is not in the JSON: %q", report.Gate.Reasoning)
+	}
+}

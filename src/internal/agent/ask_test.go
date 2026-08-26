@@ -262,3 +262,24 @@ func TestAnExitedAskReportsWhatTheHarnessSaidOnStdout(t *testing.T) {
 		t.Errorf("the reason the harness gave was dropped, leaving nothing to act on: %q", err)
 	}
 }
+
+// TestAskTimeoutClearsWhatJudgingMeasured holds a constant to its evidence.
+//
+// A ceiling nobody measured against is a number somebody picked, and this one was
+// picked wrong once already: two minutes, against judging calls that take 68s and
+// 85s. The margin has to survive a longer artifact, because the harness reads the
+// artifact before answering and that is what the time is spent on.
+//
+// It is a lower bound only. Raising the ceiling costs nothing when the answer
+// arrives sooner, and a timeout does not stop the spend — it discards an answer
+// already billed.
+func TestAskTimeoutClearsWhatJudgingMeasured(t *testing.T) {
+	// The slower of two samples, judging an 820-word contract against three
+	// criteria at 7 turns.
+	const measured = 85 * time.Second
+
+	if AskTimeout < 4*measured {
+		t.Errorf("AskTimeout is %s, and judging measured %s — that is not room for a longer artifact",
+			AskTimeout, measured)
+	}
+}

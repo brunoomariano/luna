@@ -137,6 +137,13 @@ type GateReport struct {
 	Reason   string `json:"reason"`
 	Artifact string `json:"artifact,omitempty"`
 	Payload  string `json:"payload,omitempty"`
+
+	// Judged and Reasoning are what a model concluded about this gate, and they
+	// are here for the same reason `gate show` prints them: a reader deciding
+	// whether to look at this gate needs to know one was already looked at, and
+	// what it said. Empty means nobody was asked.
+	Judged    string `json:"judged,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 // ArtifactReport is one delivered artifact and what was proven about it.
@@ -209,11 +216,13 @@ func taskReport(cfg Config, state fsm.TaskState, events int, flow []fsm.Stage) T
 
 	if state.Gate != nil {
 		report.Gate = &GateReport{
-			Kind:     string(state.Gate.Kind),
-			Stage:    string(state.Gate.Stage),
-			Reason:   state.Gate.Reason,
-			Artifact: string(state.Gate.Artifact),
-			Payload:  state.Gate.Payload,
+			Kind:      string(state.Gate.Kind),
+			Stage:     string(state.Gate.Stage),
+			Reason:    state.Gate.Reason,
+			Artifact:  string(state.Gate.Artifact),
+			Payload:   state.Gate.Payload,
+			Judged:    state.Gate.Judged,
+			Reasoning: state.Gate.Reasoning,
 		}
 	}
 
