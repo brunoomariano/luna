@@ -238,8 +238,16 @@ answer.
 ### A block
 
 ```sh
-luna task show AVG-1     # says which of the six kinds, and why
+luna status  AVG-1       # which of the six kinds, and why, under the walk
 luna unblock AVG-1       # once the cause is dealt with
+```
+
+Any command that refuses because the task is blocked names the way out, so you
+never have to guess a command that writes to the log:
+
+```
+task "AVG-1" has no running stage to work (it is blocked)
+  — deal with what stopped it, then `luna unblock AVG-1`
 ```
 
 | kind | what it means |
@@ -252,8 +260,15 @@ luna unblock AVG-1       # once the cause is dealt with
 | `no-progress` | the loop circled without converging |
 
 `unblock` resets the retry budget, because the block *was* the escalation. Deal
-with the cause first: unblocking a `tooling` block without installing the thing
-is a second failure with a second bill.
+with the cause first: unblocking a `tooling` block without fixing the thing is a
+second failure with a second bill — which is a trap somebody read this warning,
+agreed with it out loud, and fell into anyway.
+
+The two that get confused are `contract` and `tooling`, and they have opposite
+treatments: one is fixed by making the work right, the other by making the
+machine right. A `failed-check` now carries the command, its exit code and its
+output, so you should not have to run the suite by hand in a parallel worktree to
+find out which you have.
 
 ## The durable memory
 
@@ -290,6 +305,7 @@ second ledger instead of stopping the stage.
 ## The rest of the surface
 
 ```sh
+luna version              # which build, and the flows it carries
 luna next   <id>          # the order: stage, role, worktree, base, what is owed
 luna work   <id>          # run the agent for that stage and close it on its checks
 luna done   <id> --delivered <a,b> [--commit <sha>]
@@ -315,6 +331,11 @@ mkdir -p <target>/.claude/skills
 cp -r <luna>/skills/luna <target>/.claude/skills/
 ```
 
-The target project also needs `.luna/config.toml` if it wants its own
-workstream, turn budget or interpreter — Luna runs without one, on the shipped
-defaults.
+The target project wants a `.luna/config.toml` if its tests need a build step
+first — that is `bootstrap`, and it is the setting that saves the most. The rest
+(`workstream`, `turn_budget`, `interpreter`, `editor`) are optional; Luna runs
+without any of them, on the shipped defaults.
+
+`.luna/` writes its own `.gitignore`, so the log, its blobs and the costs stay
+out of commits without anybody adding a rule. `config.toml` is left committable
+on purpose: it is the project's settings, and a team shares them through git.
