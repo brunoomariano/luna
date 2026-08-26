@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -533,5 +534,84 @@ func TestARunStopsAtAGateItMayNotAnswer(t *testing.T) {
 
 	if state.Status != fsm.StatusAwaitingGate {
 		t.Errorf("a gate nobody may answer must stop the run, got %q", state.Status)
+	}
+}
+
+// TestAnApprovalKeepsItsReason is the half that goes missing quietly.
+//
+// A rejection leaves the gate open, so its account has somewhere to live and is
+// obviously there. An approval closes the gate, and an account filed after that
+// has nothing to attach to — so unless it is written first, the one decision
+// nobody was present for is also the one with no record of why. "Why did this
+// pass unattended" has no answer but this line.
+func TestAnApprovalKeepsItsReason(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	const reason = "every criterion in the task appears as an obligation"
+	l := &Lead{
+		Store: s, Node: &deliveringNode{},
+		Flow: flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria"),
+		Ask:  func(context.Context, string) (string, error) { return "APPROVE\n\n" + reason, nil },
+	}
+
+	// The gate has to be genuinely open, and at this knob the only way it opens is
+	// an ask that failed — approvals settle it before it ever appears. So one lead
+	// that cannot reach a model drives to the gate, and the one under test answers
+	// what it left behind.
+	stuck := &Lead{
+		Store: s, Node: l.Node, Flow: l.Flow,
+		Ask: func(context.Context, string) (string, error) {
+			return "", errors.New("claude did not answer within 2m0s")
+		},
+	}
+	if _, err := stuck.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("driving to the gate: %v", err)
+	}
+
+	parked, err := s.Replay("LUNA-1", l.Flow)
+	if err != nil {
+		t.Fatalf("replaying: %v", err)
+	}
+	if parked.Status != fsm.StatusAwaitingGate {
+		t.Fatalf("the gate did not open, so this test measures nothing: %q", parked.Status)
+	}
+
+	if err := l.Enter(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("Enter: %v", err)
+	}
+
+	events, err := s.Events("LUNA-1")
+	if err != nil {
+		t.Fatalf("reading the log: %v", err)
+	}
+
+	var approved bool
+	var kept string
+	for _, e := range events {
+		switch e.Action {
+		case "GateApprove":
+			approved = true
+		case "GateJudged":
+			var a struct {
+				Gate fsm.GateAccount `json:"gate"`
+			}
+			if err := json.Unmarshal([]byte(e.Payload), &a); err != nil {
+				t.Fatalf("decoding an account: %v", err)
+			}
+			if a.Gate.Judgement == "approve" {
+				kept = a.Gate.Excerpt
+			}
+		}
+	}
+
+	if !approved {
+		t.Fatal("the lead did not approve, so this test measures nothing")
+	}
+	if !strings.Contains(kept, reason) {
+		t.Errorf("the approval kept no account of itself: %q", kept)
 	}
 }

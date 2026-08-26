@@ -313,19 +313,25 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 			return nil
 		}
 
+		// What the lead concluded is filed first, and against the open gate, which
+		// is why the order matters: GateApprove closes the gate, and after that
+		// there is nothing left to attach an account to. An approval whose reason
+		// is not kept is the one nobody can audit later — "why did this pass
+		// unattended at three in the morning" has no answer but this line.
+		//
+		// This is the one position where the account cannot ride on the action
+		// that opens the gate, because the gate was already open before anybody
+		// judged: `luna lead` has the agent close its own stage through
+		// `luna done`, which reaches the gate with nothing decided. Without this
+		// the judgement is paid for and thrown away — measured on TALLY-6.
 		account := l.decideGate(ctx, state, state.Gate)
+		if account.Judgement != "" {
+			if err := l.record(taskID, fsm.GateJudged{Gate: account}); err != nil {
+				return err
+			}
+		}
 		if account.Decision == fsm.GateDecisionJudged {
 			return l.record(taskID, fsm.GateApprove{})
-		}
-		// Anything short of an approval leaves the gate where it was, and what the
-		// lead concluded is filed against it. This is the one position where the
-		// account cannot ride on the action that opens the gate, because the gate
-		// was already open before anybody judged: `luna lead` has the agent close
-		// its own stage through `luna done`, which reaches the gate with nothing
-		// decided. Without this the judgement is paid for and thrown away —
-		// measured on TALLY-6.
-		if account.Judgement != "" {
-			return l.record(taskID, fsm.GateJudged{Gate: account})
 		}
 		return nil
 	}
