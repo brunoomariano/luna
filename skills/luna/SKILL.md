@@ -62,6 +62,29 @@ luna flow check          # what each flow carries, and the pack it declares
 opening event, and a task that switched mid-run would be a log no replay can
 read. Getting this wrong means opening a new task, not fixing this one.
 
+## Before you open anything
+
+```sh
+luna flow check
+```
+
+It says what each flow carries, how many agents its pack keeps, and — once this
+project has run one — what each has cost here before, median by stage. `--flow`
+cannot change after a task opens, so this is the one moment the decision is
+cheap.
+
+If the project's tests need a step between `git clone` and "the tests run", say
+so once in `.luna/config.toml`:
+
+```toml
+bootstrap  = "make bootstrap && make build"
+workstream = "the-project"
+```
+
+Luna opens a clean worktree **per stage**, so without this every stage
+rediscovers that step and the ones that cannot fail on a check that was never
+about the work. It cost a real task $10.36 of $19.13 to learn that.
+
 ## Opening a task
 
 The statement is not description. It is what the `plan` stage turns into a
@@ -167,10 +190,15 @@ stages ran and some did not, with nothing saying which.
 Three endings, and all three are discoverable by command:
 
 ```sh
-luna status AVG-1        # the whole flow, and where this task stands in it
+luna status AVG-1        # the flow, the pack, the ledger, the ceiling, the
+                         # cost per stage with the model that answered, and
+                         # where each role's worktree is
 luna gates               # every task waiting on a person
 luna stuck --for 2h      # what has been stopped too long
 ```
+
+`luna status` is the first place to look and usually the last: it answers what
+used to take four commands.
 
 ### A gate
 
@@ -217,9 +245,9 @@ luna unblock AVG-1       # once the cause is dealt with
 | kind | what it means |
 |---|---|
 | `contract` | the stage delivered less than it owed |
-| `failed-check` | a declared command came back non-zero |
+| `failed-check` | a declared command came back non-zero — the block carries the command, its exit code and its output |
 | `over-budget` | the ceiling was reached — raise it and unblock |
-| `tooling` | the machinery broke — sandbox missing, git absent |
+| `tooling` | the machinery broke — sandbox missing, git absent, bootstrap failed |
 | `failed-node` | the stage failed and the retry budget is spent |
 | `no-progress` | the loop circled without converging |
 
