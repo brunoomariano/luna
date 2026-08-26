@@ -195,6 +195,23 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 			return fsm.TaskState{}, err
 		}
 
+		// An open gate is an ending only once nobody else may answer it. At knob 9
+		// the lead may, and the gate normally never opens — the decision rides on
+		// the action that would open it. What lands here is the recovery case: a
+		// gate that opened because the ask itself failed, which `luna run` used to
+		// treat as a person's to answer forever. Enter answers it if the knob
+		// allows, and files what it concluded if it does not approve; either way
+		// the next pass sees a settled gate and stops.
+		if state.Status == fsm.StatusAwaitingGate {
+			if err := l.Enter(ctx, taskID); err != nil {
+				return fsm.TaskState{}, err
+			}
+			state, err = l.Store.Replay(taskID, flow)
+			if err != nil {
+				return fsm.TaskState{}, err
+			}
+		}
+
 		// Three endings, none of them the lead's to push past. A gate is waiting on
 		// a person, a block is waiting on a person, and done is done.
 		if state.IsTerminal() || state.NeedsHuman() {

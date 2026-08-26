@@ -3,6 +3,7 @@ package lead
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -468,5 +469,69 @@ func TestAGateThatCouldNotBeAskedIsAskedAgain(t *testing.T) {
 					c.judged, asked, c.asks)
 			}
 		})
+	}
+}
+
+// TestARunRecoversAGateWhoseAskFailed closes the hole the timeout opened.
+//
+// At knob 9 a gate the lead approves never opens: the decision rides on the
+// action that would open it. So the only way `luna run` meets an open gate at
+// that knob is a transient failure — the ask timed out, the harness died — and
+// it used to read that as "a person's to answer" and stop there permanently. The
+// knob authorised the lead to decide and the surface would not let it.
+func TestARunRecoversAGateWhoseAskFailed(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
+
+	// The first ask fails the way a timeout does; every one after it answers.
+	asks := 0
+	l := &Lead{
+		Store: s, Node: &deliveringNode{}, Flow: flow,
+		Ask: func(context.Context, string) (string, error) {
+			asks++
+			if asks == 1 {
+				return "", errors.New("claude did not answer within 2m0s")
+			}
+			return "APPROVE", nil
+		},
+	}
+
+	state, err := l.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if state.Status == fsm.StatusAwaitingGate {
+		t.Fatalf("the run parked at a gate the knob authorised it to answer: %+v", state.Gate)
+	}
+	if asks < 2 {
+		t.Errorf("the failed ask was never retried: %d asks", asks)
+	}
+}
+
+// TestARunStopsAtAGateItMayNotAnswer is the other side, and the one that must not
+// regress: recovering a failed ask is not permission to walk past a person.
+func TestARunStopsAtAGateItMayNotAnswer(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+
+	// Knob 0: the gate is a person's, and there is no model configured anyway.
+	l := &Lead{
+		Store: s, Node: &deliveringNode{},
+		Flow: flowWithCriticality(t, "plan", 9, "the plan covers the acceptance criteria"),
+	}
+
+	state, err := l.Run(context.Background(), "LUNA-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if state.Status != fsm.StatusAwaitingGate {
+		t.Errorf("a gate nobody may answer must stop the run, got %q", state.Status)
 	}
 }
