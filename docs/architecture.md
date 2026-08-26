@@ -92,14 +92,15 @@ Two consequences worth stating, because both were surprises:
 `luna flow check` audits every flow, not one: a build that reports "the contract
 holds" about a third of what it runs is saying something true and useless.
 
-## Driving it by hand
+## The lead's own commands
 
-The same rails, with a person where the agent goes:
+The lead conducts by running these, and they are readable and runnable by a person
+for the same reason: there is one interface, not one for models and one for people.
 
 ```sh
-luna next  <id>   # what to do, how it will be checked, and the brief itself
-luna start <id>   # open it — `next` is a read and changes nothing
-luna done  <id> --delivered <a,b> --commit <sha>
+luna next <id>    # what to do, how it will be checked, and the brief itself
+luna work <id>    # start the agent for that stage, and close it on what its checks saw
+luna done <id> --delivered <a,b> --commit <sha>   # a stage carried out by hand
 ```
 
 `next` prints how each owed artifact is proven, beside what is owed, so nobody has
@@ -107,11 +108,9 @@ to go and read the stage file to find out what they are held to. It carries the
 same brief the agent would get — contract duty, gate criteria, what is handed over
 rather than committed — rather than the role's own sentence about itself.
 
-`start` exists because nothing else opened a stage without also starting an agent,
-so the pair the help text called the hand-driven path failed on its first use. It
-is a separate verb rather than folding into `done`, because `done` refusing a task
-with no running stage is what makes a mistyped id a clean error instead of two
-events in a log nobody meant to touch.
+There was a third verb, `start`, and a hand-driven mode built around it. Both are
+gone: a mode where the work is not the lead's is a third way to reach the same
+states, and the fixes only ever landed on one of them.
 
 **What a hand-driven stage cannot do is launder a verdict.** `done` records
 `existence` for everything it is told, always and deliberately, so a stage whose
@@ -302,7 +301,8 @@ recomputing one.
 
 ## The fleet
 
-`luna run` drives one task. `luna fleet run` drives every eligible one, several at a time:
+`luna lead` conducts one task. `luna fleet run` conducts every eligible one, several at a
+time — the same loop, the same lead, the count of tasks being the only difference:
 
 ```sh
 luna fleet run --flow fix --budget-usd 20 --concurrency 4

@@ -41,7 +41,7 @@ func TestTaskShowAnswersStructure(t *testing.T) {
 func TestTheStructuredViewCarriesTheScope(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--profile", "nightly")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	var report TaskReport
 	if err := json.Unmarshal([]byte(h.mustRun(t, "task", "show", "LUNA-1", "--json")), &report); err != nil {
@@ -74,7 +74,7 @@ func TestTheStructuredViewCarriesTheScope(t *testing.T) {
 func TestAWaitingTaskCarriesItsGate(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated") // interactive: stops at the first gate
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	var report TaskReport
 	if err := json.Unmarshal([]byte(h.mustRun(t, "task", "show", "LUNA-1", "--json")), &report); err != nil {
@@ -116,7 +116,7 @@ func TestGatesAnswersAnArrayEvenWhenEmpty(t *testing.T) {
 func TestTheStructuredGatesListNamesEachTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	var report GatesReport
 	if err := json.Unmarshal([]byte(h.mustRun(t, "gates", "--json")), &report); err != nil {

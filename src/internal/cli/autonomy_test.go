@@ -128,7 +128,7 @@ func TestMovingTheKnobSaysAnOpenGateIsUnaffected(t *testing.T) {
 
 	var opened bool
 	for range 12 {
-		if err := h.run(t, "run", "LUNA-1", "--dry-run"); err != nil {
+		if err := h.run(t, "lead", "LUNA-1", "--dry-run"); err != nil {
 			break
 		}
 		if strings.Contains(h.mustRun(t, "status", "LUNA-1"), string(fsm.StatusAwaitingGate)) {

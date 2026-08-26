@@ -12,7 +12,7 @@ import (
 
 // leadCommand hands a task to the lead agent.
 //
-// This is `luna run` with the loop moved: instead of Go deciding when to call
+// The loop is the lead's rather than Go's: instead of Go deciding when to call
 // the node, Luna hands the lead an order and the lead carries it out. What did
 // not move is which order — that is still `fsm.NextOrder`, and the lead never
 // sees a choice.
@@ -32,10 +32,17 @@ func leadCommand(env Env, args []string) error {
 		return err
 	}
 
-	for name := range flags {
-		if name != "autonomy" {
-			return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
-		}
+	if err := onlyLeadFlags(flags); err != nil {
+		return err
+	}
+
+	repo := flags["repo"]
+	if repo == "" {
+		repo = "."
+	}
+
+	if _, dry := flags["dry-run"]; dry {
+		return dryRun(env, id, repo, flags["agent"])
 	}
 
 	// The knob is the only control, and its state is what decides behaviour on a
@@ -50,12 +57,12 @@ func leadCommand(env Env, args []string) error {
 
 	if env.Lead == nil {
 		return errors.New("no lead is configured: Luna hosts no model of its own, so " +
-			"`luna lead` needs one wired in. `luna run` drives the same " +
-			"flow without a model")
+			"`luna lead` needs one wired in. `--dry-run` exercises the same " +
+			"flow without one")
 	}
 
 	// The gate on the way into a stage goes through the same knob-aware path
-	// `luna run` uses, rather than a second copy of it. The knob it consults is
+	// a dry run uses, rather than a second copy of it. The knob it consults is
 	// the task's own, from the state where `luna autonomy` put it.
 	//
 	// So `--autonomy` here governs what the lead may decide about a *failure* and
@@ -64,7 +71,12 @@ func leadCommand(env Env, args []string) error {
 	// The recorded one wins for gates because a gate decision is history — it is
 	// replayed as a fact, and a flag on one invocation must not rewrite how a
 	// past run reads.
-	entering := leadFor(env, ".")
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return err
+	}
+
+	entering := leadFor(env, repo, flow)
 
 	// The stage budget, not the question timeout: conducting a stage means
 	// starting an agent and waiting for it to work, which is the shape
@@ -72,7 +84,8 @@ func leadCommand(env Env, args []string) error {
 	// a model answering a question.
 	conductor := &lead.Agent{Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn()}
 
-	return conductTask(env, id, conductor, entering)
+	_, err = conductTask(env, id, conductor, entering)
+	return err
 }
 
 // landingFor is how a finished task's branch gets pointed, with the injected one
@@ -89,12 +102,18 @@ func landingFor(env Env, repo string) func(context.Context, string, string) erro
 // leadFor builds the lead `luna lead` conducts with.
 //
 // Extracted so a test can assert on the same construction the command uses. Two
-// of these fields were missing here while `luna run` had them, and the absence
-// was invisible: a task finished, its work stayed on the stage branches, and the
-// warning that would have said so had nowhere to go.
-func leadFor(env Env, repo string) *lead.Lead {
+// of these fields were missing here while the other surface had them, and the
+// absence was invisible: a task finished, its work stayed on the stage branches,
+// and the warning that would have said so had nowhere to go.
+//
+// The flow is passed rather than defaulted for the same class of reason. A Lead
+// built without one replays against this build's default, so every task on any
+// other flow was refused by its own fingerprint before it could start — the hole
+// a test caught on the hand-driven opener and nothing watched here.
+func leadFor(env Env, repo string, flow []fsm.Stage) *lead.Lead {
 	return &lead.Lead{
 		Store:     env.Store,
+		Flow:      flow,
 		Ask:       env.Lead,
 		CheckGate: checkGateWith(env.Store, repo),
 		// The artifact itself rather than the evidence line naming it: a gate that
@@ -108,7 +127,7 @@ func leadFor(env Env, repo string) *lead.Lead {
 		},
 
 		// `done` means ready to integrate, and this is what makes it true. Absent
-		// here while `luna run` had it, so a task conducted by the lead finished
+		// here while the driving loop had it, so a task conducted by the lead finished
 		// with its work reachable only through the stage branches — and `luna
 		// status` printed the landing ref it had not created. Measured on TALLY-7.
 		Land: landingFor(env, repo),
@@ -131,6 +150,16 @@ func leadFor(env Env, repo string) *lead.Lead {
 func reportEnding(env Env, order fsm.Order, state fsm.TaskState) {
 	fmt.Fprintf(env.Out, "%s: %s\n", order.Kind, order.Reason)
 
+	// A block is the ending INV-5 says has to be *notified*, and printing is not
+	// notifying: the run that most needs it is the unattended one, where nobody
+	// is reading the terminal. This lived only on the ending of the loop Luna used
+	// to drive with, so when that surface went and the fleet moved onto this one,
+	// every nightly block would have gone out in silence.
+	if state.Status == fsm.StatusBlocked {
+		fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", state.ID)
+		notifyBlocked(env, state.ID, state.Blocked)
+	}
+
 	if state.Gate == nil || state.Gate.Reasoning == "" {
 		return
 	}
@@ -152,7 +181,7 @@ func reportEnding(env Env, order fsm.Order, state fsm.TaskState) {
 // third failure blocks — and a task that stops for any reason returns an order
 // that is not OrderRun, which ends the loop above. A ceiling nothing can reach is
 // one that gets trusted without ever having held.
-func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead) error {
+func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead) (fsm.TaskState, error) {
 	for {
 		// The stage is opened before the order is read, because `next` is a read
 		// and `done` reports a finish — the transition between them is the
@@ -160,22 +189,12 @@ func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead)
 		// answers "no running stage to finish". A gate on the way in is answered
 		// here, through the knob.
 		if err := entering.Enter(context.Background(), id); err != nil {
-			return err
+			return fsm.TaskState{}, err
 		}
 
-		state, err := env.replay(id)
+		state, order, err := orderFor(env, id)
 		if err != nil {
-			return err
-		}
-
-		flow, err := env.flowOf(id)
-		if err != nil {
-			return err
-		}
-
-		order, err := fsm.NextOrder(state, flow, env.profiles().Roles)
-		if err != nil {
-			return err
+			return fsm.TaskState{}, err
 		}
 
 		// Three of the four kinds end the loop, and none of them is the lead's to
@@ -188,12 +207,21 @@ func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead)
 			// its work reachable only through the stage branches.
 			entering.PointBranchIfDone(context.Background(), state)
 			reportEnding(env, order, state)
-			return nil
+			return state, nil
+		}
+
+		// A task created as a simulation recorded checks that never ran, so it
+		// cannot be continued for real. Refused after the ending branch rather
+		// than before the loop: a simulated task that already finished still has
+		// to be reported and its branch pointed, and it is only the order to
+		// actually work that must not happen.
+		if err := agreeOnSimulation(id, state, false); err != nil {
+			return state, err
 		}
 
 		said, err := conductor.Conduct(context.Background(), order)
 		if err != nil {
-			return err
+			return state, err
 		}
 		fmt.Fprintf(env.Out, "[%s] %s\n", order.Stage, said)
 
@@ -203,15 +231,91 @@ func conductTask(env Env, id string, conductor *lead.Agent, entering *lead.Lead)
 		// merely claims to have finished has not.
 		after, err := env.replay(id)
 		if err != nil {
-			return err
+			return fsm.TaskState{}, err
 		}
 		// This is what keeps the loop finite, and it is a stronger guard than a
 		// turn count: a lead that does nothing stops the run on its first turn
 		// rather than a hundred turns later.
 		if after.Seq == state.Seq {
-			return fmt.Errorf("the lead returned on %s without the task moving: "+
+			return after, fmt.Errorf("the lead returned on %s without the task moving: "+
 				"it has to report through `luna done` (or the stage has to fail) for "+
 				"anything to happen", order.Stage)
 		}
 	}
+}
+
+// reportDryEnding says where a dry run landed.
+//
+// Its own function rather than reportEnding's, because that one takes an order
+// and notifies a block — and a block a dry run reached is a fact about the flow,
+// not about a task anybody has to be woken for.
+func reportDryEnding(env Env, id string, state fsm.TaskState) {
+	switch state.Status {
+	case fsm.StatusDone:
+		fmt.Fprintf(env.Out, "%s finished\n", id)
+	case fsm.StatusAwaitingGate:
+		reason := ""
+		if state.Gate != nil {
+			reason = state.Gate.Reason
+		}
+		fmt.Fprintf(env.Out, "%s is waiting at %s: %s\n", id, state.Stage, reason)
+		fmt.Fprintf(env.Out, "  answer it with `luna gate show %s`\n", id)
+	case fsm.StatusBlocked:
+		fmt.Fprintf(env.Out, "%s is blocked: %s\n", id, state.Blocked)
+		fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", id)
+	default:
+		fmt.Fprintf(env.Out, "%s stopped at %s (%s)\n", id, state.Stage, state.Status)
+	}
+}
+
+// onlyLeadFlags refuses a flag this command does not have, rather than ignoring
+// it. A typo that runs is worse than one that stops: the run behaves as though
+// nobody had asked for anything.
+func onlyLeadFlags(flags map[string]string) error {
+	for name := range flags {
+		switch name {
+		case "autonomy", "dry-run", "agent", "repo":
+		default:
+			return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+		}
+	}
+	return nil
+}
+
+// dryRun exercises the flow with no agent, no worktree and no model.
+//
+// It is the one shape a lead cannot conduct — there is nobody to conduct with —
+// so it takes the node-driven loop, exactly as the fleet's dry run does. That
+// keeps it a flag on a mode rather than a third mode: the same task, run free.
+func dryRun(env Env, id, repo, agent string) error {
+	state, err := driveTask(context.Background(), env, id, runOptions{
+		Agent: agent, Repo: repo, Dry: true,
+	})
+	if err != nil {
+		return err
+	}
+	reportDryEnding(env, id, state)
+	return nil
+}
+
+// orderFor reads the task, its flow and the order that follows from both.
+//
+// The three go together everywhere they are needed, and the flow is read per
+// pass rather than once: a task's flow is fixed, but replaying against this
+// build's default instead of the task's own is the mistake this makes
+// impossible to write.
+func orderFor(env Env, id string) (fsm.TaskState, fsm.Order, error) {
+	state, err := env.replay(id)
+	if err != nil {
+		return fsm.TaskState{}, fsm.Order{}, err
+	}
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return fsm.TaskState{}, fsm.Order{}, err
+	}
+	order, err := fsm.NextOrder(state, flow, env.profiles().Roles)
+	if err != nil {
+		return fsm.TaskState{}, fsm.Order{}, err
+	}
+	return state, order, nil
 }

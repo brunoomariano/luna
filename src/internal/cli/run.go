@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,29 +12,6 @@ import (
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
-
-// runTask drives a task until it needs a person or reaches the end.
-//
-// This is where the two halves meet: the node runs the agent and verifies, the
-// engine decides. Everything it assembles is an implementation of an
-// interface the lead already declared, so none of the wiring reaches the engine.
-func runTaskCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: run needs a task id", ErrUsage)
-	}
-	id := args[0]
-
-	opts, err := parseRunOptions(args[1:])
-	if err != nil {
-		return err
-	}
-
-	state, err := driveTask(context.Background(), env, id, opts)
-	if err != nil {
-		return err
-	}
-	return reportRun(env, id, state)
-}
 
 // driveTask runs one task to its next stopping point and returns where it landed.
 //
@@ -91,7 +69,7 @@ func driveTask(ctx context.Context, env Env, id string, opts runOptions) (fsm.Ta
 //
 // Measured on TALLY-6, and the stall was not the cost. Given two commands that
 // contradicted each other and no third, the lead reached for
-// `luna run --dry-run` to understand the mechanism, and that walked the task to
+// a dry run to understand the mechanism, and that walked the task to
 // `done` with `verify` and `review` recorded as passed. The gap did not block
 // the run; it routed around the part that checks.
 func stageToWork(env Env, id string, opts runOptions) (fsm.TaskState, error) {
@@ -122,7 +100,7 @@ func stageToWork(env Env, id string, opts runOptions) (fsm.TaskState, error) {
 //
 // Only for a task already in flight. A `ready` task has no stage yet, and
 // opening its first one would be `work` choosing where the flow starts — the one
-// thing this command must not do, and what `luna run` and `luna lead` are for.
+// thing this command must not do, and what `luna lead` is for.
 func openNextStage(env Env, id string, state fsm.TaskState, repo string) (fsm.TaskState, error) {
 	if state.Status != fsm.StatusStageDone {
 		return state, nil
@@ -188,7 +166,7 @@ type runOptions struct {
 	Dry bool
 }
 
-// parseRunOptions reads the flags `luna run` accepts.
+// parseRunOptions reads the flags the commands that start an agent accept.
 func parseRunOptions(args []string) (runOptions, error) {
 	opts := runOptions{Repo: "."}
 
@@ -227,7 +205,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*
 		// delivered.
 		CheckGate: checkGateWith(env.Store, opts.Repo),
 		// The judgement half, when the knob reaches a gate and a model is wired
-		// in. Nil is the ordinary case for `luna run` — and then a gate the knob
+		// in. Nil is the ordinary case for a dry run — and then a gate the knob
 		// reached still goes to a person, because authority to judge is not a
 		// judgement.
 		Ask: env.Lead,
@@ -389,28 +367,6 @@ func (dryNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lea
 	return lead.Result{Delivered: owed, Evidence: evidence}, nil
 }
 
-// reportRun prints where the task stopped and what to do about it.
-func reportRun(env Env, id string, state fsm.TaskState) error {
-	switch state.Status {
-	case fsm.StatusDone:
-		fmt.Fprintf(env.Out, "%s finished\n", id)
-	case fsm.StatusAwaitingGate:
-		reason := ""
-		if state.Gate != nil {
-			reason = state.Gate.Reason
-		}
-		fmt.Fprintf(env.Out, "%s is waiting at %s: %s\n", id, state.Stage, reason)
-		fmt.Fprintf(env.Out, "  answer it with `luna gate show %s`\n", id)
-	case fsm.StatusBlocked:
-		fmt.Fprintf(env.Out, "%s is blocked: %s\n", id, state.Blocked)
-		fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", id)
-		notifyBlocked(env, id, state.Blocked)
-	default:
-		fmt.Fprintf(env.Out, "%s stopped at %s (%s)\n", id, state.Stage, state.Status)
-	}
-	return nil
-}
-
 // notifyBlocked tells a person a task stopped, which is what INV-5 means by
 // a block being *notified*.
 //
@@ -468,13 +424,13 @@ func unblockCommand(env Env, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(env.Out, "%s unblocked — run it again with `luna run %s`\n", id, id)
+	fmt.Fprintf(env.Out, "%s unblocked — conduct it again with `luna lead %s`\n", id, id)
 	return nil
 }
 
 // workCommand runs the agent for the stage that is already open, and stops.
 //
-// It is the half of `luna run` the lead needed and Luna did not have. The
+// It is the half of the driving loop the lead needed and Luna did not have. The
 // lead's brief has always said "the agent you start does the work — you do not
 // do it yourself", and there was no way to start one: `next` reads, `done`
 // reports, and `run` drives the whole flow, which is the one thing the lead must
@@ -483,7 +439,7 @@ func unblockCommand(env Env, args []string) error {
 // blobs, no handover, and a review gate whose artifact had never been attached.
 //
 // It chooses no stage. There is exactly one open, the status says so, and a task
-// with none is refused rather than advanced — otherwise this would be `luna run`
+// with none is refused rather than advanced — otherwise this would be the driving loop
 // under another name and the lead would have a path to flow control.
 //
 // It does not close the stage either. Running the agent and reporting what it
@@ -515,14 +471,21 @@ func workCommand(env Env, args []string) error {
 	}
 	defer cleanup()
 
-	var stage fsm.Stage
-	for _, candidate := range flow {
-		if candidate.ID == state.Stage {
-			stage = candidate
-		}
-	}
-	result, err := conductor.Node.Run(context.Background(), state, stage)
+	result, err := conductor.Node.Run(context.Background(), state, stageIn(flow, state.Stage))
 	if err != nil {
+		// The machinery breaking is not this command failing. INV-5 says a task
+		// ends in a commit, a gate or a *notified* block, and a sandbox that is
+		// not installed is infrastructure: the task blocks with a reason a person
+		// can act on, and the caller — the lead, usually — reads that from the
+		// log rather than from an exit status it cannot record.
+		//
+		// This lived only in the loop that Luna used to drive with. When that
+		// surface went and the lead became the only way work starts, `work`
+		// erroring took the third ending with it: nothing blocked, nothing was
+		// notified, and the task sat `running` for whoever looked next.
+		if errors.Is(err, lead.ErrInfrastructure) || errors.Is(err, lead.ErrStalled) {
+			return blockTask(env, id, err.Error())
+		}
 		return fmt.Errorf("working %s: %w", state.Stage, err)
 	}
 
@@ -585,4 +548,33 @@ func joinArtifactNames(list []fsm.Artifact) string {
 		names = append(names, string(a))
 	}
 	return strings.Join(names, ",")
+}
+
+// blockTask records a block and reports it, which is the third ending INV-5
+// names.
+//
+// The retry budget is untouched on purpose: an attempt against a binary that is
+// not installed will not find it installed on the second one, and spending the
+// budget on that leaves nothing for the failure it was meant for.
+func blockTask(env Env, id, reason string) error {
+	if err := env.Store.AppendAction(id, fsm.Block{Reason: reason}); err != nil {
+		return err
+	}
+	fmt.Fprintf(env.Out, "%s is blocked: %s\n", id, reason)
+	fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", id)
+	notifyBlocked(env, id, reason)
+	return nil
+}
+
+// stageIn finds a stage by id, or returns the zero stage.
+//
+// The zero value rather than an error because the caller reached here through
+// NextOrder, which already refused a stage this flow does not have.
+func stageIn(flow []fsm.Stage, id fsm.StageID) fsm.Stage {
+	for _, candidate := range flow {
+		if candidate.ID == id {
+			return candidate
+		}
+	}
+	return fsm.Stage{}
 }

@@ -2,18 +2,22 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
 // DefaultConcurrency is how many tasks a fleet runs at once when nobody says.
 //
-// Four rather than one, because a fleet of one is `luna run` with extra words,
+// Four rather than one, because a fleet of one is `luna lead` with extra words,
 // and rather than many, because each task holds a worktree, a sandbox and an
 // agent subprocess — the limit that bites first is the machine, not the model.
 const DefaultConcurrency = 4
@@ -121,7 +125,7 @@ func driveFleet(ctx context.Context, env Env, ids []string, opts fleetOptions) [
 			defer wg.Done()
 			defer func() { <-slots }()
 
-			state, err := driveTask(ctx, env, id, opts.run)
+			state, err := driveOne(ctx, env.narrating(&mu, id), id, opts)
 			cost := state.TotalSpend().CostUSD
 
 			mu.Lock()
@@ -398,4 +402,73 @@ func parsePositive(value string) (int, error) {
 		return 0, fmt.Errorf("has to be at least 1, got %d", n)
 	}
 	return n, nil
+}
+
+// driveOne is how the fleet drives one task, and it is the same loop `luna lead`
+// drives: the lead conducts, starting an agent per stage.
+//
+// The fleet used to drive its own way — Luna advancing and running a node per
+// stage, with no lead conducting anything. Two engines reaching the same states
+// meant every fix landed on one of them, and the fleet was the half nobody was
+// watching. One engine, and the second mode is the count of tasks.
+//
+// A dry run is the exception rather than an inconsistency: it exists to exercise
+// a flow with no agent, no worktree and no model, and there is no lead to conduct
+// with. So it keeps the node-driven loop, which is now what that loop is for.
+func driveOne(ctx context.Context, env Env, id string, opts fleetOptions) (fsm.TaskState, error) {
+	if opts.run.Dry {
+		return driveTask(ctx, env, id, opts.run)
+	}
+	if env.Lead == nil {
+		return fsm.TaskState{}, errors.New("no lead is configured: Luna hosts no " +
+			"model of its own, so a fleet needs one wired in. `--dry-run` exercises " +
+			"the flow without one")
+	}
+
+	state, err := env.replay(id)
+	if err != nil {
+		return fsm.TaskState{}, err
+	}
+	flow, err := env.flowOf(id)
+	if err != nil {
+		return fsm.TaskState{}, err
+	}
+
+	// The task's own knob, not a fleet-wide flag: a fleet is many tasks with
+	// their own settings, and one flag over all of them would quietly overrule
+	// what `luna autonomy` recorded on each.
+	conductor := &lead.Agent{
+		Ask: env.Lead, Knob: state.Knob, Budget: env.profiles().Turn(),
+	}
+	return conductTask(env, id, conductor, leadFor(env, opts.run.Repo, flow))
+}
+
+// narrating gives one task in the fleet its own prefixed, serialised output.
+//
+// N leads narrate at once, and they narrate by the line: without this their
+// lines interleave mid-sentence, and a reader cannot tell which task said what.
+// The lock is the fleet's own, so a line is whole or it is not written.
+func (e Env) narrating(mu *sync.Mutex, id string) Env {
+	e.Out = taskLines{mu: mu, to: e.Out, id: id}
+	e.Err = taskLines{mu: mu, to: e.Err, id: id}
+	return e
+}
+
+// taskLines writes whole lines, each prefixed with the task they came from.
+type taskLines struct {
+	mu *sync.Mutex
+	to io.Writer
+	id string
+}
+
+func (w taskLines) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		if _, err := fmt.Fprintf(w.to, "%s | %s\n", w.id, line); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
 }

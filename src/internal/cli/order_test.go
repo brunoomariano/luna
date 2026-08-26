@@ -536,67 +536,6 @@ func aRealCommit(t *testing.T) string {
 	return sha
 }
 
-// TestTheHandDrivenLoopCanBegin. `next` is a read and every other opener also
-// starts an agent, so before `start` existed the pair the help text calls the
-// hand-driven path answered "no running stage to finish" on its first use — the
-// same gap TALLY-6 found in the lead's loop, fixed there and never here.
-func TestTheHandDrivenLoopCanBegin(t *testing.T) {
-	h := newHarness(t)
-	h.mustRun(t, "task", "new", "H-1", "--kind", "chore", "--flow", "chore")
-
-	out := h.mustRun(t, "start", "H-1")
-	if !strings.Contains(out, "setup") {
-		t.Errorf("start does not say which stage it opened:\n%s", out)
-	}
-
-	state := mustState(t, h, "H-1")
-	if state.Status != fsm.StatusRunning {
-		t.Fatalf("start left the task %q", state.Status)
-	}
-	if state.Stage != "setup" {
-		t.Errorf("start opened %q rather than the stage the order names", state.Stage)
-	}
-
-	// And the stage closes by hand, which is what the loop is for.
-	if out := h.mustRun(t, "done", "H-1", "--delivered", "worktree"); !strings.Contains(out, "closed") {
-		t.Errorf("the hand-driven stage did not close:\n%s", out)
-	}
-}
-
-// TestStartOpensAgainstTheTasksOwnFlow. The lead that opens a stage replays to do
-// it, and one built without a flow replays against this build's default — so every
-// task on any other flow was refused by its own fingerprint before it could start.
-func TestStartOpensAgainstTheTasksOwnFlow(t *testing.T) {
-	h := newHarness(t)
-	h.mustRun(t, "task", "new", "H-2", "--kind", "bug", "--flow", "fix")
-
-	if err := h.run(t, "start", "H-2"); err != nil {
-		t.Fatalf("a task on a non-default flow could not be started: %v", err)
-	}
-	if state := mustState(t, h, "H-2"); state.Stage != "setup" {
-		t.Errorf("the task opened at %q", state.Stage)
-	}
-}
-
-// TestStartRefusesWhatItCannotOpen. A finished task and a typo are the two ways
-// this is called wrong, and neither should leave events behind.
-func TestStartRefusesWhatItCannotOpen(t *testing.T) {
-	h := newHarness(t)
-
-	if err := h.run(t, "start"); err == nil {
-		t.Error("start with no task id was accepted")
-	}
-	if err := h.run(t, "start", "nobody"); err == nil {
-		t.Error("start on a task that does not exist was accepted")
-	}
-
-	h.mustRun(t, "task", "new", "H-3", "--kind", "chore", "--flow", "chore")
-	h.mustRun(t, "task", "abandon", "H-3", "superseded")
-	if err := h.run(t, "start", "H-3"); err == nil {
-		t.Error("start reopened a task somebody called off")
-	}
-}
-
 // TestTheOrderSaysHowEachArtifactIsProven. The order named what to deliver and
 // never what delivering would be measured by — fine for an agent Luna briefs
 // itself, and wrong for the reader driving by hand, who was told to produce
@@ -604,7 +543,7 @@ func TestStartRefusesWhatItCannotOpen(t *testing.T) {
 func TestTheOrderSaysHowEachArtifactIsProven(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "H-4", "--kind", "chore", "--flow", "chore")
-	h.mustRun(t, "start", "H-4")
+	openStage(t, h, "H-4")
 	h.mustRun(t, "done", "H-4", "--delivered", "worktree")
 
 	out := h.mustRun(t, "next", "H-4")
@@ -628,14 +567,14 @@ func TestTheOrderSaysHowEachArtifactIsProven(t *testing.T) {
 func TestStartOnAnAlreadyOpenStageChangesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "H-5", "--kind", "chore", "--flow", "chore")
-	h.mustRun(t, "start", "H-5")
+	openStage(t, h, "H-5")
 
 	before, err := h.env.Store.Events("H-5")
 	if err != nil {
 		t.Fatalf("reading the log: %v", err)
 	}
 
-	h.mustRun(t, "start", "H-5")
+	openStage(t, h, "H-5")
 
 	after, _ := h.env.Store.Events("H-5")
 	if len(after) != len(before) {
@@ -656,7 +595,7 @@ func TestStartSaysWhenAGateIsInTheWay(t *testing.T) {
 		if state.Status == fsm.StatusAwaitingGate {
 			break
 		}
-		h.mustRun(t, "start", "H-6")
+		openStage(t, h, "H-6")
 		stage := stageIn(fsm.DefaultFlow(), mustState(t, h, "H-6").Stage)
 		owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 		if len(owed) == 0 {
@@ -668,9 +607,11 @@ func TestStartSaysWhenAGateIsInTheWay(t *testing.T) {
 	}
 
 	if state := mustState(t, h, "H-6"); state.Status == fsm.StatusAwaitingGate {
-		out := h.mustRun(t, "start", "H-6")
-		if !strings.Contains(out, "gate") {
-			t.Errorf("start did not say a gate is in the way:\n%s", out)
+		// The opener leaves an open gate exactly where it is: walking past one is
+		// not the same act as deciding it.
+		openStage(t, h, "H-6")
+		if after := mustState(t, h, "H-6"); after.Status != fsm.StatusAwaitingGate {
+			t.Errorf("opening a stage walked past a gate: %q", after.Status)
 		}
 	}
 }
@@ -688,16 +629,6 @@ func TestAMechanicalStageKeepsTheEmptyBrief(t *testing.T) {
 	if !strings.Contains(out, "worktree: delivered") {
 		t.Errorf("it lost the proof line with it:\n%s", out)
 	}
-}
-
-// stageIn finds a stage in a flow, for the tests that drive one by hand.
-func stageIn(flow []fsm.Stage, id fsm.StageID) fsm.Stage {
-	for _, stage := range flow {
-		if stage.ID == id {
-			return stage
-		}
-	}
-	return fsm.Stage{}
 }
 
 // TestAnOrderThatIsNotWorkCarriesNoBrief. Three of the four order kinds are
@@ -733,5 +664,37 @@ func TestTheHandDrivenLoopRefusesATaskWhoseFlowIsGone(t *testing.T) {
 	}
 	if err := h.run(t, "next", "H-9"); err == nil {
 		t.Error("an order was issued against a flow this build does not have")
+	}
+}
+
+// openStage opens the stage a task's order names, the way `luna lead` does.
+//
+// The hand-driven opener is gone with its mode, so a test that needs a running
+// stage goes through the lead's own entry — which is also the only opener left,
+// and therefore the one worth exercising.
+func openStage(t *testing.T, h *harness, id string) {
+	t.Helper()
+
+	flow, err := h.env.flowOf(id)
+	if err != nil {
+		t.Fatalf("resolving %s's flow: %v", id, err)
+	}
+	if err := leadFor(h.env, ".", flow).Enter(context.Background(), id); err != nil {
+		t.Fatalf("opening a stage for %s: %v", id, err)
+	}
+}
+
+// TestTheLeadOpensAgainstTheTasksOwnFlow. A Lead built without a flow replays
+// against this build's default, so every task on any other flow was refused by
+// its own fingerprint before it could start. The hand-driven opener had a test
+// for this and the lead's did not — and the lead's is the one that survived.
+func TestTheLeadOpensAgainstTheTasksOwnFlow(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "H-2", "--kind", "bug", "--flow", "fix")
+
+	openStage(t, h, "H-2")
+
+	if state := mustState(t, h, "H-2"); state.Stage != "setup" {
+		t.Errorf("a task on a non-default flow opened at %q", state.Stage)
 	}
 }

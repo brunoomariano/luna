@@ -85,6 +85,26 @@ the wrong trade for a system whose product is an audit.
 adapter outside the core. **CLI first. Go, for a static single binary. Defaults plus user
 customization everywhere.**
 
+**Two modes, and one engine under both.** `luna lead` conducts one task; `luna fleet run`
+conducts every eligible one. There were four surfaces and *two* engines: `luna lead` had an
+agent conducting, while `luna run` and the fleet had Luna itself advancing and running a node
+per stage, with no lead anywhere. Two engines reaching the same states is two places for
+every fix to land, and the fleet was the half nobody watched — the block notification, the
+gate account and the flow-fingerprint fix had each landed on one engine and not the other.
+The fleet now conducts through the lead, and the second mode is the count of tasks.
+
+The hand-driven mode went with them. `luna next`, `luna work` and `luna done` stayed, because
+they are the lead's own interface and not a mode: it runs them, and so can a person reading
+what it did. What went is `luna start`, whose only purpose was to open a stage for somebody
+who was not the lead. *Rejected:* keeping `luna run` as a thin alias — a surface that reaches
+the same states by another path is the thing being removed, not the words for it.
+
+**A dry run is a flag, not a third mode.** It exercises a flow with no agent, no worktree and
+no model, which is the one shape a lead cannot conduct: there is nobody to conduct with. So
+it keeps the node-driven loop, which is now what that loop is for. *Rejected:* deleting it
+with the mode it came from — it is how a flow is checked before it costs anything, and the
+alternative to a free check is a paid one.
+
 ## State and the log
 
 **The reducer is pure; verification runs outside and the verdict arrives inside the
@@ -227,7 +247,7 @@ open.
 
 **Luna starts every agent inside `ai-jail` and refuses to start one without it.** The bug
 this fixed: Luna chose the permission flag by asking whether *its own process* was
-contained — but the agent is a child of the runner, so `ai-jail luna run` contained Luna
+contained — but the agent is a child of the runner, so `ai-jail luna lead` contained Luna
 and handed the agent `bypassPermissions` while the agent ran uncontained. Which sandbox is
 used is deliberately not configurable; making it so would move the security boundary into
 the file where `editor` lives.
@@ -289,7 +309,7 @@ design and is stated plainly rather than left to be discovered.
 judge a gate at two moments, and they need different mechanisms because they differ in
 whether the gate exists yet.
 
-When the lead closes the stage itself — the `luna run` path — the judgement happens while
+When the lead closes a stage itself — a stage no command could prove — the judgement happens while
 *computing* the decision that opens the gate, so there is no gate to file anything against.
 The verdict and an excerpt ride inside the `Advance` or `Complete` that opens it. When an
 agent closes its own stage through `luna done` — which is what `luna lead` does — the gate is
@@ -372,7 +392,7 @@ What survives is the one thing that package really was — `Harness.Ask`, a subp
 a prompt on stdin — moved to `internal/agent`, which already owned the harness table.
 *Rejected:* handing the conversation to the lead instead. The lead is per-task, its knob
 is that task's autonomy, and its brief is shaped so it never has a choice on the happy
-path; `luna gates` and `luna run <other-task>` are cross-task questions, and answering
+path; `luna gates` and starting another task are cross-task questions, and answering
 them through a task's lead widens exactly what `lead/agent.go` narrows.
 
 **`Ask` does not go through the sandbox, and `Run` refuses to start without one.** They

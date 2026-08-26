@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -360,5 +363,119 @@ func TestTheReportShowsATaskSomebodyCalledOff(t *testing.T) {
 	out := h.mustRun(t, "fleet", "report")
 	if !strings.Contains(out, "called off") || !strings.Contains(out, "OFF-1") {
 		t.Errorf("an abandoned task is missing from the report:\n%s", out)
+	}
+}
+
+// fleetLead reports every stage of whichever task it is asked about.
+//
+// A named fake rather than a canned string, and one that reads the task id out
+// of the order it is given: the fleet drives several at once, and a lead that
+// assumed one id would pass this test by conducting the same task N times.
+type fleetLead struct {
+	h  *harness
+	t  *testing.T
+	mu sync.Mutex
+}
+
+func (l *fleetLead) ask(_ context.Context, prompt string) (string, error) {
+	// The task's id comes off the order the lead was handed, not out of band: a
+	// fake told which task it is would pass this test by conducting the same one
+	// N times, which is the exact failure a fleet has.
+	id := ""
+	for _, line := range strings.Split(prompt, "\n") {
+		if rest, found := strings.CutPrefix(strings.TrimSpace(line), "task="); found {
+			id = rest
+			break
+		}
+	}
+	if id == "" {
+		return "", fmt.Errorf("the order named no task:\n%s", prompt)
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	state, err := l.h.env.replay(id)
+	if err != nil {
+		return "", err
+	}
+	flow, err := l.h.env.flowOf(id)
+	if err != nil {
+		return "", err
+	}
+	order, err := fsm.NextOrder(state, flow, l.h.env.profiles().Roles)
+	if err != nil {
+		return "", err
+	}
+
+	owed := strings.Join(artifactNames(order.Produces), ",")
+	if err := Run(l.h.env, []string{"done", id, "--delivered", owed}); err != nil {
+		return "", err
+	}
+	return "carried out " + string(order.Stage), nil
+}
+
+// TestAFleetConductsThroughTheLead is the fleet's engine.
+//
+// It used to drive its own way — Luna advancing and running a node per stage,
+// with no lead conducting anything — while `luna lead` drove the other. Two
+// engines reaching the same states meant every fix landed on one of them, and
+// the fleet was the half nobody was watching. This asserts the fleet goes
+// through the lead, by counting the leads: a fleet that drove itself would
+// finish these tasks without asking a model anything.
+func TestAFleetConductsThroughTheLead(t *testing.T) {
+	h := newHarness(t)
+	for _, id := range []string{"F-1", "F-2"} {
+		h.mustRun(t, "task", "new", id, "--kind", "chore", "--flow", "chore")
+	}
+
+	lead := &fleetLead{h: h, t: t}
+	h.env.Lead = lead.ask
+
+	out := h.mustRun(t, "fleet", "run", "--concurrency", "1")
+
+	for _, id := range []string{"F-1", "F-2"} {
+		state, err := h.env.Store.ReplayOwnFlow(id)
+		if err != nil {
+			t.Fatalf("replaying %s: %v", id, err)
+		}
+		if state.Stage == "" {
+			t.Errorf("%s never entered a stage, so no lead conducted it", id)
+		}
+		// Every line a task wrote carries its id, because N leads narrate at once
+		// and interleaved half-sentences cannot be read back to a task.
+		if !strings.Contains(out, id+" | ") {
+			t.Errorf("%s's output is not attributed to it:\n%s", id, out)
+		}
+	}
+}
+
+// TestAFleetWithNoLeadSaysSo. Luna hosts no model, and a fleet that quietly did
+// nothing would look like a fleet with nothing eligible.
+func TestAFleetWithNoLeadSaysSo(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "F-1", "--kind", "chore", "--flow", "chore")
+	h.env.Lead = nil
+
+	out := h.mustRun(t, "fleet", "run")
+
+	if !strings.Contains(out, "no lead is configured") {
+		t.Errorf("a fleet with no model did not say why nothing happened:\n%s", out)
+	}
+}
+
+// TestASimulatedTaskIsNotConductedForReal. Its stages recorded checks that never
+// ran, so continuing it for real would build on proof nobody produced.
+func TestASimulatedTaskIsNotConductedForReal(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "F-1", "--kind", "chore", "--flow", "chore", "--simulated")
+
+	lead := &fleetLead{h: h, t: t}
+	h.env.Lead = lead.ask
+
+	out := h.mustRun(t, "fleet", "run")
+
+	if !strings.Contains(out, "simulation") {
+		t.Errorf("a simulated task was conducted for real:\n%s", out)
 	}
 }

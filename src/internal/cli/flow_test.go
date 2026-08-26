@@ -194,10 +194,8 @@ func TestABlockedTaskNotifies(t *testing.T) {
 		return nil
 	}
 
-	blocked := fsm.TaskState{Status: fsm.StatusBlocked, Blocked: "the node broke"}
-	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
-		t.Fatalf("reporting: %v", err)
-	}
+	blocked := fsm.TaskState{ID: "LUNA-1", Status: fsm.StatusBlocked, Blocked: "the node broke"}
+	reportEnding(h.env, fsm.Order{Kind: fsm.OrderBlocked}, blocked)
 
 	if gotTask != "LUNA-1" {
 		t.Errorf("the notification must name the task, got %q", gotTask)
@@ -224,9 +222,8 @@ func TestOnlyABlockNotifies(t *testing.T) {
 			return nil
 		}
 
-		if err := reportRun(h.env, "LUNA-1", state); err != nil {
-			t.Fatalf("reporting: %v", err)
-		}
+		state.ID = "LUNA-1"
+		reportEnding(h.env, fsm.Order{Kind: fsm.OrderWait}, state)
 		if notified {
 			t.Errorf("%q needs no banner", state.Status)
 		}
@@ -244,10 +241,8 @@ func TestAFailedNotificationDoesNotFailTheRun(t *testing.T) {
 		return errors.New("no herdr running")
 	}
 
-	blocked := fsm.TaskState{Status: fsm.StatusBlocked, Blocked: "the node broke"}
-	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
-		t.Errorf("a notifier that failed must not fail the run: %v", err)
-	}
+	blocked := fsm.TaskState{ID: "LUNA-1", Status: fsm.StatusBlocked, Blocked: "the node broke"}
+	reportEnding(h.env, fsm.Order{Kind: fsm.OrderBlocked, Reason: "the node broke"}, blocked)
 	if !strings.Contains(h.out.String(), "blocked") {
 		t.Error("the block is still reported to the terminal")
 	}
@@ -258,9 +253,11 @@ func TestNoNotifierIsNotAnError(t *testing.T) {
 	h := newHarness(t)
 	h.env.Notify = nil
 
-	blocked := fsm.TaskState{Status: fsm.StatusBlocked, Blocked: "the node broke"}
-	if err := reportRun(h.env, "LUNA-1", blocked); err != nil {
-		t.Errorf("no notifier is a machine without one, not a failure: %v", err)
+	blocked := fsm.TaskState{ID: "LUNA-1", Status: fsm.StatusBlocked, Blocked: "the node broke"}
+	reportEnding(h.env, fsm.Order{Kind: fsm.OrderBlocked, Reason: "the node broke"}, blocked)
+
+	if !strings.Contains(h.out.String(), "the node broke") {
+		t.Error("no notifier is a machine without one, not a reason to say nothing")
 	}
 }
 
@@ -269,7 +266,7 @@ func TestNoNotifierIsNotAnError(t *testing.T) {
 // told.
 //
 // It drives the real lead against a node that always fails, rather than handing
-// `reportRun` a TaskState with `Retry{Attempts: 3}` written into it. The
+// the ending a TaskState with `Retry{Attempts: 3}` written into it. The
 // fabricated version passed identically with `Attempts: 0` — the retry was
 // decoration, and a refactor that broke exhaustion in the lead would have left
 // this green. The criterion asks for both halves in one test because the seam
@@ -300,9 +297,8 @@ func TestRetryExhaustionBlocksAndNotifies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("running: %v", err)
 	}
-	if err := reportRun(h.env, "LUNA-1", state); err != nil {
-		t.Fatalf("reporting: %v", err)
-	}
+	state.ID = "LUNA-1"
+	reportEnding(h.env, fsm.Order{Kind: fsm.OrderBlocked, Reason: state.Blocked}, state)
 
 	if state.Status != fsm.StatusBlocked {
 		t.Fatalf("an exhausted budget must end blocked, got %q", state.Status)

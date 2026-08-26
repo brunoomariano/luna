@@ -113,7 +113,7 @@ func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
-	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	if !strings.Contains(out, "LUNA-1 finished") {
 		t.Errorf("want it to say the task finished, got %q", out)
@@ -147,7 +147,7 @@ func TestTheDryNodeProvesNothingAndSaysSo(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
@@ -175,7 +175,7 @@ func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	state, err := h.env.Store.Replay("LUNA-1", fsm.DefaultFlow())
 	if err != nil {
@@ -199,7 +199,7 @@ func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 func TestRunOnATaskThatDoesNotExist(t *testing.T) {
 	h := newHarness(t)
 
-	err := h.run(t, "run", "nowhere", "--dry-run")
+	err := h.run(t, "lead", "nowhere", "--dry-run")
 
 	if err == nil {
 		t.Fatal("running a task that was never created must fail")
@@ -216,7 +216,7 @@ func TestRunOnATaskThatDoesNotExist(t *testing.T) {
 func TestRunNeedsATaskID(t *testing.T) {
 	h := newHarness(t)
 
-	if err := h.run(t, "run"); !errors.Is(err, ErrUsage) {
+	if err := h.run(t, "lead"); !errors.Is(err, ErrUsage) {
 		t.Errorf("want ErrUsage, got %v", err)
 	}
 }
@@ -229,7 +229,7 @@ func TestRunNeedsATaskID(t *testing.T) {
 func TestRunSurfacesAMistypedFlagBeforeTouchingTheStore(t *testing.T) {
 	h := newHarness(t)
 
-	err := h.run(t, "run", "never-created", "--dry-runn")
+	err := h.run(t, "lead", "never-created", "--dry-runn")
 
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("want ErrUsage, got %v", err)
@@ -252,7 +252,7 @@ func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated") // interactive by default
 
-	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	if !strings.Contains(out, "waiting at plan") {
 		t.Errorf("want the stage it stopped at, got %q", out)
@@ -272,10 +272,10 @@ func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 func TestAnsweringAGateLetsTheRunCarryOn(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	h.mustRun(t, "gate", "approve", "LUNA-1")
-	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	// It moves on, and stops at the next gate rather than the one just answered.
 	if strings.Contains(out, "waiting at discovery") {
@@ -322,7 +322,7 @@ func blockedStore(t *testing.T, h *harness, id string) {
 	}
 }
 
-// TestRunReportsABlockedTaskAndHowToClearIt covers the blocked branch of reportRun.
+// TestRunReportsABlockedTaskAndHowToClearIt covers the blocked branch of a dry run's ending.
 //
 // A block is waiting on a person, so the run ends rather than pushing past it. The
 // reason is printed because the reason is the whole value of the block — INV-5
@@ -332,7 +332,7 @@ func TestRunReportsABlockedTaskAndHowToClearIt(t *testing.T) {
 	h := newHarness(t)
 	blockedStore(t, h, "LUNA-1")
 
-	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	if !strings.Contains(out, "LUNA-1 is blocked") {
 		t.Errorf("want it to say the task is blocked, got %q", out)
@@ -368,7 +368,7 @@ func TestUnblockClearsABlockAndSaysWhatIsNext(t *testing.T) {
 	if !strings.Contains(out, "LUNA-1 unblocked") {
 		t.Errorf("want a confirmation, got %q", out)
 	}
-	if !strings.Contains(out, "luna run LUNA-1") {
+	if !strings.Contains(out, "luna lead LUNA-1") {
 		t.Errorf("want the command that resumes it, got %q", out)
 	}
 
@@ -400,7 +400,7 @@ func TestAnUnblockedTaskRunsAgain(t *testing.T) {
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
-	out := h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	if !strings.Contains(out, "finished") {
 		t.Errorf("want the task to carry on to the end, got %q", out)
@@ -418,7 +418,7 @@ func TestUnblockRefusesATaskThatIsNotBlocked(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	// Unattended is the knob now, not a profile.
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run") // runs to done
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run") // runs to done
 
 	err := h.run(t, "unblock", "LUNA-1")
 
@@ -465,25 +465,23 @@ func TestUnblockNeedsATaskID(t *testing.T) {
 	}
 }
 
-// ── reportRun ────────────────────────────────────────────────────────────────
+// ── reportDryEnding ────────────────────────────────────────────────────────────────
 
-// TestReportRunOnAnUnexpectedStatus covers the branch no ordinary run reaches.
+// TestADryRunOnAnUnexpectedStatus covers the branch no ordinary run reaches.
 //
 // Run returns on three endings — done, gated, blocked — so a state that is still
 // running only arrives here if the loop grows a fourth way out. The branch prints the
 // stage and the status rather than nothing, which is what keeps a future ending from
 // finishing in silence. It is called directly because reaching it through a real run
 // would mean the lead was broken.
-func TestReportRunOnAnUnexpectedStatus(t *testing.T) {
+func TestADryRunOnAnUnexpectedStatus(t *testing.T) {
 	h := newHarness(t)
 
 	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
 	state.Status = fsm.StatusRunning
 	state.Stage = "build"
 
-	if err := reportRun(h.env, "LUNA-1", state); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	reportDryEnding(h.env, "LUNA-1", state)
 
 	out := h.out.String()
 	if !strings.Contains(out, "build") {
@@ -494,12 +492,12 @@ func TestReportRunOnAnUnexpectedStatus(t *testing.T) {
 	}
 }
 
-// TestReportRunOnAGateWithNoDetail covers the nil-gate guard.
+// TestADryRunOnAGateWithNoDetail covers the nil-gate guard.
 //
-// A task awaiting a gate normally carries one, but reportRun reads the reason
+// A task awaiting a gate normally carries one, but the ending reads the reason
 // defensively: printing a line with an empty reason beats panicking on the command
 // someone ran to find out what went wrong.
-func TestReportRunOnAGateWithNoDetail(t *testing.T) {
+func TestADryRunOnAGateWithNoDetail(t *testing.T) {
 	h := newHarness(t)
 
 	state := fsm.NewTaskState("LUNA-1", fsm.KindFeature)
@@ -507,9 +505,7 @@ func TestReportRunOnAGateWithNoDetail(t *testing.T) {
 	state.Stage = "spec"
 	state.Gate = nil
 
-	if err := reportRun(h.env, "LUNA-1", state); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	reportDryEnding(h.env, "LUNA-1", state)
 
 	if !strings.Contains(h.out.String(), "luna gate show LUNA-1") {
 		t.Errorf("want the command that answers it, got %q", h.out.String())
@@ -678,7 +674,18 @@ func TestAMissingSandboxBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 
-	out := h.mustRun(t, "run", "LUNA-1", "--repo", repoWithCommit(t))
+	// Through `luna work`, which is the command that starts a stage's agent and
+	// therefore the one that meets the missing sandbox. It is also what the lead
+	// runs, so this is the same code path a conducted task takes.
+	//
+	// Twice, because `setup` is mechanical and needs no sandbox to close: the
+	// first stage that wants an agent is the one after it, and a test that stopped
+	// at the first would prove the sandbox was never reached.
+	repo := repoWithCommit(t)
+	openStage(t, h, "LUNA-1")
+	h.mustRun(t, "work", "LUNA-1", "--repo", repo)
+	openStage(t, h, "LUNA-1")
+	out := h.mustRun(t, "work", "LUNA-1", "--repo", repo)
 
 	if !strings.Contains(out, "blocked") {
 		t.Errorf("want the task reported as blocked, got %q", out)
@@ -709,7 +716,7 @@ func TestRunRefusesToStartWhenTheStoreCannotAnswer(t *testing.T) {
 		t.Fatalf("closing the store: %v", err)
 	}
 
-	err := h.run(t, "run", "LUNA-1", "--dry-run")
+	err := h.run(t, "lead", "LUNA-1", "--dry-run")
 
 	if err == nil {
 		t.Fatal("a run against an unreadable store must fail")
@@ -816,7 +823,7 @@ func TestStatusNamesTheBranchAFinishedTaskLandedOn(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
-	h.mustRun(t, "run", "LUNA-1", "--dry-run")
+	h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
 	out := h.mustRun(t, "status", "LUNA-1")
 
@@ -1199,7 +1206,7 @@ func TestADryRunIsRefusedOnARealTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--profile", "nightly")
 
-	err := Run(h.env, []string{"run", "LUNA-1", "--dry-run"})
+	err := Run(h.env, []string{"lead", "LUNA-1", "--dry-run"})
 	if err == nil {
 		t.Fatal("a dry run over a real task must be refused")
 	}
@@ -1217,7 +1224,7 @@ func TestARealRunIsRefusedOnASimulatedTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated", "--kind", "feature", "--profile", "nightly")
 
-	err := Run(h.env, []string{"run", "LUNA-1"})
+	err := Run(h.env, []string{"lead", "LUNA-1"})
 	if err == nil {
 		t.Fatal("a real run over a simulated task must be refused")
 	}

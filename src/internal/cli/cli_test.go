@@ -1541,7 +1541,7 @@ func TestAbandoningAFinishedTaskIsRefusedBeforeItIsWritten(t *testing.T) {
 	// A task that has actually ended, rather than one seeded into the status:
 	// what is under test is the refusal, and a hand-built terminal state would
 	// not prove the command reaches it.
-	_ = Run(h.env, []string{"run", "LUNA-1", "--dry-run"})
+	_ = Run(h.env, []string{"lead", "LUNA-1", "--dry-run"})
 	state := mustState(t, h, "LUNA-1")
 	if !state.IsTerminal() {
 		t.Skipf("this flow did not reach a terminal state, got %q", state.Status)

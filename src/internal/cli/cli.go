@@ -53,7 +53,7 @@ type Env struct {
 	Notify func(ctx context.Context, taskID, reason string) error
 
 	// Lead is the model that judges a gate for `luna lead`. Injected because
-	// Luna hosts no model of its own, and nil because `luna run` drives the same
+	// Luna hosts no model of its own, and nil because a dry run exercises the same
 	// flow without one — a machine with no harness still runs every task whose
 	// gates a person answers.
 	Lead func(ctx context.Context, prompt string) (string, error)
@@ -90,14 +90,12 @@ func Run(env Env, args []string) error {
 	// table would be an initialisation cycle.
 	commands := map[string]func(Env, []string) error{
 		"task":     runTask,
-		"run":      runTaskCommand,
 		"work":     workCommand,
 		"unblock":  unblockCommand,
 		"gates":    runGates,
 		"gate":     runGate,
 		"flow":     runFlow,
 		"next":     nextCommand,
-		"start":    startCommand,
 		"done":     doneCommand,
 		"status":   statusCommand,
 		"stuck":    stuckCommand,
@@ -118,9 +116,63 @@ func Run(env Env, args []string) error {
 
 // Usage is the help text. It is a function rather than a constant so the command
 // list has one home.
+// Usage is the help text. It is a function rather than a constant so the command
+// list has one home.
+//
+// Grouped by who acts rather than alphabetically, because the two modes are the
+// product and everything else exists to watch them or to correct them. A reader
+// looking for "how do I start work" should not have to find that among the ways
+// to read a gate.
 func Usage() string {
 	return strings.TrimSpace(`
 luna — deterministic orchestration for AI agents
+
+Two modes. Luna picks the stage in both; the knob picks who answers a gate.
+
+  luna lead <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
+        conduct one task. Luna gives the lead one order at a time and it
+        carries them out, starting an agent per stage. It never chooses a
+        stage. The knob bounds which gates it may answer and what it may
+        do about a failure. 0 judges nothing, and is the default.
+        --dry-run exercises the flow with no agent, no worktree and no
+        model — it is what tells a broken flow from a broken integration.
+
+  luna fleet run [--flow <flow>] [--budget-usd <usd>]
+        [--concurrency <n>] [--agent <kind>] [--dry-run]
+        the same, over every eligible task, several at a time. Eligible
+        means not finished, not called off, not waiting on a person and
+        not blocked — a block stopped for a reason somebody has to deal
+        with, and a fleet that retried it nightly would turn a notified
+        block into a nightly bill. The ceiling stops starting new tasks;
+        one already under way is holding a worktree and an agent, and
+        killing it mid-stage would spend the money and throw away the
+        delivery. --dry-run exercises the flow with no agent, no worktree
+        and no model.
+
+the lead's own commands — it runs these, and so can you
+
+  luna next <id> [--json]
+        the order for this task: which stage, which role, which worktree,
+        which base commit, what is denied. It is an instruction, not
+        advice, and reading it changes nothing.
+
+  luna work <id> [--agent <kind>] [--dry-run]
+        run the agent for the stage the order names, and close that stage
+        with whatever its checks observed. It chooses no stage.
+
+  luna done <id> --delivered <a,b> [--commit <sha>]
+        report a stage carried out by hand, and hand in the commit it
+        produced. Luna checks the delivery against the contract — a stage
+        that owed more than it delivered does not close. A stage whose
+        contract names a command will not close this way.
+
+  luna artifact put <artifact> [--stage <stage>]
+  luna artifact get <artifact> [--stage <stage>]
+        hand a document to Luna, or read one back. This is how a stage
+        delivers something that is not a commit — a contract, a briefing —
+        without leaving it in the tree for everyone downstream.
+
+opening and correcting a task
 
   luna task new <id> --kind <kind> [--flow <flow>] [--profile <profile>]
         [--simulated] [--about <what>] [--design <how>] [--acceptance <done when>]
@@ -129,51 +181,16 @@ luna — deterministic orchestration for AI agents
         into the opening event, so a task that switched flows mid-run would
         be a log no replay could read. luna flow check lists them.
 
-  luna task show <id> [--json]
-        the task's current state and what it has produced
-
-  luna next <id> [--json]
-        the order for this task: which stage, which role, which worktree,
-        which base commit, what is denied. It is an instruction, not advice,
-        and reading it changes nothing.
-
-  luna start <id>
-        open the stage the order names, for work you are about to do by
-        hand. next is a read and changes nothing, so this is what puts
-        a stage in front of you without also starting an agent — the
-        middle step of next, start, done.
-
-  luna done <id> --delivered <a,b> [--commit <sha>]
-        report the running stage finished, and hand in the commit it
-        produced. Luna checks the delivery against the contract — a stage
-        that owed more than it delivered does not close.
-
-  luna status <id> [--json]
-        the whole flow and where the task stands in it. Separate from
-        next on purpose: an order carries no view of what comes after it.
-
-  luna run <id> [--agent <kind>] [--dry-run]
-        drive the task until it needs a person or finishes.
-        --dry-run exercises the flow with no agent and no worktree.
-
-  luna work <id> [--agent <kind>] [--dry-run]
-        run the agent for the stage that is already open, and close that
-        stage with whatever its checks observed. It chooses no stage.
-        This is how the lead starts an agent instead of doing the work
-        itself; luna done is for a stage carried out by hand.
-
-  luna lead <id> [--autonomy 0-10]
-        hand the task to the lead agent: Luna gives it one order at a
-        time and it carries them out. It never chooses a stage — the
-        autonomy knob bounds which gates it may answer and what it may
-        do about a failure. 0 judges nothing, and is the default.
+  luna task statement <id> [--about ...] [--design ...] [--acceptance ...]
+        correct what a task is about. The previous wording stays in the
+        log — a revision is an event, not an overwrite.
 
   luna budget <id> [<usd> [reason]]
-        show what the task may spend, or move the ceiling. A task that
-        stops on its budget carries on by raising it and unblocking —
-        a limit with no way past it makes the cheapest failure the one
-        you cannot recover from. Moving it writes an event, so the log
-        says when it changed and why. 0 is no ceiling.
+        show what the task may spend, or move the ceiling. No ceiling by
+        default. A task that stops on its budget carries on by raising it
+        and unblocking — a limit with no way past it makes the cheapest
+        failure the one you cannot recover from. Moving it writes an
+        event, so the log says when it changed and why.
 
   luna autonomy <id> [<0-10> [reason]]
         show the knob, or move it mid-run. Moving it writes an event, so
@@ -183,6 +200,55 @@ luna — deterministic orchestration for AI agents
   luna task abandon <id> <reason>
         end a task that will not be finished. The log keeps everything —
         abandoning records that a person called it off, and why.
+
+  luna task forget <id>
+        drop the documents a finished task handed over. The log is
+        untouched, hashes included, so what was produced outlives the
+        content. Only a task that has ended may be forgotten.
+
+answering a gate
+
+  luna gate show <id>
+        what a suspended task is waiting for, and what the lead already
+        concluded about it if the knob let it look
+
+  luna gate approve <id>
+        accept and carry on
+
+  luna gate reject <id> [reason]
+        refuse the artifact; the stage that produced it runs again
+
+  luna gate adjust <id> [--append <text> | --replace <text> | --stdin]
+        change the artifact under review, then accept the changed version.
+        With no flag, opens the editor. The flags exist so an agent or a
+        script can answer a gate without a terminal.
+
+  luna gate checks <id> --on <gate> [--run <command>]...
+        declare the commands that answer a gate mechanically. They run
+        against what the stage delivered, and the first failure is the
+        answer. With no --run, the gate is declared to have no mechanical
+        answer and goes to judgement.
+
+watching
+
+  luna status <id> [--json]
+        the whole flow and where the task stands in it. Separate from
+        next on purpose: an order carries no view of what comes after it.
+
+  luna task show <id> [--json]
+        the task's current state and what it has produced
+
+  luna gates [--json]
+        every task waiting on a person
+
+  luna stuck [--for <duration>] [--notify] [--json]
+        what has been stopped for too long — a blocked merge, a gate
+        nobody answered. Defaults to an hour. --notify tells a person
+        instead of only whoever ran the command.
+
+  luna fleet report [--since <duration>] [--json]
+        what every task is, grouped by what has to happen to it next.
+        This is the morning's product rather than a side effect of it.
 
   luna unblock <id>
         clear a block once whatever caused it is dealt with
@@ -195,51 +261,11 @@ luna — deterministic orchestration for AI agents
         contract nobody checked. Changing a flow under an open task stops
         it replaying.
 
-  luna fleet run [--flow <flow>] [--budget-usd <usd>]
-        [--concurrency <n>] [--agent <kind>] [--dry-run]
-        drive every eligible task, several at a time. Eligible means not
-        finished, not called off, not waiting on a person and not blocked
-        — a block stopped for a reason somebody has to deal with, and a
-        fleet that retried it nightly would turn a notified block into a
-        nightly bill. The ceiling stops starting new tasks; one already
-        under way is holding a worktree and an agent, and killing it
-        mid-stage would spend the money and throw away the delivery.
+setting the machine up
 
-  luna fleet report [--since <duration>] [--json]
-        what every task is, grouped by what has to happen to it next.
-        This is the morning's product rather than a side effect of it.
-
-  luna gates [--json]
-        every task waiting on a person
-
-  luna stuck [--for <duration>] [--notify] [--json]
-        what has been stopped for too long — a blocked merge, a gate
-        nobody answered. Defaults to an hour. --notify tells a person
-        instead of only whoever ran the command.
-
-  luna gate show <id>
-        what a suspended task is waiting for
-
-  luna gate approve <id>
-        accept and carry on
-
-  luna gate adjust <id> [--append <text> | --replace <text> | --stdin]
-        change the artifact under review, then accept the changed version.
-        With no flag, opens the editor. The flags exist so an agent or a
-        script can answer a gate without a terminal.
-
-  luna gate reject <id> [reason]
-        refuse the artifact; the stage that produced it runs again
-
-  luna gate checks <id> --on <gate> [--run <command>]...
-        declare the commands that answer a gate mechanically. They run
-        against what the stage delivered, and the first failure is the
-        answer. With no --run, the gate is declared to have no mechanical
-        answer and goes to judgement.
-
-  luna task statement <id> [--about ...] [--design ...] [--acceptance ...]
-        correct what a task is about. The previous wording stays in the
-        log — a revision is an event, not an overwrite.
+  luna trust
+        tell the harness it trusts the directory Luna makes worktrees in,
+        so its agents start at a prompt instead of at a folder dialog.
 
 kinds:    feature, bug, chore, docs
 profiles: interactive (default), turbo, nightly, plus any the project

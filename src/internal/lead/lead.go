@@ -4,7 +4,7 @@
 // stage, calls the node, checks the delivery and records the transition —
 // deterministic, zero tokens. When something goes off the rails, a model decides
 // what to do with it, and that judgement arrives through the Judge interface
-// rather than being wired in here. It is what `luna run` uses, and it needs no
+// rather than being wired in here. It is what a dry run uses, and it needs no
 // model at all.
 //
 // Agent is the same task conducted by a model, so a person can talk to the thing
@@ -142,7 +142,7 @@ type Lead struct {
 	// Ask is how the lead judges a gate the knob reached. It is the same boundary
 	// Agent uses, and the same one drawn everywhere: Luna hosts no model of its own.
 	//
-	// Nil is the ordinary case — `luna run` needs no model, and a run with none
+	// Nil is the ordinary case — a dry run needs no model, and a run with none
 	// sends every judgement to a person rather than approving what nobody looked
 	// at.
 	Ask func(ctx context.Context, prompt string) (string, error)
@@ -198,7 +198,7 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 		// An open gate is an ending only once nobody else may answer it. At knob 9
 		// the lead may, and the gate normally never opens — the decision rides on
 		// the action that would open it. What lands here is the recovery case: a
-		// gate that opened because the ask itself failed, which `luna run` used to
+		// gate that opened because the ask itself failed, which the driving loop used to
 		// treat as a person's to answer forever. Enter answers it if the knob
 		// allows, and files what it concluded if it does not approve; either way
 		// the next pass sees a settled gate and stops.
@@ -234,7 +234,7 @@ func (l *Lead) Run(ctx context.Context, taskID string) (fsm.TaskState, error) {
 // PointBranchIfDone lands a finished task, for a caller driving its own loop.
 //
 // Exported because two loops end a task and both have to do this. `Lead.Run`
-// drives `luna run` and calls the unexported one; `conductTask` drives `luna
+// drives a dry run and calls the unexported one; `conductTask` drives `luna
 // lead` and had no way in — it finished six stages without ever pointing the
 // branch, while the status printed `luna/TALLY-8/done` for a ref nothing had
 // created. Measured on TALLY-8, one commit after a fix that wired the Land field
@@ -278,7 +278,7 @@ func (l *Lead) land(ctx context.Context, state fsm.TaskState) {
 // Entering is not the lead's decision and is not offered to it: a task that is
 // not running has exactly one next step and the status says which. What *is* a
 // decision is the gate on the way in, and that goes through the same knob-aware
-// path `luna run` uses rather than a second copy of it — the reason this is a
+// path a dry run uses rather than a second copy of it — the reason this is a
 // method on Lead and not a helper in the CLI.
 func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	flow := l.flow()
@@ -297,7 +297,7 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	// sits at that status and the decision is taken on the next Advance. Refusing
 	// it meant the knob could not reach the only gate the shipped flow has:
 	// measured on TALLY-5 at knob 9 against a criticality-9 gate, where the loop
-	// ended at "wait" every time. `luna run` never had this, because its own step
+	// ended at "wait" every time. The driving loop never had this, because its own step
 	// advances from any status that is not running.
 	//
 	// A block and a finished task are still endings: nothing authorises walking

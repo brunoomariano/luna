@@ -191,7 +191,7 @@ func TestWithNoLeadTheCommandSaysSoAndNamesTheAlternative(t *testing.T) {
 	if err == nil {
 		t.Fatal("a lead command with no model reported success")
 	}
-	if !strings.Contains(err.Error(), "luna run") {
+	if !strings.Contains(err.Error(), "--dry-run") {
 		t.Errorf("the refusal does not name the alternative: %v", err)
 	}
 }
@@ -446,7 +446,7 @@ func TestWhatTheLeadConcludedAboutAGateIsKept(t *testing.T) {
 func TestConductTaskLandsAFinishedTask(t *testing.T) {
 	var landed struct{ task, commit string }
 
-	conductor := leadFor(newHarness(t).env, ".")
+	conductor := leadFor(newHarness(t).env, ".", fsm.DefaultFlow())
 	conductor.Land = func(_ context.Context, taskID, commit string) error {
 		landed.task, landed.commit = taskID, commit
 		return nil
@@ -485,7 +485,7 @@ func TestConductTaskLandsWhatTheLoopEndsOn(t *testing.T) {
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	// Driven to done by the dry runner, which needs no agent.
-	_ = Run(h.env, []string{"run", "LUNA-1", "--dry-run"})
+	_ = Run(h.env, []string{"lead", "LUNA-1", "--dry-run"})
 	if state := mustState(t, h, "LUNA-1"); !state.IsTerminal() {
 		t.Skipf("the dry run did not finish the task (it is %q)", state.Status)
 	}
@@ -518,7 +518,7 @@ func TestTheLeadIsWiredToLandAndToWarn(t *testing.T) {
 	// Rebuilt the same way the command does, which is the thing under test: if
 	// leadCommand stops setting these, this constructor has to stop too or the
 	// test is asserting about a struct nothing uses.
-	built := leadFor(h.env, ".")
+	built := leadFor(h.env, ".", fsm.DefaultFlow())
 	if built.Land == nil {
 		t.Error("the lead cannot land: a finished task's work stays on the stage branches")
 	}

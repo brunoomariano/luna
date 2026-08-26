@@ -75,7 +75,7 @@ type TaskCreated struct {
 	// Measured on TALLY-6, where a dry run walked a *real* task to `done` and
 	// left `ci_green passed (full) make ci → 0` in the log for code no command
 	// had seen. That the flag could be pointed at a task with real stages in it
-	// is the other half of the failure, and `luna run` now refuses it.
+	// is the other half of the failure, and the engine now refuses it.
 	Simulated bool `json:"simulated,omitempty"`
 
 	// Statement is what a person said the task is about, recorded with the task
@@ -1017,7 +1017,7 @@ func block(state TaskState, a Block) (TaskState, error) {
 
 	state.Status = StatusBlocked
 	// A Block action arrives from the node layer, and the one thing that gets
-	// there is infrastructure: `luna run` blocks on ErrInfrastructure without
+	// there is infrastructure: the caller blocks on ErrInfrastructure without
 	// consulting anyone, because there is no judgement to make about a binary that
 	// is missing. Anything the *work* did wrong is one of the cases above.
 	state.BlockedBy = BlockTooling
