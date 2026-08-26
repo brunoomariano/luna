@@ -39,7 +39,6 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Guard":            "policy",  // the node matches it; the reducer reads only whether it fired
 		"Role":             "policy",  // only internal/node reads it
 		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
-		"Memory":           "policy",  // the same: what the agent knows walking in, not what it owes walking out
 	}
 
 	stage := reflect.TypeOf(Stage{})

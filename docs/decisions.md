@@ -291,6 +291,28 @@ beads adapter and the merger had *zero* importers despite having decision record
 own. The flow audit was called only from its own tests — Luna's flow was audited in Luna's
 test suite while a project's flow was audited by nothing.
 
+**The workstream is the task's, and every agent of that task writes to it.** It was a
+stage's field, `memory = "on"`, defaulting to off — and no shipped stage ever turned it on,
+so the feature was parsed, documented and doing nothing for its whole life. What made
+per-stage look right was a fear of contamination: writing back from every stage of every
+task is how a shared memory fills with the transient. A named workstream is a better answer
+to that, because it separates by what the work *is* rather than by how much of it somebody
+guessed was worth keeping.
+
+The task is the unit and not the stage or the role, for the reason the contract already
+gives: a task is one piece of work handed along. What the planner learned has to be there
+for the coder, and a stage choosing its own ledger would answer "what happened on this
+task" with a shrug. The default is the project's, named in `.luna/config.toml`; a task may
+select another or ask Luna to open one, and what it used is written into `TaskCreated` —
+so replaying a finished run reads where the work actually went rather than where today's
+config points. *Rejected:* reading the workstream from config at replay time — a task's
+history would move whenever somebody edited a file.
+
+*Rejected:* an unnamed default. Empty means no memory at all, which is a different thing
+from "nobody configured it": a run with no name lands in whatever workstream the machine
+was last pointing at, and that is the contamination arriving by a different door. A machine
+with no config writes to `luna`.
+
 ## Gates
 
 **A gate suspends and frees the slot.** With N tasks in parallel, gates that held processes
@@ -567,7 +589,15 @@ while parallelism is between tasks rather than inside one.
 
 Filesystem containment and durable project memory. Orthogonal to orchestration and
 already validated in use, so Luna composes with them instead of reimplementing them: the
-sandbox is INV-4, and `memory = "on"` wraps the harness in `ai-memory run`.
+sandbox is INV-4, and every agent runs inside `ai-memory run --workstream <name>`.
+
+**Taken:** the workstream as the unit of memory, and its two refusals as the mechanism —
+selecting a name that does not exist is a 404 and creating one that does is a 409, both
+before the agent starts, so neither wastes a model call and neither falls back to whatever
+workstream the machine was pointing at. Measured against ai-memory 1.32.1.
+
+**Rejected:** letting an unknown name create its own workstream — a typo would open a
+second ledger and the run would look fine.
 
 ### Project practices
 

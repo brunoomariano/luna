@@ -23,6 +23,15 @@ type TaskCreated struct {
 	Kind    TaskKind `json:"kind"`
 	Profile Profile  `json:"profile,omitempty"`
 
+	// Memory is the workstream every agent this task starts writes to.
+	//
+	// Recorded like the profile and for the same reason: a replay has to reproduce
+	// the run as it happened, and which ledger a task's work landed in is a fact
+	// about that run rather than about today's configuration. Reading it from the
+	// config at replay time would make a task's history move when somebody edits a
+	// file.
+	Memory TaskMemory `json:"memory,omitzero"`
+
 	// Flow identifies the flow this task was born under.
 	//
 	// It is recorded, unlike Advance.Flow, and the difference is the same one
@@ -515,6 +524,7 @@ func created(state TaskState, a TaskCreated) (TaskState, error) {
 
 	state.Context.Kind = a.Kind
 	state.BudgetUSD = a.BudgetUSD
+	state.Memory = a.Memory
 	state.Profile = a.Profile
 	if state.Profile == "" {
 		state.Profile = ProfileInteractive

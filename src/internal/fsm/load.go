@@ -290,11 +290,12 @@ func assignStageField(stage *Stage, key, value, at string) error {
 		}
 		stage.Context = context
 	case "memory":
-		memory, err := ParseStageMemory(unquote(value), at)
-		if err != nil {
-			return err
-		}
-		stage.Memory = memory
+		// Refused rather than ignored. Memory is the task's now — one workstream
+		// for every agent a task starts — and a stage file still carrying the old
+		// key would read as configuration that does something.
+		return fmt.Errorf("%s: `memory` is a task's setting, not a stage's — "+
+			"`luna task new --workstream <name>` picks the workstream every agent "+
+			"of that task writes to", at)
 	case "requires", "produces", "produces_for_human":
 		return assignArtifactList(stage, key, value, at)
 	default:

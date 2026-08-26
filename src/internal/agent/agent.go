@@ -112,31 +112,59 @@ type Call struct {
 	// Budget bounds the call. Zero means the caller's context decides.
 	Budget time.Duration
 
-	// Memory says whether this call runs inside the project's durable memory.
+	// Workstream is the named managed workstream this call runs inside, and it is
+	// the task's rather than the stage's: every agent a task starts writes to one
+	// ledger, so what one stage learned is there for the next one and for the next
+	// task that touches the same ground.
 	//
-	// It is per call rather than global because the two useful settings differ by
-	// stage: a stage that benefits from knowing what the project already decided
-	// is not always one whose session is worth writing back.
-	Memory Memory
+	// Empty runs the harness directly, with no memory at all. It is not a fallback
+	// to whatever workstream the machine happens to be pointing at — that is the
+	// contamination this names its way out of, and an unnamed one would be it
+	// arriving by a different door.
+	Workstream string
+
+	// MayCreateWorkstream lets the call create the workstream when selecting it
+	// finds nothing, for a task that asked for a new one.
+	//
+	// Selecting is tried first and creating is the fallback, which is the right way
+	// round: the ordinary case is a workstream that already exists and costs one
+	// launch, and only the first call of a task that asked for a fresh one pays for
+	// a second. The other end makes this safe — selecting a name that does not
+	// exist is a 404 and creating one that does is a 409, both before the agent
+	// starts, so neither wastes a model call and neither falls back to whatever
+	// workstream the machine was pointing at.
+	//
+	// Off by default, and that is the point: without it a typo in a workstream
+	// name stops the stage instead of quietly opening a second ledger nobody
+	// meant to write to.
+	MayCreateWorkstream bool
 }
 
-// Memory is how a call relates to the project's durable memory.
+// memoryArgs is the wrapper that puts a call inside the task's workstream.
 //
-// The wrapper (`ai-memory run`) forwards native arguments byte-for-byte, so it
-// composes with the harness's non-interactive mode rather than replacing it.
-// What it adds is a session imported on exit and consolidated into the project's
-// wiki — the gotchas and decisions a fresh agent would otherwise rediscover.
-type Memory string
+// `--workstream` selects and `--new` creates, and they are exclusive: the other
+// end answers 404 for a name that does not exist and 409 for one that does.
+// Measured against ai-memory 1.32.1, and both refusals arrive before the agent
+// starts — which is what makes selecting-then-creating cheap enough to be the
+// order rather than the other way round.
+func memoryArgs(call Call, create bool) []string {
+	selector := "--workstream"
+	if create {
+		selector = "--new"
+	}
+	return []string{memoryWrapper, "run", selector, call.Workstream, call.Kind}
+}
 
-const (
-	// MemoryOff runs the harness directly. The default: a stage that needs no
-	// project history should not pay for one, and writing back from every stage
-	// of every task is how a shared memory gets contaminated.
-	MemoryOff Memory = "off"
-
-	// MemoryOn wraps the call so the session lands in the project's memory.
-	MemoryOn Memory = "on"
-)
+// missingWorkstream reports whether a failed call failed because the workstream
+// it selected is not there.
+//
+// Matched on the wrapper's own words rather than on an exit status, because the
+// wrapper exits the same way for every reason it refuses — and creating a
+// workstream because the disk was full would be worse than the disk being full.
+func missingWorkstream(name, output string) bool {
+	return strings.Contains(output, "not found: managed workstream") &&
+		strings.Contains(output, name)
+}
 
 // memoryWrapper is the command that gives a call the project's durable memory.
 //
@@ -216,18 +244,33 @@ func (h Harness) resolve(call Call) (harness, string, error) {
 
 // Run executes one call and returns what the agent said and what it cost.
 //
+// Two recoveries, and both are the same shape: something the call names has gone
+// or has not arrived yet, the wrapper says so in its own words, and retrying with
+// the one thing that fits is better than failing a stage for something nobody did
+// wrong.
+//
 // A live call whose session the harness no longer has is retried fresh. The id
 // lives in the log now, so it can outlive the conversation it names — a task
-// picked up days later, a harness that pruned its history — and that is a
-// recovery rather than a stage failing for something nobody did wrong. The
-// retried result reports Fresh, so the cost column does not claim a resumption
-// that did not happen.
+// picked up days later, a harness that pruned its history. The retried result
+// reports Fresh, so the cost column does not claim a resumption that did not
+// happen.
+//
+// A call selecting a workstream that is not there is retried creating it, but
+// only for a task that asked for a new one. Neither refusal reaches a model, so
+// the second launch costs process time and nothing else.
 func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
-	result, err := h.runOnce(ctx, call)
-	if err != nil && call.Context == Live && staleSession(err) {
+	result, err := h.runOnce(ctx, call, false)
+	if err == nil {
+		return result, nil
+	}
+
+	if call.Context == Live && staleSession(err) {
 		fresh := call
 		fresh.Context, fresh.Session = Fresh, ""
-		return h.runOnce(ctx, fresh)
+		return h.runOnce(ctx, fresh, false)
+	}
+	if call.MayCreateWorkstream && missingWorkstream(call.Workstream, err.Error()) {
+		return h.runOnce(ctx, call, true)
 	}
 	return result, err
 }
@@ -243,7 +286,7 @@ func staleSession(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "no conversation found")
 }
 
-func (h Harness) runOnce(ctx context.Context, call Call) (Result, error) {
+func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) (Result, error) {
 	spec, binary, err := h.resolve(call)
 	if err != nil {
 		return Result{}, err
@@ -256,10 +299,13 @@ func (h Harness) runOnce(ctx context.Context, call Call) (Result, error) {
 	}
 
 	args := append([]string{binary}, spec.args(call)...)
-	if call.Memory == MemoryOn {
+	if call.Workstream != "" {
 		// The wrapper goes between the sandbox and the harness: contained first,
-		// then remembered, so a call that must not escape still cannot.
-		args = append([]string{memoryWrapper, "run", call.Kind}, args[1:]...)
+		// then remembered, so a call that must not escape still cannot. It also has
+		// to be this way round for the workstream to reach the agent at all — the
+		// id travels to managed children as environment, and the jail clears the
+		// environment on the way in.
+		args = append(memoryArgs(call, createWorkstream), args[1:]...)
 	}
 	args = append(sandboxArgs(), args...)
 	started := time.Now()

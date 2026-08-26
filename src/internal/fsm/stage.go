@@ -160,49 +160,6 @@ type Stage struct {
 	// through should be able to switch without its log becoming unreplayable.
 	// The same reasoning that keeps an artifact's path out of it.
 	Context StageContext
-
-	// Memory says whether this stage runs inside the project's durable memory.
-	// The zero value is MemoryOff.
-	//
-	// Policy like Context, and out of the fingerprint for the same reason: it
-	// changes what the agent knows walking in, not what the stage owes walking
-	// out. A task halfway through must be able to gain memory without its log
-	// becoming unreplayable.
-	//
-	// Off by default, and deliberately: a shared project memory that every stage
-	// of every task writes to is one that fills with the transient. Reading is
-	// cheap and safe; writing is the part worth declaring.
-	Memory StageMemory
-}
-
-// StageMemory is whether a stage's agent sees the project's durable memory.
-type StageMemory string
-
-const (
-	// MemoryOff runs the harness directly. The default.
-	MemoryOff StageMemory = "off"
-
-	// MemoryOn wraps the call so the agent starts knowing what the project
-	// already decided, and its session is consolidated on the way out.
-	MemoryOn StageMemory = "on"
-)
-
-// Enabled answers whether the stage runs with memory. The zero value reads as
-// off, so a flow that never mentions it behaves as every flow did before.
-func (m StageMemory) Enabled() bool { return m == MemoryOn }
-
-// ParseStageMemory reads the `memory` key, refusing what it does not know for
-// the reason ParseStageContext does: a typo silently meaning "off" looks like a
-// setting that was applied.
-func ParseStageMemory(value, at string) (StageMemory, error) {
-	switch StageMemory(value) {
-	case MemoryOn, MemoryOff:
-		return StageMemory(value), nil
-	case "":
-		return MemoryOff, nil
-	}
-	return "", fmt.Errorf("%s: memory is %q, and the choices are %q and %q",
-		at, value, MemoryOff, MemoryOn)
 }
 
 // StageContext is how a stage's agent starts: clean, or continuing.

@@ -456,8 +456,10 @@ func TestMemoryWrapsTheCallInsideTheSandbox(t *testing.T) {
 	// and runs it, which is what the real one does with native arguments.
 	// `ai-memory run <harness> <native args...>`: drop the wrapper's own two
 	// arguments and run the harness with the rest, byte-for-byte.
+	// `ai-memory run --workstream <name> <harness> <native args...>`: drop the
+	// wrapper's own four arguments and run the harness with the rest.
 	wrapper := filepath.Join(t.TempDir(), "fake-memory")
-	script := "#!/bin/sh\nshift\nharness=$1\nshift\nexec \"" + fake.path() + "\" \"$@\"\n"
+	script := "#!/bin/sh\necho \"$@\" > \"$AI_MEMORY_ARGV\"\nshift 4\nexec \"" + fake.path() + "\" \"$@\"\n"
 	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatalf("writing the fake wrapper: %v", err)
 	}
@@ -465,8 +467,11 @@ func TestMemoryWrapsTheCallInsideTheSandbox(t *testing.T) {
 	memoryWrapper = wrapper
 	defer func() { memoryWrapper = original }()
 
+	seen := filepath.Join(t.TempDir(), "wrapper-argv")
+	t.Setenv("AI_MEMORY_ARGV", seen)
+
 	_, err := h.Run(context.Background(), Call{
-		Kind: "claude", Dir: t.TempDir(), Prompt: "go", Memory: MemoryOn,
+		Kind: "claude", Dir: t.TempDir(), Prompt: "go", Workstream: "nightly",
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -477,11 +482,86 @@ func TestMemoryWrapsTheCallInsideTheSandbox(t *testing.T) {
 	if argv := fake.argv(t); !strings.Contains(argv, "-p") {
 		t.Errorf("the wrapper swallowed the harness's non-interactive flag:\n%s", argv)
 	}
+
+	// And the workstream reached the wrapper by name. Without it the wrapper falls
+	// back to whichever workstream the machine was pointing at, which is the
+	// contamination naming one exists to prevent.
+	asked, err := os.ReadFile(seen)
+	if err != nil {
+		t.Fatalf("reading what the wrapper was asked: %v", err)
+	}
+	if !strings.Contains(string(asked), "--workstream nightly") {
+		t.Errorf("the wrapper was not told which workstream: %s", asked)
+	}
 }
 
-// TestMemoryIsOffUnlessAsked covers the default. A shared project memory that
-// every stage of every task writes to is one that fills with the transient.
-func TestMemoryIsOffUnlessAsked(t *testing.T) {
+// TestASelectedWorkstreamThatIsMissingIsOpenedOnlyWhenAsked covers the recovery
+// and its guard.
+//
+// Selecting is tried first because that is the ordinary case and costs one
+// launch. Creating is the fallback, and only for a task that asked — otherwise a
+// typo in a name opens a second ledger instead of stopping the stage. Measured
+// against ai-memory 1.32.1, which answers 404 for a name that does not exist and
+// 409 for one that does, both before the agent starts.
+func TestASelectedWorkstreamThatIsMissingIsOpenedOnlyWhenAsked(t *testing.T) {
+	fake := newFakeHarness(t, success, 0)
+
+	// A wrapper that refuses to select and accepts to create, the way the real one
+	// does for a workstream that is not there yet.
+	wrapper := filepath.Join(t.TempDir(), "fussy-memory")
+	script := "#!/bin/sh\n" +
+		"echo \"$@\" >> \"$AI_MEMORY_ARGV\"\n" +
+		"if [ \"$2\" = \"--workstream\" ]; then\n" +
+		"  echo \"server returned 404 Not Found: {\\\"error\\\":\\\"not found: managed workstream '$3'\\\"}\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"shift 4\nexec \"" + fake.path() + "\" \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing the fake wrapper: %v", err)
+	}
+	original := memoryWrapper
+	memoryWrapper = wrapper
+	defer func() { memoryWrapper = original }()
+
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
+
+	// A task that did not ask: the stage stops rather than opening a ledger.
+	refused := filepath.Join(t.TempDir(), "refused-argv")
+	t.Setenv("AI_MEMORY_ARGV", refused)
+	if _, err := h.Run(context.Background(), Call{
+		Kind: "claude", Dir: t.TempDir(), Prompt: "go", Workstream: "typo",
+	}); err == nil {
+		t.Error("a missing workstream nobody asked to create was opened anyway")
+	}
+	if asked, _ := os.ReadFile(refused); strings.Contains(string(asked), "--new") {
+		t.Errorf("a task that did not ask still tried to create one: %s", asked)
+	}
+
+	// A task that did: selecting fails, creating follows, the agent runs.
+	opened := filepath.Join(t.TempDir(), "opened-argv")
+	t.Setenv("AI_MEMORY_ARGV", opened)
+	if _, err := h.Run(context.Background(), Call{
+		Kind: "claude", Dir: t.TempDir(), Prompt: "go",
+		Workstream: "brand-new", MayCreateWorkstream: true,
+	}); err != nil {
+		t.Fatalf("a task that asked for a new workstream could not open one: %v", err)
+	}
+
+	asked, err := os.ReadFile(opened)
+	if err != nil {
+		t.Fatalf("reading what the wrapper was asked: %v", err)
+	}
+	// Selected first, created second: the order is what keeps the ordinary case
+	// to one launch.
+	if !strings.Contains(string(asked), "--workstream brand-new") ||
+		!strings.Contains(string(asked), "--new brand-new") {
+		t.Errorf("the wrapper was not asked to select and then to create: %s", asked)
+	}
+}
+
+// TestACallWithNoWorkstreamGetsNoWrapper. Empty means no memory at all, and it
+// must not become "whatever workstream this machine was last pointing at".
+func TestACallWithNoWorkstreamGetsNoWrapper(t *testing.T) {
 	fake := newFakeHarness(t, success, 0)
 	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
 

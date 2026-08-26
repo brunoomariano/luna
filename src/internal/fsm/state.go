@@ -288,6 +288,10 @@ type TaskState struct {
 	// task run overnight must not replay as though it had been supervised.
 	Profile Profile
 
+	// Memory is the workstream this task's agents write to, for the same reason
+	// the profile is here.
+	Memory TaskMemory
+
 	// Knob is how far the lead may judge on its own, as it stands now. It moves
 	// only through SetKnob, so replaying the log reproduces every value it held
 	// and when — which is the whole reason the change is an action rather than
@@ -446,3 +450,32 @@ func (s TaskState) NeedsHuman() bool {
 func ShippedProfiles() []Profile {
 	return []Profile{ProfileInteractive, ProfileTurbo, ProfileNightly}
 }
+
+// TaskMemory is the durable memory one task runs inside.
+//
+// A property of the task and not of a stage or a role, which is the whole of the
+// design: every agent a task starts writes to one ledger, so what the planner
+// learned is there for the coder, and what this task learned is there for the
+// next one over the same ground. A stage choosing its own would split one task's
+// memory across several and answer "what happened on this task" with a shrug.
+//
+// It was per stage, defaulting to off, and no shipped stage turned it on — so the
+// feature was configured, documented, and doing nothing. What made per-stage look
+// right was a fear of contamination: writing back from every stage of every task
+// is how a shared memory fills with noise. A named workstream is the answer to
+// that, and it is a better one, because it separates by what the work *is*
+// rather than by how much of it was worth keeping.
+type TaskMemory struct {
+	// Workstream is the name. Empty runs every agent with no memory at all, and it
+	// is never a fallback to whatever workstream the machine is pointing at —
+	// an unnamed one is the contamination arriving by a different door.
+	Workstream string `json:"workstream,omitempty"`
+
+	// MayCreate lets the first call open the workstream when selecting it finds
+	// nothing. Off unless a person asked for a new one, so a typo in a name stops
+	// the stage instead of quietly opening a second ledger.
+	MayCreate bool `json:"may_create,omitempty"`
+}
+
+// Named reports whether this task has a workstream to run inside.
+func (m TaskMemory) Named() bool { return m.Workstream != "" }

@@ -183,11 +183,18 @@ func (r *Runner) call(
 		Deny:    denied(role),
 		Budget:  r.Budget,
 		Context: agent.Fresh,
-		Memory:  agent.MemoryOff,
 		Env:     identity.Env(),
-	}
-	if stage.Memory.Enabled() {
-		call.Memory = agent.MemoryOn
+
+		// The task's workstream, not the stage's and not the role's. Every agent a
+		// task starts writes to one ledger, so what the planner learned is there
+		// for the coder and for the next task over the same ground — and a stage
+		// choosing its own would split one task's memory across several.
+		//
+		// Selecting is tried first and creating is the fallback, so a task that
+		// asked for a new workstream opens it on its first call and selects it on
+		// every one after — without Luna having to remember which was which.
+		Workstream:          state.Memory.Workstream,
+		MayCreateWorkstream: state.Memory.MayCreate,
 	}
 	if handsOver {
 		call.Env = append(call.Env, socketEnv+"="+SocketName)

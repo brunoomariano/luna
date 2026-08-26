@@ -231,10 +231,34 @@ the containment behind it belongs to the sandbox (INV-4). A reviewer that writes
 a *review*, which the next stage reads and a person can reject — not a *record*, which
 nothing downstream could catch.
 
-## The sandbox and the socket
+## The sandbox, the workstream and the socket
 
-Every agent starts inside `ai-jail`. Under Landlock, the only writable position an agent
-can reach is its own worktree — `$HOME`, `/tmp` and symlinks out all fail, measured.
+Every agent starts inside `ai-jail`, and inside it inside `ai-memory run`:
+
+```text
+ai-jail --network --worktree  ai-memory run --workstream <name>  <harness> <args…>
+        └── contained first ──┘             └── then remembered ──┘
+```
+
+That order is load-bearing twice. Reversed, a call that must not escape could — the memory
+wrapper would be outside the containment. And the workstream would not reach the agent at
+all: the id travels to managed children as environment, and the jail clears the environment
+on the way in.
+
+**The workstream is the task's.** Every agent a task starts writes to one ledger, so what
+the planner learned is there for the coder and for the next task over the same ground. The
+default is the project's, from `.luna/config.toml`; a task may name another with
+`--workstream`, or ask Luna to open one with `--new-workstream`. What it used is written
+into the opening event, so a replay reads where the work went rather than where the config
+points today.
+
+Selecting is tried first and creating is the fallback, and only for a task that asked.
+`ai-memory` answers 404 for a name that does not exist and 409 for one that does, both
+before the agent starts — so the ordinary case costs one launch, the retry costs no model
+call, and a typo in a name stops the stage instead of opening a second ledger.
+
+Under Landlock, the only writable position an agent can reach is its own worktree —
+`$HOME`, `/tmp` and symlinks out all fail, measured.
 
 So the socket lives there: `.luna/artifact.sock` inside the stage's worktree. The agent
 calls `luna artifact put <name>`, the CLI dials the socket, and **Luna** writes the blob.

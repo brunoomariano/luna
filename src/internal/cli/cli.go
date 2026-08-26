@@ -188,11 +188,17 @@ how a stage is carried out — the pack's lead runs these, and so can you
 opening and correcting a task
 
   luna task new <id> --kind <kind> [--flow <flow>] [--profile <profile>]
-        [--simulated] [--about <what>] [--design <how>] [--acceptance <done when>]
+        [--workstream <name> | --new-workstream <name>] [--simulated]
+        [--about <what>] [--design <how>] [--acceptance <done when>]
         open a task's log, with what the task is about. --flow picks which
         flow it runs and cannot change afterwards: the flow's identity goes
         into the opening event, so a task that switched flows mid-run would
         be a log no replay could read. luna flow check lists them.
+        Every agent this task starts writes to one durable workstream, so
+        what one stage learned is there for the next. It is the project's
+        unless the task names another; --new-workstream is the only way
+        Luna opens one, because inferring that from an unknown name would
+        make a typo write to a second ledger instead of stopping.
 
   luna task statement <id> [--about ...] [--design ...] [--acceptance ...]
         correct what a task is about. The previous wording stays in the
@@ -279,6 +285,9 @@ setting the machine up
   luna trust
         tell the harness it trusts the directory Luna makes worktrees in,
         so its agents start at a prompt instead of at a folder dialog.
+
+config:   .luna/config.toml — editor, interpreter, turn_budget,
+          workstream (the project's default), profiles
 
 kinds:    feature, bug, chore, docs
 profiles: interactive (default), turbo, nightly, plus any the project
@@ -411,6 +420,14 @@ func taskNew(env Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The project's workstream unless the task named one. Resolved here, at
+	// creation, and written into the log — so a replay reads which ledger the work
+	// actually went to rather than which one the config names today.
+	memory := opts.memory
+	if memory.Workstream == "" {
+		memory.Workstream = env.profiles().Memory()
+	}
+
 	fingerprint := fsm.Fingerprint(stages)
 	created := fsm.TaskCreated{
 		Kind:      opts.kind,
@@ -418,6 +435,7 @@ func taskNew(env Env, args []string) error {
 		Flow:      fingerprint,
 		FlowName:  opts.flow,
 		BudgetUSD: opts.budgetUSD,
+		Memory:    memory,
 		Statement: opts.stated,
 		Simulated: opts.simulated,
 	}
@@ -493,6 +511,10 @@ type taskOptions struct {
 	kind    fsm.TaskKind
 	profile fsm.Profile
 
+	// memory is the workstream this task's agents write to. The zero value takes
+	// the project's, which is what almost every task wants.
+	memory fsm.TaskMemory
+
 	// budgetUSD is the most the task may spend before it stops. Zero is no
 	// ceiling, which is what a caller that never named one gets.
 	budgetUSD float64
@@ -516,6 +538,10 @@ type taskOptions struct {
 // what it is about. An unknown flag lands here because this is the last of the
 // three, and it is the one that can say what the valid names are.
 func howToRun(opts *taskOptions, cfg Config, name, value string) error {
+	if done, err := whichWorkstream(opts, name, value); done {
+		return err
+	}
+
 	switch name {
 	case "kind":
 		kind, err := parseKind(value)
@@ -536,13 +562,7 @@ func howToRun(opts *taskOptions, cfg Config, name, value string) error {
 		}
 		opts.budgetUSD = budget
 	case "flow":
-		// Refused here rather than at the first replay: the name is about to be
-		// written into an append-only log, and a task opened against a flow that
-		// does not exist is one no command can read afterwards.
-		if _, err := fsm.FlowNamed(value); err != nil {
-			return fmt.Errorf("%w: %w", ErrUsage, err)
-		}
-		opts.flow = value
+		return namedFlow(opts, value)
 	case "simulated":
 		opts.simulated = true
 	default:
@@ -590,16 +610,26 @@ func parseTaskOptions(cfg Config, args []string) (taskOptions, error) {
 	return opts, nil
 }
 
-// profiles is the configuration a command should resolve names against, falling
-// back to the shipped profiles when nothing was loaded.
+// profiles is the configuration a command should resolve names against, filling
+// in the shipped profiles and roles when nothing was loaded.
 //
 // The fallback is for tests and for a zero Env, not for a real run: main always
 // loads a config, and a missing file already yields the shipped set.
+//
+// It fills in rather than rebuilds, and the difference is a bug this had: the
+// earlier version returned a fresh Config carrying only the editor, so a project
+// that set `turn_budget` or `interpreter` but named no profile silently lost
+// both — its watchdog ran on the shipped default and nothing said so. Every
+// setting that is not a profile has to survive a project that has none.
 func (e Env) profiles() Config {
-	if len(e.Config.Profiles) == 0 {
-		return Config{Editor: e.Config.Editor, Profiles: ShippedProfiles(), Roles: ShippedRoles()}
+	cfg := e.Config
+	if len(cfg.Profiles) == 0 {
+		cfg.Profiles = ShippedProfiles()
 	}
-	return e.Config
+	if len(cfg.Roles) == 0 {
+		cfg.Roles = ShippedRoles()
+	}
+	return cfg
 }
 
 func taskShow(env Env, args []string) error {
@@ -1313,4 +1343,40 @@ func printSpend(env Env, state fsm.TaskState, flow []fsm.Stage) {
 		fmt.Fprintf(env.Out, "  %-14s %8s  $%.2f  ($%.4f left)\n",
 			"budget", "", state.BudgetUSD, state.BudgetUSD-total.CostUSD)
 	}
+}
+
+// whichWorkstream reads the two flags that pick a task's durable memory, and says
+// whether it handled the flag.
+//
+// Two flags rather than one, and the second is the only way Luna opens a ledger.
+// Inferring "create it" from a name that does not exist would make a typo open a
+// second workstream instead of stopping the stage — and a task quietly writing
+// somewhere nobody meant is the failure a named workstream exists to prevent.
+func whichWorkstream(opts *taskOptions, name, value string) (bool, error) {
+	switch name {
+	case "workstream":
+		opts.memory = fsm.TaskMemory{Workstream: value}
+	case "new-workstream":
+		opts.memory = fsm.TaskMemory{Workstream: value, MayCreate: true}
+	default:
+		return false, nil
+	}
+
+	if value == "" {
+		return true, fmt.Errorf("%w: --%s needs a name", ErrUsage, name)
+	}
+	return true, nil
+}
+
+// namedFlow refuses a flow this build does not carry.
+//
+// Refused here rather than at the first replay: the name is about to be written
+// into an append-only log, and a task opened against a flow that does not exist
+// is one no command can read afterwards.
+func namedFlow(opts *taskOptions, value string) error {
+	if _, err := fsm.FlowNamed(value); err != nil {
+		return fmt.Errorf("%w: %w", ErrUsage, err)
+	}
+	opts.flow = value
+	return nil
 }

@@ -727,10 +727,14 @@ func TestTheBriefCanBeReplacedWithoutTouchingTheRunner(t *testing.T) {
 	}
 }
 
-// TestAStageRunsWithTheProjectsMemoryWhenItAsks covers the setting reaching the
-// call. A stage declaring memory and not getting it would start an agent blind
-// to what the project already decided, and nothing about the run would say so.
-func TestAStageRunsWithTheProjectsMemoryWhenItAsks(t *testing.T) {
+// TestEveryStageOfATaskRunsInTheTasksWorkstream covers the setting reaching the
+// call, and the unit it is measured in.
+//
+// It used to be a stage's, and a stage that asked for memory got it while its
+// neighbours ran blind. That splits one task's memory across several ledgers and
+// answers "what happened on this task" with a shrug — so it is the task's now,
+// and every stage of it, including the ones that never mention memory.
+func TestEveryStageOfATaskRunsInTheTasksWorkstream(t *testing.T) {
 	repo := repoWithCommit(t)
 	fake := &recordingAgent{result: agent.Result{Text: "done"}}
 
@@ -740,22 +744,65 @@ func TestAStageRunsWithTheProjectsMemoryWhenItAsks(t *testing.T) {
 		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 	}
 
-	stage := fsm.Stage{ID: "intake", Role: "analyst", Memory: fsm.MemoryOn}
-	if _, err := r.Run(context.Background(), runningState("T-41"), stage); err != nil {
-		t.Fatalf("Run: %v", err)
+	state := runningState("T-41")
+	state.Memory = fsm.TaskMemory{Workstream: "nightly"}
+
+	for _, id := range []fsm.StageID{"intake", "build"} {
+		if _, err := r.Run(context.Background(), state, fsm.Stage{ID: id, Role: "analyst"}); err != nil {
+			t.Fatalf("running %s: %v", id, err)
+		}
+		if got := fake.last(t).Workstream; got != "nightly" {
+			t.Errorf("%s ran in %q rather than the task's workstream", id, got)
+		}
+		if fake.last(t).MayCreateWorkstream {
+			t.Errorf("%s was allowed to open a ledger the task did not ask for", id)
+		}
 	}
-	if got := fake.last(t).Memory; got != agent.MemoryOn {
-		t.Errorf("want the stage's memory setting carried to the call, got %q", got)
+}
+
+// TestATaskWithNoWorkstreamRunsWithNoMemoryAtAll. Empty is not a fallback to
+// whatever workstream the machine is pointing at — that is the contamination a
+// name exists to prevent, arriving by a different door.
+func TestATaskWithNoWorkstreamRunsWithNoMemoryAtAll(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 	}
 
-	// And the default stays off: a shared memory every stage writes to fills with
-	// the transient.
-	plain := fsm.Stage{ID: "build", Role: "analyst"}
-	if _, err := r.Run(context.Background(), runningState("T-41"), plain); err != nil {
+	stage := fsm.Stage{ID: "build", Role: "analyst"}
+	if _, err := r.Run(context.Background(), runningState("T-42"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := fake.last(t).Memory; got != agent.MemoryOff {
-		t.Errorf("want memory off by default, got %q", got)
+	if got := fake.last(t).Workstream; got != "" {
+		t.Errorf("a task with no workstream ran inside %q", got)
+	}
+}
+
+// TestOnlyATaskThatAskedMayOpenAWorkstream. Creating on a name that is simply
+// absent would make a typo open a second ledger instead of stopping the stage.
+func TestOnlyATaskThatAskedMayOpenAWorkstream(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
+	}
+
+	state := runningState("T-43")
+	state.Memory = fsm.TaskMemory{Workstream: "brand-new", MayCreate: true}
+
+	stage := fsm.Stage{ID: "build", Role: "analyst"}
+	if _, err := r.Run(context.Background(), state, stage); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !fake.last(t).MayCreateWorkstream {
+		t.Error("a task that asked for a new workstream cannot open one")
 	}
 }
 

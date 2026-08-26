@@ -20,6 +20,12 @@ import (
 
 // TaskReport is what `luna task show --json` answers.
 type TaskReport struct {
+	// Workstream is the durable memory this task's agents write to. Reported
+	// because "which ledger did this land in" is a question a person answers from
+	// the machine surface — and a task quietly writing somewhere else is exactly
+	// what naming one prevents.
+	Workstream string `json:"workstream,omitempty"`
+
 	ID      string `json:"id"`
 	Status  string `json:"status"`
 	Kind    string `json:"kind"`
@@ -185,6 +191,7 @@ func taskReport(cfg Config, state fsm.TaskState, events int, flow []fsm.Stage) T
 		Status:         string(state.Status),
 		Kind:           string(state.Context.Kind),
 		Profile:        string(state.Profile),
+		Workstream:     state.Memory.Workstream,
 		Stage:          string(state.Stage),
 		Simulated:      state.Simulated,
 		Blocked:        state.Blocked,

@@ -42,6 +42,19 @@ type Config struct {
 	// Zero means the shipped default, so a project with no config still has a net.
 	TurnBudget time.Duration
 
+	// Workstream is the durable memory every task in this project runs inside,
+	// unless a task names another.
+	//
+	// Here rather than per task because it is a fact about the project: one
+	// repository's work belongs in one ledger, and asking every `task new` to
+	// name it would mean most of them naming it wrong eventually. A task can
+	// still choose or open another, and what it chose is recorded on the task.
+	//
+	// Empty means the shipped default, so a project with no config still writes
+	// somewhere named — never to whatever workstream the machine happened to be
+	// pointing at, which is the contamination a name exists to prevent.
+	Workstream string
+
 	// Profiles are the names this project defines. A project that names none
 	// inherits the three shipped ones; naming one that already exists is not an
 	// error, because there is nothing left in a profile to conflict.
@@ -115,6 +128,23 @@ func (c Config) Turn() time.Duration {
 		return fsm.DefaultBudgets().Turn
 	}
 	return c.TurnBudget
+}
+
+// DefaultWorkstream is where a project's tasks write when nothing names another.
+//
+// A constant rather than an empty string, because empty means *no memory at all*
+// and that is a different thing from "nobody configured it". A machine with no
+// config still writes to one named ledger, which is the whole point: an unnamed
+// run lands in whatever workstream the machine was last pointing at, and that is
+// contamination by omission.
+const DefaultWorkstream = "luna"
+
+// Memory is the workstream this project's tasks run inside.
+func (c Config) Memory() string {
+	if c.Workstream == "" {
+		return DefaultWorkstream
+	}
+	return c.Workstream
 }
 
 // ProfileNames lists the profiles this project offers, sorted, for error messages
@@ -323,6 +353,9 @@ func assignRoot(cfg *Config, key, value, where string) error {
 		return nil
 	case "interpreter":
 		cfg.Interpreter = strings.Trim(value, `"`)
+		return nil
+	case "workstream":
+		cfg.Workstream = strings.Trim(value, `"`)
 		return nil
 	case "turn_budget":
 		budget, err := fsm.ParseBudget(strings.Trim(value, `"`))

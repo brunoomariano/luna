@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/store"
@@ -1586,5 +1587,141 @@ func TestATaskWhoseFlowChangedCanStillBeAbandoned(t *testing.T) {
 
 	if err := h.run(t, "task", "abandon", "LUNA-1", "the flow it ran under is gone"); err != nil {
 		t.Fatalf("a task that no longer replays could not be abandoned: %v", err)
+	}
+}
+
+// TestATaskTakesTheProjectsWorkstreamUnlessItNamesOne is the rule, at the surface
+// that decides it.
+//
+// One workstream per task, resolved at creation and written into the log. Read
+// from the config at replay time instead, a task's history would move whenever
+// somebody edited a file — and "which ledger did this work land in" is a fact
+// about the run, not about today's settings.
+func TestATaskTakesTheProjectsWorkstreamUnlessItNamesOne(t *testing.T) {
+	h := newHarness(t)
+	h.env.Config = Config{Workstream: "the-project's"}
+
+	h.mustRun(t, "task", "new", "M-1", "--kind", "chore", "--flow", "chore")
+	if got := mustState(t, h, "M-1").Memory; got.Workstream != "the-project's" {
+		t.Errorf("a task that named none took %q", got.Workstream)
+	}
+
+	h.mustRun(t, "task", "new", "M-2", "--kind", "chore", "--flow", "chore",
+		"--workstream", "this-one")
+	got := mustState(t, h, "M-2").Memory
+	if got.Workstream != "this-one" {
+		t.Errorf("a task that named one took %q", got.Workstream)
+	}
+	if got.MayCreate {
+		t.Error("selecting an existing workstream was allowed to open a new one")
+	}
+
+	h.mustRun(t, "task", "new", "M-3", "--kind", "chore", "--flow", "chore",
+		"--new-workstream", "a-fresh-one")
+	if got := mustState(t, h, "M-3").Memory; !got.MayCreate || got.Workstream != "a-fresh-one" {
+		t.Errorf("a task that asked to open one got %+v", got)
+	}
+}
+
+// TestAProjectWithNoConfigStillWritesSomewhereNamed. An unnamed run lands in
+// whatever workstream the machine was last pointing at, which is contamination by
+// omission — so the shipped default is a name and not an absence.
+func TestAProjectWithNoConfigStillWritesSomewhereNamed(t *testing.T) {
+	h := newHarness(t)
+
+	h.mustRun(t, "task", "new", "M-4", "--kind", "chore", "--flow", "chore")
+
+	if got := mustState(t, h, "M-4").Memory.Workstream; got != DefaultWorkstream {
+		t.Errorf("a project with no config wrote to %q", got)
+	}
+}
+
+// TestTheWorkstreamOutlivesAConfigEdit. It is recorded on the task, so replaying
+// a finished run reads where the work actually went.
+func TestTheWorkstreamOutlivesAConfigEdit(t *testing.T) {
+	h := newHarness(t)
+	h.env.Config = Config{Workstream: "when-it-ran"}
+	h.mustRun(t, "task", "new", "M-5", "--kind", "chore", "--flow", "chore")
+
+	h.env.Config = Config{Workstream: "renamed-since"}
+
+	if got := mustState(t, h, "M-5").Memory.Workstream; got != "when-it-ran" {
+		t.Errorf("editing the config moved a finished task's history to %q", got)
+	}
+}
+
+// TestEverySettingSurvivesAProjectWithNoProfiles is a bug this had.
+//
+// `profiles()` used to return a fresh Config carrying only the editor, so a
+// project that set `turn_budget`, `interpreter` or `workstream` but named no
+// profile silently lost all three — its watchdog ran on the shipped default and
+// nothing said so.
+func TestEverySettingSurvivesAProjectWithNoProfiles(t *testing.T) {
+	h := newHarness(t)
+	h.env.Config = Config{
+		Interpreter: "codex",
+		TurnBudget:  90 * time.Minute,
+		Workstream:  "kept",
+	}
+
+	cfg := h.env.profiles()
+	if cfg.Interpreter != "codex" {
+		t.Errorf("the interpreter was lost: %q", cfg.Interpreter)
+	}
+	if cfg.Turn() != 90*time.Minute {
+		t.Errorf("the turn budget was lost: %s", cfg.Turn())
+	}
+	if cfg.Memory() != "kept" {
+		t.Errorf("the workstream was lost: %q", cfg.Memory())
+	}
+	// And the shipped sets still fill in, which is what the fallback is for.
+	if len(cfg.Profiles) == 0 || len(cfg.Roles) == 0 {
+		t.Error("the shipped profiles and roles stopped filling in")
+	}
+}
+
+// TestAWorkstreamFlagWithNoNameIsRefused. An empty name would read as "no
+// memory at all", which is the opposite of what somebody typing the flag meant —
+// and it would arrive as a task whose agents write nowhere, silently.
+func TestAWorkstreamFlagWithNoNameIsRefused(t *testing.T) {
+	h := newHarness(t)
+
+	for _, flag := range []string{"--workstream", "--new-workstream"} {
+		err := h.run(t, "task", "new", "M-6", "--kind", "chore", "--flow", "chore", flag, "")
+		if !errors.Is(err, ErrUsage) {
+			t.Errorf("%s with no name was accepted: %v", flag, err)
+		}
+	}
+}
+
+// TestAStageStillDeclaringMemoryIsRefused. The setting moved to the task, and a
+// stage file carrying the old key would read as configuration that does
+// something — which is what it was for the whole time it existed and no shipped
+// stage turned it on.
+func TestAStageStillDeclaringMemoryIsRefused(t *testing.T) {
+	_, err := fsm.ParseStage("id = \"build\"\nrole = \"coder\"\nmemory = \"on\"\n", "a stage")
+	if err == nil {
+		t.Fatal("a stage declaring `memory` was accepted")
+	}
+	if !strings.Contains(err.Error(), "--workstream") {
+		t.Errorf("the refusal does not say what to use instead: %v", err)
+	}
+}
+
+// TestTheWorkstreamIsInTheJSON covers the reader that is not a person. "Which
+// ledger did this task write to" is a question a dashboard or a script asks, and
+// a task quietly writing somewhere else is exactly what naming one prevents.
+func TestTheWorkstreamIsInTheJSON(t *testing.T) {
+	h := newHarness(t)
+	h.env.Config = Config{Workstream: "nightly"}
+	h.mustRun(t, "task", "new", "M-7", "--kind", "chore", "--flow", "chore")
+
+	out := h.mustRun(t, "task", "show", "M-7", "--json")
+	var report TaskReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("the report does not parse: %v", err)
+	}
+	if report.Workstream != "nightly" {
+		t.Errorf("the workstream is not in the JSON: %q", report.Workstream)
 	}
 }

@@ -152,70 +152,45 @@ func TestContextDoesNotMoveTheFingerprint(t *testing.T) {
 	}
 }
 
-// TestMemoryIsOffUnlessAStageSaysOtherwise pins the default, and the reason for
-// it: a shared project memory that every stage of every task writes to fills
-// with the transient, so reading is the cheap half and writing is the part worth
-// declaring.
-func TestMemoryIsOffUnlessAStageSaysOtherwise(t *testing.T) {
-	var unset StageMemory
-	if unset.Enabled() {
-		t.Error("a stage that never mentions memory must not run with it")
+// TestMemoryIsTheTasksAndNotTheStages is the setting that moved.
+//
+// It was a stage's, defaulting to off, and no shipped stage ever turned it on —
+// so the feature was parsed, documented, and doing nothing. It is the task's now,
+// because a task's agents have to write to one ledger: what the planner learned
+// has to be there for the coder, and a stage choosing its own would split one
+// task's memory across several.
+func TestMemoryIsTheTasksAndNotTheStages(t *testing.T) {
+	var none TaskMemory
+	if none.Named() {
+		t.Error("a task with no workstream reported one")
 	}
-	if !MemoryOn.Enabled() {
-		t.Error("a stage that asked for memory must get it")
+	if !(TaskMemory{Workstream: "luna"}).Named() {
+		t.Error("a task with a workstream reported none")
 	}
-	if MemoryOff.Enabled() {
-		t.Error("off must read as off")
+
+	// And a stage file still carrying the old key is refused rather than ignored:
+	// configuration that reads as though it does something, and does not, is worse
+	// than configuration that fails.
+	_, err := ParseStage("id = \"build\"\nrole = \"coder\"\nmemory = \"on\"\n", "a stage")
+	if err == nil {
+		t.Fatal("a stage still declaring `memory` was accepted")
+	}
+	if !strings.Contains(err.Error(), "task") {
+		t.Errorf("the refusal does not say where the setting went: %v", err)
 	}
 }
 
-// TestAnUnknownMemoryValueIsRefused covers the typo, for the reason the context
-// key refuses one: silently meaning "off" looks like a setting that was applied,
-// and a stage briefed without the project's history would give no sign of it.
-func TestAnUnknownMemoryValueIsRefused(t *testing.T) {
-	for _, value := range []string{"on ", "yes", "true"} {
-		if _, err := ParseStageMemory(value, "stages/030-intake.toml:5"); err == nil {
-			t.Errorf("ParseStageMemory(%q) was accepted", value)
+// TestTheWorkstreamDoesNotMoveTheFingerprint. Which ledger a task writes to is
+// recorded on the task, not in the flow — so it cannot make a running task
+// unreplayable, and two tasks on different workstreams share one flow.
+func TestTheWorkstreamDoesNotMoveTheFingerprint(t *testing.T) {
+	if Fingerprint(DefaultFlow()) == "" {
+		t.Fatal("the shipped flow has no fingerprint, so this proves nothing")
+	}
+	// The flow carries no workstream at all: there is no field to change.
+	for _, stage := range DefaultFlow() {
+		if strings.Contains(strings.ToLower(string(stage.ID)), "workstream") {
+			t.Errorf("%q looks like a workstream leaked into the flow", stage.ID)
 		}
-	}
-
-	for _, tc := range []struct {
-		value string
-		want  StageMemory
-	}{{"on", MemoryOn}, {"off", MemoryOff}, {"", MemoryOff}} {
-		got, err := ParseStageMemory(tc.value, "stages/030-intake.toml:5")
-		if err != nil {
-			t.Errorf("ParseStageMemory(%q): %v", tc.value, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("ParseStageMemory(%q) = %q, want %q", tc.value, got, tc.want)
-		}
-	}
-}
-
-// TestAStageFileCanDeclareContextAndMemory covers both keys reaching the stage
-// through the loader, which is the only way a project sets either.
-func TestAStageFileCanDeclareContextAndMemory(t *testing.T) {
-	stage, err := ParseStage(`
-id       = "refactor"
-role     = "implementer"
-requires = ["code"]
-produces = ["clean"]
-context  = "live"
-memory   = "on"
-
-[verify.clean]
-kind = "existence"
-`, "stages/080-refactor.toml")
-	if err != nil {
-		t.Fatalf("ParseStage: %v", err)
-	}
-
-	if stage.Context != ContextLive {
-		t.Errorf("want the declared context, got %q", stage.Context)
-	}
-	if !stage.Memory.Enabled() {
-		t.Errorf("want the declared memory, got %q", stage.Memory)
 	}
 }
