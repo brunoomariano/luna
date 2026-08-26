@@ -267,11 +267,16 @@ luna trust                # tell the harness it trusts where Luna makes worktree
 
 ## Installing this in a target project
 
-This skill ships with Luna's source. To use it where the work happens:
+This skill ships with Luna, in `skills/`. It is not `src/stock/skills/`, which
+belongs to a different idea — the capability bundles a *role* loads, which
+travel in the order as `skills=`. This one is for whoever drives Luna from
+outside, so it is not the binary's to embed.
+
+Copy it where the work happens:
 
 ```sh
 mkdir -p <target>/.claude/skills
-cp -r <luna>/.claude/skills/luna <target>/.claude/skills/
+cp -r <luna>/skills/luna <target>/.claude/skills/
 ```
 
 The target project also needs `.luna/config.toml` if it wants its own

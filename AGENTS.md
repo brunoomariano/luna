@@ -56,6 +56,7 @@ src/
   internal/lead/     conducting a task, and the model that judges a gate
   stock/             defaults: flows, roles, profiles (embedded TOML)
 docs/                four files, above
+skills/              how to *use* Luna, for an agent driving it from outside
 scripts/             lint helpers
 ```
 

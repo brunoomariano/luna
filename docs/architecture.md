@@ -424,8 +424,10 @@ remembered:
   it. A flow that adds a conditional producer will want the mechanism back.
 - **Import adapters** — no tracker adapter ships.
 - **Token accounting** — being added now that the transport reports usage.
-- **Skills** — `src/stock/skills/` is empty. A role declares an agent and a brief; the
-  skill set is parsed and read by nothing.
+- **A role's skills** — `src/stock/skills/` is empty. A role declares an agent and a
+  brief; the skill set is parsed, travels in the order as `skills=`, and is read by
+  nothing. Not to be confused with `skills/` at the root, which is the opposite
+  direction: how to *use* Luna, for whoever drives it from outside.
 - **A second harness.** Every role names `claude`. The transport supports four and
   `CanGate` knows which of them can deny a tool, but no shipped role names another,
   so "harness-agnostic" is built and unmeasured.
