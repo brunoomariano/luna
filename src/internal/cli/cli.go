@@ -252,8 +252,13 @@ answering a gate
 watching
 
   luna status <id> [--json]
-        the whole flow and where the task stands in it. Separate from
-        next on purpose: an order carries no view of what comes after it.
+        the whole flow and where the task stands in it — which flow and
+        its fingerprint, the pack it keeps, the workstream it writes to,
+        what the knob means for these gates, the ceiling and what is
+        left, and per stage the model that answered, the turns and the
+        cost. Plus where each role's worktree is, and which one is open.
+        Separate from next on purpose: an order carries no view of what
+        comes after it.
 
   luna task show <id> [--json]
         the task's current state and what it has produced
@@ -274,7 +279,11 @@ watching
         clear a block once whatever caused it is dealt with
 
   luna flow check [--flow <flow>]
-        what flows this build carries, and whether anything is open.
+        what flows this build carries, whether anything is open, and
+        what each has cost here before — median by stage, from this
+        project's own log. --flow cannot change once a task opens, so it
+        is the most expensive decision available and was the one made
+        with the least information.
         They come from the binary and a project cannot override them —
         one build, one set of flows, every repository the same.
         Every flow by default — one that is never audited is one whose

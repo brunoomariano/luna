@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -696,5 +698,177 @@ func TestTheLeadOpensAgainstTheTasksOwnFlow(t *testing.T) {
 
 	if state := mustState(t, h, "H-2"); state.Stage != "setup" {
 		t.Errorf("a task on a non-default flow opened at %q", state.Stage)
+	}
+}
+
+// TestStatusAnswersWhatSomebodyWouldOtherwiseAskFourCommandsFor.
+//
+// It used to print the walk and the base — which answers "which stage" and
+// nothing else, so "what is this costing", "which model answered", "which
+// worktree" each meant a second command or a JSON parse. All of it was already in
+// the state; none of it was on the screen.
+func TestStatusAnswersWhatSomebodyWouldOtherwiseAskFourCommandsFor(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-9", "--kind", "bug", "--flow", "fix",
+		"--workstream", "nightly")
+	h.mustRun(t, "budget", "S-9", "12", "measuring")
+	h.mustRun(t, "autonomy", "S-9", "7", "measuring")
+
+	out := h.mustRun(t, "status", "S-9")
+
+	for what, want := range map[string]string{
+		"which flow, with its fingerprint": "fix/",
+		"what kind of task":                "bug",
+		"how many agents it keeps":         "investigator, coder",
+		"which ledger it writes to":        "nightly",
+		"what the knob means here":         "autonomy   7",
+		"the ceiling and what is left":     "$12.00",
+		"where each role works":            "wt-",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status does not say %s (%q):\n%s", what, want, out)
+		}
+	}
+}
+
+// TestStatusReportsTheModelThatAnsweredRatherThanTheHarness. The harness is which
+// CLI was called; the model is what answered, and a cost belongs to the second.
+// It was recorded from the first day and shown nowhere.
+func TestStatusReportsTheModelThatAnsweredRatherThanTheHarness(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-10", "--kind", "chore", "--flow", "chore")
+
+	openStage(t, h, "S-10")
+	if err := h.env.Store.AppendAction("S-10", fsm.Complete{
+		Delivered: []fsm.Artifact{"worktree"},
+		Evidence: map[fsm.Artifact]fsm.Evidence{
+			"worktree": {Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed},
+		},
+		Spent: fsm.Spend{
+			CostUSD: 0.4213, Turns: 17, Model: "claude-opus-5", Context: "fresh",
+		},
+		Flow: fsm.DefaultFlow(),
+	}); err != nil {
+		t.Fatalf("closing the stage: %v", err)
+	}
+
+	out := h.mustRun(t, "status", "S-10")
+
+	for _, want := range []string{"claude-opus-5", "17t", "$0.4213", "fresh"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status does not carry %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestTheKnobIsExplainedInTheFlowsOwnTerms. A number alone is a setting somebody
+// has to look up; what it means is which of *these* gates the lead may answer.
+func TestTheKnobIsExplainedInTheFlowsOwnTerms(t *testing.T) {
+	full := fsm.DefaultFlow()
+
+	if got := knobMeaning(0, full); !strings.Contains(got, "person") {
+		t.Errorf("knob 0 on the shipped flow reads as %q", got)
+	}
+	if got := knobMeaning(10, full); !strings.Contains(got, "every gate") {
+		t.Errorf("knob 10 on the shipped flow reads as %q", got)
+	}
+	// A flow with no judged gate says so rather than implying the setting does
+	// something here.
+	chore, err := fsm.FlowNamed("chore")
+	if err != nil {
+		t.Fatalf("reading the chore flow: %v", err)
+	}
+	if got := knobMeaning(9, chore); !strings.Contains(got, "no gate") {
+		t.Errorf("a flow with no judged gate reads as %q", got)
+	}
+}
+
+// TestStatusSaysWhichWorktreeIsOpen. A worktree lasts exactly as long as its
+// stage, so "where is this work" has two true answers — a path that is there
+// while the stage runs and gone after — and both beat making somebody guess the
+// naming convention.
+func TestStatusSaysWhichWorktreeIsOpen(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-11", "--kind", "bug", "--flow", "fix")
+
+	// One role's checkout exists, the other's does not.
+	open, err := node.WorktreePath(".", "S-11", "coder")
+	if err != nil {
+		t.Fatalf("resolving the path: %v", err)
+	}
+	if err := os.MkdirAll(open, 0o750); err != nil {
+		t.Fatalf("opening it: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(open) })
+
+	out := h.mustRun(t, "status", "S-11")
+
+	if !strings.Contains(out, "coder") || !strings.Contains(out, "(open)") {
+		t.Errorf("status does not mark the checkout that exists:\n%s", out)
+	}
+	if strings.Count(out, "(open)") != 1 {
+		t.Errorf("a checkout that does not exist was marked open:\n%s", out)
+	}
+}
+
+// TestABlockedTaskSaysWhyOnItsStatus. `status` is where somebody looks first, and
+// sending them to a second command for the reason is the half-answer this whole
+// pass is about.
+func TestABlockedTaskSaysWhyOnItsStatus(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-12", "--kind", "chore", "--flow", "chore")
+	if err := h.env.Store.AppendAction("S-12", fsm.Block{
+		Reason: "bootstrap \"make bootstrap\" failed: no lockfile",
+	}); err != nil {
+		t.Fatalf("blocking: %v", err)
+	}
+
+	out := h.mustRun(t, "status", "S-12")
+
+	if !strings.Contains(out, "no lockfile") || !strings.Contains(out, "tooling") {
+		t.Errorf("status does not say why it stopped:\n%s", out)
+	}
+}
+
+// TestAPathIsShortenedAgainstWhereYouAreStanding. A worktree is a sibling of the
+// repository, so its absolute path is mostly the part the reader is standing in.
+func TestAPathIsShortenedAgainstWhereYouAreStanding(t *testing.T) {
+	here, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("reading the working directory: %v", err)
+	}
+
+	sibling := filepath.Join(filepath.Dir(here), "wt-app-T-1-coder")
+	if got := nearby(sibling); got != filepath.Join("..", "wt-app-T-1-coder") {
+		t.Errorf("a sibling was not shortened: %q", got)
+	}
+	// And a path the relative form would not help with keeps the long one, which
+	// is the only case where the long form is the more useful of the two.
+	if got := nearby("/x"); got != "/x" {
+		t.Errorf("a short absolute path was lengthened: %q", got)
+	}
+}
+
+// TestAStageThatHasNotRunSaysWhatItWillRunOn. Before a stage runs there is no
+// cost to report and there is still an answer worth having — the harness that
+// will answer for it, which is what somebody is deciding about.
+func TestAStageThatHasNotRunSaysWhatItWillRunOn(t *testing.T) {
+	roles := map[fsm.RoleName]fsm.Role{"coder": {Agent: "codex"}}
+	state := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{}}
+
+	if got := stageCostLine(state, roles, fsm.Stage{ID: "build", Role: "coder"}); got != "codex" {
+		t.Errorf("a stage that has not run reports %q", got)
+	}
+	// A mechanical stage starts no agent, so it has nothing to report either way.
+	if got := stageCostLine(state, roles, fsm.Stage{ID: "setup"}); got != "" {
+		t.Errorf("a mechanical stage was given a harness: %q", got)
+	}
+	// And a stage that ran without the harness reporting a model falls back to the
+	// role's, rather than leaving the column blank on a stage that cost money.
+	ran := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{
+		"build": {CostUSD: 0.5, Turns: 3, Context: "fresh"},
+	}}
+	if got := stageCostLine(ran, roles, fsm.Stage{ID: "build", Role: "coder"}); !strings.Contains(got, "codex") {
+		t.Errorf("a stage whose model went unreported names nothing: %q", got)
 	}
 }

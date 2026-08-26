@@ -543,3 +543,89 @@ func TestFlowCheckStopsOnALogItCannotDecode(t *testing.T) {
 		t.Errorf("a damaged log was reported as a flow change:\n%s", h.out.String())
 	}
 }
+
+// TestFlowCheckSaysWhatThisFlowHasCostHere is the number that lived in prose.
+//
+// `--flow` cannot change after a task opens, and the three flows differ by a
+// factor nobody can guess — so it is the most expensive decision available and
+// the one made with the least information. The skill carried figures; the tool
+// carried none, and the decision is made in the terminal.
+func TestFlowCheckSaysWhatThisFlowHasCostHere(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "C-1", "--kind", "chore", "--flow", "chore")
+
+	openStage(t, h, "C-1")
+	if err := h.env.Store.AppendAction("C-1", fsm.Complete{
+		Delivered: []fsm.Artifact{"worktree"},
+		Evidence: map[fsm.Artifact]fsm.Evidence{
+			"worktree": {Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed},
+		},
+		Spent: fsm.Spend{CostUSD: 0.6681, Turns: 8},
+		Flow:  fsm.DefaultFlow(),
+	}); err != nil {
+		t.Fatalf("closing the stage: %v", err)
+	}
+
+	out := h.mustRun(t, "flow", "check", "--flow", "chore")
+
+	if !strings.Contains(out, "$0.6681") {
+		t.Errorf("flow check does not say what this flow has cost here:\n%s", out)
+	}
+	if !strings.Contains(out, "setup") {
+		t.Errorf("the cost is not attributed to a stage:\n%s", out)
+	}
+	// How many observations it rests on, because one is not an estimate.
+	if !strings.Contains(out, "1 run") {
+		t.Errorf("the report does not say how much it is standing on:\n%s", out)
+	}
+
+	// A second task on the same flow: the count moves, and the estimate is now
+	// standing on two observations rather than one.
+	h.mustRun(t, "task", "new", "C-2", "--kind", "chore", "--flow", "chore")
+	openStage(t, h, "C-2")
+	if err := h.env.Store.AppendAction("C-2", fsm.Complete{
+		Delivered: []fsm.Artifact{"worktree"},
+		Evidence: map[fsm.Artifact]fsm.Evidence{
+			"worktree": {Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed},
+		},
+		Spent: fsm.Spend{CostUSD: 0.9, Turns: 11},
+		Flow:  fsm.DefaultFlow(),
+	}); err != nil {
+		t.Fatalf("closing the second stage: %v", err)
+	}
+
+	if out := h.mustRun(t, "flow", "check", "--flow", "chore"); !strings.Contains(out, "2 runs") {
+		t.Errorf("the second observation did not move the count:\n%s", out)
+	}
+}
+
+// TestAFlowNobodyHasRunReportsNoCost. An estimate from no observations is a
+// number somebody would plan against.
+func TestAFlowNobodyHasRunReportsNoCost(t *testing.T) {
+	h := newHarness(t)
+
+	out := h.mustRun(t, "flow", "check", "--flow", "full")
+
+	if strings.Contains(out, "what it has cost") {
+		t.Errorf("a flow nobody has run was given a price:\n%s", out)
+	}
+}
+
+// TestTheMedianSurvivesOneRunawayStage. A mean would follow the outlier and say
+// nothing about the next run — which is the run somebody is deciding about.
+func TestTheMedianSurvivesOneRunawayStage(t *testing.T) {
+	ordinary := []float64{1, 1, 1, 1, 40}
+
+	if got := medianOf(ordinary); got != 1 {
+		t.Errorf("one runaway moved the estimate to %v", got)
+	}
+	// An even count takes the middle pair, so two observations do not silently
+	// report the cheaper one.
+	if got := medianOf([]float64{2, 4}); got != 3 {
+		t.Errorf("an even count reported %v", got)
+	}
+	// And the source is not reordered: the caller may still be using it.
+	if ordinary[4] != 40 {
+		t.Error("taking the median sorted the caller's slice")
+	}
+}

@@ -35,7 +35,7 @@ type Worktree struct {
 // falling back to HEAD is how twelve stages once verified against the
 // repository's own head and passed, having discarded every stage before them.
 func OpenWorktree(ctx context.Context, repo, taskID, role, base string) (Worktree, error) {
-	path, err := worktreePath(repo, taskID, role)
+	path, err := WorktreePath(repo, taskID, role)
 	if err != nil {
 		return Worktree{}, err
 	}
@@ -105,8 +105,12 @@ func CloseWorktree(ctx context.Context, repo string, wt Worktree) error {
 	return nil
 }
 
-// worktreePath is `../wt-<repo>-<task>-<role>`, absolute.
-func worktreePath(repo, taskID, role string) (string, error) {
+// WorktreePath is `../wt-<repo>-<task>-<role>`, absolute.
+//
+// Exported so `luna status` can say where the work is without opening anything:
+// "which worktree is this in" is asked while a stage is running, and answering it
+// by guessing the naming convention is how somebody looks in the wrong directory.
+func WorktreePath(repo, taskID, role string) (string, error) {
 	absolute, err := filepath.Abs(repo)
 	if err != nil {
 		return "", fmt.Errorf("resolving the repository path %q: %w", repo, err)

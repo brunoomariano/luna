@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -240,6 +241,7 @@ func auditFlows(env Env, names []string) error {
 				len(roles), strings.Join(roles, ", "))
 		}
 
+		reportWhatItCost(env, name, flow)
 		reportFlowGaps(env, flow)
 		reportGates(env, flow)
 	}
@@ -297,4 +299,93 @@ func reportTaskSurvey(env Env, open, unreadable []string) {
 	fmt.Fprintf(env.Out, "\n%d task(s) still open:\n  %s\n", len(open), strings.Join(open, "\n  "))
 	fmt.Fprintf(env.Out, "\nfinish or abandon them before changing the flow — "+
 		"a task whose flow changes under it stops replaying\n")
+}
+
+// reportWhatItCost says what this flow has cost before, per stage, from this
+// project's own log.
+//
+// The most expensive decision here is irreversible: `--flow` cannot change after
+// a task opens, and the three differ by a factor nobody can guess. What existed
+// was a note in a skill — $0.88 on the right task class against $2.88 on the
+// wrong one — and a tool that knew neither, so the number lived in prose while
+// the decision was made in the terminal.
+//
+// The median rather than the mean, because one runaway stage moves a mean and
+// says nothing about the next run. Nothing is printed when the log has no
+// finished stage to read: an estimate from no observations is a number somebody
+// would plan against.
+func reportWhatItCost(env Env, name string, flow []fsm.Stage) {
+	spent := pastSpend(env, name)
+	if len(spent) == 0 {
+		return
+	}
+
+	var total float64
+	lines := make([]string, 0, len(flow))
+	for _, stage := range flow {
+		costs := spent[stage.ID]
+		if len(costs) == 0 {
+			continue
+		}
+		median := medianOf(costs)
+		total += median
+		lines = append(lines, fmt.Sprintf("  %-10s $%.4f  (%d run%s)",
+			stage.ID, median, len(costs), plural(len(costs))))
+	}
+	if len(lines) == 0 {
+		return
+	}
+
+	fmt.Fprintf(env.Out, "what it has cost here: $%.4f a task, median by stage\n", total)
+	for _, line := range lines {
+		fmt.Fprintln(env.Out, line)
+	}
+}
+
+// pastSpend collects what each stage of a flow cost, across every task that ran
+// it in this project.
+func pastSpend(env Env, name string) map[fsm.StageID][]float64 {
+	ids, err := env.Store.Tasks()
+	if err != nil {
+		return nil
+	}
+
+	spent := map[fsm.StageID][]float64{}
+	for _, id := range ids {
+		ran, err := env.Store.FlowNameOf(id)
+		if err != nil || ran != name {
+			continue
+		}
+		state, err := env.Store.ReplayOwnFlow(id)
+		if err != nil {
+			// A task this build cannot read is not one to average. It surfaces by
+			// name elsewhere in this command, which is where a person deals with it.
+			continue
+		}
+		for stage, spend := range state.Spent {
+			if spend.CostUSD > 0 {
+				spent[stage] = append(spent[stage], spend.CostUSD)
+			}
+		}
+	}
+	return spent
+}
+
+// medianOf is the middle observation, which is what survives one runaway stage.
+func medianOf(costs []float64) float64 {
+	sorted := append([]float64{}, costs...)
+	sort.Float64s(sorted)
+
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[middle]
+	}
+	return (sorted[middle-1] + sorted[middle]) / 2
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

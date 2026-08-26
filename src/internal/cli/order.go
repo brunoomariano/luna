@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -193,21 +195,166 @@ func statusCommand(env Env, args []string) error {
 		return writeJSON(env.Out, report)
 	}
 
+	printStatus(env, state, flow, report)
+	return nil
+}
+
+// printStatus is the whole of what somebody sees when they ask where a task is.
+//
+// It used to be the walk and the base, which answers "which stage" and nothing
+// else — so every other question ("what is this costing", "which worktree",
+// "which model answered") meant a second command or a JSON parse. All of it was
+// already in the state; none of it was on the screen.
+//
+// Aligned by hand rather than by a layout library. The reader that matters most
+// here is an agent reading the terminal, and it said so: text it can read without
+// heuristic parsing was the best thing about the surface. A dependency comes when
+// there is a TUI to justify it.
+func printStatus(env Env, state fsm.TaskState, flow []fsm.Stage, report StatusReport) {
 	fmt.Fprintf(env.Out, "%s  %s%s\n", report.TaskID, report.Status, simulationNote(state))
+	printStatusFacts(env, state, flow, report)
+
+	fmt.Fprintln(env.Out)
+	printStatusStages(env, state, flow, report)
+
+	if state.Blocked != "" {
+		fmt.Fprintf(env.Out, "\nblocked (%s)\n  %s\n", state.BlockedBy, state.Blocked)
+	}
+}
+
+// printStatusFacts is the block of things that are true about the task rather
+// than about one stage.
+func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report StatusReport) {
+	line := func(label, format string, args ...any) {
+		fmt.Fprintf(env.Out, "  %-10s %s\n", label, fmt.Sprintf(format, args...))
+	}
+
+	if name, err := env.Store.FlowNameOf(state.ID); err == nil {
+		line("flow", "%s/%s · %s", name, fsm.Fingerprint(flow), state.Context.Kind)
+	}
+	if roles := packRoles(flow); len(roles) > 0 {
+		line("pack", "%s", strings.Join(roles, ", "))
+	}
+	if state.Memory.Named() {
+		line("workstream", "%s", state.Memory.Workstream)
+	}
+	line("autonomy", "%d  (%s)", int(state.Knob), knobMeaning(state.Knob, flow))
+
+	spent := state.TotalSpend()
+	switch {
+	case state.BudgetUSD > 0:
+		line("budget", "$%.4f of $%.2f · $%.2f left · %d turns",
+			spent.CostUSD, state.BudgetUSD, state.BudgetUSD-spent.CostUSD, spent.Turns)
+	case spent.CostUSD > 0:
+		line("spent", "$%.4f · %d turns · no ceiling", spent.CostUSD, spent.Turns)
+	default:
+		line("budget", "%s", "no ceiling, nothing spent")
+	}
+
 	if report.Base != "" {
-		fmt.Fprintf(env.Out, "  base   %s\n", report.Base)
+		line("base", "%s", report.Base)
 	}
 	// Where the work is, which is the half of `done` a person actually needs.
 	// `done` means ready to integrate, and integrating is a manual act — so the
 	// branch has to be named rather than left to be worked out.
 	if report.Branch != "" {
-		fmt.Fprintf(env.Out, "  branch %s\n", report.Branch)
+		line("branch", "%s", report.Branch)
 	}
+}
+
+// printStatusStages is the walk, with what each stage cost and who ran it.
+//
+// The role and the harness are here rather than in the facts above because they
+// differ per stage in a pack — and "which model answered" is a question about one
+// stage, not about the task.
+func printStatusStages(env Env, state fsm.TaskState, flow []fsm.Stage, report StatusReport) {
+	roles := env.profiles().Roles
+
+	for _, mark := range report.Stages {
+		stage := stageIn(flow, mark.ID)
+		line := fmt.Sprintf("  %-3s %-10s %-13s %s",
+			mark.Mark, mark.ID, stage.Role, stageCostLine(state, roles, stage))
+		// A mechanical stage has no role and no cost, so the columns after it are
+		// padding — and trailing whitespace is what makes a diff of two runs noisy
+		// for a reason that has nothing to do with the runs.
+		fmt.Fprintln(env.Out, strings.TrimRight(line, " "))
+	}
+
+	printWorktrees(env, state, flow)
+}
+
+// stageCostLine is what one stage cost, or what it will run on if it has not.
+func stageCostLine(state fsm.TaskState, roles map[fsm.RoleName]fsm.Role, stage fsm.Stage) string {
+	spend, ran := state.Spent[stage.ID]
+	if !ran {
+		if stage.Mechanical() {
+			return ""
+		}
+		return roles[fsm.RoleName(stage.Role)].Agent
+	}
+
+	// The model rather than the harness: the harness is which CLI was called and
+	// the model is what answered, and a cost belongs to the second. It is recorded
+	// only when exactly one model answered a stage.
+	answered := spend.Model
+	if answered == "" {
+		answered = roles[fsm.RoleName(stage.Role)].Agent
+	}
+	return fmt.Sprintf("%-24s %-6s %3dt  $%.4f", answered, spend.Context, spend.Turns, spend.CostUSD)
+}
+
+// printWorktrees says where each role's checkout is.
+//
+// Whether or not it exists: a worktree lasts exactly as long as its stage, so the
+// answer to "where is this work" is a path that is there while the stage runs and
+// gone after. Naming it either way beats making somebody guess the convention.
+func printWorktrees(env Env, state fsm.TaskState, flow []fsm.Stage) {
+	roles := packRoles(flow)
+	if len(roles) == 0 {
+		return
+	}
+
 	fmt.Fprintln(env.Out)
-	for _, stage := range report.Stages {
-		fmt.Fprintf(env.Out, "  %-3s %s\n", stage.Mark, stage.ID)
+	fmt.Fprintln(env.Out, "  worktrees")
+	for _, role := range roles {
+		path, err := node.WorktreePath(".", state.ID, role)
+		if err != nil {
+			continue
+		}
+		here := ""
+		if _, err := os.Stat(path); err == nil {
+			here = "  (open)"
+		}
+		fmt.Fprintf(env.Out, "    %-13s %s%s\n", role, nearby(path), here)
 	}
-	return nil
+}
+
+// knobMeaning says what this setting does for this flow, in the flow's own terms.
+//
+// A number alone is a setting somebody has to look up. What it means is which of
+// *these* gates the lead may answer, and that is a reading of the flow.
+func knobMeaning(knob fsm.Knob, flow []fsm.Stage) string {
+	var reachable, total int
+	for _, stage := range flow {
+		if stage.Gate == nil || len(stage.Gate.Judge) == 0 {
+			continue
+		}
+		total++
+		if knob.Judges(stage.Gate.Criticality) {
+			reachable++
+		}
+	}
+
+	switch {
+	case total == 0:
+		return "this flow opens no gate the lead could answer"
+	case reachable == 0:
+		return "every gate goes to a person"
+	case reachable == total:
+		return "the lead may answer every gate this flow has"
+	default:
+		return fmt.Sprintf("the lead may answer %d of this flow's %d gates", reachable, total)
+	}
 }
 
 // StatusReport is the structured shape of `luna status`.
@@ -382,4 +529,23 @@ func fullyBriefed(order fsm.Order, state fsm.TaskState, flow []fsm.Stage, cfg Co
 		break
 	}
 	return order
+}
+
+// nearby shortens a path against the working directory.
+//
+// A worktree is a sibling of the repository, so its absolute path is mostly the
+// part the reader already knows and is standing in. `../wt-app-T-1-coder` is the
+// same answer with the noise removed, and it falls back to the absolute path
+// whenever the relative one would be longer or cannot be worked out — which is
+// the only case where the long form is the more useful of the two.
+func nearby(path string) string {
+	here, err := os.Getwd()
+	if err != nil {
+		return path
+	}
+	relative, err := filepath.Rel(here, path)
+	if err != nil || len(relative) >= len(path) {
+		return path
+	}
+	return relative
 }

@@ -423,7 +423,9 @@ remembered:
   `contract` only when `spec` ran, and merging `spec` into the unconditional `plan` closed
   it. A flow that adds a conditional producer will want the mechanism back.
 - **Import adapters** — no tracker adapter ships.
-- **Token accounting** — being added now that the transport reports usage.
+- **Token accounting** — being added now that the transport reports usage. The model
+  that answered is recorded per stage and reported by `luna status`; a per-model price
+  table is not, so cost is the harness's number rather than one Luna derives.
 - **A role's skills** — `src/stock/skills/` is empty. A role declares an agent and a
   brief; the skill set is parsed, travels in the order as `skills=`, and is read by
   nothing. Not to be confused with `skills/` at the root, which is the opposite

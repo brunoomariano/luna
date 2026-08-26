@@ -831,7 +831,7 @@ func TestStatusNamesTheBranchAFinishedTaskLandedOn(t *testing.T) {
 	if !strings.Contains(out, "done") {
 		t.Fatalf("this test needs a finished task, got:\n%s", out)
 	}
-	if !strings.Contains(out, "branch luna/LUNA-1") {
+	if !strings.Contains(out, "luna/LUNA-1/done") {
 		t.Errorf("status does not name the branch the work is on:\n%s", out)
 	}
 }
