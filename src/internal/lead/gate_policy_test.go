@@ -410,3 +410,63 @@ func TestAReviewGateIsJudgedOnceAndNotTwice(t *testing.T) {
 		t.Errorf("and the one that counts recorded %q", got)
 	}
 }
+
+// TestAGateThatCouldNotBeAskedIsAskedAgain separates a verdict from a failure to
+// reach one.
+//
+// A gate carrying `could-not-ask` was treated as judged, so the run that skips
+// re-judging skipped it forever: the first knob 9 cycle timed out at two minutes,
+// recorded `could-not-ask`, and every later pass declined to ask again. The
+// timeout is fixed; this is what keeps the class of bug from coming back through
+// any other transient failure of the harness.
+func TestAGateThatCouldNotBeAskedIsAskedAgain(t *testing.T) {
+	cases := map[string]struct {
+		judged string
+		asks   bool
+	}{
+		"a verdict is not re-asked":             {judged: "reject", asks: false},
+		"nor is one the model would not settle": {judged: "cannot-decide", asks: false},
+		"but a failed ask is not a verdict":     {judged: askFailed, asks: true},
+		"and a gate nobody looked at is asked":  {judged: "", asks: true},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newStore(t)
+			nightly(t, s, "LUNA-1", fsm.KindFeature)
+			if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+				t.Fatalf("setting the knob: %v", err)
+			}
+
+			flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
+			asked := 0
+			l := &Lead{
+				Store: s, Node: &deliveringNode{}, Flow: flow,
+				Ask: func(context.Context, string) (string, error) {
+					asked++
+					return "CANNOT-DECIDE", nil
+				},
+			}
+
+			// Drive to the gate, then put the verdict under test on it.
+			if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if err := s.AppendAction("LUNA-1", fsm.GateJudged{
+				Gate: fsm.GateAccount{Judgement: c.judged},
+			}); err != nil {
+				t.Fatalf("recording the verdict under test: %v", err)
+			}
+
+			asked = 0
+			if err := l.Enter(context.Background(), "LUNA-1"); err != nil {
+				t.Fatalf("Enter: %v", err)
+			}
+
+			if (asked > 0) != c.asks {
+				t.Errorf("with %q on the gate the lead asked %d times, want asks=%v",
+					c.judged, asked, c.asks)
+			}
+		})
+	}
+}

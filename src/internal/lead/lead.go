@@ -292,7 +292,7 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	if state.Status == fsm.StatusAwaitingGate {
 		// A gate that already carries a verdict was judged when it opened, and
 		// judging it again is a second model call for an answer already in hand.
-		if state.Gate != nil && state.Gate.Judged != "" {
+		if state.Gate != nil && settled(state.Gate.Judged) {
 			return nil
 		}
 
@@ -498,7 +498,7 @@ func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateA
 		// The model could not be reached. Blocking is the conservative reading:
 		// it stops and notifies rather than spending another round on a loop
 		// nobody assessed.
-		return fsm.GateAccount{Decision: fsm.GateDecisionAbsent, Judgement: "could-not-ask"}
+		return fsm.GateAccount{Decision: fsm.GateDecisionAbsent, Judgement: askFailed}
 	}
 
 	account := fsm.GateAccount{Judgement: ReadCeiling(said).String(), Excerpt: excerpt(said)}
@@ -674,7 +674,7 @@ func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpe
 		// looking at this gate afterwards most needs.
 		return fsm.GateAccount{
 			Decision:  fsm.GateDecisionWaited,
-			Judgement: "could-not-ask",
+			Judgement: askFailed,
 			Excerpt:   excerpt(err.Error()),
 		}
 	}
@@ -794,3 +794,19 @@ func stageIn(flow []fsm.Stage, id fsm.StageID) fsm.Stage {
 	}
 	return fsm.Stage{ID: id}
 }
+
+// settled reports whether a gate's recorded verdict is one a model reached.
+//
+// `could-not-ask` is not: it says a model was asked and the ask itself failed —
+// a timeout, a harness that died — and that is transient in a way a verdict is
+// not. Treating it as settled is how a gate that timed out once stays unjudged
+// forever, which is what the first knob 9 run did when the judging ceiling was
+// two minutes.
+func settled(judged string) bool {
+	return judged != "" && judged != askFailed
+}
+
+// askFailed is the verdict that means there is no verdict: a model was asked and
+// the ask did not complete. One spelling, because two callers write it and a
+// third reads it.
+const askFailed = "could-not-ask"
