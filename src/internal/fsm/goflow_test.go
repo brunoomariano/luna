@@ -16,10 +16,11 @@ func goFlow() []Stage {
 			Produces: []Artifact{"worktree"},
 		},
 		{
-			ID:       "intake",
-			Role:     "maker",
-			Requires: []Artifact{TaskID, "worktree"},
-			Produces: []Artifact{"briefing", "kind"},
+			ID:        "intake",
+			Role:      "maker",
+			Requires:  []Artifact{TaskID, "worktree"},
+			Produces:  []Artifact{"briefing"},
+			Verifiers: map[Artifact]Verifier{"briefing": Existence{Handover: true}},
 		},
 		{
 			ID:               "diagnose",
@@ -40,7 +41,7 @@ func goFlow() []Stage {
 				Kind: GateReviewArtifact, Artifact: "contract",
 				Reason: "review the plan and its contract",
 			},
-			Requires: []Artifact{"briefing", "kind"},
+			Requires: []Artifact{"briefing"},
 			Produces: []Artifact{"scenarios", "approach", "contract"},
 			Verifiers: map[Artifact]Verifier{
 				"scenarios": Existence{Handover: true},
@@ -175,7 +176,7 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	//
 	// Any other change to this constant is a flow change that has to be argued
 	// for, because every open task's log was written under the old one.
-	const shipped = "9f1e8cf1fb2cbdb3"
+	const shipped = "99fa3a6a6b436a79"
 	if got != shipped {
 		t.Errorf("fingerprint = %s, want %s — the shipped flow changed, and every "+
 			"open task's log was written under the old one", got, shipped)

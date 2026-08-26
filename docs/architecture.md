@@ -340,7 +340,7 @@ luna fleet report --since 12h     # every task, grouped by what it needs
 The size of the pack is the flow's rather than a flag's, and `luna flow check` reports it:
 
 ```
-flow full/9f1e8cf1fb2cbdb3 (9 stages)
+flow full/99fa3a6a6b436a79 (9 stages)
 pack of 5: planner, investigator, coder, cleaner, auditor — `luna lead` runs the same flow with one
 ```
 

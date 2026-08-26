@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/node"
@@ -61,6 +62,12 @@ func TestNothingIsLeftBesideTheLog(t *testing.T) {
 		t.Fatalf("reading the log directory: %v", err)
 	}
 	for _, entry := range entries {
+		// The ignore is the one thing that belongs here, and it is written rather
+		// than left: the log holds task statements, handed-over documents and
+		// costs, and a `git add -A` from an agent in the repository takes all of it.
+		if entry.Name() == ".gitignore" {
+			continue
+		}
 		t.Errorf("the guard left %q beside the log", entry.Name())
 	}
 }
@@ -245,5 +252,60 @@ func TestRecordedAndVisibleIsTheOrdinaryCase(t *testing.T) {
 	}
 	if err := node.EnsureDurable(dir); err != nil {
 		t.Fatalf("a recorded directory that is visible must pass, got %v", err)
+	}
+}
+
+// TestTheLogDirectoryIgnoresItself is the leak.
+//
+// The log holds a task's statement, every document handed over and what each
+// stage cost, and a `git add -A` from an agent working in the repository takes
+// all of it. Measured twice on real runs, where a stage's own artifacts ended up
+// committed because nothing stopped them.
+func TestTheLogDirectoryIgnoresItself(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".luna")
+
+	if err := node.EnsureDurable(dir); err != nil {
+		t.Fatalf("creating the log directory: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("the log directory does not ignore itself: %v", err)
+	}
+	if !strings.Contains(string(body), "*") {
+		t.Errorf("the pattern does not cover the log:\n%s", body)
+	}
+	// The project's own settings stay committable: they are the project's, not
+	// Luna's state, and a team shares a workstream through git.
+	if !strings.Contains(string(body), "!config.toml") {
+		t.Errorf("the project's config was swept up with Luna's state:\n%s", body)
+	}
+}
+
+// TestAnIgnoreSomebodyEditedIsLeftAlone. Overwriting would be Luna deciding it
+// knows better about a file in their repository — and the second run of every
+// command would undo whatever they changed.
+func TestAnIgnoreSomebodyEditedIsLeftAlone(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".luna")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("preparing: %v", err)
+	}
+
+	path := filepath.Join(dir, ".gitignore")
+	const theirs = "# mine\n*.tmp\n"
+	if err := os.WriteFile(path, []byte(theirs), 0o600); err != nil {
+		t.Fatalf("writing theirs: %v", err)
+	}
+
+	if err := node.EnsureDurable(dir); err != nil {
+		t.Fatalf("recording: %v", err)
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if string(body) != theirs {
+		t.Errorf("Luna overwrote an ignore somebody wrote:\n%s", body)
 	}
 }

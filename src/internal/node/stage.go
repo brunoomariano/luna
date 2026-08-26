@@ -24,6 +24,20 @@ type Runner struct {
 	// verification reads the delivery from.
 	Repo string
 
+	// Bootstrap is the project's step between `git clone` and "the tests run",
+	// run in every fresh worktree before the stage starts. Empty means the
+	// repository needs none.
+	//
+	// Per stage rather than once, because a worktree is per stage: it is opened
+	// clean and removed when the stage ends, so whatever the first one installed
+	// is not there for the second. That costs an install per stage, and the
+	// alternative costs a stage.
+	Bootstrap string
+
+	// BootstrapTimeout bounds it. Zero means BootstrapTimeout — a field so a test
+	// can reach the branch without waiting fifteen minutes for it.
+	BootstrapTimeout time.Duration
+
 	// Agent runs the agent call. An interface so a test substitutes a named fake
 	// for a real process.
 	Agent agent.Runner
@@ -79,13 +93,8 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 		return lead.Result{}, err
 	}
 
-	wt, err := OpenWorktree(ctx, r.Repo, state.ID, stage.Role, state.Base)
+	wt, err := r.openWorktree(ctx, state, stage)
 	if err != nil {
-		// A missing git is the machinery breaking rather than the stage failing,
-		// and it is not a thing a retry can fix.
-		if errors.Is(err, exec.ErrNotFound) {
-			return lead.Result{}, fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
-		}
 		return lead.Result{}, err
 	}
 	// The worktree lasts exactly as long as the stage. A failure to remove it
@@ -97,6 +106,14 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 			r.warn("could not remove the worktree for %s at %s: %v", state.ID, stage.ID, err)
 		}
 	}()
+
+	// Before anything reads or runs in there. A worktree is a clean checkout, and
+	// a repository whose tests need a build step first has none — so the check
+	// fails on the machine rather than on the work, and says so with the wrong
+	// words. This is where the step between `git clone` and "the tests run" goes.
+	if err := r.bootstrap(ctx, wt.Path); err != nil {
+		return lead.Result{}, err
+	}
 
 	// A mechanical stage runs no agent at all: paying a model to run git buys
 	// nothing and can lose something. The verification still runs, so the stage
@@ -624,4 +641,20 @@ func join(artifacts []fsm.Artifact) string {
 		names = append(names, string(artifact))
 	}
 	return strings.Join(names, ", ")
+}
+
+// openWorktree cuts the stage's checkout, reporting a missing git as what it is.
+//
+// A missing git is the machinery breaking rather than the stage failing, and it
+// is not a thing a retry can fix — spending the retry budget on it leaves none
+// for the failure it was meant for.
+func (r *Runner) openWorktree(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (Worktree, error) {
+	wt, err := OpenWorktree(ctx, r.Repo, state.ID, stage.Role, state.Base)
+	if err == nil {
+		return wt, nil
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return Worktree{}, fmt.Errorf("%w: %w", lead.ErrInfrastructure, err)
+	}
+	return Worktree{}, err
 }

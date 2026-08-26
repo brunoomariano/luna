@@ -256,7 +256,6 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 	unprovable := map[Artifact]string{
 		"worktree":    "a directory either exists or the stage that makes it failed",
 		"briefing":    "prose: what it says is judgement, and running it is not a thing",
-		"kind":        "a classification, which is a word rather than a state of the repository",
 		"root_cause":  "prose about why something happened",
 		"scenarios":   "prose a person reads to decide whether the work was understood",
 		"approach":    "prose naming what will change",
@@ -334,7 +333,7 @@ func TestTheUnprovableListDescribesTheFlowItGuards(t *testing.T) {
 	// Rebuilt rather than shared with the test above, so the two cannot drift into
 	// agreeing with each other about a list neither checks.
 	for _, artifact := range []Artifact{
-		"worktree", "briefing", "kind", "root_cause", "scenarios",
+		"worktree", "briefing", "root_cause", "scenarios",
 		"approach", "contract", "code", "dod_checked", "min_case",
 		"audit_report",
 	} {

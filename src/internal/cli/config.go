@@ -55,6 +55,19 @@ type Config struct {
 	// pointing at, which is the contamination a name exists to prevent.
 	Workstream string
 
+	// Bootstrap is what makes a fresh worktree runnable — the step between
+	// `git clone` and "the tests run". `make bootstrap`, `pnpm install`,
+	// whatever this repository needs.
+	//
+	// Here rather than in a stage file because it is a fact about the repository
+	// and the stages ship with the binary: one project builds with make and the
+	// next with pnpm, and neither is the flow's business. Empty means none is
+	// needed, which is true of a repository whose tests run from a clean checkout.
+	//
+	// A failure here is infrastructure, not the work. It blocks with the command
+	// and its output rather than as a stage that delivered too little.
+	Bootstrap string
+
 	// Profiles are the names this project defines. A project that names none
 	// inherits the three shipped ones; naming one that already exists is not an
 	// error, because there is nothing left in a profile to conflict.
@@ -353,6 +366,9 @@ func assignRoot(cfg *Config, key, value, where string) error {
 		return nil
 	case "interpreter":
 		cfg.Interpreter = strings.Trim(value, `"`)
+		return nil
+	case "bootstrap":
+		cfg.Bootstrap = strings.Trim(value, `"`)
 		return nil
 	case "workstream":
 		cfg.Workstream = strings.Trim(value, `"`)

@@ -2,10 +2,14 @@ package node
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
 // TestAWorktreeIsASiblingOfTheRepository covers the layout rule.
@@ -234,5 +238,43 @@ func TestAStageKilledMidFlightDoesNotBlockTheNextOne(t *testing.T) {
 	}
 	if err := CloseWorktree(ctx, repo, next); err != nil {
 		t.Fatalf("closing: %v", err)
+	}
+}
+
+// TestABranchHeldElsewhereSaysWhereToLook is a foot of clay somebody stood on.
+//
+// Luna opens a stage's worktree by branch, so a branch checked out anywhere else
+// — including by whoever is verifying the work in a parallel checkout — stops the
+// stage. Git's own message names the path, and wrapping it in "opening a worktree
+// for T-1 at coder from abc123" buried the one useful sentence.
+//
+// The branch stays. It is not decoration: it is what keeps a stage's commits
+// reachable between the worktree being removed and the next stage branching from
+// them, and a detached HEAD would leave them for `git gc`. So the fix is the
+// message, and it carries the recipe for reading the work without taking the
+// branch — which is what the person who hit this ended up doing.
+func TestABranchHeldElsewhereSaysWhereToLook(t *testing.T) {
+	repo := repoWithCommit(t)
+
+	// Someone else takes the branch this stage is about to want.
+	held := filepath.Join(t.TempDir(), "theirs")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-B",
+		"luna/T-9/coder", held, "HEAD").CombinedOutput(); err != nil {
+		t.Fatalf("setting up the collision: %v: %s", err, out)
+	}
+
+	_, err := OpenWorktree(context.Background(), repo, "T-9", "coder", "")
+	if err == nil {
+		t.Fatal("a stage opened a worktree on a branch somebody else was holding")
+	}
+	// Infrastructure: a retry finds the branch held again, and spending the retry
+	// budget on it leaves none for the failure it was meant for.
+	if !errors.Is(err, lead.ErrInfrastructure) {
+		t.Errorf("a held branch was reported as the work failing: %v", err)
+	}
+	for _, want := range []string{"luna/T-9/coder", "git worktree list", "--detach"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not carry %q:\n%v", want, err)
+		}
 	}
 }

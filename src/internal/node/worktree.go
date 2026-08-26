@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
 // Worktree is a stage's checkout: where its agent works and what its delivery is
@@ -71,6 +73,14 @@ func OpenWorktree(ctx context.Context, repo, taskID, role, base string) (Worktre
 	// the new base rather than refusing the stage. The branch name identifies the
 	// work, not one particular attempt at it.
 	if _, err := git(ctx, repo, "worktree", "add", "-B", branch, path, from); err != nil {
+		if held := strings.Contains(err.Error(), "already used by worktree"); held {
+			return Worktree{}, fmt.Errorf(
+				"%w: the branch %s is checked out somewhere else, so this stage cannot open its worktree.\n"+
+					"  `git worktree list` says where. Remove it, or — to read the work without holding\n"+
+					"  the branch — `git worktree add --detach <path> <sha>`, which collides with nobody: %w",
+				lead.ErrInfrastructure, branch, err,
+			)
+		}
 		return Worktree{}, fmt.Errorf("opening a worktree for %s at %s from %s: %w", taskID, role, from, err)
 	}
 	return Worktree{Path: path, Branch: branch}, nil

@@ -17,7 +17,7 @@ role     = "planner"
 # would mean continuing the investigator's. AuditContextChain refuses a live
 # stage whose predecessor holds a different role, and it refused this one.
 context  = "fresh"
-requires = ["briefing", "kind"]
+requires = ["briefing"]
 produces = ["scenarios", "approach", "contract"]
 
 [verify.scenarios]

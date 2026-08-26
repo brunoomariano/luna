@@ -1381,3 +1381,32 @@ func TestAStageThatFailsIsAnErrorRatherThanABlock(t *testing.T) {
 		t.Error("an ordinary stage failure spent the block that infrastructure needs")
 	}
 }
+
+// TestWorkNamesTheWayOutOfWhereItStopped. The status is already in hand when
+// `work` refuses, so leaving out the command is withholding half an answer — and
+// a lead that correctly refuses to guess a command that writes to the log has
+// nowhere to go, which is where one sat.
+func TestWorkNamesTheWayOutOfWhereItStopped(t *testing.T) {
+	cases := map[fsm.Status]string{
+		fsm.StatusBlocked:      "luna unblock",
+		fsm.StatusAwaitingGate: "luna gate show",
+		fsm.StatusReady:        "luna lead",
+		fsm.StatusStageDone:    "luna lead",
+	}
+
+	for status, want := range cases {
+		t.Run(string(status), func(t *testing.T) {
+			if got := wayOut("W-9", fsm.TaskState{Status: status}); !strings.Contains(got, want) {
+				t.Errorf("%q does not name %q: %q", status, want, got)
+			}
+		})
+	}
+
+	// A finished or abandoned task has no next command, and inventing one would
+	// send somebody to reopen a task that ended on purpose.
+	for _, ended := range []fsm.Status{fsm.StatusDone, fsm.StatusAbandoned} {
+		if got := wayOut("W-9", fsm.TaskState{Status: ended}); got != "" {
+			t.Errorf("%q was given a way out of an ending: %q", ended, got)
+		}
+	}
+}

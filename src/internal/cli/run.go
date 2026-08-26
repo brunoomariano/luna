@@ -90,7 +90,12 @@ func stageToWork(env Env, id string, opts runOptions) (fsm.TaskState, error) {
 	// person, a block, or a finished task. The status says which, and none of
 	// them is `work`'s to push past.
 	if state.Status != fsm.StatusRunning {
-		return state, fmt.Errorf("task %q has no running stage to work (it is %s)", id, state.Status)
+		// The status is known here, so the way out is too. It used to stop at the
+		// state and leave the caller to work out the command — and a lead that
+		// correctly refuses to guess a command that writes to the log has nowhere
+		// to go, which is where one sat.
+		return state, fmt.Errorf("task %q has no running stage to work (it is %s)%s",
+			id, state.Status, wayOut(id, state))
 	}
 	return state, nil
 }
@@ -253,6 +258,11 @@ func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(),
 
 	runner := &node.Runner{
 		Repo: opts.Repo,
+		// The project's step between `git clone` and "the tests run", run in every
+		// fresh worktree. Without it a stage's checks fail on the machine rather
+		// than on the work — two build stages and $10.36 of a $19.13 task, for code
+		// that had been correct since the first attempt.
+		Bootstrap: cfg.Bootstrap,
 		// The flow, so a stage declaring `context = "live"` can find which session
 		// its role was last in. The answer comes out of the task's log, and the
 		// flow is what says which stage belongs to which role.
@@ -590,4 +600,24 @@ func stageIn(flow []fsm.Stage, id fsm.StageID) fsm.Stage {
 		}
 	}
 	return fsm.Stage{}
+}
+
+// wayOut names the command that moves a task on from where it stopped.
+//
+// Three of the four states `work` refuses have one, and saying it is the whole
+// difference between a caller that continues and one that stops: the state is
+// already in hand, so leaving it out is withholding half an answer.
+func wayOut(id string, state fsm.TaskState) string {
+	switch state.Status {
+	case fsm.StatusBlocked:
+		return fmt.Sprintf(" — deal with what stopped it, then `luna unblock %s`", id)
+	case fsm.StatusAwaitingGate:
+		return fmt.Sprintf(" — answer it with `luna gate show %s`", id)
+	case fsm.StatusReady, fsm.StatusStageDone:
+		return fmt.Sprintf(" — `luna lead %s` opens the next stage", id)
+	default:
+		// Done, called off: there is no next command, and inventing one would send
+		// somebody to reopen a task that ended on purpose.
+		return ""
+	}
 }

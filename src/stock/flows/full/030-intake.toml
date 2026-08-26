@@ -1,10 +1,24 @@
 id       = "intake"
 role     = "planner"
 requires = ["task_id", "worktree"]
-produces = ["briefing", "kind"]
+# The kind is not produced here any more, and that is a removal rather than a
+# move. The task already carries it: `luna task new --kind` records it, the
+# reducer reads it to decide which conditional stages apply, and nothing but this
+# stage's own `produces` ever read the artifact. An agent writing a word into a
+# file that the log already holds is ceremony with a bill.
+produces = ["briefing"]
 
+# Handed to Luna rather than written into the tree, and this is the fix for a
+# leak rather than a tidy-up.
+#
+# `briefing` and `kind` were the only artifacts in the flow proven by a file on
+# disk. A file only survives into the next stage's worktree if it is committed —
+# so the contract left the agent no choice, and the delivery carried `.luna/` or
+# a stray `briefing.md` into the repository. Measured twice: one run committed
+# them under `.luna/`, another at the root, and neither agent was being careless.
+#
+# The store has no such problem. The document crosses stages by hash, `luna gate
+# show` puts it in front of a person, and nothing reaches the commit.
 [verify.briefing]
-kind = "existence"
-
-[verify.kind]
-kind = "existence"
+kind     = "existence"
+handover = "store"

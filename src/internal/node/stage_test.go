@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
@@ -1332,4 +1333,111 @@ func mustGit(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return string(out)
+}
+
+// TestAWorktreeIsBootstrappedBeforeTheStageStarts is the most expensive thing a
+// real run found.
+//
+// A worktree is a clean checkout opened per stage, so a repository whose tests
+// need a build step first has none — and the check fails on the machine while
+// saying the stage delivered too little. Measured: `tests_green` runs `make
+// test`, `make test` needs `make build`, and two build stages failed on it for
+// $10.36 of a $19.13 task, producing code that had been correct all along.
+func TestAWorktreeIsBootstrappedBeforeTheStageStarts(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	marker := filepath.Join(t.TempDir(), "bootstrapped")
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
+		Bootstrap: "touch " + marker,
+	}
+
+	stage := fsm.Stage{ID: "build", Role: "analyst"}
+	if _, err := r.Run(context.Background(), runningState("B-1"), stage); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the worktree was handed to the stage without being made runnable: %v", err)
+	}
+}
+
+// TestABootstrapThatFailsIsInfrastructure. "The machine is not ready" and "the
+// stage delivered less than it owed" are different facts with opposite
+// treatments, and a person who cannot tell them apart pays for the wrong fix.
+func TestABootstrapThatFailsIsInfrastructure(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
+		Bootstrap: "echo 'no lockfile here' >&2; exit 1",
+	}
+
+	_, err := r.Run(context.Background(), runningState("B-2"), fsm.Stage{ID: "build", Role: "analyst"})
+	if !errors.Is(err, lead.ErrInfrastructure) {
+		t.Fatalf("a failed bootstrap was reported as the work failing: %v", err)
+	}
+	// And it carries what went wrong, because the whole point is that somebody can
+	// act on it without running the suite by hand in a parallel worktree.
+	if !strings.Contains(err.Error(), "no lockfile here") {
+		t.Errorf("the failure does not carry the command's output: %v", err)
+	}
+
+	// The agent never started: there was nothing for it to work in.
+	if len(fake.calls) != 0 {
+		t.Errorf("an agent was billed for a worktree that was not ready: %d calls", len(fake.calls))
+	}
+}
+
+// TestARepositoryThatNeedsNoBootstrapRunsNone. Empty means none, and a project
+// whose tests run from a clean checkout should not pay for a shell per stage.
+func TestARepositoryThatNeedsNoBootstrapRunsNone(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
+	}
+
+	if _, err := r.Run(context.Background(), runningState("B-3"), fsm.Stage{ID: "build", Role: "analyst"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Errorf("the stage did not run: %d calls", len(fake.calls))
+	}
+}
+
+// TestABootstrapThatNeverFinishesIsStuckRatherThanSlow. The stage behind it has
+// not started, so nothing is lost by saying so — and a wait with no ceiling is
+// the silent hang INV-5 forbids.
+func TestABootstrapThatNeverFinishesIsStuckRatherThanSlow(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	r := &Runner{
+		Repo:             repo,
+		Agent:            fake,
+		Roles:            roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
+		Bootstrap:        "sleep 30",
+		BootstrapTimeout: 20 * time.Millisecond,
+	}
+
+	_, err := r.Run(context.Background(), runningState("B-4"), fsm.Stage{ID: "build", Role: "analyst"})
+	if !errors.Is(err, lead.ErrInfrastructure) {
+		t.Fatalf("a bootstrap that hung was reported as the work failing: %v", err)
+	}
+	if !strings.Contains(err.Error(), "did not finish") {
+		t.Errorf("the failure does not say it ran out of time: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("an agent was billed for a worktree that never became ready: %d", len(fake.calls))
+	}
 }

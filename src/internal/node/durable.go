@@ -130,6 +130,7 @@ func recordLogLocation(dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
 	}
+	keepOutOfGit(dir)
 
 	// Best effort: a repository Luna cannot write to still gets a working log, and
 	// the guard simply has nothing to compare against next time.
@@ -138,4 +139,43 @@ func recordLogLocation(dir string) error {
 		_ = os.WriteFile(filepath.Join(gitDir, gitAnchorName), []byte(dir+"\n"), 0o600)
 	}
 	return nil
+}
+
+// keepOutOfGit makes the log directory invisible to git, from inside itself.
+//
+// The log holds a task's statement, every document handed over, and what each
+// stage cost. None of that belongs in a commit, and a `git add -A` from an agent
+// working in the repository takes all of it — measured twice on real runs, where
+// a stage's own artifacts ended up committed because nothing stopped them.
+//
+// Written into `.luna/.gitignore` rather than the project's, because the
+// project's belongs to the project: Luna appending to a file somebody else
+// maintains is a change they did not make and would have to review. A directory
+// that ignores itself needs nobody's permission.
+//
+// `config.toml` is the exception and is deliberately left committable: it is the
+// project's settings rather than Luna's state, and a team sharing a workstream
+// and a turn budget shares them through git. That negation only holds when no
+// outer rule already excludes the directory — git does not descend into an
+// ignored directory, so a global `.luna/` makes everything here moot. On the
+// machine this was written on, exactly that was true; on any other, this file is
+// the only thing between the log and a commit.
+//
+// Best effort, like the anchor beside it: a repository Luna cannot write to still
+// gets a working log. What it loses is the protection, not the run.
+func keepOutOfGit(dir string) {
+	const ignore = `# Written by Luna. The log holds task statements, handed-over
+# documents and what each stage cost — none of it belongs in a commit.
+# config.toml is the exception: it is the project's settings, not Luna's state.
+*
+!.gitignore
+!config.toml
+`
+	path := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(path); err == nil {
+		// Somebody may have edited it, and overwriting would be Luna deciding it
+		// knows better about a file in their repository.
+		return
+	}
+	_ = os.WriteFile(path, []byte(ignore), 0o600)
 }

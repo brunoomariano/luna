@@ -201,6 +201,50 @@ limit saves.
 
 **A task carries its own statement of work in its log.**
 
+**The log directory ignores itself, and the intake hands its briefing over.** A real run
+committed `.luna/` into the project, and the agent was not being careless: `briefing` and
+`kind` were the only artifacts in the flow proven by a file on disk, and a file only
+survives into the next stage's worktree if it is committed. The contract left no other
+move. They are handed to the store now, like the plan's three, so nothing reaches the
+commit — and `.luna/` carries its own `.gitignore`, because the log holds task statements,
+handed-over documents and costs, and `git add -A` from an agent working in the repository
+takes all of it. *Rejected:* appending to the project's `.gitignore` — that file belongs to
+the project, and Luna editing it is a change somebody else has to review. A directory that
+ignores itself needs nobody's permission. `config.toml` stays committable: it is the
+project's settings, not Luna's state.
+
+The `kind` artifact went with them, and that is a removal rather than a move. `luna task
+new --kind` already records it, the reducer reads it to decide which conditional stages
+apply, and nothing but the `plan` stage's own `requires` ever read the file. An agent
+writing a word into a file that the log already holds is ceremony with a bill.
+
+**A stage's worktree is bootstrapped before the stage starts.** Every serious repository has
+a step between `git clone` and "the tests run", and Luna opens a clean worktree per stage —
+so without one, every stage rediscovers it and the ones that cannot fail on a check that was
+never about the work. Measured: `tests_green` runs `make test`, `make test` needs `make
+build`, and two build stages failed on it for $10.36 of a $19.13 task, producing code that
+had been correct since the first attempt. It is `bootstrap` in `.luna/config.toml`, because
+one project builds with make and the next with pnpm and neither is the flow's business.
+*Rejected:* running it once per task — a worktree is opened clean per stage and removed
+after, so whatever the first one installed is not there for the second. That costs an
+install per stage, and the alternative costs a stage.
+
+**A shortfall says why, not just what.** A stage that never earned an artifact because a
+command came back non-zero and one that simply did not produce the thing were reported as
+the same block: *"declared [a b] and did not deliver [b]"*. The evidence was there the whole
+time — the node proves every owed artifact and absorbs the failing verdicts — and none of it
+was said, so the reader went and ran the suite by hand in a parallel worktree to find out.
+It is the *honest* agent that produced the worse message, which is what makes it worth
+fixing rather than tolerating: refusing to claim an artifact it could not prove is the
+behaviour the whole design asks for, and it left the least to go on.
+
+**A branch held elsewhere keeps its branch.** Luna opens a stage's worktree by branch, so a
+branch checked out anywhere else stops the stage. *Rejected:* opening detached at the base
+SHA — the branch is what keeps a stage's commits reachable between the worktree being
+removed and the next stage branching from them, and a detached HEAD leaves them for `git
+gc`. What changed is the message: it names the branch, points at `git worktree list`, and
+carries `git worktree add --detach` for whoever wants to read the work without taking it.
+
 ## Verification
 
 **Output is validated by running the real tool.** Not format, not exit codes alone.

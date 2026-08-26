@@ -711,10 +711,41 @@ func askAgain(state TaskState, a Complete, owed, missing []Artifact) TaskState {
 	}
 
 	state.Status = StatusBlocked
-	state.BlockedBy = BlockContract
-	state.Blocked = fmt.Sprintf("stage %q declared %v and did not deliver %v after %d attempts",
-		state.Stage, owed, missing, state.Retry.Attempts)
+	state.BlockedBy, state.Blocked = whyItFellShort(state, owed, missing)
 	return state
+}
+
+// whyItFellShort turns a shortfall into a reason somebody can act on.
+//
+// A stage falls short in two different ways and they were reported as one. The
+// stage that never earned an artifact because a command came back non-zero is a
+// `failed-check`, and the command and its output are already in the evidence
+// beside it. The stage that simply did not produce the thing is a `contract`.
+// Both used to say "declared [a b] and did not deliver [b]", which names what is
+// absent and never why — so whoever read it went and ran the suite by hand in a
+// parallel worktree to find out.
+//
+// It is the honest agent that produced the worse message, which is what makes
+// this worth fixing rather than tolerating: an agent refusing to claim an
+// artifact it could not prove is the behaviour the whole design asks for, and it
+// left the least to go on.
+func whyItFellShort(state TaskState, owed, missing []Artifact) (BlockKind, string) {
+	for _, artifact := range missing {
+		evidence := state.Evidence[artifact]
+		if evidence.Command == "" || evidence.Verdict == VerdictPassed {
+			continue
+		}
+
+		reason := fmt.Sprintf("stage %q could not prove %q after %d attempts: %s exited %d",
+			state.Stage, artifact, state.Retry.Attempts, evidence.Command, evidence.ExitCode)
+		if evidence.Detail != "" {
+			reason += " — " + evidence.Detail
+		}
+		return BlockCheck, reason
+	}
+
+	return BlockContract, fmt.Sprintf("stage %q declared %v and did not deliver %v after %d attempts",
+		state.Stage, owed, missing, state.Retry.Attempts)
 }
 
 // refuseTheEvidence applies the two checks that judge what came back, rather than
