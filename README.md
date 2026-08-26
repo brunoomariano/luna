@@ -62,7 +62,30 @@ is cheaper is the next thing to measure, not something to claim here. See
 
 ## Installation
 
-No release yet. When there is one, it will be one command.
+```sh
+go install github.com/brunoomariano/luna/src/cmd/luna@latest
+```
+
+Or from a checkout, which is the same build by the same route:
+
+```sh
+make install          # into GOBIN, else GOPATH/bin
+make uninstall
+```
+
+`make install` prints what it installed, where, and — separately — what `luna`
+resolves to for your shell. Those two are not always the same binary, and a
+stale copy earlier on your PATH is invisible until it refuses a flag the current
+build has.
+
+```sh
+luna version
+```
+
+says which build this is and which flows it carries, with their fingerprints.
+Check it against whatever runbook or skill you are following: a document written
+for one surface and run against another fails at the first unknown flag, with
+nothing saying which of the two is behind.
 
 ## Documentation
 

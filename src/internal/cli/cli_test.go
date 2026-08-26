@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -1723,5 +1724,85 @@ func TestTheWorkstreamIsInTheJSON(t *testing.T) {
 	}
 	if report.Workstream != "nightly" {
 		t.Errorf("the workstream is not in the JSON: %q", report.Workstream)
+	}
+}
+
+// TestVersionSaysWhichBuildAndWhichSurface is the answer to a stale install.
+//
+// A skill or a runbook is written against a surface, and running it against an
+// older binary fails at the first unknown flag with nothing saying which of the
+// two is behind. Measured on a real run: the skill documented three flows and the
+// binary that answered carried one.
+func TestVersionSaysWhichBuildAndWhichSurface(t *testing.T) {
+	h := newHarness(t)
+
+	out := h.mustRun(t, "version")
+
+	if !strings.HasPrefix(out, "luna ") {
+		t.Errorf("version does not open with what this build is:\n%s", out)
+	}
+	// Every flow, with its fingerprint: that is the half a document is written
+	// against, and a name alone would not catch a flow whose stages moved.
+	for _, name := range []string{"chore", "fix", "full"} {
+		if !strings.Contains(out, name+"/") {
+			t.Errorf("version does not name the %s flow:\n%s", name, out)
+		}
+	}
+	if !strings.Contains(out, "pack of") {
+		t.Errorf("version does not say how many agents a flow keeps:\n%s", out)
+	}
+}
+
+// TestVersionTakesNoArguments. A flag it silently ignored would read as a
+// question it answered.
+func TestVersionTakesNoArguments(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "version", "--json"); !errors.Is(err, ErrUsage) {
+		t.Errorf("version accepted an argument it does not have: %v", err)
+	}
+}
+
+// TestTheSurfaceStampIsOneComparison. It is what a document records so a reader
+// can check it against a binary without running a command per flag.
+func TestTheSurfaceStampIsOneComparison(t *testing.T) {
+	stamp := SurfaceStamp()
+
+	for _, name := range []string{"chore", "fix", "full"} {
+		if !strings.Contains(stamp, name+"/") {
+			t.Errorf("the stamp does not carry the %s flow: %q", name, stamp)
+		}
+	}
+	if stamp != SurfaceStamp() {
+		t.Error("the stamp is not stable, so no document can record one")
+	}
+}
+
+// TestTheVersionIsHonestAboutHowItWasBuilt covers the three shapes the toolchain
+// produces, which a test cannot get by being built three ways.
+func TestTheVersionIsHonestAboutHowItWasBuilt(t *testing.T) {
+	revision := []debug.BuildSetting{{Key: "vcs.revision", Value: "78209ef15278abcdef"}}
+
+	cases := map[string]struct {
+		module   string
+		settings []debug.BuildSetting
+		want     string
+	}{
+		// `go install <module>@<version>`, and the toolchain's own dirty marker.
+		"a module version wins":      {module: "v1.4.0", want: "v1.4.0"},
+		"including when it is dirty": {module: "v1.4.0+dirty", want: "v1.4.0+dirty"},
+		// A local `go build`: no module version, but git is there.
+		"otherwise the revision, short": {module: "(devel)", settings: revision, want: "78209ef15278"},
+		// Neither: a build from a tarball, or vcs stamping turned off.
+		"and (devel) when there is neither": {module: "(devel)", want: "(devel)"},
+		"nor an empty module version":       {module: "", want: "(devel)"},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := versionFrom(c.module, c.settings); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
 	}
 }

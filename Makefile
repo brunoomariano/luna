@@ -4,7 +4,8 @@
 # ignore the process.
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap doctor ci ci-check test lint lint-docs lint-language \
-        fmt fmt-check cover race vuln mod deadcode crap cyclo mutation build clean bench
+        fmt fmt-check cover race vuln mod deadcode crap cyclo mutation build clean bench \
+        install uninstall
 
 help: ## list the targets
 	@grep -E '^[a-z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -120,6 +121,35 @@ ci: ## fix what can be fixed, then verify. Run before opening a PR.
 
 build: ## build the binary
 	@go build -o bin/luna ./src/cmd/luna
+
+# Where `make install` puts the binary. GOBIN if it is set, else GOPATH/bin, else
+# the Go default — the same three places `go install` would use, resolved the
+# same way, so the two never disagree about where `luna` ended up.
+INSTALL_DIR ?= $(shell go env GOBIN)
+ifeq ($(INSTALL_DIR),)
+INSTALL_DIR := $(shell go env GOPATH)/bin
+endif
+
+install: ## build and install luna into GOBIN (or GOPATH/bin)
+	@mkdir -p "$(INSTALL_DIR)"
+	@go build -o "$(INSTALL_DIR)/luna" ./src/cmd/luna
+	@printf 'installed %s\n' "$$("$(INSTALL_DIR)/luna" version | head -1)"
+	@printf '  at %s\n' "$(INSTALL_DIR)/luna"
+	@# What `luna` resolves to for this shell, which is not always what was just
+	@# installed: a stale copy earlier on PATH is invisible until it refuses a flag
+	@# the current build has. Measured on a real run, where the skill documented
+	@# three flows and the binary that answered carried one.
+	@if command -v luna >/dev/null 2>&1; then \
+	  printf '  `luna` resolves to %s, which is %s\n' \
+	    "$$(command -v luna)" \
+	    "$$(luna version 2>/dev/null | head -1 || true)$$(luna version >/dev/null 2>&1 || echo 'older than this build — it has no `version`')"; \
+	else \
+	  printf '  %s is not on your PATH — add it, or call luna by path\n' "$(INSTALL_DIR)"; \
+	fi
+
+uninstall: ## remove the installed binary
+	@rm -f "$(INSTALL_DIR)/luna"
+	@printf 'removed %s\n' "$(INSTALL_DIR)/luna"
 
 clean: ## remove build artifacts
 	@rm -f luna coverage.out

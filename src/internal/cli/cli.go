@@ -120,6 +120,7 @@ func Run(env Env, args []string) error {
 		"fleet":    runFleet,
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
+		"version":  versionCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -281,6 +282,13 @@ watching
         it replaying.
 
 setting the machine up
+
+  luna version
+        which build this is, and the flows it carries with their
+        fingerprints. A skill or a runbook written against one surface and
+        run against another fails at the first unknown flag with no way to
+        tell which of the two is behind — this is the one comparison that
+        answers it.
 
   luna trust
         tell the harness it trusts the directory Luna makes worktrees in,

@@ -5,6 +5,14 @@ description: Drive a coding task through Luna — open it with a statement worth
 
 # Driving a task through Luna
 
+> **Check the binary first.** `luna version` says which build you have and which
+> flows it carries. This skill is written against a build with three flows —
+> `chore`, `fix`, `full` — and the `--flow`, `--workstream` and `fleet run <id>`
+> surface. Against an older one it fails at the first unknown flag with nothing
+> saying which of the two is behind, which is how somebody lost a run to
+> `unknown flag --flow`. `make install` from a checkout, or
+> `go install github.com/brunoomariano/luna/src/cmd/luna@latest`.
+
 Luna is a state machine that conducts agents through a flow. It decides which
 stage runs, and it closes a stage on what a command returned — not on what an
 agent said. Your job here is the two ends: **state the work well enough to build a
