@@ -748,7 +748,7 @@ func walkToGate(t *testing.T, s *Store, id string) {
 			return
 		}
 
-		var action fsm.Action = fsm.Advance{Flow: flow, GateDecision: fsm.GateDecisionWaited}
+		var action fsm.Action = fsm.Advance{Flow: flow, Gate: fsm.GateAccount{Decision: fsm.GateDecisionWaited}}
 		if state.Status == fsm.StatusRunning {
 			stage := fsm.Stage{ID: state.Stage}
 			for _, candidate := range flow {

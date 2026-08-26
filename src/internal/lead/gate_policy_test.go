@@ -106,13 +106,13 @@ func TestAGatelessStageRecordsNoDecision(t *testing.T) {
 			continue
 		}
 		var advance struct {
-			GateDecision fsm.GateWaited `json:"gate_decision"`
+			Gate fsm.GateAccount `json:"gate"`
 		}
 		if err := json.Unmarshal([]byte(e.Payload), &advance); err != nil {
 			t.Fatalf("decoding an advance: %v", err)
 		}
-		if advance.GateDecision != fsm.GateDecisionAbsent {
-			t.Errorf("a flow with no gates recorded %q", advance.GateDecision)
+		if advance.Gate.Decision != fsm.GateDecisionAbsent {
+			t.Errorf("a flow with no gates recorded %q", advance.Gate.Decision)
 		}
 	}
 }
@@ -199,20 +199,24 @@ func firstGateDecision(t *testing.T, s *store.Store, id string) fsm.GateWaited {
 	}
 
 	for _, e := range events {
-		if e.Action != "Advance" {
+		// Either action can carry one: a gate that asks about work ahead is
+		// decided on the Advance into the stage, and a review gate on the
+		// Complete that closes it. Reading only the Advance made every review
+		// gate look undecided.
+		if e.Action != "Advance" && e.Action != "Complete" {
 			continue
 		}
-		var advance struct {
-			GateDecision fsm.GateWaited `json:"gate_decision"`
+		var carrier struct {
+			Gate fsm.GateAccount `json:"gate"`
 		}
-		if err := json.Unmarshal([]byte(e.Payload), &advance); err != nil {
-			t.Fatalf("decoding an advance: %v", err)
+		if err := json.Unmarshal([]byte(e.Payload), &carrier); err != nil {
+			t.Fatalf("decoding a %s: %v", e.Action, err)
 		}
-		if advance.GateDecision != fsm.GateDecisionAbsent {
-			return advance.GateDecision
+		if carrier.Gate.Decision != fsm.GateDecisionAbsent {
+			return carrier.Gate.Decision
 		}
 	}
-	t.Fatal("no advance recorded a gate decision")
+	t.Fatal("no action recorded a gate decision")
 	return fsm.GateDecisionAbsent
 }
 
@@ -368,5 +372,41 @@ func TestAFailingCheckDoesNotReachTheLead(t *testing.T) {
 	}
 	if got := firstGateDecision(t, s, "LUNA-1"); got != fsm.GateDecisionWaited {
 		t.Errorf("a rejected gate recorded %q, want a person to answer", got)
+	}
+}
+
+// TestAReviewGateIsJudgedOnceAndNotTwice is a billed call that judged nothing.
+//
+// `GateAhead` returned every gate the next stage declares, including the review
+// kind — which opens on the way *out*. So advancing into `plan` asked a model to
+// judge a contract that did not exist yet, the reducer discarded the answer
+// because that gate does not open there, and the stage judged it again on the way
+// out. Two calls, one used. Counting them is the only way this shows up: both
+// runs end in the same state, with the same decision in the log.
+func TestAReviewGateIsJudgedOnceAndNotTwice(t *testing.T) {
+	s := newStore(t)
+	nightly(t, s, "LUNA-1", fsm.KindFeature)
+	if err := s.AppendAction("LUNA-1", fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+
+	judged := 0
+	l := &Lead{
+		Store: s, Node: &deliveringNode{},
+		Flow: flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria"),
+		Ask: func(context.Context, string) (string, error) {
+			judged++
+			return "APPROVE", nil
+		},
+	}
+	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if judged != 1 {
+		t.Errorf("the one gate in this flow was judged %d times", judged)
+	}
+	if got := firstGateDecision(t, s, "LUNA-1"); got != fsm.GateDecisionJudged {
+		t.Errorf("and the one that counts recorded %q", got)
 	}
 }

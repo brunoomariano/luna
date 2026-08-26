@@ -24,7 +24,7 @@ func TestAnEditedProfileDoesNotRewriteThePast(t *testing.T) {
 	appendAll(
 		t, s, "LUNA-1",
 		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(gatedFlow())},
-		fsm.Advance{GateDecision: fsm.GateDecisionPassed},
+		fsm.Advance{Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed}},
 	)
 
 	state, err := s.Replay("LUNA-1", gatedFlow())
@@ -41,7 +41,7 @@ func TestAnEditedProfileDoesNotRewriteThePast(t *testing.T) {
 	appendAll(
 		t, s, "LUNA-2",
 		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.ProfileNightly, Flow: fsm.Fingerprint(gatedFlow())},
-		fsm.Advance{GateDecision: fsm.GateDecisionWaited},
+		fsm.Advance{Gate: fsm.GateAccount{Decision: fsm.GateDecisionWaited}},
 	)
 
 	waited, err := s.Replay("LUNA-2", gatedFlow())
@@ -86,7 +86,7 @@ func TestAProfileNoLongerDefinedStillReplays(t *testing.T) {
 	appendAll(
 		t, s, "LUNA-1",
 		fsm.TaskCreated{Kind: fsm.KindFeature, Profile: fsm.Profile("deleted-last-week"), Flow: fsm.Fingerprint(gatedFlow())},
-		fsm.Advance{GateDecision: fsm.GateDecisionPassed},
+		fsm.Advance{Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed}},
 	)
 
 	state, err := s.Replay("LUNA-1", gatedFlow())

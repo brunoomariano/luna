@@ -104,7 +104,7 @@ func TestTheUnreadableCeilingBlocks(t *testing.T) {
 func TestWithNoModelASpentCeilingBlocks(t *testing.T) {
 	l := &Lead{}
 
-	if got := l.decideCeiling(context.Background(), fsm.TaskState{}); got != fsm.GateDecisionAbsent {
+	if got := l.decideCeiling(context.Background(), fsm.TaskState{}).Decision; got != fsm.GateDecisionAbsent {
 		t.Errorf("a run with no model recorded %q, want the absent decision that blocks", got)
 	}
 }
@@ -119,7 +119,7 @@ func TestALeadThatCannotBeReachedBlocks(t *testing.T) {
 		return "", context.DeadlineExceeded
 	}}
 
-	if got := l.decideCeiling(context.Background(), fsm.TaskState{}); got != fsm.GateDecisionAbsent {
+	if got := l.decideCeiling(context.Background(), fsm.TaskState{}).Decision; got != fsm.GateDecisionAbsent {
 		t.Errorf("an unreachable model recorded %q, want the absent decision that blocks", got)
 	}
 }
@@ -136,7 +136,7 @@ func TestTheLeadCanSendASpentCeilingToAPerson(t *testing.T) {
 
 	state := fsm.TaskState{Loop: fsm.LoopCounters{Rounds: 3, NoProgress: 0}}
 
-	if got := l.decideCeiling(context.Background(), state); got != fsm.GateDecisionWaited {
+	if got := l.decideCeiling(context.Background(), state).Decision; got != fsm.GateDecisionWaited {
 		t.Errorf("the lead asked for a person and the decision recorded %q", got)
 	}
 	if !strings.Contains(sawHistory, "rounds:      3") {
@@ -157,7 +157,7 @@ func TestALeadThatSaysBlockBlocks(t *testing.T) {
 
 	state := fsm.TaskState{Loop: fsm.LoopCounters{Rounds: 3, NoProgress: 3}}
 
-	if got := l.decideCeiling(context.Background(), state); got != fsm.GateDecisionAbsent {
+	if got := l.decideCeiling(context.Background(), state).Decision; got != fsm.GateDecisionAbsent {
 		t.Errorf("the lead said block and the decision recorded %q, want the absent "+
 			"decision the reducer turns into a block", got)
 	}

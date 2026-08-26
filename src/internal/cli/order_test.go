@@ -177,7 +177,7 @@ func enterStage(t *testing.T, h *harness, id string) {
 	t.Helper()
 
 	state := mustState(t, h, id)
-	advance := fsm.Advance{Flow: fsm.DefaultFlow(), GateDecision: fsm.GateDecisionPassed}
+	advance := fsm.Advance{Flow: fsm.DefaultFlow(), Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed}}
 	if err := h.env.Store.AppendActionAt(id, state.Seq, advance); err != nil {
 		t.Fatalf("entering the stage: %v", err)
 	}
@@ -467,8 +467,8 @@ func seedAtFirstGate(t *testing.T, h *harness, id string) fsm.StageID {
 		}
 
 		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Advance{
-			Flow:         flow,
-			GateDecision: fsm.GateDecisionWaited,
+			Flow: flow,
+			Gate: fsm.GateAccount{Decision: fsm.GateDecisionWaited},
 		}); err != nil {
 			t.Fatalf("walking to the first gate: %v", err)
 		}

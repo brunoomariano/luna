@@ -876,7 +876,7 @@ func TestTheLeadJudgesTheArtifactRatherThanItsHash(t *testing.T) {
 	}
 
 	state := fsm.TaskState{ID: "LUNA-1"}
-	if got := l.judge(context.Background(), state, spec, gate); got != fsm.GateDecisionJudged {
+	if got := l.judge(context.Background(), state, spec, gate); got.Decision != fsm.GateDecisionJudged {
 		t.Fatalf("the lead could not judge an artifact it was given, got %q", got)
 	}
 	if !strings.Contains(judged, "--avg` MUST print the mean") {
@@ -919,7 +919,7 @@ func TestTheLeadIsGivenTheTaskWhenItJudges(t *testing.T) {
 		},
 	}
 
-	if got := l.judge(context.Background(), state, spec, gate); got != fsm.GateDecisionJudged {
+	if got := l.judge(context.Background(), state, spec, gate); got.Decision != fsm.GateDecisionJudged {
 		t.Fatalf("judging: got %q", got)
 	}
 	if !strings.Contains(judged, "tally.sh --avg 1 2 3 prints 2") {
@@ -997,4 +997,57 @@ func anyContains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestTheLeadsReasoningSurvivesToTheGate is TALLY-6 as a test.
+//
+// The lead read a contract, found a real contradiction in it, and concluded it
+// could not decide. All of that went to a warning on stderr and the log recorded
+// nothing, because the account was a separate action the reducer refused: judging
+// happens while computing the decision that *opens* the gate, so there was never
+// an open gate to file it against. What a person answering the gate needs is the
+// contradiction, and this is the path that has to carry it.
+func TestTheLeadsReasoningSurvivesToTheGate(t *testing.T) {
+	l := &Lead{
+		Ask: func(context.Context, string) (string, error) {
+			return "I cannot decide. Obligation 7 requires six cases; the contract permits five.", nil
+		},
+		Artifact: func(string, string) (string, bool) { return "# contract\n", true },
+	}
+
+	spec := &fsm.GateSpec{
+		Kind: fsm.GateReviewArtifact, Artifact: "contract",
+		Judge: []string{"the contract does not contradict itself"},
+	}
+	gate := &fsm.PendingGate{Kind: fsm.GateReviewArtifact, Stage: "plan", Artifact: "contract"}
+
+	got := l.judge(context.Background(), fsm.TaskState{ID: "TALLY-6"}, spec, gate)
+
+	if got.Decision != fsm.GateDecisionWaited {
+		t.Errorf("anything short of an approval falls to a person, got %q", got.Decision)
+	}
+	if got.Judgement != JudgedCannotDecide.String() {
+		t.Errorf("the verdict did not survive: %q", got.Judgement)
+	}
+	if !strings.Contains(got.Excerpt, "Obligation 7 requires six cases") {
+		t.Errorf("the contradiction the lead found did not reach the gate: %q", got.Excerpt)
+	}
+}
+
+// TestAnExcerptIsCutAtTheEnd. The conclusion is the last thing said, so a cut
+// that keeps the start keeps the working and drops the answer.
+func TestAnExcerptIsCutAtTheEnd(t *testing.T) {
+	said := strings.Repeat("weighing this at length. ", 60) + "REJECT: the contract permits five."
+
+	got := excerpt(said)
+
+	if len(got) > 420 {
+		t.Errorf("an excerpt this long defeats the point of cutting it: %d bytes", len(got))
+	}
+	if !strings.HasSuffix(got, "REJECT: the contract permits five.") {
+		t.Errorf("the conclusion was cut off: %q", got)
+	}
+	if !strings.HasPrefix(got, "…") {
+		t.Error("a cut excerpt must say it was cut")
+	}
 }

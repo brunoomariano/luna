@@ -113,7 +113,7 @@ func (h *harness) loop(t *testing.T, id string, want fsm.LoopCounters) {
 		state := h.replay(t, id)
 		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.ReviewFinding{
 			Aligned: true, Progress: progress, Flow: flow,
-			GateDecision: fsm.GateDecisionPassed,
+			Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed},
 		}); err != nil {
 			t.Fatalf("round %d: %v", round, err)
 		}
@@ -136,7 +136,7 @@ func (h *harness) walkTo(t *testing.T, id string, stage fsm.StageID) {
 			continue
 		}
 		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Advance{
-			Flow: flow, GateDecision: fsm.GateDecisionPassed,
+			Flow: flow, Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed},
 		}); err != nil {
 			t.Fatalf("advancing towards %s: %v", stage, err)
 		}
@@ -163,8 +163,8 @@ func (h *harness) closeStage(t *testing.T, id string, state fsm.TaskState) {
 	}
 	if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Complete{
 		Delivered: owed, Evidence: evidence, Flow: flow,
-		Commit:       "c0ffee" + string(state.Stage),
-		GateDecision: fsm.GateDecisionPassed,
+		Commit: "c0ffee" + string(state.Stage),
+		Gate:   fsm.GateAccount{Decision: fsm.GateDecisionPassed},
 	}); err != nil {
 		t.Fatalf("closing %s: %v", state.Stage, err)
 	}

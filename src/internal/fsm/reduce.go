@@ -137,10 +137,10 @@ type GateChecksDeclared struct {
 type Advance struct {
 	Flow []Stage `json:"-"`
 
-	// GateDecision is what was decided about the gate this advance walks into, or
-	// empty when the stage opens no gate. An empty value on a stage that does open
-	// one is a gate nobody answered, and it waits.
-	GateDecision GateWaited `json:"gate_decision,omitempty"`
+	// Gate is what was decided about the gate this advance walks into, and why, or
+	// zero when the stage opens no gate. A zero value on a stage that does open one
+	// is a gate nobody answered, and it waits.
+	Gate GateAccount `json:"gate,omitzero"`
 }
 
 // Complete closes the running stage.
@@ -158,14 +158,14 @@ type Complete struct {
 	Evidence  map[Artifact]Evidence `json:"evidence,omitempty"`
 	Flow      []Stage               `json:"-"`
 
-	// GateDecision is what was decided about the review gate this stage's closing
-	// opens, or empty when the stage opens none.
+	// Gate is what was decided about the review gate this stage's closing opens,
+	// and why, or zero when the stage opens none.
 	//
 	// It is here for the same reason Advance carries one: a review gate opens on
-	// the way *out* of the stage that produced its artifact, so this
-	// is the action that reaches it, and the decision is history while the policy
-	// behind it is not.
-	GateDecision GateWaited `json:"gate_decision,omitempty"`
+	// the way *out* of the stage that produced its artifact, so this is the action
+	// that reaches it, and the decision is history while the policy behind it is
+	// not.
+	Gate GateAccount `json:"gate,omitzero"`
 
 	// Guarded is the guarded paths this delivery touched, computed outside and
 	// carried in like every other verdict.
@@ -274,32 +274,28 @@ type GateReject struct {
 	Reason string `json:"reason"`
 }
 
-// GateJudged records that the lead looked at a gate and what it concluded.
+// GateJudged attaches what the lead concluded to a gate that is already open.
 //
-// It changes no state, and that is the point: the gate stays exactly where it
-// was, and this is the reasoning that produced the answer being written down
-// beside it. A gate the lead approves is followed by GateApprove; one it does
-// not is followed by nothing, and without this event the reasoning is lost.
+// It changes nothing else: the gate stays exactly where it was, and this writes
+// the reasoning down beside it. A gate the lead approves is followed by
+// GateApprove; one it does not is followed by nothing, and without this the
+// judgement is paid for and thrown away.
 //
-// Measured on TALLY-6. The lead found a real contradiction in a contract —
-// test.sh fixed at two pre-existing cases plus three appended, against an
-// obligation requiring six — reported it to a terminal, and the log recorded no
-// event at all. The next person to open that gate sees "waiting for review" and
-// none of the analysis that was already paid for, so they do it again.
+// This is the second of the two moments a gate can be judged, and the only one
+// that needs an action of its own. When the lead itself closes the stage, the
+// gate does not exist yet and the account rides on the Complete that opens it.
+// When an agent closes the stage through `luna done` — which is what `luna lead`
+// does — the gate is already open by the time anybody judges it, and there is no
+// action left to carry the account.
 //
-// Separate from the decision it explains because the decision is a transition
-// and this is not: recording them as one action would make an approval and its
-// account inseparable, and the account is worth having for the answers that
-// change nothing.
+// Measured on TALLY-6: the lead found a real contradiction in a contract — an
+// obligation requiring six test cases against a permitted five — and the log
+// recorded nothing, so the next person to open that gate sees "waiting for
+// review" and pays for the analysis again.
 type GateJudged struct {
-	// Decision is what the lead concluded, in its own vocabulary: approve,
-	// reject or cannot-decide.
-	Decision string `json:"decision"`
-
-	// Reasoning is what it said, verbatim. Verbatim because a summary of a
-	// judgement is a second judgement, and the point of keeping it is that a
-	// person can check the working rather than take the verdict on trust.
-	Reasoning string `json:"reasoning,omitempty"`
+	// Gate is the verdict and the excerpt, in the same shape the actions that
+	// open a gate carry, so there is one place a gate's account comes from.
+	Gate GateAccount `json:"gate"`
 }
 
 // ReviewFinding is what a review stage found. Aligned sends the work back to
@@ -317,11 +313,9 @@ type ReviewFinding struct {
 	// shipped one.
 	Flow []Stage `json:"-"`
 
-	// GateDecision is what the profile decided about the loop-ceiling gate, for
-	// the same reason Advance carries one: the decision is history and the policy
-	// behind it is not. It is consulted only when a ceiling is actually
-	// reached, so an ordinary round leaves it empty.
-	GateDecision GateWaited `json:"gate_decision,omitempty"`
+	// Gate is what was decided about the loop-ceiling gate this finding may open,
+	// and why. Zero is a ceiling nobody answered, and it waits.
+	Gate GateAccount `json:"gate,omitzero"`
 
 	// Progress is what the round produced, as an opaque signal to compare against
 	// the last one. Two consecutive rounds with the same value made no functional
@@ -613,9 +607,9 @@ func advance(state TaskState, a Advance) (TaskState, error) {
 	// The decision arrived in the action, and a gate that resolves on its own
 	// still happened — it is just that nobody was asked.
 	if gate := gateFor(stage); asksAboutWorkAhead(gate) &&
-		gateWaits(a.GateDecision) {
+		a.Gate.Waits() {
 		state.Status = StatusAwaitingGate
-		state.Gate = withPayload(gate, state.Evidence)
+		state.Gate = withPayload(gate, state.Evidence, a.Gate)
 		return state, nil
 	}
 
@@ -814,9 +808,9 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// After the base advances, so a task answering the gate resumes from what the
 	// stage delivered — the gate is a pause in the handoff, not a step before it.
 	if gate := gateFor(stage); asksAboutWorkDone(gate) &&
-		gateWaits(a.GateDecision) {
+		a.Gate.Waits() {
 		state.Status = StatusAwaitingGate
-		state.Gate = withPayload(gate, state.Evidence)
+		state.Gate = withPayload(gate, state.Evidence, a.Gate)
 		return state, nil
 	}
 
@@ -976,7 +970,7 @@ func reviewFinding(state TaskState, a ReviewFinding) (TaskState, error) {
 	// A spent ceiling opens a gate rather than blocking. Not converging is a
 	// decision to make with the history in view, not an anomaly of the node.
 	if reason := ceilingHit(state.Loop, limits); reason != "" {
-		if gateWaits(a.GateDecision) {
+		if a.Gate.Waits() {
 			state.Status = StatusAwaitingGate
 			state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
 			return state, nil
@@ -1196,7 +1190,18 @@ func GateAhead(state TaskState, flow []Stage) *PendingGate {
 		// decision to make here.
 		return nil
 	}
-	return gateFor(stage)
+
+	// Only the kinds that open on the way in. This used to return every gate the
+	// next stage declares, including the review kind that opens on the way *out* —
+	// so advancing into `plan` asked a model to judge a contract that did not
+	// exist yet, and the reducer discarded the answer because that gate does not
+	// open here. The stage then judged it again on the way out. Two calls billed,
+	// one used, and the wasted one judged nothing.
+	gate := gateFor(stage)
+	if !asksAboutWorkAhead(gate) {
+		return nil
+	}
+	return gate
 }
 
 // gateWaits reports whether a gate stops the task, reading the decision the log
@@ -1261,14 +1266,20 @@ func asksAboutWorkDone(gate *PendingGate) bool {
 // review-artifact gate asks about work already done, so the contract exists by
 // the time it opens — but a project flow can declare one that asks on the way
 // in, and inventing a payload for it would be worse than showing none.
-func withPayload(gate *PendingGate, evidence map[Artifact]Evidence) *PendingGate {
-	if gate.Kind != GateReviewArtifact || gate.Payload != "" {
-		return gate
-	}
+func withPayload(gate *PendingGate, evidence map[Artifact]Evidence, answer GateAccount) *PendingGate {
 	// A copy: the caller's gate is shared with the state it came from, and the
 	// reducer does not write through its inputs.
 	filled := *gate
-	filled.Payload = evidence[gate.Artifact].Detail
+
+	if filled.Kind == GateReviewArtifact && filled.Payload == "" {
+		filled.Payload = evidence[gate.Artifact].Detail
+	}
+
+	// What the lead concluded before this gate was left open, so a person about to
+	// answer it can see that a model already looked and what it said. Empty when
+	// nobody was asked, which is the ordinary case at a low knob.
+	filled.Judged, filled.Reasoning = answer.Judgement, answer.Excerpt
+
 	return &filled
 }
 
@@ -1451,28 +1462,25 @@ func (s TaskState) TotalSpend() Spend {
 	return total
 }
 
-// gateJudged records a judgement without acting on it.
-//
-// The only action in the engine that deliberately changes nothing. What it
-// writes is the account of a decision, and the decision itself arrives as its
-// own action — an approval as GateApprove, anything else as no action at all,
-// which is what leaves the gate open.
+// gateJudged files what a model concluded against the gate it is about.
 //
 // It is refused when no gate is open, because a judgement about nothing is a
-// caller bug rather than a fact worth keeping: the reasoning would be filed
-// against a gate that is not there, and the next person to read the log would
-// have to work out which one it meant.
+// caller bug rather than a fact worth keeping: the next person to read the log
+// would have to work out which gate it meant. The refusal used to fire on every
+// call, because the only caller ran while computing the decision that opens the
+// gate — that caller now carries its account inside its own action, and what is
+// left here is the case the guard was written for.
 func gateJudged(state TaskState, a GateJudged) (TaskState, error) {
 	if state.Gate == nil {
 		return state, fmt.Errorf("%w: %q judged with no gate open",
-			ErrIllegalTransition, a.Decision)
+			ErrIllegalTransition, a.Gate.Judgement)
 	}
 
 	// Copied rather than mutated through the pointer: the gate is shared with the
 	// state this one was built from, and writing through it would edit history
 	// that a replay already produced.
 	judged := *state.Gate
-	judged.Judged, judged.Reasoning = a.Decision, a.Reasoning
+	judged.Judged, judged.Reasoning = a.Gate.Judgement, a.Gate.Excerpt
 	state.Gate = &judged
 	return state, nil
 }

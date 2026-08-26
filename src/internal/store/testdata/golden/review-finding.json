@@ -1,1 +1,1 @@
-{"aligned":true,"summary":"the error path is unhandled","limits":{"max_rounds":3,"no_progress":2,"oscillation":2},"gate_decision":"passed"}
+{"aligned":true,"summary":"the error path is unhandled","limits":{"max_rounds":3,"no_progress":2,"oscillation":2},"gate":{"decision":"passed"}}

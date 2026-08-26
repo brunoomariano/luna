@@ -145,6 +145,35 @@ const (
 	GateGuard GateKind = "guard"
 )
 
+// GateAccount is what was decided about a gate, and why.
+//
+// The two travel together because the second is the reason for the first, and
+// keeping them apart cost exactly what it was always going to: the account was a
+// separate action, recorded after the fact, and it could never land. `judge()`
+// runs while *computing* the decision that opens the gate, so at that moment
+// there is no gate to attach an account to, and the reducer refused every one.
+// A run at knob 9 judged its gate, concluded `cannot-decide`, and left no trace
+// of why beyond a warning on stderr that an unattended run has nobody to read.
+//
+// Excerpt rather than the whole reply, because this goes into an append-only log
+// that a fleet writes to every night. The verdict is structured and kept whole;
+// the prose is cut to its end, where a conclusion is, on the same reasoning the
+// harness's own diagnostics are cut.
+type GateAccount struct {
+	// Decision is what happened to the gate: waited, passed, checked, judged.
+	Decision GateWaited `json:"decision,omitempty"`
+
+	// Judgement is the lead's verdict in its own vocabulary — approve, reject,
+	// cannot-decide — and is empty when no model was asked.
+	Judgement string `json:"judgement,omitempty"`
+
+	// Excerpt is the end of what it said. Empty when nothing was asked.
+	Excerpt string `json:"excerpt,omitempty"`
+}
+
+// Waits reports whether this answer leaves the gate open for a person.
+func (a GateAccount) Waits() bool { return gateWaits(a.Decision) }
+
 // PendingGate is what a suspended task is waiting on. It is what `luna gates`
 // lists, so a suspension is discoverable without anyone having watched it happen
 // (INV-5).

@@ -110,7 +110,7 @@ func TestNoAutonomySettingGetsPastAGuard(t *testing.T) {
 	action := buildDelivery(flow)
 	action.Guarded = []string{".env.production"}
 	// And even with the gate decision that waves every other gate through.
-	action.GateDecision = GateDecisionPassed
+	action.Gate = GateAccount{Decision: GateDecisionPassed}
 
 	state, err := Reduce(state, action)
 	if err != nil {

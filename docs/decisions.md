@@ -285,6 +285,36 @@ worse than no guard, so an unreadable diff counts as every pattern matched.
 answers.** A gate with nothing declared never waits. That is a reversal from the original
 design and is stated plainly rather than left to be discovered.
 
+**A gate's account reaches it from whichever of the two positions judged it.** The lead can
+judge a gate at two moments, and they need different mechanisms because they differ in
+whether the gate exists yet.
+
+When the lead closes the stage itself — the `luna run` path — the judgement happens while
+*computing* the decision that opens the gate, so there is no gate to file anything against.
+The verdict and an excerpt ride inside the `Advance` or `Complete` that opens it. When an
+agent closes its own stage through `luna done` — which is what `luna lead` does — the gate is
+already open before anybody judges, and the account arrives as `GateJudged`, an action that
+changes nothing else.
+
+Both were one action before, and it was the wrong one for the position that had the only
+caller: the reducer refused `GateJudged` unless a gate was open, and the caller ran before
+the gate existed, so every account was refused and none was kept. Measured on TALLY-6, where
+the lead found a real contradiction in a contract, and again at knob 9, where it concluded
+`cannot-decide` and left nothing behind but a warning on a stream an unattended run has
+nobody to read. The refusal was never wrong — it just had no correct caller, and now it has
+one. *Rejected:* keeping the whole transcript — what is kept is the verdict and the last 400
+characters, because the reasoning is a note in front of whoever answers the gate rather than
+an audit record, and a log that stores every judgement in full is one nobody keeps.
+*Rejected:* letting the reducer accept a judgement against no gate — the next reader would
+have to work out which gate it meant.
+
+A gate that already carries a verdict is not judged again: the same gate reached from both
+paths would otherwise cost two model calls for one answer.
+
+This renamed `gate_decision` to `gate.decision` in three actions. The golden corpus caught
+it, which is what the corpus is for; a log written before this commit replays an open gate as
+none. It is re-recorded rather than bridged: no task older than this change exists.
+
 **`produces_for_human` is a contract field of its own** — checked on the way out, exempt
 from the static check, because no stage downstream will ever ask for it.
 

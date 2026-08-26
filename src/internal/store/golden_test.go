@@ -154,25 +154,34 @@ func goldenCases() []struct {
 		{"task-created", actionTaskCreated, fsm.TaskCreated{
 			Kind: fsm.KindFeature, Profile: fsm.ProfileTurbo, Flow: "c0c9ff4d121b43fc",
 		}},
-		{"advance", actionAdvance, fsm.Advance{GateDecision: fsm.GateDecisionWaited}},
+		{"advance", actionAdvance, fsm.Advance{Gate: fsm.GateAccount{Decision: fsm.GateDecisionWaited}}},
 		{"complete", actionComplete, fsm.Complete{
 			Delivered: []fsm.Artifact{"code", "tests_green"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{"tests_green": {
 				Scope: fsm.ScopeTargeted, Verdict: fsm.VerdictPassed,
 				Command: "make test", ExitCode: 0, Detail: "12 passed", RecordedAt: 7,
 			}},
+			// The account is on `complete` and not on `advance` because judging
+			// happens on the way out of the stage that produced the artifact —
+			// this is the action that actually carries one in a real log.
+			Gate: fsm.GateAccount{
+				Decision:  fsm.GateDecisionWaited,
+				Judgement: "cannot-decide",
+				Excerpt:   "obligation 7 wants six cases and the contract permits five",
+			},
 		}},
 		{"fail", actionFail, fsm.Fail{Reason: "the node died"}},
 		{"gate-adjust", actionGateAdjust, fsm.GateAdjust{Payload: "the contract a human fixed"}},
 		{"gate-reject", actionGateReject, fsm.GateReject{Reason: "the scenarios miss a case"}},
-		{"gate-judged", actionGateJudged, fsm.GateJudged{
-			Decision:  "reject",
-			Reasoning: "obligation 7 wants six cases and the contract permits five",
-		}},
+		{"gate-judged", actionGateJudged, fsm.GateJudged{Gate: fsm.GateAccount{
+			Decision:  fsm.GateDecisionWaited,
+			Judgement: "reject",
+			Excerpt:   "obligation 7 wants six cases and the contract permits five",
+		}}},
 		{"review-finding", actionReviewFinding, fsm.ReviewFinding{
 			Aligned: true, Summary: "the error path is unhandled",
-			Limits:       fsm.LoopLimits{MaxRounds: 3, NoProgress: 2, Oscillation: 2},
-			GateDecision: fsm.GateDecisionPassed,
+			Limits: fsm.LoopLimits{MaxRounds: 3, NoProgress: 2, Oscillation: 2},
+			Gate:   fsm.GateAccount{Decision: fsm.GateDecisionPassed},
 		}},
 		{"block", actionBlock, fsm.Block{Reason: "retries exhausted"}},
 		{"abandon", actionAbandon, fsm.Abandon{Reason: "superseded by LUNA-2"}},

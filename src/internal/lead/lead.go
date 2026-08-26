@@ -290,10 +290,27 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	// same act as deciding it. Whether the lead may decide is decideGate's
 	// question, and a `waited` answer leaves the gate exactly where it was.
 	if state.Status == fsm.StatusAwaitingGate {
-		if l.decideGate(ctx, state, state.Gate) != fsm.GateDecisionJudged {
+		// A gate that already carries a verdict was judged when it opened, and
+		// judging it again is a second model call for an answer already in hand.
+		if state.Gate != nil && state.Gate.Judged != "" {
 			return nil
 		}
-		return l.record(taskID, fsm.GateApprove{})
+
+		account := l.decideGate(ctx, state, state.Gate)
+		if account.Decision == fsm.GateDecisionJudged {
+			return l.record(taskID, fsm.GateApprove{})
+		}
+		// Anything short of an approval leaves the gate where it was, and what the
+		// lead concluded is filed against it. This is the one position where the
+		// account cannot ride on the action that opens the gate, because the gate
+		// was already open before anybody judged: `luna lead` has the agent close
+		// its own stage through `luna done`, which reaches the gate with nothing
+		// decided. Without this the judgement is paid for and thrown away —
+		// measured on TALLY-6.
+		if account.Judgement != "" {
+			return l.record(taskID, fsm.GateJudged{Gate: account})
+		}
+		return nil
 	}
 
 	// A block and a finished task are endings, and nothing authorises walking
@@ -303,8 +320,8 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	}
 
 	return l.record(taskID, fsm.Advance{
-		Flow:         flow,
-		GateDecision: l.decideGate(ctx, state, fsm.GateAhead(state, flow)),
+		Flow: flow,
+		Gate: l.decideGate(ctx, state, fsm.GateAhead(state, flow)),
 	})
 }
 
@@ -316,8 +333,8 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	// so the lead never has to infer it.
 	if state.Status != fsm.StatusRunning {
 		return l.record(taskID, fsm.Advance{
-			Flow:         flow,
-			GateDecision: l.decideGate(ctx, state, fsm.GateAhead(state, flow)),
+			Flow: flow,
+			Gate: l.decideGate(ctx, state, fsm.GateAhead(state, flow)),
 		})
 	}
 
@@ -355,7 +372,7 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		// A review gate opens when the stage that produced its artifact closes,
 		// so this is the action that reaches it and the decision is
 		// owed here rather than on the next advance.
-		GateDecision: l.decideGate(ctx, state, fsm.GateClosing(state, flow)),
+		Gate: l.decideGate(ctx, state, fsm.GateClosing(state, flow)),
 	}); err != nil {
 		return err
 	}
@@ -418,7 +435,7 @@ func (l *Lead) readReview(
 		// What a spent ceiling means is the lead's to decide, from the history.
 		// It is consulted only when a ceiling is actually reached; an
 		// ordinary round leaves this absent and nothing is asked.
-		GateDecision: l.decideCeiling(ctx, state),
+		Gate: l.decideCeiling(ctx, state),
 	})
 }
 
@@ -471,9 +488,9 @@ func (l *Lead) reportFindings(taskID string, findings []fsm.Finding) {
 //
 // With no model, it blocks. An unattended run that cannot ask must not carry on
 // looping, and the absent decision is what produces that.
-func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateWaited {
+func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateAccount {
 	if l.Ask == nil {
-		return fsm.GateDecisionAbsent
+		return fsm.GateAccount{Decision: fsm.GateDecisionAbsent}
 	}
 
 	said, err := l.Ask(ctx, CeilingBrief(state.Loop))
@@ -481,13 +498,16 @@ func (l *Lead) decideCeiling(ctx context.Context, state fsm.TaskState) fsm.GateW
 		// The model could not be reached. Blocking is the conservative reading:
 		// it stops and notifies rather than spending another round on a loop
 		// nobody assessed.
-		return fsm.GateDecisionAbsent
+		return fsm.GateAccount{Decision: fsm.GateDecisionAbsent, Judgement: "could-not-ask"}
 	}
 
+	account := fsm.GateAccount{Judgement: ReadCeiling(said).String(), Excerpt: excerpt(said)}
 	if ReadCeiling(said) == CeilingAsk {
-		return fsm.GateDecisionWaited
+		account.Decision = fsm.GateDecisionWaited
+		return account
 	}
-	return fsm.GateDecisionAbsent
+	account.Decision = fsm.GateDecisionAbsent
+	return account
 }
 
 // progressOf is what this round produced, for the next one to compare against
@@ -553,9 +573,9 @@ func (l *Lead) flow() []fsm.Stage {
 // criteria in the flow, or checks in the task's registry entry. One with neither
 // was never going to put a question in front of anybody, so stopping at it would
 // be stopping to ask nothing.
-func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate) fsm.GateWaited {
+func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate) fsm.GateAccount {
 	if gate == nil {
-		return fsm.GateDecisionAbsent
+		return fsm.GateAccount{Decision: fsm.GateDecisionAbsent}
 	}
 
 	// The two halves are declared in different places, so both are consulted
@@ -569,7 +589,7 @@ func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.Pe
 	}
 
 	if !declared(spec, checks) {
-		return fsm.GateDecisionPassed
+		return fsm.GateAccount{Decision: fsm.GateDecisionPassed}
 	}
 	return l.answerDeclaredGate(ctx, state, spec, gate, checks)
 }
@@ -599,18 +619,18 @@ func declared(spec *fsm.GateSpec, checks fsm.GateChecksOutcome) bool {
 func (l *Lead) answerDeclaredGate(
 	ctx context.Context, state fsm.TaskState,
 	spec *fsm.GateSpec, gate *fsm.PendingGate, checks fsm.GateChecksOutcome,
-) fsm.GateWaited {
+) fsm.GateAccount {
 	switch fsm.ResolveGate(spec, checks, state.Knob) {
 	case fsm.AnswerChecks:
-		return fsm.GateDecisionChecked
+		return fsm.GateAccount{Decision: fsm.GateDecisionChecked}
 	case fsm.AnswerLead:
 		return l.judge(ctx, state, spec, gate)
 	case fsm.AnswerRejected, fsm.AnswerPerson:
-		return fsm.GateDecisionWaited
+		return fsm.GateAccount{Decision: fsm.GateDecisionWaited}
 	default:
 		// A resolution this build does not recognise falls to a person, which is
 		// the direction every uncertain path in this design takes.
-		return fsm.GateDecisionWaited
+		return fsm.GateAccount{Decision: fsm.GateDecisionWaited}
 	}
 }
 
@@ -627,16 +647,19 @@ func (l *Lead) answerDeclaredGate(
 // wait is honest about that — the gate is still open, and what the lead concluded
 // belongs in front of whoever answers it.
 //
-// What it concluded is recorded whichever way it went, as a GateJudged event
-// that changes nothing. Without it the reasoning reaches a terminal and dies
-// there: measured on TALLY-6, where the lead found a real contradiction in a
-// contract and the log recorded no event at all.
-func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateWaited {
+// What it concluded rides back in the GateAccount, and the caller puts it where
+// the position allows: inside the action that opens the gate when there is no
+// gate yet, and as a GateJudged when the gate is already open. It used to be a
+// GateJudged either way, and from here that could never land — judging happens
+// while computing the decision that opens the gate, so the reducer refused every
+// one. Measured on TALLY-6, where the lead found a real contradiction in a
+// contract and the log recorded nothing.
+func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpec, gate *fsm.PendingGate) fsm.GateAccount {
 	if l.Ask == nil {
 		// The knob authorised a judgement and there is nobody to make it. Asking a
 		// person is the only honest answer: the alternative is approving a gate
 		// because no model was configured to look at it.
-		return fsm.GateDecisionWaited
+		return fsm.GateAccount{Decision: fsm.GateDecisionWaited}
 	}
 
 	said, err := l.Ask(ctx, JudgingBrief(spec, Evidence{
@@ -646,29 +669,47 @@ func (l *Lead) judge(ctx context.Context, state fsm.TaskState, spec *fsm.GateSpe
 		Statement: state.Statement,
 	}))
 	if err != nil {
-		return fsm.GateDecisionWaited
-	}
-
-	judgement := ReadJudgement(said)
-
-	// Written before the decision it explains, and its failure does not change
-	// the decision: a gate the lead approved is still approved if the account of
-	// it could not be filed, and losing the approval over its own paperwork would
-	// be the worse of the two failures. The warning is what keeps it from being
-	// silent.
-	if l.Store != nil {
-		if err := l.record(state.ID, fsm.GateJudged{
-			Decision:  judgement.String(),
-			Reasoning: said,
-		}); err != nil {
-			l.warn("could not record what the lead concluded about %s's gate: %v", state.ID, err)
+		// The account says a model was asked and could not answer, which is a
+		// different fact from nobody having been asked — and the one a person
+		// looking at this gate afterwards most needs.
+		return fsm.GateAccount{
+			Decision:  fsm.GateDecisionWaited,
+			Judgement: "could-not-ask",
+			Excerpt:   excerpt(err.Error()),
 		}
 	}
 
-	if judgement == JudgedApprove {
-		return fsm.GateDecisionJudged
+	judgement := ReadJudgement(said)
+	account := fsm.GateAccount{
+		Judgement: judgement.String(),
+		Excerpt:   excerpt(said),
 	}
-	return fsm.GateDecisionWaited
+
+	// The decision is settled here; where the account lands is the caller's, and
+	// depends on whether a gate is open yet. Measured at knob 9, where the lead
+	// judged, concluded `cannot-decide`, and left nothing behind but a warning on
+	// a stream nobody reads at night.
+	account.Decision = fsm.GateDecisionWaited
+	if judgement == JudgedApprove {
+		account.Decision = fsm.GateDecisionJudged
+	}
+	return account
+}
+
+// excerpt keeps the end of what the lead said.
+//
+// The end because that is where a conclusion is, on the same reasoning the
+// harness's own diagnostics are cut — and cut at all because this goes into an
+// append-only log a fleet writes to every night, and a verbatim transcript per
+// gate is a cost that only shows up later. The verdict beside it is structured
+// and kept whole, so what is truncated is the working and never the answer.
+func excerpt(said string) string {
+	said = strings.TrimSpace(said)
+	const most = 400
+	if len(said) <= most {
+		return said
+	}
+	return "…" + said[len(said)-most:]
 }
 
 // artifactFor is what the lead is actually asked to judge.

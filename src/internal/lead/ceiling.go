@@ -77,6 +77,16 @@ const (
 	CeilingAsk
 )
 
+// String names the verdict for the account that goes into the log, so a person
+// reading a ceiling that stopped can see what was concluded and not only that
+// something was.
+func (v CeilingVerdict) String() string {
+	if v == CeilingAsk {
+		return "ask"
+	}
+	return "block"
+}
+
 // ReadCeiling finds the verdict in what the lead said.
 //
 // The first line only, the same shape ReadJudgement uses and for the same reason:

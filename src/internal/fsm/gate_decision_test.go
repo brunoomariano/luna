@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -15,7 +16,7 @@ func TestARecordedDecisionOverridesTheShippedPolicy(t *testing.T) {
 	// interactive stops at every gate, and discovery opens one.
 	state := start(t, ProfileInteractive)
 
-	state, err := Reduce(state, Advance{Flow: gatedFlow(), GateDecision: GateDecisionPassed})
+	state, err := Reduce(state, Advance{Flow: gatedFlow(), Gate: GateAccount{Decision: GateDecisionPassed}})
 	if err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestARecordedDecisionOverridesTheShippedPolicy(t *testing.T) {
 func TestARecordedWaitHoldsAgainstAPermissiveProfile(t *testing.T) {
 	state := start(t, ProfileNightly)
 
-	state, err := Reduce(state, Advance{Flow: gatedFlow(), GateDecision: GateDecisionWaited})
+	state, err := Reduce(state, Advance{Flow: gatedFlow(), Gate: GateAccount{Decision: GateDecisionWaited}})
 	if err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestASpentCeilingStopsTheTaskWhicheverWayItIsAnswered(t *testing.T) {
 	}
 
 	// Nobody is waiting: it blocks, which is the ending that notifies.
-	passed, err := Reduce(spent, ReviewFinding{Aligned: true, GateDecision: GateDecisionPassed})
+	passed, err := Reduce(spent, ReviewFinding{Aligned: true, Gate: GateAccount{Decision: GateDecisionPassed}})
 	if err != nil {
 		t.Fatalf("reviewing: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestAnUnattendedRunStopsAtTheCeiling(t *testing.T) {
 		Evidence: map[Artifact]Evidence{},
 	}
 
-	after, err := Reduce(spent, ReviewFinding{Aligned: true, GateDecision: GateDecisionPassed})
+	after, err := Reduce(spent, ReviewFinding{Aligned: true, Gate: GateAccount{Decision: GateDecisionPassed}})
 	if err != nil {
 		t.Fatalf("reviewing: %v", err)
 	}
@@ -217,23 +218,6 @@ func TestWaitsReportsWhetherAnythingWasRecorded(t *testing.T) {
 			t.Errorf("%q: want waited=%v recorded=%v, got %v and %v",
 				c.decision, c.waited, c.recorded, waited, recorded)
 		}
-	}
-}
-
-// TestAJudgedGateIsNeverRecordedAsHuman is the falsification this design must
-// not commit.
-//
-// Recording the lead's judgement as ScopeHuman would make the audit say a person
-// looked when none did. The scopes are separate values and `judged` must not
-// satisfy a requirement for `human` — an inverted implementation that aliased
-// them would pass every other test in this file.
-func TestAJudgedGateIsNeverRecordedAsHuman(t *testing.T) {
-	if ScopeJudged == ScopeHuman {
-		t.Fatal("the lead's judgement and a person's are the same scope")
-	}
-
-	if ScopeJudged.Satisfies(ScopeHuman) {
-		t.Error("a lead's judgement stood in for a person's")
 	}
 }
 
@@ -325,58 +309,163 @@ func gatedFlow() []Stage {
 	}}
 }
 
-// TestAJudgementIsRecordedAgainstTheGateItIsAbout covers the one action in the
-// engine that deliberately changes nothing.
+// TestAJudgedGateIsNeverRecordedAsHuman is the falsification this design must
+// not commit.
 //
-// The gate stays where it was — that is the point. What it gains is the account
-// of a decision that would otherwise reach a terminal and die there.
+// Recording the lead's judgement as ScopeHuman would make the audit say a person
+// looked when none did. The scopes are separate values and `judged` must not
+// satisfy a requirement for `human` — an inverted implementation that aliased
+// them would pass every other test in this file.
+func TestAJudgedGateIsNeverRecordedAsHuman(t *testing.T) {
+	if ScopeJudged == ScopeHuman {
+		t.Fatal("the lead's judgement and a person's are the same scope")
+	}
+
+	if ScopeJudged.Satisfies(ScopeHuman) {
+		t.Error("a lead's judgement stood in for a person's")
+	}
+}
+
+// TestTheAccountTravelsWithTheDecisionThatOpensTheGate is what replaced a
+// separate `GateJudged` action.
+//
+// That action could never land. `judge()` runs while *computing* the decision
+// that opens the gate, so at that moment there is no gate for the reducer to
+// attach an account to, and it refused every one. Measured at knob 9: the lead
+// judged, concluded `cannot-decide`, and left nothing behind but a warning on a
+// stream an unattended run has nobody to read.
+func TestTheAccountTravelsWithTheDecisionThatOpensTheGate(t *testing.T) {
+	state := atStage(t, KindFeature, "plan")
+	stage := stageIn(DefaultFlow(), "plan")
+
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	state, err := Reduce(state, Complete{
+		Delivered: owed,
+		Evidence:  passing(stage, owed),
+		Gate: GateAccount{
+			Decision:  GateDecisionWaited,
+			Judgement: "cannot-decide",
+			Excerpt:   "criterion 3 turns on the arithmetic, which I cannot settle from the document",
+		},
+	})
+	if err != nil {
+		t.Fatalf("closing plan: %v", err)
+	}
+
+	if state.Status != StatusAwaitingGate || state.Gate == nil {
+		t.Fatalf("a waited decision did not leave the gate open: %q", state.Status)
+	}
+	if state.Gate.Judged != "cannot-decide" {
+		t.Errorf("the verdict did not reach the gate: %q", state.Gate.Judged)
+	}
+	if state.Gate.Reasoning == "" {
+		t.Error("the gate carries a verdict and no account of it")
+	}
+}
+
+// TestAGateNobodyJudgedCarriesNoAccount. An empty verdict beside an open gate has
+// to mean "nobody was asked" and not "asked, said nothing" — a person answering
+// it reads the difference.
+func TestAGateNobodyJudgedCarriesNoAccount(t *testing.T) {
+	state := atStage(t, KindFeature, "plan")
+	stage := stageIn(DefaultFlow(), "plan")
+
+	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	state, err := Reduce(state, Complete{Delivered: owed, Evidence: passing(stage, owed)})
+	if err != nil {
+		t.Fatalf("closing plan: %v", err)
+	}
+
+	if state.Gate == nil {
+		t.Fatal("the gate did not open")
+	}
+	if state.Gate.Judged != "" || state.Gate.Reasoning != "" {
+		t.Errorf("a gate nobody judged carries an account: %q / %q",
+			state.Gate.Judged, state.Gate.Reasoning)
+	}
+}
+
+// TestAJudgementIsRecordedAgainstTheGateItIsAbout. It used to be possible to file
+// reasoning against nothing, which the reducer refused — and that refusal was the
+// bug: the only caller filed it before the gate existed, so every account was
+// refused and none was ever kept. Carrying it inside the action removes the
+// question: there is exactly one gate the action can be about, and the reducer
+// attaches the account to that one as it opens it.
 func TestAJudgementIsRecordedAgainstTheGateItIsAbout(t *testing.T) {
 	state := start(t, ProfileNightly)
 
-	state, err := Reduce(state, Advance{Flow: gatedFlow(), GateDecision: GateDecisionWaited})
+	state, err := Reduce(state, Advance{
+		Flow: gatedFlow(),
+		Gate: GateAccount{
+			Decision:  GateDecisionWaited,
+			Judgement: "reject",
+			Excerpt:   "obligation 7 wants six cases and the contract permits five",
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if state.Gate == nil {
+		t.Fatal("the flow under test opens no gate")
+	}
+	if state.Gate.Judged != "reject" {
+		t.Errorf("the verdict is filed against the wrong thing: %q", state.Gate.Judged)
+	}
+	if state.Gate.Reasoning == "" {
+		t.Error("the gate carries a verdict with no account of it")
+	}
+}
+
+// TestAJudgedGateRecordsWhatTheLeadConcluded covers the second of the two
+// positions a gate can be judged from — the one where the gate is already open.
+//
+// `luna lead` has the agent close its own stage through `luna done`, so the gate
+// reaches this point with nothing decided and there is no action left to carry an
+// account. Filing it here changes nothing else: the gate stays exactly where it
+// was, with the reasoning beside it.
+func TestAJudgedGateRecordsWhatTheLeadConcluded(t *testing.T) {
+	state := start(t, ProfileNightly)
+	state = mustReduce(t, state, Advance{Flow: gatedFlow(), Gate: GateAccount{Decision: GateDecisionWaited}})
 	if state.Gate == nil {
 		t.Fatal("the flow under test opens no gate")
 	}
 
 	before := state.Status
-	judged, err := Reduce(state, GateJudged{
-		Decision:  "reject",
-		Reasoning: "obligation 7 wants six cases and the contract permits five",
-	})
+	judged, err := Reduce(state, GateJudged{Gate: GateAccount{
+		Judgement: "reject",
+		Excerpt:   "obligation 7 wants six cases and the contract permits five",
+	}})
 	if err != nil {
-		t.Fatalf("recording a judgement: %v", err)
+		t.Fatalf("filing a judgement: %v", err)
 	}
 
 	if judged.Status != before {
-		t.Errorf("a judgement must not move the task: %q became %q", before, judged.Status)
+		t.Errorf("an account is not a transition: %q became %q", before, judged.Status)
 	}
 	if judged.Gate == nil {
-		t.Fatal("the gate was closed by an action that only describes it")
+		t.Fatal("the gate closed on an action that only describes it")
 	}
-	if judged.Gate.Judged != "reject" {
-		t.Errorf("gate decision: want reject, got %q", judged.Gate.Judged)
-	}
-	if !strings.Contains(judged.Gate.Reasoning, "six cases") {
-		t.Errorf("the reasoning did not reach the gate: %q", judged.Gate.Reasoning)
+	if judged.Gate.Judged != "reject" || !strings.Contains(judged.Gate.Reasoning, "six cases") {
+		t.Errorf("the account did not reach the gate: %+v", judged.Gate)
 	}
 
-	// And the state it was reduced from is untouched: a replay produces states
-	// that share a gate pointer, so writing through it would edit history.
+	// The state it was built from keeps its own gate: a replay produced that one,
+	// and writing through the pointer would edit history.
 	if state.Gate.Judged != "" {
-		t.Error("the judgement was written into the state it was reduced from")
+		t.Error("the reducer wrote through its input")
 	}
 }
 
-// TestAJudgementWithNoGateOpenIsRefused keeps reasoning from being filed against
-// nothing. A caller bug rather than a fact worth keeping: the next person to read
-// the log would have to work out which gate it meant.
-func TestAJudgementWithNoGateOpenIsRefused(t *testing.T) {
+// TestGateJudgedRefusesWithNoGateOpen keeps reasoning from being filed against
+// nothing. The next person to read the log would have to work out which gate it
+// meant — and this guard is why the *other* position carries its account inside
+// the action that opens the gate instead of calling this.
+func TestGateJudgedRefusesWithNoGateOpen(t *testing.T) {
 	state := start(t, ProfileNightly)
 
-	if _, err := Reduce(state, GateJudged{Decision: "approve"}); err == nil {
-		t.Fatal("a judgement about no gate must be refused")
+	_, err := Reduce(state, GateJudged{Gate: GateAccount{Judgement: "approve"}})
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Fatalf("a judgement about no gate must be refused, got %v", err)
 	}
 }

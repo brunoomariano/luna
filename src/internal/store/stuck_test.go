@@ -98,8 +98,8 @@ func TestAGateNobodyAnsweredIsAlsoStuck(t *testing.T) {
 		t.Fatalf("opening the task: %v", err)
 	}
 	if err := s.AppendAction("LUNA-1", fsm.Advance{
-		Flow:         fsm.DefaultFlow(),
-		GateDecision: fsm.GateDecisionWaited,
+		Flow: fsm.DefaultFlow(),
+		Gate: fsm.GateAccount{Decision: fsm.GateDecisionWaited},
 	}); err != nil {
 		t.Fatalf("advancing to the gate: %v", err)
 	}
