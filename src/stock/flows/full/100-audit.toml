@@ -24,7 +24,7 @@
 # section for them and the parser refuses a key it does not know.
 
 id                 = "audit"
-role               = "lead"
+role               = "auditor"
 context            = "fresh"
 when               = "not-chore"
 requires           = ["code", "ci_green"]

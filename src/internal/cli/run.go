@@ -106,9 +106,9 @@ func openNextStage(env Env, id string, state fsm.TaskState, repo string) (fsm.Ta
 		return state, nil
 	}
 
-	// The task's own flow, for the reason spelled out in openForHand: a lead with
-	// no Flow replays against DefaultFlow, and every task on any other flow is
-	// refused by its own fingerprint before it can open a stage.
+	// The task's own flow, never this build's default: a Lead with no Flow replays
+	// against DefaultFlow, and every task on any other flow is then refused by its
+	// own fingerprint before it can open a stage.
 	flow, err := env.flowOf(id)
 	if err != nil {
 		return state, err
@@ -195,7 +195,6 @@ func parseRunOptions(args []string) (runOptions, error) {
 // The node is chosen here and nowhere else: swapping how a stage is run is one
 // more branch in this function, not a change to the lead or the engine.
 func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*lead.Lead, func(), error) {
-	cfg := env.profiles()
 	// The judge is what makes the retry budget real: without one the lead blocks on
 	// the first failure and the retry budget is never spent. This one
 	// carries no model — it reads the budget the task already has.
@@ -234,11 +233,25 @@ func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*
 		return conductor, func() {}, nil
 	}
 
-	// The agent runs as a subprocess in its own worktree. There is no server to
-	// dial and no session to keep alive: a stage that dies leaves nothing behind
-	// to reap, which is most of what the previous transport needed a connection
-	// for.
-	conductor.Node = &node.Runner{
+	stage, cleanup, err := env.Node(env, opts, flow)
+	if err != nil {
+		return nil, nil, err
+	}
+	conductor.Node = stage
+	return conductor, cleanup, nil
+}
+
+// StageRunner is the real thing that runs a stage: a contained agent in its own
+// worktree.
+//
+// Exported so the binary can wire it and a test can replace it. There is no
+// server to dial and no session to keep alive — a stage that dies leaves nothing
+// behind to reap, which is most of what the previous transport needed a
+// connection for.
+func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(), error) {
+	cfg := env.profiles()
+
+	runner := &node.Runner{
 		Repo: opts.Repo,
 		// The flow, so a stage declaring `context = "live"` can find which session
 		// its role was last in. The answer comes out of the task's log, and the
@@ -280,7 +293,7 @@ func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*
 			fmt.Fprintf(env.Err, format+"\n", args...)
 		},
 	}
-	return conductor, func() {}, nil
+	return runner, func() {}, nil
 }
 
 // checkGateWith runs the commands a task declared for one gate, over what it

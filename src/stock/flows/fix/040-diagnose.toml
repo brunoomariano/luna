@@ -10,7 +10,7 @@
 # task's own statement is in the brief Luna generates.
 
 id                 = "diagnose"
-role               = "lead"
+role               = "investigator"
 requires           = ["task_id", "worktree"]
 produces           = ["root_cause"]
 produces_for_human = ["min_case"]

@@ -231,6 +231,15 @@ func auditFlows(env Env, names []string) error {
 		fmt.Fprintf(env.Out, "flow %s/%s (%d stages)\n",
 			name, fsm.Fingerprint(flow), len(flow))
 
+		// The pack, because it is the second thing a person choosing a flow needs
+		// and it is a reading of the flow rather than a setting beside it: how many
+		// agents `luna fleet run` will keep, and what each one is for. `luna lead`
+		// collapses all of them onto one.
+		if roles := packRoles(flow); len(roles) > 0 {
+			fmt.Fprintf(env.Out, "pack of %d: %s — `luna lead` runs the same flow with one\n",
+				len(roles), strings.Join(roles, ", "))
+		}
+
 		reportFlowGaps(env, flow)
 		reportGates(env, flow)
 	}

@@ -18,26 +18,37 @@ import (
 func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
 	roles := ShippedRoles()
 
-	// The one the shipped flow names. A flow whose role does not resolve stops
-	// loudly, so a missing file here is a stage that cannot run. (`setup` and
-	// `pipeline` name none: a worktree is git and `ci_green` is a command's
-	// verdict, and there is no judgement in either.)
-	role, ok := roles["lead"]
-	if !ok {
-		t.Fatal("lead has no definition — every stage that names it cannot run")
-	}
-	if role.Agent != "claude" {
-		t.Errorf("lead runs on %q, want claude", role.Agent)
-	}
-	if role.Brief == "" {
-		t.Error("lead has no brief")
+	// The pack the shipped flows name, plus the one a solo run collapses onto. A
+	// flow whose role does not resolve stops loudly, so a missing file here is a
+	// stage that cannot run. (`setup` and `pipeline` name none: a worktree is git
+	// and `ci_green` is a command's verdict, and there is no judgement in either.)
+	for _, name := range []string{"lead", "planner", "investigator", "coder", "cleaner", "auditor"} {
+		role, ok := roles[fsm.RoleName(name)]
+		if !ok {
+			t.Errorf("%s has no definition — every stage that names it cannot run", name)
+			continue
+		}
+		if role.Agent != "claude" {
+			t.Errorf("%s runs on %q, want claude", name, role.Agent)
+		}
+		if role.Brief == "" {
+			t.Errorf("%s has no brief", name)
+		}
 	}
 
-	// One, and the number is the point rather than an accident. Three roles became
-	// one when the same agent started doing every stage, and a second file
-	// appearing here is a design change that has to be argued rather than typed.
-	if len(roles) != 1 {
-		t.Errorf("got %d roles, want the 1 the flow names", len(roles))
+	// The auditor is the one that has to deny, and it is what a pack buys back:
+	// with a single agent doing everything, `tools_deny` cannot separate writing
+	// from judging, so the audit was not independent and did not claim to be. A
+	// different agent makes the denial mean something again.
+	if len(roles["auditor"].ToolsDeny) == 0 {
+		t.Error("the auditor denies nothing, so it can edit what it is judging")
+	}
+
+	// Six, and the number is the point rather than an accident: five specialisms
+	// plus the solo role. A seventh file appearing here is a design change that
+	// has to be argued rather than typed.
+	if len(roles) != 6 {
+		t.Errorf("got %d roles, want the 6 the flows name", len(roles))
 	}
 }
 
@@ -211,8 +222,11 @@ brief = "You write things down."
 	if cfg.Roles["scribe"].Brief == "" {
 		t.Error("naming one role cleared another's brief")
 	}
-	if len(cfg.Roles) != 2 {
-		t.Errorf("got %d roles, want both", len(cfg.Roles))
+	// The stock's roles plus the one the project added: naming one role must not
+	// clear the rest.
+	if len(cfg.Roles) != len(ShippedRoles())+1 {
+		t.Errorf("got %d roles, want the stock's %d plus the project's one",
+			len(cfg.Roles), len(ShippedRoles()))
 	}
 }
 

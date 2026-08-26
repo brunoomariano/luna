@@ -1,18 +1,10 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io"
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
-	"github.com/brunoomariano/luna/src/internal/lead"
 )
 
 // DefaultConcurrency is how many tasks a fleet runs at once when nobody says.
@@ -38,178 +30,16 @@ func runFleet(env Env, args []string) error {
 	}
 }
 
-// fleetOptions is what a fleet run was asked for.
+// fleetOptions is what a pack run was asked for.
 type fleetOptions struct {
-	run         runOptions
-	flow        string
-	budgetUSD   float64
-	concurrency int
-}
-
-// fleetRun drives every eligible task, several at a time, until the fleet's own
-// ceiling is reached or there is nothing left to start.
-//
-// Parallelism is between tasks and never inside one, which is not a fleet
-// decision but the property the whole design rests on: one worktree and one lead
-// per task is what makes two tasks unable to see each other's work.
-func fleetRun(env Env, args []string) error {
-	opts, err := parseFleetOptions(args)
-	if err != nil {
-		return err
-	}
-
-	eligible, err := eligibleTasks(env, opts.flow)
-	if err != nil {
-		return err
-	}
-	if len(eligible) == 0 {
-		fmt.Fprintf(env.Out, "nothing to run\n")
-		return nil
-	}
-
-	fmt.Fprintf(env.Out, "starting %d task(s), %d at a time\n", len(eligible), opts.concurrency)
-	landed := driveFleet(context.Background(), env, eligible, opts)
-
-	reportFleetRun(env, landed)
-	return nil
-}
-
-// landing is where one task ended up, and what it cost getting there.
-type landing struct {
-	id      string
-	state   fsm.TaskState
-	err     error
-	costUSD float64
-}
-
-// driveFleet runs the tasks, bounded by the concurrency limit and by the fleet's
-// ceiling.
-//
-// The ceiling stops *starting* rather than stops running: a task already under
-// way is holding a worktree and an agent, and killing it mid-stage would spend
-// the money and throw away the delivery. So the fleet overshoots by at most the
-// tasks in flight, which is the same shape as a task's own ceiling overshooting
-// by one stage, and for the same reason — the bill arrives after the work.
-func driveFleet(ctx context.Context, env Env, ids []string, opts fleetOptions) []landing {
-	var (
-		wg      sync.WaitGroup
-		mu      sync.Mutex
-		spent   float64
-		landed  []landing
-		stopped bool
-		slots   = make(chan struct{}, opts.concurrency)
-	)
-
-	for _, id := range ids {
-		// The slot is taken *before* the ceiling is weighed, and the order is the
-		// whole correctness of this loop. Checking first would decide while the
-		// previous task was still running, against a total that did not yet include
-		// it — so a fleet of one would always start one task too many. Waiting for
-		// a slot means at least one task has finished and booked its bill, which is
-		// the only moment the number is worth reading.
-		slots <- struct{}{}
-
-		mu.Lock()
-		over := opts.budgetUSD > 0 && spent >= opts.budgetUSD
-		if over {
-			stopped = true
-		}
-		mu.Unlock()
-		if over {
-			<-slots
-			break
-		}
-
-		wg.Add(1)
-		go func(id string) {
-			defer wg.Done()
-			defer func() { <-slots }()
-
-			state, err := driveOne(ctx, env.narrating(&mu, id), id, opts)
-			cost := state.TotalSpend().CostUSD
-
-			mu.Lock()
-			spent += cost
-			landed = append(landed, landing{id: id, state: state, err: err, costUSD: cost})
-			mu.Unlock()
-		}(id)
-	}
-	wg.Wait()
-
-	if stopped {
-		fmt.Fprintf(env.Out, "the fleet's ceiling of $%.2f was reached — "+
-			"the tasks it did not start are still eligible\n", opts.budgetUSD)
-	}
-
-	sort.Slice(landed, func(i, j int) bool { return landed[i].id < landed[j].id })
-	return landed
-}
-
-// eligibleTasks is every task a fleet may start: not finished, not called off,
-// not waiting on a person, not blocked.
-//
-// A blocked task is deliberately not eligible. It stopped for a reason somebody
-// has to deal with, and a fleet that retried it every night would turn a notified
-// block into a nightly bill. `luna unblock` is how it becomes eligible again.
-func eligibleTasks(env Env, flow string) ([]string, error) {
-	ids, err := env.Store.Tasks()
-	if err != nil {
-		return nil, err
-	}
-
-	var eligible []string
-	for _, id := range ids {
-		state, err := env.Store.ReplayOwnFlow(id)
-		// A task this build cannot read is not one to start. It surfaces by name in
-		// `luna flow check`, which is where a person deals with it.
-		if err != nil {
-			continue
-		}
-		if state.Operation() != fsm.OperationRunning {
-			continue
-		}
-		if flow != "" && state.FlowName != flow {
-			continue
-		}
-		eligible = append(eligible, id)
-	}
-	return eligible, nil
-}
-
-// reportFleetRun prints where each task landed, which is the product of a night's
-// work rather than a side effect of it.
-func reportFleetRun(env Env, landed []landing) {
-	var total float64
-	for _, l := range landed {
-		total += l.costUSD
-	}
-
-	fmt.Fprintf(env.Out, "\n%-14s %-10s %-22s %9s\n", "task", "product", "flow", "usd")
-	for _, l := range landed {
-		if l.err != nil {
-			fmt.Fprintf(env.Out, "%-14s %-10s %-22s %9s\n", l.id, "?", "error", "—")
-			fmt.Fprintf(env.Out, "  %v\n", l.err)
-			continue
-		}
-		fmt.Fprintf(env.Out, "%-14s %-10s %-22s %9.4f\n",
-			l.id, l.state.Product(), operationLine(l.state), l.costUSD)
-	}
-	fmt.Fprintf(env.Out, "%-14s %-10s %-22s %9.4f\n", "total", "", "", total)
-}
-
-// operationLine is the operational verdict with the block's kind after it, which
-// is what turns a column of "stopped" into a column somebody can act on.
-func operationLine(state fsm.TaskState) string {
-	if state.BlockedBy == "" {
-		return string(state.Operation())
-	}
-	return fmt.Sprintf("%s (%s)", state.Operation(), state.BlockedBy)
+	run  runOptions
+	knob fsm.Knob
 }
 
 // parseFleetOptions reads the flags a fleet run takes, refusing what it does not
 // know rather than ignoring it.
 func parseFleetOptions(args []string) (fleetOptions, error) {
-	opts := fleetOptions{concurrency: DefaultConcurrency}
+	opts := fleetOptions{}
 
 	flags, err := parseFlags(args)
 	if err != nil {
@@ -227,23 +57,18 @@ func parseFleetOptions(args []string) (fleetOptions, error) {
 // fleetFlag reads one flag into the options, refusing what it does not know.
 func fleetFlag(opts *fleetOptions, name, value string) error {
 	switch name {
-	case "flow":
-		if _, err := fsm.FlowNamed(value); err != nil {
-			return fmt.Errorf("%w: %w", ErrUsage, err)
-		}
-		opts.flow = value
-	case "budget-usd":
-		usd, err := fsm.ParseBudgetUSD(value)
+	case "autonomy":
+		// The flag governs this invocation; an absent one leaves the task's own
+		// recorded knob alone. `--flow` and `--concurrency` are gone with the
+		// cross-task fleet: a pack runs the flow its task was opened on, and the
+		// concurrency inside it is the pack, which the flow declares.
+		knob, err := fsm.ParseKnob(value)
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrUsage, err)
 		}
-		opts.budgetUSD = usd
-	case "concurrency":
-		n, err := parsePositive(value)
-		if err != nil {
-			return fmt.Errorf("%w: concurrency %w", ErrUsage, err)
-		}
-		opts.concurrency = n
+		opts.knob = knob
+	case "repo":
+		opts.run.Repo = value
 	case "agent":
 		opts.run.Agent = value
 	case "dry-run":
@@ -388,87 +213,61 @@ func parseReportOptions(args []string) (since time.Duration, asJSON bool, err er
 	return since, asJSON, nil
 }
 
-// parsePositive reads a count that has to be at least one.
+// fleetRun conducts one task with the pack its flow declares.
 //
-// Zero is refused rather than read as "no limit": a concurrency of nothing is a
-// fleet that starts no task and reports success, which is the silent no-op this
-// project treats as worse than an error.
-func parsePositive(value string) (int, error) {
-	n, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, fmt.Errorf("has to be a whole number, got %q", value)
+// A pack is internal to the task: the lead conducts, and the flow's roles do the
+// work — one worktree and one session each, kept across the stages that role
+// owns. That is what the pack buys and what `luna lead` cannot have, because a
+// single agent is a single session.
+//
+// The size of the pack is the flow's, not a flag's. `chore` declares one working
+// role, `fix` two, `full` five — so choosing the flow chooses the depth, which is
+// the same shape SwarmForge gives its two-, four- and six-packs.
+func fleetRun(env Env, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%w: fleet run needs a task id", ErrUsage)
 	}
-	if n < 1 {
-		return 0, fmt.Errorf("has to be at least 1, got %d", n)
-	}
-	return n, nil
-}
+	id := args[0]
 
-// driveOne is how the fleet drives one task, and it is the same loop `luna lead`
-// drives: the lead conducts, starting an agent per stage.
-//
-// The fleet used to drive its own way — Luna advancing and running a node per
-// stage, with no lead conducting anything. Two engines reaching the same states
-// meant every fix landed on one of them, and the fleet was the half nobody was
-// watching. One engine, and the second mode is the count of tasks.
-//
-// A dry run is the exception rather than an inconsistency: it exists to exercise
-// a flow with no agent, no worktree and no model, and there is no lead to conduct
-// with. So it keeps the node-driven loop, which is now what that loop is for.
-func driveOne(ctx context.Context, env Env, id string, opts fleetOptions) (fsm.TaskState, error) {
+	opts, err := parseFleetOptions(args[1:])
+	if err != nil {
+		return err
+	}
+
+	repo := opts.run.Repo
+	if repo == "" {
+		repo = "."
+	}
+
+	// A dry run has no model to conduct with and no agent to dispatch to, so it
+	// takes the node-driven loop like `luna lead --dry-run` does. It exercises the
+	// flow, which is what it is for.
 	if opts.run.Dry {
-		return driveTask(ctx, env, id, opts.run)
-	}
-	if env.Lead == nil {
-		return fsm.TaskState{}, errors.New("no lead is configured: Luna hosts no " +
-			"model of its own, so a fleet needs one wired in. `--dry-run` exercises " +
-			"the flow without one")
+		return dryRun(env, id, repo, opts.run.Agent)
 	}
 
-	state, err := env.replay(id)
+	state, err := packRun(env, id, repo, opts.knob)
 	if err != nil {
-		return fsm.TaskState{}, err
+		return err
 	}
-	flow, err := env.flowOf(id)
-	if err != nil {
-		return fsm.TaskState{}, err
-	}
-
-	// The task's own knob, not a fleet-wide flag: a fleet is many tasks with
-	// their own settings, and one flag over all of them would quietly overrule
-	// what `luna autonomy` recorded on each.
-	conductor := &lead.Agent{
-		Ask: env.Lead, Knob: state.Knob, Budget: env.profiles().Turn(),
-	}
-	return conductTask(env, id, conductor, leadFor(env, opts.run.Repo, flow))
+	reportSoloEnding(env, id, state)
+	return nil
 }
 
-// narrating gives one task in the fleet its own prefixed, serialised output.
+// packRoles is what a flow's pack is made of, in the order the flow meets them.
 //
-// N leads narrate at once, and they narrate by the line: without this their
-// lines interleave mid-sentence, and a reader cannot tell which task said what.
-// The lock is the fleet's own, so a line is whole or it is not written.
-func (e Env) narrating(mu *sync.Mutex, id string) Env {
-	e.Out = taskLines{mu: mu, to: e.Out, id: id}
-	e.Err = taskLines{mu: mu, to: e.Err, id: id}
-	return e
-}
+// Reported rather than configured: the roles are declared per stage, so the pack
+// is a reading of the flow and never a second place that could disagree with it.
+func packRoles(flow []fsm.Stage) []string {
+	var roles []string
+	seen := map[string]bool{}
 
-// taskLines writes whole lines, each prefixed with the task they came from.
-type taskLines struct {
-	mu *sync.Mutex
-	to io.Writer
-	id string
-}
-
-func (w taskLines) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
-		if _, err := fmt.Fprintf(w.to, "%s | %s\n", w.id, line); err != nil {
-			return 0, err
+	for _, stage := range flow {
+		if stage.Mechanical() || seen[stage.Role] {
+			continue
 		}
+		seen[stage.Role] = true
+		roles = append(roles, stage.Role)
 	}
-	return len(p), nil
+	return roles
 }

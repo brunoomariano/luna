@@ -170,6 +170,12 @@ func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 		// person is looking at, so this delegates rather than growing a transport
 		// of its own.
 		Notify: node.NewNotifier().Blocked,
+
+		// What runs a stage: a contained agent in its own worktree, built per run
+		// because it needs the repository, the flow and the role table first.
+		// Injected like the rest so a solo run — which has no model to fake — can
+		// be driven by a test at all.
+		Node: cli.StageRunner,
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/lead"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -67,6 +68,20 @@ type Env struct {
 	// times the suite was green and `luna status` promised a branch that was
 	// never created.
 	Land func(ctx context.Context, taskID, commit string) error
+
+	// Node builds the thing that runs one stage. Injected so a test can drive a
+	// solo run without starting a contained agent and waiting out the turn budget.
+	//
+	// A constructor rather than a value because the real one is per-run: it needs
+	// the repository, the flow and the role table before it can exist. That also
+	// keeps it wired in the binary rather than nil-means-real, which is the shape
+	// TestEveryInjectedDependencyIsWired exists to hold — a field that is nil on
+	// every machine is a feature that is off on every machine.
+	//
+	// It exists because solo mode has no other seam. The pack's conductor is a
+	// model and arrives through `Lead`, so a fake there drives it; a solo run has
+	// no conductor at all.
+	Node func(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(), error)
 }
 
 // Run dispatches a command line. args excludes the program name.
@@ -130,26 +145,24 @@ luna — deterministic orchestration for AI agents
 Two modes. Luna picks the stage in both; the knob picks who answers a gate.
 
   luna lead <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
-        conduct one task. Luna gives the lead one order at a time and it
-        carries them out, starting an agent per stage. It never chooses a
-        stage. The knob bounds which gates it may answer and what it may
-        do about a failure. 0 judges nothing, and is the default.
+        solo: one agent carries the task end to end. Luna starts it per
+        stage, contained and in a worktree, under the single role a solo
+        run collapses the flow onto — so the worktree and the session
+        survive from stage to stage, and there is never a conductor and a
+        worker alive at once. It never chooses a stage.
         --dry-run exercises the flow with no agent, no worktree and no
         model — it is what tells a broken flow from a broken integration.
 
-  luna fleet run [--flow <flow>] [--budget-usd <usd>]
-        [--concurrency <n>] [--agent <kind>] [--dry-run]
-        the same, over every eligible task, several at a time. Eligible
-        means not finished, not called off, not waiting on a person and
-        not blocked — a block stopped for a reason somebody has to deal
-        with, and a fleet that retried it nightly would turn a notified
-        block into a nightly bill. The ceiling stops starting new tasks;
-        one already under way is holding a worktree and an agent, and
-        killing it mid-stage would spend the money and throw away the
-        delivery. --dry-run exercises the flow with no agent, no worktree
-        and no model.
+  luna fleet run <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
+        pack: the lead conducts, and the roles the flow declares do the
+        work — a worktree and a session each, kept across the stages that
+        role owns. That is what buys an independent audit: a role that
+        judges can be denied the tools to edit, which one agent doing
+        everything cannot be.
+        The size of the pack is the flow's, not a flag's — luna flow
+        check says what each one names. A pack is inside one task.
 
-the lead's own commands — it runs these, and so can you
+how a stage is carried out — the pack's lead runs these, and so can you
 
   luna next <id> [--json]
         the order for this task: which stage, which role, which worktree,

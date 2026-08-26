@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/store"
+
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
@@ -64,7 +67,7 @@ func leadHarness(t *testing.T) (*harness, *obedientLead) {
 func TestTheLeadDrivesTheTaskThroughItsStages(t *testing.T) {
 	h, lead := leadHarness(t)
 
-	if err := h.run(t, "lead", "LUNA-1"); err != nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1"); err != nil {
 		t.Fatalf("lead: %v", err)
 	}
 
@@ -89,7 +92,7 @@ func TestALeadThatClaimsSuccessWithoutReportingMovesNothing(t *testing.T) {
 		return "Done. I completed every stage and the task is finished.", nil
 	}
 
-	err := h.run(t, "lead", "LUNA-1")
+	err := h.run(t, "fleet", "run", "LUNA-1")
 
 	if err == nil {
 		t.Fatal("a lead that only claimed to have finished was believed")
@@ -131,7 +134,7 @@ func TestTheLoopStopsWhenSomethingNeedsAPerson(t *testing.T) {
 	// Interactive stops at every gate; walk to the first one there is.
 	seedAtFirstGate(t, h, "LUNA-1")
 
-	out := h.mustRun(t, "lead", "LUNA-1")
+	out := h.mustRun(t, "fleet", "run", "LUNA-1")
 
 	if asked != 0 {
 		t.Errorf("the lead was asked to act on a task waiting for a person (%d times)", asked)
@@ -146,7 +149,7 @@ func TestTheLoopStopsWhenSomethingNeedsAPerson(t *testing.T) {
 func TestTheAutonomyKnobReachesTheLead(t *testing.T) {
 	h, lead := leadHarness(t)
 
-	if err := h.run(t, "lead", "LUNA-1", "--autonomy", "10"); err != nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1", "--autonomy", "10"); err != nil {
 		t.Fatalf("lead: %v", err)
 	}
 
@@ -164,14 +167,14 @@ func TestTheAutonomyKnobReachesTheLead(t *testing.T) {
 func TestTheKnobIsANumberAndTheOldNamesAreGone(t *testing.T) {
 	for _, value := range []string{"ask", "retry", "decide", "whatever", "11", "-1"} {
 		h, _ := leadHarness(t)
-		if err := h.run(t, "lead", "LUNA-1", "--autonomy", value); err == nil {
+		if err := h.run(t, "fleet", "run", "LUNA-1", "--autonomy", value); err == nil {
 			t.Errorf("--autonomy %s was accepted", value)
 		}
 	}
 
 	// And an absent flag is the most supervised setting, never the widest.
 	h, lead := leadHarness(t)
-	if err := h.run(t, "lead", "LUNA-1"); err != nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1"); err != nil {
 		t.Fatalf("lead with no knob: %v", err)
 	}
 	if strings.Contains(lead.saw[0], "That judgement is yours") {
@@ -187,11 +190,11 @@ func TestWithNoLeadTheCommandSaysSoAndNamesTheAlternative(t *testing.T) {
 	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature")
 	h.env.Lead = nil
 
-	err := h.run(t, "lead", "LUNA-1")
+	err := h.run(t, "fleet", "run", "LUNA-1")
 	if err == nil {
 		t.Fatal("a lead command with no model reported success")
 	}
-	if !strings.Contains(err.Error(), "--dry-run") {
+	if !strings.Contains(err.Error(), "luna lead") {
 		t.Errorf("the refusal does not name the alternative: %v", err)
 	}
 }
@@ -217,7 +220,7 @@ func TestALeadThatWillNotAnswerStopsTheRun(t *testing.T) {
 		return "", context.DeadlineExceeded
 	}
 
-	if err := h.run(t, "lead", "LUNA-1"); err == nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1"); err == nil {
 		t.Fatal("a lead that never answered was treated as having conducted the stage")
 	}
 
@@ -255,7 +258,7 @@ func TestALeadThatCannotFinishAStageStillTerminates(t *testing.T) {
 		return "failed it", nil
 	}
 
-	out := h.mustRun(t, "lead", "LUNA-1")
+	out := h.mustRun(t, "fleet", "run", "LUNA-1")
 
 	if !strings.Contains(out, string(fsm.OrderBlocked)) {
 		t.Errorf("the run did not end at a block:\n%s", out)
@@ -274,7 +277,7 @@ func TestALeadThatCannotFinishAStageStillTerminates(t *testing.T) {
 func TestTheLeadIsGivenOneOrderAtATime(t *testing.T) {
 	h, lead := leadHarness(t)
 
-	if err := h.run(t, "lead", "LUNA-1"); err != nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1"); err != nil {
 		t.Fatalf("lead: %v", err)
 	}
 
@@ -298,8 +301,8 @@ func TestLeadRefusesACommandLineItCannotParse(t *testing.T) {
 	h, _ := leadHarness(t)
 
 	for _, args := range [][]string{
-		{"lead", "LUNA-1", "--nonsense", "x"},
-		{"lead", "LUNA-1", "--autonomy"},
+		{"fleet", "run", "LUNA-1", "--nonsense", "x"},
+		{"fleet", "run", "LUNA-1", "--autonomy"},
 	} {
 		if err := h.run(t, args...); err == nil {
 			t.Errorf("%v was accepted", args)
@@ -354,7 +357,7 @@ func TestTheLeadCanCloseTheStageItWasHandedIsTheWholeLoop(t *testing.T) {
 		return "carried out " + string(order.Stage), nil
 	}
 
-	if err := h.run(t, "lead", "LUNA-1"); err != nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1"); err != nil {
 		t.Fatalf("a lead that reports what it produced must be able to conduct: %v", err)
 	}
 	if reported < 2 {
@@ -393,7 +396,7 @@ func TestWhatTheLeadConcludedAboutAGateIsKept(t *testing.T) {
 		return obedient.ask(ctx, prompt)
 	}
 
-	if err := h.run(t, "lead", "LUNA-1", "--autonomy", "9"); err != nil {
+	if err := h.run(t, "fleet", "run", "LUNA-1", "--autonomy", "9"); err != nil {
 		t.Fatalf("lead: %v", err)
 	}
 
@@ -485,7 +488,7 @@ func TestConductTaskLandsWhatTheLoopEndsOn(t *testing.T) {
 	h.mustRun(t, "autonomy", "LUNA-1", "10")
 
 	// Driven to done by the dry runner, which needs no agent.
-	_ = Run(h.env, []string{"lead", "LUNA-1", "--dry-run"})
+	_ = Run(h.env, []string{"fleet", "run", "LUNA-1", "--dry-run"})
 	if state := mustState(t, h, "LUNA-1"); !state.IsTerminal() {
 		t.Skipf("the dry run did not finish the task (it is %q)", state.Status)
 	}
@@ -499,7 +502,7 @@ func TestConductTaskLandsWhatTheLoopEndsOn(t *testing.T) {
 		return "", errors.New("the loop asked a model about a finished task")
 	}
 
-	if err := Run(h.env, []string{"lead", "LUNA-1", "--autonomy", "10"}); err != nil {
+	if err := Run(h.env, []string{"fleet", "run", "LUNA-1", "--autonomy", "10"}); err != nil {
 		t.Fatalf("conducting a finished task: %v", err)
 	}
 	if landed != "LUNA-1" {
@@ -513,7 +516,7 @@ func TestTheLeadIsWiredToLandAndToWarn(t *testing.T) {
 
 	// The command builds its lead and runs it; a task that goes nowhere is fine
 	// here, since the assertion is about the fields.
-	_ = Run(h.env, []string{"lead", "LUNA-1"})
+	_ = Run(h.env, []string{"fleet", "run", "LUNA-1"})
 
 	// Rebuilt the same way the command does, which is the thing under test: if
 	// leadCommand stops setting these, this constructor has to stop too or the
@@ -554,5 +557,322 @@ func TestTheAccountIsInTheJSONAndNotOnlyInTheProse(t *testing.T) {
 	}
 	if !strings.Contains(report.Gate.Reasoning, "six cases") {
 		t.Errorf("the reasoning is not in the JSON: %q", report.Gate.Reasoning)
+	}
+}
+
+// soloNode reports that every stage delivered exactly what it declared, and
+// remembers the role each one ran under.
+//
+// A named fake rather than an inline stub, and it records the role because that
+// is the whole difference between the two modes: a solo run resolves one role for
+// every stage, a pack resolves the one each stage declares.
+type soloNode struct{ roles []string }
+
+func (n *soloNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
+	n.roles = append(n.roles, stage.Role)
+
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, artifact := range owed {
+		evidence[artifact] = fsm.Evidence{
+			Scope: fsm.ScopeExistence, Verdict: fsm.VerdictPassed, RecordedAt: state.Seq,
+		}
+	}
+	return lead.Result{Delivered: owed, Evidence: evidence, Commit: state.Base}, nil
+}
+
+// TestASoloRunCarriesEveryStageUnderOneRole is the mode `luna lead` runs.
+//
+// One agent for the whole task, which is what a person asking for a single agent
+// means — and the role is how it is one: the worktree and the session are both
+// keyed by role, so collapsing them is what makes them survive from stage to
+// stage. A run that resolved the flow's declared roles would open a worktree per
+// specialism and start a cold agent in each, which is the pack and is the other
+// command.
+func TestASoloRunCarriesEveryStageUnderOneRole(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-1", "--kind", "chore", "--flow", "chore")
+
+	node := &soloNode{}
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return node, func() {}, nil
+	}
+	// No model: a solo run needs none, and that is a property worth holding.
+	h.env.Lead = nil
+
+	if err := h.run(t, "lead", "S-1"); err != nil {
+		t.Fatalf("lead: %v", err)
+	}
+
+	if len(node.roles) == 0 {
+		t.Fatal("no stage ran, so this test measures nothing")
+	}
+	for _, role := range node.roles {
+		// A mechanical stage has none, and keeps none: a stage that starts no agent
+		// has nobody to be.
+		if role != "" && role != fsm.SoloRole {
+			t.Errorf("a solo run started a stage under %q rather than the one role", role)
+		}
+	}
+
+	// And the flow it ran still declares its pack, untouched: the collapse is a
+	// reading of the flow for one run, never an edit to it.
+	if stageIn(fsm.DefaultFlow(), "build").Role != "coder" {
+		t.Error("a solo run rewrote the flow's declared roles")
+	}
+}
+
+// TestAPackRunResolvesTheRolesTheFlowDeclares is the other half, and the two
+// together are the whole difference between the modes.
+func TestAPackRunResolvesTheRolesTheFlowDeclares(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "P-1", "--kind", "bug", "--flow", "fix")
+
+	node := &soloNode{}
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return node, func() {}, nil
+	}
+
+	// The pack is conducted, so it needs a model; this one carries out whatever
+	// order it is given by running the stage through `luna work`.
+	h.env.Lead = func(_ context.Context, prompt string) (string, error) {
+		id := ""
+		for _, line := range strings.Split(prompt, "\n") {
+			if rest, found := strings.CutPrefix(strings.TrimSpace(line), "task="); found {
+				id = rest
+				break
+			}
+		}
+		if id == "" {
+			return "", errors.New("the order named no task")
+		}
+		return "carried it out", Run(h.env, []string{"work", id})
+	}
+
+	if err := h.run(t, "fleet", "run", "P-1"); err != nil {
+		t.Fatalf("fleet run: %v", err)
+	}
+
+	var sawSpecialist bool
+	for _, role := range node.roles {
+		if role == fsm.SoloRole {
+			t.Errorf("a pack run collapsed a stage onto the solo role")
+		}
+		if role != "" {
+			sawSpecialist = true
+		}
+	}
+	if !sawSpecialist {
+		t.Fatal("no stage with a role ran, so this test measures nothing")
+	}
+}
+
+// TestASoloRunThatStopsAtAGateShowsWhatWasConcluded. A run that ends at a gate is
+// the ordinary ending, and the person who has to answer it should not have to run
+// a second command to see that a model already looked.
+func TestASoloRunThatStopsAtAGateShowsWhatWasConcluded(t *testing.T) {
+	h := newHarness(t)
+
+	gated := fsm.TaskState{
+		ID: "S-2", Status: fsm.StatusAwaitingGate, Stage: "plan",
+		Gate: &fsm.PendingGate{
+			Kind: fsm.GateReviewArtifact, Stage: "plan", Reason: "review the contract",
+			Judged: "reject", Reasoning: "obligation 7 wants six cases and the contract permits five",
+		},
+	}
+	reportSoloEnding(h.env, "S-2", gated)
+
+	out := h.out.String()
+	for _, want := range []string{"waiting", "review the contract", "reject", "six cases"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the ending does not carry %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestASoloRunOnAnUnexpectedStatusSaysWhereItStopped covers the branch no ordinary
+// run reaches. A fourth way out of the loop must not finish in silence.
+func TestASoloRunOnAnUnexpectedStatusSaysWhereItStopped(t *testing.T) {
+	h := newHarness(t)
+
+	reportSoloEnding(h.env, "S-3", fsm.TaskState{
+		ID: "S-3", Status: fsm.StatusRunning, Stage: "build",
+	})
+
+	out := h.out.String()
+	if !strings.Contains(out, "build") || !strings.Contains(out, string(fsm.StatusRunning)) {
+		t.Errorf("an unexpected ending said neither the stage nor the status:\n%s", out)
+	}
+}
+
+// TestASoloRunOnAGateWithNoDetailDoesNotPanic. A gate normally carries a reason,
+// and the ending reads it defensively: printing a blank line beats dying on the
+// command a person ran to find out what happened.
+func TestASoloRunOnAGateWithNoDetailDoesNotPanic(t *testing.T) {
+	h := newHarness(t)
+
+	reportSoloEnding(h.env, "S-4", fsm.TaskState{
+		ID: "S-4", Status: fsm.StatusAwaitingGate, Stage: "plan",
+	})
+
+	if !strings.Contains(h.out.String(), "S-4") {
+		t.Errorf("a gate with no detail said nothing at all:\n%s", h.out.String())
+	}
+}
+
+// TestBothModesRefuseAFlagTheyDoNotHave. A typo that runs is worse than one that
+// stops: the run behaves as though nobody had asked for anything, and the person
+// finds out from the bill.
+func TestBothModesRefuseAFlagTheyDoNotHave(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "F-1", "--kind", "chore", "--flow", "chore")
+
+	if err := h.run(t, "lead", "F-1", "--nonsense", "1"); !errors.Is(err, ErrUsage) {
+		t.Errorf("`luna lead` accepted a flag it does not have: %v", err)
+	}
+	if err := h.run(t, "fleet", "run", "F-1", "--nonsense", "1"); !errors.Is(err, ErrUsage) {
+		t.Errorf("`luna fleet run` accepted a flag it does not have: %v", err)
+	}
+}
+
+// TestAModeRefusesATaskWhoseFlowThisBuildCannotRead. The order is computed from
+// the flow, so a flow that is gone is not a run that goes wrong halfway — it is
+// one that must not start.
+func TestAModeRefusesATaskWhoseFlowThisBuildCannotRead(t *testing.T) {
+	h := newHarness(t)
+	if err := h.env.Store.AppendAction("GONE-2", fsm.TaskCreated{
+		Kind: fsm.KindChore, FlowName: "a-flow-nobody-ships",
+	}); err != nil {
+		t.Fatalf("creating the task: %v", err)
+	}
+
+	if err := h.run(t, "lead", "GONE-2"); err == nil {
+		t.Error("a solo run started against a flow this build cannot read")
+	}
+	if err := h.run(t, "fleet", "run", "GONE-2"); err == nil {
+		t.Error("a pack run started against a flow this build cannot read")
+	}
+}
+
+// TestAStageLookupOnAFlowThatDoesNotHaveItIsEmpty. The caller reached the lookup
+// through NextOrder, which already refused a stage the flow does not have — so the
+// zero stage is the honest answer and not a case anybody has to handle.
+func TestAStageLookupOnAFlowThatDoesNotHaveItIsEmpty(t *testing.T) {
+	if got := stageIn(fsm.DefaultFlow(), "nowhere"); got.ID != "" {
+		t.Errorf("a stage that is not in the flow resolved to %q", got.ID)
+	}
+}
+
+// TestASoloRunIsRefusedOnASimulatedTask. Its stages recorded checks that never
+// ran, so continuing it for real would build on proof nobody produced — and the
+// guard has to be on both modes, because it is a fact about the task rather than
+// about how it is being carried out.
+func TestASoloRunIsRefusedOnASimulatedTask(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-5", "--kind", "chore", "--flow", "chore", "--simulated")
+
+	err := h.run(t, "lead", "S-5")
+	if err == nil {
+		t.Fatal("a simulated task was carried out for real")
+	}
+	if !strings.Contains(err.Error(), "simulation") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
+}
+
+// TestTheReportWindowRefusesADurationItCannotRead. `--since yesterday` silently
+// read as "everything" would answer a different question from the one asked.
+func TestTheReportWindowRefusesADurationItCannotRead(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "fleet", "report", "--since", "yesterday"); !errors.Is(err, ErrUsage) {
+		t.Errorf("a window nobody can parse was accepted: %v", err)
+	}
+}
+
+// TestTheLeadIsHandedNothingRatherThanTheWrongThing. The artifact lookup answers
+// the gate's judge, and an artifact that was never handed over has no body to
+// read. Answering with an empty string and "found" would put a blank document in
+// front of a model and ask it to judge one.
+func TestTheLeadIsHandedNothingRatherThanTheWrongThing(t *testing.T) {
+	h := newHarness(t)
+	built := leadFor(h.env, ".", fsm.DefaultFlow())
+
+	if built.Artifact == nil {
+		t.Fatal("the lead cannot fetch the artifact a gate is about")
+	}
+	if _, found := built.Artifact("NOBODY-1", "contract"); found {
+		t.Error("an artifact nobody handed over was reported as fetched")
+	}
+
+	// And the one that was handed over comes back whole. A gate that asks the lead
+	// to judge a contract has to hand it the contract, not the evidence line that
+	// names it — `gate show` printed a name and a blank line until this existed.
+	h.mustRun(t, "task", "new", "A-1", "--kind", "chore", "--flow", "chore")
+	if err := h.env.Store.PutBlob(store.Blob{
+		TaskID: "A-1", Stage: "plan", Artifact: "contract", Body: []byte("# contract\n"),
+	}); err != nil {
+		t.Fatalf("handing an artifact over: %v", err)
+	}
+	body, found := built.Artifact("A-1", "contract")
+	if !found || !strings.Contains(body, "# contract") {
+		t.Errorf("the artifact came back as %q (found=%v)", body, found)
+	}
+}
+
+// TestTheRealLandingIsUsedWhenNoneIsInjected. The injected one wins so a test can
+// watch a landing without a repository; with none, the command has to supply the
+// real thing rather than leaving the field nil and landing nothing.
+func TestTheRealLandingIsUsedWhenNoneIsInjected(t *testing.T) {
+	h := newHarness(t)
+	h.env.Land = nil
+
+	if landingFor(h.env, ".") == nil {
+		t.Error("with nothing injected there is no landing at all, so `done` means nothing")
+	}
+}
+
+// TestReadingAnOrderCarriesTheReasonItCouldNotBeRead. The order is computed from
+// the task and its flow, and each of the three reads can fail — a task nobody
+// created, a flow this build does not carry, an order the flow cannot produce.
+// The loop stops on any of them, so the reason has to survive the return.
+func TestReadingAnOrderCarriesTheReasonItCouldNotBeRead(t *testing.T) {
+	h := newHarness(t)
+
+	if _, _, err := orderFor(h.env, "NOBODY-2"); err == nil {
+		t.Error("an order was produced for a task nobody created")
+	}
+
+	if err := h.env.Store.AppendAction("GONE-3", fsm.TaskCreated{
+		Kind: fsm.KindChore, FlowName: "a-flow-nobody-ships",
+	}); err != nil {
+		t.Fatalf("creating the task: %v", err)
+	}
+	_, _, err := orderFor(h.env, "GONE-3")
+	if err == nil {
+		t.Fatal("an order was produced against a flow this build cannot read")
+	}
+	if !strings.Contains(err.Error(), "a-flow-nobody-ships") {
+		t.Errorf("the refusal does not name the flow it could not find: %v", err)
+	}
+}
+
+// TestAnInjectedLandingWinsOverTheRealOne is what lets a test watch a landing
+// without a repository — and the landing is the half of `done` that broke twice
+// with nothing seeing it.
+func TestAnInjectedLandingWinsOverTheRealOne(t *testing.T) {
+	h := newHarness(t)
+
+	var landed string
+	h.env.Land = func(_ context.Context, taskID, _ string) error {
+		landed = taskID
+		return nil
+	}
+
+	if err := landingFor(h.env, ".")(context.Background(), "L-1", "c0ffee"); err != nil {
+		t.Fatalf("landing: %v", err)
+	}
+	if landed != "L-1" {
+		t.Error("the injected landing was not the one called")
 	}
 }

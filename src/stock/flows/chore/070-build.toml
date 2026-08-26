@@ -10,7 +10,7 @@
 # sandbox. The flow is short; the exit check is the same one `full` uses.
 
 id       = "build"
-role     = "lead"
+role     = "coder"
 requires = ["task_id", "worktree"]
 produces = ["code", "tests_green"]
 

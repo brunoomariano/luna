@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1263,5 +1264,120 @@ func TestASimulatedTaskSaysSoWhereItIsRead(t *testing.T) {
 	}
 	if !report.Simulated {
 		t.Error("the JSON view does not carry the simulation flag")
+	}
+}
+
+// stalledNode is a stage runner whose agent is alive and achieving nothing.
+type stalledNode struct{}
+
+func (stalledNode) Run(context.Context, fsm.TaskState, fsm.Stage) (lead.Result, error) {
+	return lead.Result{}, fmt.Errorf("%w: no output for 20m", lead.ErrStalled)
+}
+
+// TestAStalledStageBlocksTheTaskRatherThanFailingTheCommand is the other half of
+// the infrastructure branch.
+//
+// A stall is a decision, not a judgement call: the node observed that the agent is
+// alive and doing nothing, and there is nothing for a model to weigh. It must
+// reach the log as a block with a reason, because the caller is usually the lead
+// and an exit status is not something it can record.
+func TestAStalledStageBlocksTheTaskRatherThanFailingTheCommand(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "W-1", "--kind", "chore", "--flow", "chore")
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return stalledNode{}, func() {}, nil
+	}
+
+	notified := 0
+	h.env.Notify = func(context.Context, string, string) error { notified++; return nil }
+
+	openStage(t, h, "W-1")
+	openStage(t, h, "W-1")
+	out := h.mustRun(t, "work", "W-1")
+
+	state := mustState(t, h, "W-1")
+	if state.Status != fsm.StatusBlocked {
+		t.Fatalf("a stalled stage left the task %q", state.Status)
+	}
+	if !strings.Contains(out, "blocked") || !strings.Contains(out, "20m") {
+		t.Errorf("the block does not say what stopped it:\n%s", out)
+	}
+	if notified != 1 {
+		t.Errorf("a block has to be notified, got %d notifications", notified)
+	}
+	// The retry budget is untouched: a second attempt against an agent that stalls
+	// stalls again, and spending the budget on that leaves none for a real failure.
+	if state.Retry.Attempts != 0 {
+		t.Errorf("a stall spent the retry budget: %d", state.Retry.Attempts)
+	}
+}
+
+// TestOpeningAStageIsARepeatableNoOpOnceOneIsOpen. `work` opens before it runs,
+// because `next` is a read and nothing else opens a stage now — so calling it
+// twice has to be harmless rather than a second entry in the log.
+func TestOpeningAStageIsARepeatableNoOpOnceOneIsOpen(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "O-1", "--kind", "chore", "--flow", "chore")
+
+	openStage(t, h, "O-1")
+	first := mustState(t, h, "O-1")
+	if first.Status != fsm.StatusRunning {
+		t.Fatalf("the stage did not open: %q", first.Status)
+	}
+
+	openStage(t, h, "O-1")
+	if again := mustState(t, h, "O-1"); again.Seq != first.Seq {
+		t.Errorf("opening an open stage wrote to the log: seq %d became %d", first.Seq, again.Seq)
+	}
+}
+
+// TestOpeningAStageOnAFlowThisBuildCannotReadIsRefused. The opener replays, and a
+// replay needs the flow the task was written under.
+func TestOpeningAStageOnAFlowThisBuildCannotReadIsRefused(t *testing.T) {
+	h := newHarness(t)
+	if err := h.env.Store.AppendAction("O-2", fsm.TaskCreated{
+		Kind: fsm.KindChore, FlowName: "a-flow-nobody-ships",
+	}); err != nil {
+		t.Fatalf("creating the task: %v", err)
+	}
+
+	if err := h.run(t, "work", "O-2"); err == nil {
+		t.Error("a stage opened against a flow this build cannot read")
+	}
+}
+
+// brokenNode fails the way a stage fails, rather than the way the machinery does.
+type brokenNode struct{}
+
+func (brokenNode) Run(context.Context, fsm.TaskState, fsm.Stage) (lead.Result, error) {
+	return lead.Result{}, errors.New("the agent exited 2")
+}
+
+// TestAStageThatFailsIsAnErrorRatherThanABlock keeps the two kinds of failure
+// apart.
+//
+// Infrastructure blocks the task, because a retry against a missing binary finds
+// it missing again and there is a person who has to fix it. A stage that actually
+// failed is the run's own business — the caller decides whether to try again, and
+// turning it into a block here would spend the escalation on the ordinary case.
+func TestAStageThatFailsIsAnErrorRatherThanABlock(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "W-2", "--kind", "chore", "--flow", "chore")
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return brokenNode{}, func() {}, nil
+	}
+
+	openStage(t, h, "W-2")
+	openStage(t, h, "W-2")
+
+	err := h.run(t, "work", "W-2")
+	if err == nil {
+		t.Fatal("a failed stage reported success")
+	}
+	if !strings.Contains(err.Error(), "exited 2") {
+		t.Errorf("the failure does not carry what went wrong: %v", err)
+	}
+	if state := mustState(t, h, "W-2"); state.Status == fsm.StatusBlocked {
+		t.Error("an ordinary stage failure spent the block that infrastructure needs")
 	}
 }

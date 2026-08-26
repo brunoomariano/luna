@@ -1,0 +1,11 @@
+# The role that diagnoses. Separate because it runs before there is code to build
+# on, so it has no session to inherit and nothing to hand forward but the cause it
+# found — and because finding a cause and fixing it are different jobs that the
+# same turn does badly.
+#
+# Measured: `diagnose` costs $0.8847 over 19 turns on the task class it exists
+# for, and $2.8826 over 48 turns on the wrong one. Which flow a task runs is what
+# decides whether this role is in the pack at all.
+
+agent = "claude"
+brief = "You find the root cause and the smallest case that shows it. You do not fix it — the fix is a later stage, and a diagnosis that arrives already repaired is one nobody can check. The smallest case is the deliverable, not an illustration of it: it has to fail before the fix and pass after, and somebody else has to be able to run it."

@@ -33,6 +33,11 @@ func TestDefaultFlowHasNoContractGap(t *testing.T) {
 func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	flow := DefaultFlow()
 
+	// The roles are the pack: five of them, and a stage names the one that owns it.
+	// `luna lead` collapses them onto `lead` for a single-agent run, which is why
+	// this table is about what the flow *declares* and not about what every mode
+	// resolves.
+	//
 	// The empty role is how the table writes "—". There are two mechanical stages:
 	// `setup`, because a worktree is git, and `pipeline`, because `ci_green` is a
 	// command's verdict and nothing about it is a judgement. A third would be a
@@ -42,14 +47,14 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		Role string
 	}{
 		{"setup", ""},
-		{"intake", "lead"},
-		{"diagnose", "lead"},
-		{"plan", "lead"},
-		{"build", "lead"},
-		{"refactor", "lead"},
+		{"intake", "planner"},
+		{"diagnose", "investigator"},
+		{"plan", "planner"},
+		{"build", "coder"},
+		{"refactor", "cleaner"},
 		{"pipeline", ""},
-		{"verify", "lead"},
-		{"audit", "lead"},
+		{"verify", "auditor"},
+		{"audit", "auditor"},
 	}
 
 	if len(flow) != len(want) {

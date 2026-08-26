@@ -179,13 +179,15 @@ Three things follow from the transport:
   **The shipped flow uses it, and that is what collapsing the roles bought.** While the
   flow had twelve roles for twelve stages, every stage started cold by construction and
   the setting had nowhere to apply. Three roles brought it to two cold starts a run; one
-  role brings it to one — every agent stage after the first continues the session before
-  it, except `audit`, which is deliberately `fresh`.
+  role, so how many there are is the mode. A solo run collapses every stage onto one role
+  and each stage after the first continues the session before it, except `audit`, which is
+  deliberately `fresh`. A pack keeps a session per role, so a cold start happens wherever
+  the flow changes role — which is `build` and `refactor` in the shipped one.
 
-  One of those cold starts is not an economy to be recovered. `plan` is `fresh` because
-  on a bug task `diagnose` runs immediately before it, and continuing "the previous
-  session" would mean continuing the investigation's. The check refused it while the roles
-  were separate; with one role it has nothing left to refuse, and it stays for the packs.
+  Those cold starts are not economies to be recovered. `AuditContextChain` refuses a live
+  stage whose predecessor holds a different role, and it is right to: a coder continuing
+  the planner's session reads the plan's reasoning instead of the plan, and a cleaner
+  continuing the coder's reads its reasoning instead of its output.
 
   The session id is recorded in the log, with the stage's spend. It was a map on the
   runner until a real run showed what that costs: answering a gate ends the process, the
@@ -299,20 +301,38 @@ Changing the knob changes what happens from here on and leaves the past alone �
 advance records what its gate actually decided, so a replay reads a fact instead of
 recomputing one.
 
-## The fleet
+## The pack
 
-`luna lead` conducts one task. `luna fleet run` conducts every eligible one, several at a
-time — the same loop, the same lead, the count of tasks being the only difference:
+`luna lead` is one agent carrying the task end to end. `luna fleet run` is a pack: the lead
+conducts, and the flow's declared roles do the work — one worktree and one session each,
+kept across the stages that role owns.
 
 ```sh
-luna fleet run --flow fix --budget-usd 20 --concurrency 4
-luna fleet report --since 12h
+luna lead      AVG-1              # solo: one agent, one worktree, one session
+luna fleet run AVG-1              # pack: the roles the flow declares
+luna fleet report --since 12h     # every task, grouped by what it needs
 ```
 
-**Eligible** means not finished, not called off, not waiting on a person and not blocked. A
-blocked task is deliberately excluded — it stopped for a reason somebody has to deal with,
-and a fleet that retried it every night would turn a notified block into a nightly bill.
-`luna unblock` is how it becomes eligible again.
+The size of the pack is the flow's rather than a flag's, and `luna flow check` reports it:
+
+```
+flow full/9f1e8cf1fb2cbdb3 (9 stages)
+pack of 5: planner, investigator, coder, cleaner, auditor — `luna lead` runs the same flow with one
+```
+
+**What the pack buys.** A role per specialism means `tools_deny` works again: the `auditor`
+holds `Edit` and `Write`, so an audit is independent rather than a stage that says it is.
+And each role keeps its own session, so the coder's context is not rebuilt to be read by
+somebody judging it.
+
+**What it costs.** A conductor billed every turn, a worktree per role, and a cold start
+wherever the flow changes role. A solo run pays none of that and claims none of it — its
+`audit` re-reads its own work with no memory of writing it, which is the one half of
+independence a single agent can have.
+
+**The mode is not recorded.** `Role` is policy rather than history, so it is out of the flow
+fingerprint: a task begun solo can be continued as a pack and the other way round. If it
+could not, choosing the mode would be a decision nobody could revisit.
 
 The fleet's ceiling stops it **starting** rather than stops it running, and the slot is
 taken before the ceiling is weighed. That ordering is the correctness of the loop: checking
@@ -382,8 +402,8 @@ remembered:
 - **Token accounting** — being added now that the transport reports usage.
 - **Skills** — `src/stock/skills/` is empty. A role declares an agent and a brief; the
   skill set is parsed and read by nothing.
-- **A second harness.** The one role names `claude`. The transport supports four and
-  `CanGate` knows which of them can deny a tool, but no shipped role exercises another,
+- **A second harness.** Every role names `claude`. The transport supports four and
+  `CanGate` knows which of them can deny a tool, but no shipped role names another,
   so "harness-agnostic" is built and unmeasured.
 - **Tool denial.** `tools_deny` parses, reaches the harness and is removed from the
   request — and no shipped role sets it, because the one role must be able to edit. A

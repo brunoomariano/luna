@@ -1,6 +1,11 @@
 id       = "refactor"
-role     = "lead"
-context  = "live"
+role     = "cleaner"
+# Fresh, and the pack is what made it so. A cleaner continuing the coder's
+# session reads its reasoning instead of its output, and the whole reason this
+# stage is a separate role is that it has to re-earn the green over code it did
+# not write. AuditContextChain refuses a live stage whose predecessor holds a
+# different role, and it refused this one the moment `build` became `coder`.
+context  = "fresh"
 requires = ["code", "tests_green"]
 produces = ["code", "tests_green"]
 

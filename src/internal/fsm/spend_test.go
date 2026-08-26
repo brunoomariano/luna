@@ -237,23 +237,78 @@ func TestTheSessionSurvivesAReplay(t *testing.T) {
 // TestTheLastSessionOfARoleIsWhatALiveStageContinues answers the question the
 // node layer actually asks: not "what did this stage do" but "what session is
 // this role in".
+//
+// This is what a pack buys and a solo run cannot have. `planner` owns intake and
+// plan, so its session is the later of those two; `auditor` owns verify and audit
+// and has its own. A single agent carrying the whole task has one session for
+// everything, which is the trade `luna lead` makes.
+//
+// It walks the flow rather than the map, because map order would make "the last
+// one" mean whatever Go felt like.
 func TestTheLastSessionOfARoleIsWhatALiveStageContinues(t *testing.T) {
 	state := TaskState{
 		Spent: map[StageID]Spend{
-			"intake": {Session: "sess-intake", Turns: 1},
-			"plan":   {Session: "sess-plan", Turns: 1},
-			"verify": {Session: "sess-verify", Turns: 1},
+			"intake": {Session: "sess-planner-1", Turns: 1},
+			"plan":   {Session: "sess-planner-2", Turns: 1},
+			"verify": {Session: "sess-auditor", Turns: 1},
 		},
 	}
 
-	// The lead ran intake, then plan, then verify; a live stage continues the
-	// latest of them. With one role this is the whole of what the lookup does —
-	// and it still has to walk the flow rather than the map, because map order
-	// would make "the last one" mean whatever Go felt like.
-	if got := state.SessionOf(DefaultFlow(), "lead"); got != "sess-verify" {
-		t.Errorf("the lead's session is the last one it opened, got %q", got)
+	if got := state.SessionOf(DefaultFlow(), "planner"); got != "sess-planner-2" {
+		t.Errorf("a role continues the last session it opened, got %q", got)
+	}
+	// Not the planner's, which is the whole point of keeping them apart: an
+	// auditor continuing the planner's session reads the plan's reasoning rather
+	// than the delivery.
+	if got := state.SessionOf(DefaultFlow(), "auditor"); got != "sess-auditor" {
+		t.Errorf("a role must not continue another role's session, got %q", got)
 	}
 	if got := state.SessionOf(DefaultFlow(), "nobody"); got != "" {
 		t.Errorf("a role that has not run has no session to continue, got %q", got)
+	}
+}
+
+// TestSoloCollapsesEveryRoleOntoOne is the mode `luna lead` runs.
+//
+// One agent carrying the task means one worktree and one session, and both are
+// keyed by role — so the collapse is what makes them survive from stage to stage.
+// A mechanical stage keeps its empty role: a stage that starts no agent has
+// nobody to be.
+func TestSoloCollapsesEveryRoleOntoOne(t *testing.T) {
+	pack := DefaultFlow()
+	solo := Solo(pack)
+
+	if len(solo) != len(pack) {
+		t.Fatalf("a solo flow has the same stages, got %d against %d", len(solo), len(pack))
+	}
+
+	for i, stage := range solo {
+		switch {
+		case pack[i].Mechanical() && stage.Role != "":
+			t.Errorf("%q starts no agent and was given the role %q", stage.ID, stage.Role)
+		case !pack[i].Mechanical() && stage.Role != SoloRole:
+			t.Errorf("%q runs under %q rather than the one solo role", stage.ID, stage.Role)
+		}
+	}
+
+	// The pack it was built from keeps its own roles: the collapse copies rather
+	// than editing a flow the caller may still be holding.
+	if stageIn(pack, "build").Role != "coder" {
+		t.Error("collapsing wrote through the flow it was given")
+	}
+}
+
+// TestSoloIsNotInTheFingerprint is what lets a task change mode mid-run.
+//
+// `Role` is policy rather than history — the reducer never reads it, only the
+// node does — so it is out of the fingerprint by the same rule that keeps gate
+// criteria and verifier commands out. A task begun solo replays against a pack
+// and the other way round; if it did not, choosing the mode would be a decision
+// nobody could revisit.
+func TestSoloIsNotInTheFingerprint(t *testing.T) {
+	pack := DefaultFlow()
+
+	if Fingerprint(Solo(pack)) != Fingerprint(pack) {
+		t.Error("collapsing the roles changed the flow's identity, so a task cannot change mode")
 	}
 }

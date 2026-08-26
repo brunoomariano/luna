@@ -42,6 +42,11 @@ func newHarness(t *testing.T) *harness {
 		Store: s,
 		Out:   h.out,
 		Err:   h.errOut,
+		// The real one, as the binary wires it, so a test that reaches a stage
+		// exercises the same construction. A test that means to drive a solo run
+		// replaces it with a fake — starting a contained agent here would wait out
+		// the turn budget, which is hours.
+		Node: StageRunner,
 		// A stand-in for the editor: returns whatever the test staged, so no test
 		// needs $EDITOR or a terminal.
 		Edit: func(current string) (string, error) {

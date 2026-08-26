@@ -5,8 +5,17 @@
 # required, and the conditional-requires mechanism is no longer owed anything.
 
 id       = "build"
-role     = "lead"
-context  = "live"
+role     = "coder"
+# Fresh, because in a pack `build` never follows its own role: on a feature the
+# stage before it is `plan` under `planner`, on a bug it is `diagnose` under
+# `investigator`. AuditContextChain refuses a live stage whose predecessor holds a
+# different role, and that refusal is the point — a coder continuing the planner's
+# session reads the plan's reasoning instead of the plan.
+#
+# The cost is a cold start, and it is the pack's to pay: session reuse and role
+# specialisation are the two things a single agent could have and a pack has to
+# choose between.
+context  = "fresh"
 requires = ["scenarios", "approach", "contract", "worktree"]
 produces = ["code", "tests_green"]
 

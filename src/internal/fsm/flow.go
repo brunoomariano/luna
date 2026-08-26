@@ -110,3 +110,38 @@ func mustShippedFlows() map[string][]Stage {
 // A project that genuinely needs a different shape gets a new named flow in the
 // stock rather than a private copy of an existing one — the difference is that
 // the first is visible to everyone and the second was visible to nobody.
+
+// SoloRole is the role every stage runs under when one agent carries the whole
+// task. It is the only role a solo run resolves, and the stock ships it.
+const SoloRole = "lead"
+
+// Solo collapses a flow's roles onto one, for the mode where a single agent
+// carries the task from end to end.
+//
+// The pack declares a role per specialism — planner, coder, auditor — and each
+// one buys a worktree of its own, a session of its own, and the tool denials that
+// make an audit independent. A solo run buys none of that and does not pretend
+// to: one agent, one worktree, one session, and the `audit` stage re-reading its
+// own work with no memory of writing it, which is the one half of independence a
+// single agent can have.
+//
+// Safe to apply after a task has started, and that is not an accident of the
+// implementation. `Role` is policy rather than history — the reducer never reads
+// it, only the node does — so it is out of the flow fingerprint by the same rule
+// that keeps gate criteria and verifier commands out. A task begun solo replays
+// against a pack and the other way round.
+//
+// Mechanical stages keep their empty role: a stage that starts no agent has
+// nobody to be.
+func Solo(flow []Stage) []Stage {
+	solo := make([]Stage, len(flow))
+	copy(solo, flow)
+
+	for i := range solo {
+		if solo[i].Mechanical() {
+			continue
+		}
+		solo[i].Role = SoloRole
+	}
+	return solo
+}

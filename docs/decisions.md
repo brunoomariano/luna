@@ -85,19 +85,35 @@ the wrong trade for a system whose product is an audit.
 adapter outside the core. **CLI first. Go, for a static single binary. Defaults plus user
 customization everywhere.**
 
-**Two modes, and one engine under both.** `luna lead` conducts one task; `luna fleet run`
-conducts every eligible one. There were four surfaces and *two* engines: `luna lead` had an
-agent conducting, while `luna run` and the fleet had Luna itself advancing and running a node
-per stage, with no lead anywhere. Two engines reaching the same states is two places for
-every fix to land, and the fleet was the half nobody watched — the block notification, the
-gate account and the flow-fingerprint fix had each landed on one engine and not the other.
-The fleet now conducts through the lead, and the second mode is the count of tasks.
+**Two modes, and the mode is how many agents carry the task.** `luna lead` is solo: Luna
+advances and starts one agent per stage, under the single role `fsm.Solo` collapses the flow
+onto, so one worktree and one session survive from stage to stage and there is never a
+conductor and a worker alive at once. `luna fleet run` is the pack: the lead conducts from
+outside the sandbox — the `Ask`/`Run` split holding — and the flow's declared roles do the
+work, one worktree and one session each.
 
-The hand-driven mode went with them. `luna next`, `luna work` and `luna done` stayed, because
-they are the lead's own interface and not a mode: it runs them, and so can a person reading
-what it did. What went is `luna start`, whose only purpose was to open a stage for somebody
-who was not the lead. *Rejected:* keeping `luna run` as a thin alias — a surface that reaches
-the same states by another path is the thing being removed, not the words for it.
+The two are different engines and that is now correct rather than duplicated. They were the
+same engine reached by four surfaces, which is two places for every fix to land: the block
+notification, the gate account and the flow-fingerprint fix had each landed on one and not
+the other. Now each engine owns a mode, and neither reaches a state the other does.
+
+A pack is internal to one task. *Rejected:* the cross-task fleet that ran every eligible
+task several at a time — it was the reading of "fleet" that fitted a design with no pack in
+it, and keeping both would put the word on two different things. `luna fleet report` stays
+cross-task, because the morning's question is about every task and answering it starts
+nothing.
+
+The mode can change between runs, and that falls out of a rule already written down: `Role`
+is policy rather than history — the reducer never reads it, only the node does — so it is
+out of the flow fingerprint and a task begun solo replays against a pack. If it did not,
+choosing the mode would be a decision nobody could revisit.
+
+The hand-driven mode went with `luna run`. `luna next`, `luna work` and `luna done` stayed,
+because they are the interface a stage is carried out through and not a mode: the pack's
+lead runs them, and so can a person reading what it did. What went is `luna start`, whose
+only purpose was to open a stage for somebody who was not the lead. *Rejected:* keeping
+`luna run` as a thin alias — a surface that reaches the same states by another path is the
+thing being removed, not the words for it.
 
 **A dry run is a flag, not a third mode.** It exercises a flow with no agent, no worktree and
 no model, which is the one shape a lead cannot conduct: there is nobody to conduct with. So
@@ -338,14 +354,28 @@ none. It is re-recorded rather than bridged: no task older than this change exis
 **`produces_for_human` is a contract field of its own** — checked on the way out, exempt
 from the static check, because no stage downstream will ever ask for it.
 
-**One role, and it is the lead itself.** There were three, and the decision that made them
-carried its own test: *a role is worth splitting from another only when it denies a
-different tool, cannot inherit the previous session, or runs on a different harness.* With
-one agent conducting and doing the work, none of the three applies, so the test yields one.
-The split is not overruled — it is run again against a different design and comes back with
-a different number. *Rejected:* keeping `critic` for the judging stages — `tools_deny`
-cannot separate writing from judging when the same agent must do both, and a role that
-denies nothing is a name.
+**The flow declares a pack of roles, and a solo run collapses them onto one.** The same test
+has now been run three times and returned three numbers, which is the point of writing it
+down: *a role is worth splitting from another only when it denies a different tool, cannot
+inherit the previous session, or runs on a different harness.* Twelve roles became three
+when the first two conditions were applied honestly. Three became one when a single agent
+did every stage, because a lone agent cannot deny itself a tool and has only one session.
+Five came back when the pack arrived, because with a role per specialism the second
+condition holds by construction and the first works again — the `auditor` denies `Edit` and
+`Write`, which is what makes an audit independent rather than a stage that says it is.
+
+The pack is `planner`, `investigator`, `coder`, `cleaner`, `auditor`, and its size is the
+flow's: `chore` names one working role, `fix` two, `full` five. Choosing the flow chooses the
+depth, which is the shape SwarmForge gives its two-, four- and six-packs.
+
+What a solo run gives up is named rather than hidden: one agent means one session and no
+denials, so `audit` re-reads its own work with `context = "fresh"` and does not claim to be
+an independent review. What a pack gives up is session continuity across a role change —
+`build` and `refactor` are `fresh` in the pack because their predecessors hold a different
+role, and `AuditContextChain` refuses a live stage that would inherit a stranger's session.
+*Rejected:* letting a live stage fall back to a fresh session at runtime when the roles
+differ — the static check is a proof, and trading it for a runtime argument about map keys
+is how a guarantee turns into a habit.
 
 **What that costs is named rather than hidden: whoever writes now reviews.** The judging
 stage is called `audit`, not `review`, because a review is independent or it is not a
@@ -481,10 +511,17 @@ validated by running `git` rather than by checking that the text *looks* like a 
 roles specialize by negation, declaring what they do not do; "produced no functional
 change" as a stopping condition rather than a plain iteration count.
 
-**Rejected:** git as the transport channel (it ties transport to version control);
-worktree per agent (here it is per task — parallelism is between tasks); a queue per role
-with outbox/inbox (the FSM is the channel); notification by injecting keystrokes into a
-terminal with hand-tuned pauses.
+**Rejected:** git as the transport channel (it ties transport to version control); a queue
+per role with outbox/inbox (the FSM is the channel); notification by injecting keystrokes
+into a terminal with hand-tuned pauses.
+
+**Reversed:** worktree per agent was rejected here, on the reasoning that parallelism is
+between tasks and a worktree therefore belongs to one. That was true of a design with no
+pack in it. A pack is N roles inside one task, and each needs a checkout it can commit to
+without merging with a peer mid-stage — so the worktree is per role, keyed by task and
+role, and two tasks still cannot see each other's work because the task is half the key.
+The reading that was wrong was not "per task" but the premise under it, and the premise
+changed when the second mode arrived.
 
 The reading that closes the study: it has strong enforcement on **transport** and none on
 **flow**. Luna wants the inverse, and the stage contract is where it gets it. What was
