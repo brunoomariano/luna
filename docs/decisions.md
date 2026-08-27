@@ -543,15 +543,27 @@ full cycle that reached it, it found a genuine violation of the contract's own c
 sent the work back, the first time that mechanism ever fired. Whether it still finds that
 when auditing itself is unmeasured, and the honest move is to keep the stage and measure.
 
-**Eight stages, not twelve.** `scenarios`+`spec` merged into `plan`; `qa`+`code-review`+
+**Eight stages, not twelve — and later seven.** `scenarios`+`spec` merged into `plan`; `qa`+`code-review`+
 `harden`+`architecture` merged into `review`. The argument is measured: the two planning
 stages were $4.14 of a $6.78 task, and `contract` was consumed by no stage; the four review
 stages had identical review blocks, verifiers and handovers, read the same two artifacts,
-and paid to ingest one diff four times. *Rejected:* merging `build` with `refactor` —
-`refactor` must re-earn `tests_green` after rewriting green code, and that boundary is what
-forces the proof (it once closed without running anything). *Rejected:* merging `verify`
-into `review` — `verify` produces `ci_green`, which the flow consumes, and is the only
-stage that earns `scope = "full"`.
+and paid to ingest one diff four times.
+
+> Both of this record's rejections were later reversed, and the reversal is above rather
+> than appended here — see *"The trail converges in one stage"*. They are kept because the
+> arguments are the ones the reversal had to answer, and it answers them differently rather
+> than denying them.
+>
+> *Was rejected:* merging `build` with `refactor` — `refactor` must re-earn `tests_green`
+> after rewriting green code, and that boundary is what forces the proof (it once closed
+> without running anything). **Answered by:** the loop re-earns it every round, and
+> `converges_on` is what refuses an exit while the command is red — the proof is forced by
+> the exit rather than by the boundary.
+>
+> *Was rejected:* merging `verify` into the judging stage — `verify` produces `ci_green`,
+> which the flow consumes, and is the only stage that earns `scope = "full"`. **Answered
+> by:** `forge` produces it, still at `full`, and still by running `make ci`. What changed
+> is which stage owes it, not what proves it.
 
 **`plan` starts fresh, even though the runtime would probably allow otherwise.** Sessions
 are keyed by role, so a live `plan` would resume the session `intake` left under `maker`,

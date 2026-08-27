@@ -134,20 +134,6 @@ func TestANestedProfileNameIsRejected(t *testing.T) {
 	}
 }
 
-// TestATrailingCommaInAListIsTolerated covers the skipped empty entry.
-//
-// The list is hand-parsed, and a trailing comma is the one piece of TOML slack
-// worth keeping: it is what someone leaves behind after deleting an entry.
-func TestATrailingCommaInAListIsTolerated(t *testing.T) {
-	list, err := parseStringArray(`["scenarios", ]`, "config.toml:1")
-	if err != nil {
-		t.Fatalf("parseStringArray: %v", err)
-	}
-	if len(list) != 1 || list[0] != "scenarios" {
-		t.Errorf("the entry before the trailing comma still counts, got %q", list)
-	}
-}
-
 // TestTheTurnBudgetIsProjectWide covers where the clock lives now. It is a
 // property of the project, not of a profile: profiles stopped deciding
 // anything, and how long a suite takes is a fact about the repository rather

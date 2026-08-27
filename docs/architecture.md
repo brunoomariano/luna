@@ -124,19 +124,23 @@ those, carrying what its verifiers actually observed.
 A stage is a TOML file in `src/stock/flows/<flow>/`. This is the whole shape:
 
 ```toml
-id                 = "review"
+id                 = "forge"
 agent              = "claude"
-brief              = "You are reading a delivery you did not write. …"
-requires           = ["code", "shipped"]
-produces           = ["ci_green"]
-produces_for_human = ["dod_checked"]
+brief              = "You build, clean and check, then judge the round. …"
+requires           = ["scenarios", "approach", "contract", "worktree"]
+produces           = ["code", "ci_green"]
+produces_for_human = ["delivery_summary"]
+
+[loop]
+converges_on = ["ci_green"]   # what must be green before it may leave
+max_rounds   = 4
 
 [verify.ci_green]
 run   = "make ci"      # the command that proves it
 scope = "full"
 
-[verify.dod_checked]
-kind     = "existence" # a checklist a person reads; claiming more would be a lie
+[verify.delivery_summary]
+kind     = "existence" # prose a person reads; claiming more would be a lie
 handover = "store"     # handed to Luna, not committed
 ```
 

@@ -348,38 +348,6 @@ func parseSection(header, where string) (sectionRef, error) {
 	}
 }
 
-// parseStringArray reads `["a", "b"]` on a single line.
-//
-// Single-line only, which is the shape the config's one array takes. A multi-line
-// array is refused with a message saying so, rather than parsed halfway and
-// silently truncated to the first line.
-func parseStringArray(value, where string) ([]string, error) {
-	if !strings.HasPrefix(value, "[") {
-		return nil, fmt.Errorf(`%s: expected a list like ["confirm"], got %q`, where, value)
-	}
-	if !strings.HasSuffix(value, "]") {
-		return nil, fmt.Errorf("%s: a list has to close on the same line, got %q", where, value)
-	}
-
-	inner := strings.TrimSpace(value[1 : len(value)-1])
-	if inner == "" {
-		return nil, nil
-	}
-
-	var items []string
-	for _, item := range strings.Split(inner, ",") {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		if !strings.HasPrefix(item, `"`) || !strings.HasSuffix(item, `"`) || len(item) < 2 {
-			return nil, fmt.Errorf("%s: list entries are quoted strings, got %s", where, item)
-		}
-		items = append(items, item[1:len(item)-1])
-	}
-	return items, nil
-}
-
 // stripComment drops a trailing `#` comment, leaving one inside quotes alone —
 // an editor command may legitimately contain a hash.
 func stripComment(line string) string {

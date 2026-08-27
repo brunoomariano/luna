@@ -44,7 +44,7 @@ func FlowNames() []string {
 	return names
 }
 
-// DefaultFlow is the flow Luna ships with — the nine stages of
+// DefaultFlow is the flow Luna ships with — the seven stages of
 // docs/architecture.md.
 //
 // Which flow runs is a task's choice (`--flow`); what a flow contains is not
