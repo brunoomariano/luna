@@ -153,7 +153,7 @@ func TestAFindingWithNoIdStillCounts(t *testing.T) {
 // review stages collapse into one without touching this: a flow that renames its
 // report, or adds a second review stage under another name, still resolves.
 func TestTheReportIsFoundFromTheStagesOwnDeclaration(t *testing.T) {
-	for _, id := range []StageID{"audit"} {
+	for _, id := range []StageID{"review"} {
 		stage := stageIn(DefaultFlow(), id)
 
 		artifact, ok := ReviewedArtifact(stage)
@@ -170,7 +170,7 @@ func TestTheReportIsFoundFromTheStagesOwnDeclaration(t *testing.T) {
 // TestAStageThatReviewsNothingHasNoReport. Only a review stage may send work
 // back, so only a review stage has a report to read.
 func TestAStageThatReviewsNothingHasNoReport(t *testing.T) {
-	build := stageIn(DefaultFlow(), "build")
+	build := stageIn(DefaultFlow(), "forge")
 
 	if _, ok := ReviewedArtifact(build); ok {
 		t.Error("a stage that does not review reported a readable report")

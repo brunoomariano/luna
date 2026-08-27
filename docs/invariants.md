@@ -223,8 +223,8 @@ two — Luna knows exactly which artifact is missing, the socket is still open, 
 declaring `context = "live"` resumes the session it already paid for. It is asked again
 now, and told by name what did not arrive and that its earlier work stands; only the
 attempt past the budget blocks. This is what killed a benchmark run whose code was
-otherwise correct: `verify` produced `ci_green` from a real `make ci` and forgot
-`dod_checked`.
+otherwise correct: the judging stage produced `ci_green` from a real `make ci` and forgot
+the checklist it also owed.
 
 **Covered by.** Retry-exhaustion and budget tests in `internal/agent`; the gate listing
 test in `internal/cli`; the empty-delivery reporting tests in `internal/node`; the spending
@@ -243,34 +243,42 @@ caught by the same wall that catches a fresh agent that is simply bad.
 Context is now a per-stage setting (`fresh` or `live`), and the choice is measured rather
 than assumed. One piece of it stays mandatory: the stage that judges delivered work never
 inherits the session that produced it. With separate roles that was half of what made a
-review independent; with one agent it is *all* of what is left, and that is why `audit`
-declares `fresh` rather than inheriting like every other stage after the first.
+review independent; it is now one of three again, and `review` declares `fresh` rather
+than inheriting like every other stage after the first.
 
 `AuditContextChain` earned its keep the first time the flow tried to use `live` in
 earnest: `plan` was declared live, and on a bug task `diagnose` ran immediately before it —
 so "continue the previous session" would have meant continuing the investigation's. It
 refused that statically, before a task ran. It compares briefs now rather than role names,
-which is stricter: `verify` and `audit` held one role and are told different things, so the
-old test would have let them share a session neither should inherit from the other.
+which is stricter: a builder and a judge once held one role and are told different things,
+so the old test would have let them share a session neither should inherit from the other.
 
 **A prose summary never crosses the handoff.** Still true in the code — the payload is
 synthesized by Luna, and the agent fills structured fields. It is a design rule rather
 than an invariant: breaking it degrades quality, it does not make Luna stop being Luna.
 
-**Whoever writes does not review.** It was demoted from the invariant list because its
-enforcement floor was honest but soft — tool gating removes named tools, not the shell —
-and it is now gone altogether. With one agent doing every stage, the same agent that writes
-the code judges it: `tools_deny` cannot separate writing from judging when the same agent
-must do both, and there is no second role whose session it could be kept out of.
+**Whoever writes does not review.** It was demoted from the invariant list, then lost
+entirely when one agent came to do every stage, and it is back — placed differently, and
+for a reason worth stating rather than quietly restoring.
 
-What replaced it is smaller and true. The judging stage is called `audit` rather than
-`review`, because a review is independent or it is not one, and the name would claim a
-property this design does not have. It runs `fresh`, which is the one half of independence
-a single agent can still have. And the half that never depended on who was asking is
-untouched: a command that runs over the delivered commit does not care who wrote it.
+It is deliberately *not* held inside the loop. `forge` builds, cleans, checks and judges
+its own rounds, and that is a self-assessment by construction. It buys speed: a failure
+found by the check goes back into building in the same session, without a cold start. What
+it cannot buy is an honest verdict on the delivery as a whole.
+
+So the independent read is a separate stage after the delivery. `review` has all three
+halves this time: a session it did not write (`fresh`), tools it does not hold (`Edit` and
+`Write` denied, on a harness Luna can actually gate), and work it did not do. A judging
+stage missing any of them reads its own reasoning back and agrees with it.
+
+This is still not proof. Tool gating removes named tools, not the shell — the floor is
+honest and soft, and containment is the sandbox's job. What is *not* soft is the half that
+never depended on who was asking: a command that runs over the delivered commit does not
+care who wrote it.
 
 **What is unmeasured, and stated rather than assumed.** On the one full cycle that reached
-it, the judging stage — a separate role then — found a genuine violation of the contract's
-own clause and sent the work back, the first time that mechanism ever fired. Whether it
-still finds that when auditing its own work is not known. The stage was kept rather than
-deleted so the question can be answered by a run instead of by argument.
+it, an independent judging stage found a genuine violation of the contract's own clause and
+sent the work back — the first time that mechanism ever fired. Whether the merged loop
+judges its own rounds well is not known, and it is the thing to measure first: the whole
+argument for merging is that a biased fast verdict inside the loop, corrected by an
+unbiased one after it, beats an unbiased slow verdict at every step.

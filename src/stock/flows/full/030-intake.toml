@@ -1,25 +1,29 @@
+# Reading the task, the code and what the project already knows — and concluding
+# which of the two kinds of work this is.
+#
+# The triage is the reason this stage got bigger. It used to produce `kind`, and
+# that was removed on the argument that the task already carried it from
+# `luna task new --kind`. The argument holds for a *declaration* and not for a
+# *finding*: what a person types when opening a task is said before anyone has
+# read the code, and whether something is broken or merely missing is exactly what
+# reading it settles. So the kind stays where it is, and this stage records a fact
+# beside it.
+#
+# The two are not interchangeable and are deliberately not merged: one is intent,
+# the other is a conclusion, and a later reader needs to know which they are
+# looking at.
+
 id       = "intake"
 agent    = "claude"
-brief    = "You are opening the task. Read what the task states and the repository it names, and turn them into a briefing the later stages can work from: what is being asked, what the code does today, and what is unclear enough to be worth saying so. You do not plan the change and you do not write code. You turn what a person asked for into obligations somebody can be held to. You do not write the code, and you do not decide how it will be built beyond what the task already says. When what you owe is a contract, every sentence in it binds someone: an obligation, a prohibition, or a statement of fact a checker can settle by running a command. It carries no recommendations, no notes to whoever builds next, and no section for them — a sentence saying one option is preferable, or that something is worth doing, is one a checker cannot act on and it does not belong in the document. Where two forms are genuinely both acceptable, say that both satisfy the contract and stop; the choice belongs to whoever builds, and the contract has nothing further to add. Anything you want to say that is not binding belongs in the approach, not the contract. Every acceptance criterion the task states has to appear as an obligation, in the contract's own words, and an obligation that contradicts another is a defect in the document rather than a question for later."
 requires = ["task_id", "worktree"]
-# The kind is not produced here any more, and that is a removal rather than a
-# move. The task already carries it: `luna task new --kind` records it, the
-# reducer reads it to decide which conditional stages apply, and nothing but this
-# stage's own `produces` ever read the artifact. An agent writing a word into a
-# file that the log already holds is ceremony with a bill.
 produces = ["briefing"]
+brief    = "You are opening the task, and you owe one document: a briefing the later stages work from. Do three things before you write it. First, read what the task states and the code it names, and find where the change belongs — the files, the seam, the callers. Second, read what the project already knows: its durable memory, its decisions, its lessons. You are looking for the gotcha somebody already paid for, the decision that already settled this question, and the thing the task asks for that has already been done. Say when you find one; a briefing that repeats a solved problem costs the whole trail. Third, name contradictions — between the task and the code, between the task and a recorded decision, or inside the task itself. An unresolved contradiction is worth more in the briefing than a clean-looking summary that buried it. Then classify: is something BROKEN, or is something MISSING? Broken means there is behaviour that exists and is wrong, and a cause to find; missing means the behaviour is not there yet. Say which, in those words, and say what settled it — if it is broken, the investigation stage runs next and the whole shape of the work changes, so this is not a label, it is a decision with a bill. If you genuinely cannot tell from the code, say that instead of guessing: the honest answer sends it down the shorter path, and a wrong 'broken' pays for an investigation with nothing to investigate. You do not plan the change here and you do not write code."
 
-# Handed to Luna rather than written into the tree, and this is the fix for a
-# leak rather than a tidy-up.
-#
-# `briefing` and `kind` were the only artifacts in the flow proven by a file on
-# disk. A file only survives into the next stage's worktree if it is committed —
-# so the contract left the agent no choice, and the delivery carried `.luna/` or
-# a stray `briefing.md` into the repository. Measured twice: one run committed
-# them under `.luna/`, another at the root, and neither agent was being careless.
-#
-# The store has no such problem. The document crosses stages by hash, `luna gate
-# show` puts it in front of a person, and nothing reaches the commit.
 [verify.briefing]
+# Handed to Luna rather than written into the tree, and this is the fix for a leak
+# rather than a tidy-up. Measured twice: one run committed the briefing under
+# `.luna/`, another at the root, and neither agent was being careless — a file
+# only survives into the next stage's worktree if it is committed, so the contract
+# left them no choice.
 kind     = "existence"
 handover = "store"

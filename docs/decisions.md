@@ -388,6 +388,64 @@ from "nobody configured it": a run with no name lands in whatever workstream the
 was last pointing at, and that is the contamination arriving by a different door. A machine
 with no config writes to `luna`.
 
+**The trail converges in one stage, and is judged in another.** `build`, `refactor`,
+`pipeline`, `verify` and `audit` became `forge` — which builds, cleans, checks and judges
+its own round — followed by `shipping` and then an independent `review`.
+
+The verdict on a round is the model's and the exit from the loop is not: `[loop]
+converges_on` names the evidence that has to be passing, and the reducer refuses
+`converged` without it. The mechanical check is the floor; the judgement moves inside it.
+
+> *Rejected: keeping the five stages and adding loop edges between them.* It preserves four
+> contract boundaries — one of which, `verify requires ci_green`, is what kept a model from
+> being paid to read code the compiler had rejected ($1.62, measured). The merge gives that
+> ordering to the agent's brief instead. Taken deliberately: a failure found by the check
+> goes back into building in the same session, and the cold start it saves is paid on every
+> round of every task, where the boundary was paid once.
+>
+> *Rejected: letting the loop decide purely on exit codes.* No exit code tells "this round
+> fixed something" from "this round traded one failure for another", and the second is
+> exactly what a ceiling exists to catch.
+>
+> *Rejected: leaving the self-judgement uncorrected.* An agent judging its own delivery is
+> biased and cannot fix that from inside, so `review` runs after `shipping`, cold and unable
+> to edit — the independence the merge gave up, put back where it can be real.
+
+**The intake concludes whether something is broken; the task's kind stays what a person
+declared.** `full/diagnose` keys on a fact recorded by `intake`, not on `--kind`.
+
+The kind was removed from `intake` once, on the argument that the task already carried it.
+That argument holds for a declaration and not for a finding: what a person types when
+opening a task is said before anyone has read the code, and whether something is broken or
+missing is what reading it settles. Both are kept, and are not merged — one is intent, the
+other a conclusion, and a later reader needs to know which they are looking at.
+
+> *Rejected: changing the kind mid-run.* The reducer refuses it (`a task is created once`)
+> and it should: the kind lives in the opening event, and rewriting it would make the log's
+> own first record disagree with the task.
+>
+> *Rejected: widening `is-bug` to mean "the kind or the fact".* One name for two sources is
+> a condition whose reader cannot tell which answered. `fix` keeps `is-bug` because it has
+> no intake to conclude anything; `full` gets `triaged-as-bug`.
+
+This also gave `TaskContext.Facts` its first writer. The map was read by `HasFact`, a
+condition was registered against it, and nothing in the engine ever wrote to it — so the
+one stage gated on a fact could never enter. A floor nobody can reach teaches a reader not
+to believe the floor.
+
+**`setup` reports on the sandbox, and Luna writes the report itself.** It reads `.ai-jail`
+and `.ai-memory.toml` and hands over a summary the gate attaches, so the mounts and the
+workstream are confirmed before anything is paid for.
+
+Luna writes it because `setup` is mechanical: no agent runs, so the handover socket is
+never opened, and a contract asking a mechanical stage for a handed-over artifact would be
+one nothing can satisfy. It reports rather than repairs — writing a default into a
+repository before a person has seen what is there is the opposite of what the gate is for.
+
+> *Rejected: a `confirm` gate on `setup`.* A `confirm` opens on the way *into* a stage, so
+> it would ask about a configuration nothing had read yet. `review-artifact` opens on the
+> way out, with the report attached.
+
 ## Gates
 
 **A gate suspends and frees the slot.** With N tasks in parallel, gates that held processes

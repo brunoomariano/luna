@@ -19,15 +19,15 @@ func TestTaskShowReportsWhatTheTaskCost(t *testing.T) {
 	state := fsm.TaskState{
 		ID: "T-1",
 		Spent: map[fsm.StageID]fsm.Spend{
-			"build":  {InputTokens: 1000, OutputTokens: 200, CostUSD: 0.30, Turns: 4, Context: "fresh"},
-			"verify": {InputTokens: 500, CacheRead: 9000, CostUSD: 0.05, Turns: 2, Context: "live"},
+			"forge":    {InputTokens: 1000, OutputTokens: 200, CostUSD: 0.30, Turns: 4, Context: "fresh"},
+			"shipping": {InputTokens: 500, CacheRead: 9000, CostUSD: 0.05, Turns: 2, Context: "live"},
 		},
 	}
 
 	printSpend(env, state, fsm.DefaultFlow())
 	got := out.String()
 
-	for _, want := range []string{"spent", "build", "verify", "total", "fresh", "live"} {
+	for _, want := range []string{"spent", "forge", "shipping", "total", "fresh", "live"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("want %q in the report, got:\n%s", want, got)
 		}
@@ -62,9 +62,9 @@ func TestTheReportReadsInFlowOrder(t *testing.T) {
 	state := fsm.TaskState{
 		ID: "T-3",
 		Spent: map[fsm.StageID]fsm.Spend{
-			"audit": {InputTokens: 1, CostUSD: 0.01},
-			"build": {InputTokens: 1, CostUSD: 0.01},
-			"plan":  {InputTokens: 1, CostUSD: 0.01},
+			"review": {InputTokens: 1, CostUSD: 0.01},
+			"forge":  {InputTokens: 1, CostUSD: 0.01},
+			"plan":   {InputTokens: 1, CostUSD: 0.01},
 		},
 	}
 
@@ -72,8 +72,8 @@ func TestTheReportReadsInFlowOrder(t *testing.T) {
 	got := out.String()
 
 	plan := strings.Index(got, "plan")
-	build := strings.Index(got, "build")
-	review := strings.Index(got, "audit")
+	build := strings.Index(got, "forge")
+	review := strings.Index(got, "review")
 	if plan >= build || build >= review {
 		t.Errorf("want the stages in flow order, got:\n%s", got)
 	}

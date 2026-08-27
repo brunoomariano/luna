@@ -51,6 +51,17 @@ func (o *obedientLead) ask(_ context.Context, prompt string) (string, error) {
 	return "carried out " + string(order.Stage), nil
 }
 
+// drivingAutonomy lets the lead answer the gates a walk of the whole trail meets.
+//
+// The trail opens one at `setup`, so a run with the knob at zero stops on the
+// first stage — correctly, and a test measuring the walk would then measure
+// nothing. Setting it is what an unattended run does, so this is the realistic
+// shape rather than a way around the gate.
+func drivingAutonomy(t *testing.T, h *harness, id string) {
+	t.Helper()
+	h.mustRun(t, "autonomy", id, "8", "driving the whole trail under test")
+}
+
 func leadHarness(t *testing.T) (*harness, *obedientLead) {
 	t.Helper()
 
@@ -66,6 +77,7 @@ func leadHarness(t *testing.T) (*harness, *obedientLead) {
 // orders, the lead carries them out, and the task walks its flow.
 func TestTheLeadDrivesTheTaskThroughItsStages(t *testing.T) {
 	h, lead := leadHarness(t)
+	drivingAutonomy(t, h, "LUNA-1")
 
 	if err := h.run(t, "fleet", "run", "LUNA-1"); err != nil {
 		t.Fatalf("lead: %v", err)
@@ -132,7 +144,7 @@ func TestTheLoopStopsWhenSomethingNeedsAPerson(t *testing.T) {
 	}
 
 	// Interactive stops at every gate; walk to the first one there is.
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	out := h.mustRun(t, "fleet", "run", "LUNA-1")
 
@@ -337,6 +349,7 @@ func TestTheLeadCanCloseTheStageItWasHandedIsTheWholeLoop(t *testing.T) {
 	if state.Status != fsm.StatusReady {
 		t.Fatalf("a new task is ready, got %q", state.Status)
 	}
+	drivingAutonomy(t, h, "LUNA-1")
 
 	// A lead that can do nothing but report. It is what a real one is: `luna next`
 	// changes nothing, and there is no command that opens a stage — so if the

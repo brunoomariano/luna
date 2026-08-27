@@ -1,10 +1,43 @@
 # Mechanical: a worktree is git, and paying a model to make one buys nothing.
-# It names no role, and the static check allows that because a worktree is not a
-# judgement.
+#
+# It also reads the two files that decide what the rest of the trail may touch —
+# `.ai-jail` (what is mounted read-write, what stays read-only) and
+# `.ai-memory.toml` (which workstream every agent of this task writes to). Reading
+# them costs nothing and answering them wrong costs the whole run: a task that
+# discovers at `forge` that the repository was mounted read-only has already paid
+# for intake and plan.
+#
+# It reports rather than decides. The gate below is where a person confirms.
 
 id       = "setup"
 requires = ["task_id"]
-produces = ["worktree"]
+produces = ["worktree", "setup_report"]
 
 [verify.worktree]
 kind = "existence"
+
+[verify.setup_report]
+# Handed to Luna rather than written into the tree, for the reason every other
+# document is: a file only survives into the next stage's worktree if it is
+# committed, and a sandbox summary has no business in the delivery.
+kind     = "existence"
+handover = "store"
+
+[gate]
+# review-artifact rather than confirm, and the difference is when it opens. A
+# `confirm` asks about work not yet done, so it opens on the way *in* — which
+# would ask a person to approve a configuration nothing had read yet. This one
+# opens on the way out, with the report attached, so the question is about
+# something that exists.
+kind     = "review-artifact"
+artifact = "setup_report"
+reason   = "confirm the sandbox and the workstream before anything runs"
+autonomy_floor = 6
+judge = [
+  "The read-write mounts cover the repository being changed, and nothing beyond it",
+  "The workstream named is the one this task should write to",
+]
+judge_by_reading = [
+  "The read-write mounts cover the repository being changed, and nothing beyond it",
+  "The workstream named is the one this task should write to",
+]

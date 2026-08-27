@@ -18,11 +18,11 @@ import (
 // The evidence was there the whole time. `askAgain` absorbs it before blocking;
 // it just never said any of it.
 func TestAShortfallSaysWhyRatherThanWhat(t *testing.T) {
-	state := atStage(t, KindChore, "build")
+	state := atStage(t, KindChore, "shipping")
 	// The node proves every owed artifact and delivers only what passed, so a
 	// failed check arrives as evidence for an artifact that is not in Delivered.
 	failing := map[Artifact]Evidence{
-		"tests_green": {
+		"shipped": {
 			Scope: ScopeTargeted, Verdict: VerdictFailed,
 			Command: "make test", ExitCode: 2,
 			Detail: "make: *** No rule to make target 'dist/index.js'",
@@ -46,7 +46,7 @@ func TestAShortfallSaysWhyRatherThanWhat(t *testing.T) {
 	if state.BlockedBy != BlockCheck {
 		t.Errorf("a failed check blocked as %q", state.BlockedBy)
 	}
-	for _, want := range []string{"tests_green", "make test", "exited 2", "dist/index.js"} {
+	for _, want := range []string{"shipped", "make test", "exited 2", "dist/index.js"} {
 		if !strings.Contains(state.Blocked, want) {
 			t.Errorf("the block does not carry %q:\n%s", want, state.Blocked)
 		}
@@ -57,7 +57,7 @@ func TestAShortfallSaysWhyRatherThanWhat(t *testing.T) {
 // nothing and ran nothing has no output to carry, and the honest answer is the
 // contract: it owed these and delivered those.
 func TestAShortfallWithNothingToShowStillNamesWhatIsMissing(t *testing.T) {
-	state := atStage(t, KindChore, "build")
+	state := atStage(t, KindChore, "shipping")
 
 	for range 4 {
 		state, _ = Reduce(state, Complete{Delivered: []Artifact{"code"}})
@@ -69,7 +69,7 @@ func TestAShortfallWithNothingToShowStillNamesWhatIsMissing(t *testing.T) {
 	if state.BlockedBy != BlockContract {
 		t.Errorf("a stage that ran no check blocked as %q", state.BlockedBy)
 	}
-	if !strings.Contains(state.Blocked, "tests_green") {
+	if !strings.Contains(state.Blocked, "shipped") {
 		t.Errorf("the block does not name what is missing:\n%s", state.Blocked)
 	}
 }

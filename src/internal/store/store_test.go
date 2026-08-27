@@ -154,9 +154,13 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"worktree"},
-			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(0)},
+			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Evidence: map[fsm.Artifact]fsm.Evidence{
+				"worktree":     fsm.Exists(0),
+				"setup_report": fsm.Exists(0),
+			},
 		},
+		fsm.GateApprove{},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 	} {
 		live, err = fsm.Reduce(live, action)
@@ -301,7 +305,9 @@ func TestSuspendedTasksAreListable(t *testing.T) {
 	if waiting[0].TaskID != "waiting" {
 		t.Errorf("want the task that stopped at a gate, got %q", waiting[0].TaskID)
 	}
-	if waiting[0].Stage != "plan" {
+	// `setup` is where the trail first stops: the sandbox and the workstream are
+	// confirmed before anything is paid for.
+	if waiting[0].Stage != "setup" {
 		t.Errorf("the listing says where it stopped; got %q", waiting[0].Stage)
 	}
 }

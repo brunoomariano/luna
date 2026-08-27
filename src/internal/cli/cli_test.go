@@ -109,7 +109,7 @@ func (h *harness) loop(t *testing.T, id string, want fsm.LoopCounters) {
 	for round := range want.Rounds {
 		// A finding is legal from the stage a review loop returns to, so the task
 		// is walked there before each one.
-		h.walkTo(t, id, "audit")
+		h.walkTo(t, id, "review")
 
 		// The same signal every round is what NoProgress counts, and a distinct one
 		// resets it — which is how a count smaller than the round total is made.
@@ -140,6 +140,15 @@ func (h *harness) walkTo(t *testing.T, id string, stage fsm.StageID) {
 
 		if state.Status == fsm.StatusRunning {
 			h.closeStage(t, id, state)
+			continue
+		}
+		// A gate met on the way is answered rather than walked around: the trail
+		// opens one when `setup` closes, and a walk that ignored it would be
+		// walking a flow nobody runs.
+		if state.Gate != nil {
+			if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.GateApprove{}); err != nil {
+				t.Fatalf("answering the gate at %s: %v", state.Stage, err)
+			}
 			continue
 		}
 		if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.Advance{
@@ -529,12 +538,15 @@ func TestTaskShowListsWhatWasProducedWithItsEvidence(t *testing.T) {
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"worktree"},
-			Evidence: map[fsm.Artifact]fsm.Evidence{"worktree": {
-				Scope:   fsm.ScopeFull,
-				Verdict: fsm.VerdictPassed,
-				Command: "git worktree add",
-			}},
+			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Evidence: map[fsm.Artifact]fsm.Evidence{
+				"worktree": {
+					Scope:   fsm.ScopeFull,
+					Verdict: fsm.VerdictPassed,
+					Command: "git worktree add",
+				},
+				"setup_report": fsm.Exists(0),
+			},
 		},
 	} {
 		if err := h.env.Store.AppendAction("LUNA-1", action); err != nil {
@@ -574,7 +586,7 @@ func TestTaskShowOnAnUnknownTask(t *testing.T) {
 func TestGatesListsWhatIsWaiting(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "waiting")
-	stage := seedAtFirstGate(t, h, "waiting")
+	stage := seedAtGate(t, h, "waiting", "plan")
 
 	out := h.mustRun(t, "gates")
 
@@ -616,7 +628,7 @@ func TestANightlyTaskDoesNotAppearInTheListing(t *testing.T) {
 func TestGateShowSaysWhatIsBeingAskedFor(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
 
@@ -638,7 +650,7 @@ func TestGateShowSaysWhatIsBeingAskedFor(t *testing.T) {
 func TestGateShowNamesWhatItIsJudgedOn(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
 
@@ -664,7 +676,7 @@ func TestGateShowNamesTheChecksTheTaskDeclared(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
 	h.mustRun(t, "gate", "checks", "LUNA-1", "--on", "review-artifact", "--run", "make ci")
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	out := h.mustRun(t, "gate", "show", "LUNA-1")
 
@@ -709,7 +721,7 @@ func TestGateShowTellsUndeclaredFromDeclaredEmpty(t *testing.T) {
 func TestGateApproveResumesTheTask(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	out := h.mustRun(t, "gate", "approve", "LUNA-1")
 
@@ -966,9 +978,13 @@ func planGateStore(t *testing.T, h *harness, id string) {
 	actions := []fsm.Action{
 		fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())},
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // setup
-		delivered("worktree"),
+		delivered("worktree", "setup_report"),
+		// `setup` opens a gate of its own now, and it is answered rather than
+		// skipped: these tests are about the plan's gate, and walking past this one
+		// is what gets them there.
+		fsm.GateApprove{},
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // intake
-		delivered("briefing", "kind"),
+		delivered("briefing"),
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // plan
 		// The review gate opens when `plan` closes, because that is the first
 		// moment the contract exists to be reviewed.
@@ -1167,10 +1183,14 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 		// The first stage closes cleanly; the block has to come from the second
 		// stage's missing input, not from an unverified delivery.
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"worktree"},
-			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(0)},
-			Flow:      flow,
+			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Evidence: map[fsm.Artifact]fsm.Evidence{
+				"worktree":     fsm.Exists(0),
+				"setup_report": fsm.Exists(0),
+			},
+			Flow: flow,
 		},
+		fsm.GateApprove{},
 		fsm.Advance{Flow: flow},
 	} {
 		if err := h.env.Store.AppendAction("LUNA-1", action); err != nil {
@@ -1345,7 +1365,7 @@ func TestAnUndefinedProfileIsFlaggedInTheListing(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	out := h.mustRun(t, "gates")
 	if !strings.Contains(out, "no longer defined") {
@@ -1505,7 +1525,7 @@ func (brokenPipe) Read([]byte) (int, error) {
 func TestAnAdjustedArtifactIsWhatTheNextStageReads(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1")
-	seedAtFirstGate(t, h, "LUNA-1")
+	seedAtGate(t, h, "LUNA-1", "plan")
 
 	// The artifact as the stage handed it over.
 	if err := h.env.Store.PutBlob(store.Blob{

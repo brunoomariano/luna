@@ -1,6 +1,6 @@
 {
   "ends": {
-    "seq": 4,
+    "seq": 5,
     "stage": "intake",
     "status": "running"
   },
@@ -8,7 +8,7 @@
     {
       "Seq": 1,
       "Action": "TaskCreated",
-      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"99fa3a6a6b436a79\"}"
+      "Payload": "{\"kind\":\"chore\",\"profile\":\"turbo\",\"flow\":\"662a73f3cbedc7b1\"}"
     },
     {
       "Seq": 2,
@@ -18,10 +18,15 @@
     {
       "Seq": 3,
       "Action": "Complete",
-      "Payload": "{\"delivered\":[\"worktree\"],\"evidence\":{\"worktree\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}"
+      "Payload": "{\"delivered\":[\"worktree\",\"setup_report\"],\"evidence\":{\"setup_report\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2},\"worktree\":{\"scope\":\"existence\",\"verdict\":\"passed\",\"recorded_at\":2}}}"
     },
     {
       "Seq": 4,
+      "Action": "GateApprove",
+      "Payload": ""
+    },
+    {
+      "Seq": 5,
       "Action": "Advance",
       "Payload": "{}"
     }

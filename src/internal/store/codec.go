@@ -22,6 +22,8 @@ const (
 	actionGateReject    = "GateReject"
 	actionGateJudged    = "GateJudged"
 	actionReviewFinding = "ReviewFinding"
+	actionFact          = "FactDiscovered"
+	actionRoundJudged   = "RoundJudged"
 	actionBlock         = "Block"
 	actionUnblock       = "Unblock"
 	actionAbandon       = "Abandon"
@@ -51,18 +53,32 @@ func encodeAction(action fsm.Action) (name, payload string, err error) {
 
 // encodeWithPayload handles the actions whose fields have to survive the log.
 func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
+	// The actions that carry a body, each encoded the same way. A switch rather
+	// than a map because the type is what selects, and Go has no map keyed on one.
 	switch a := action.(type) {
-	case fsm.Advance:
-		// Flow is tagged json:"-" and stays out; the gate decision goes in. That
-		// split is the whole point — the flow is configuration and may change, the
-		// decision is history and may not.
-		return withPayload(actionAdvance, a)
 	case fsm.TaskCreated:
 		return withPayload(actionTaskCreated, a)
+	case fsm.Advance:
+		return withPayload(actionAdvance, a)
 	case fsm.Complete:
 		return withPayload(actionComplete, a)
 	case fsm.Fail:
 		return withPayload(actionFail, a)
+	case fsm.Block:
+		return withPayload(actionBlock, a)
+	default:
+		return encodeJudgement(action)
+	}
+}
+
+// encodeJudgement covers the actions that carry somebody's verdict — a gate
+// answered, a review's finding, a round of the loop, a fact the intake concluded.
+//
+// Split from the lifecycle actions above because the switch had grown past the
+// complexity the linter gates on, and the line between the two is real: these say
+// what was decided, the others say what happened.
+func encodeJudgement(action fsm.Action) (name, payload string, err error) {
+	switch a := action.(type) {
 	case fsm.GateAdjust:
 		return withPayload(actionGateAdjust, a)
 	case fsm.GateReject:
@@ -71,8 +87,10 @@ func encodeWithPayload(action fsm.Action) (name, payload string, err error) {
 		return withPayload(actionGateJudged, a)
 	case fsm.ReviewFinding:
 		return withPayload(actionReviewFinding, a)
-	case fsm.Block:
-		return withPayload(actionBlock, a)
+	case fsm.FactDiscovered:
+		return withPayload(actionFact, a)
+	case fsm.RoundJudged:
+		return withPayload(actionRoundJudged, a)
 	default:
 		return encodeDeclaration(action)
 	}
@@ -142,6 +160,11 @@ func decodeAction(e Event, flow []fsm.Stage) (fsm.Action, error) {
 			a.Flow = flow
 			return a
 		})
+	case actionRoundJudged:
+		return decodeWithFlow(e.Payload, flow, func(a fsm.RoundJudged) fsm.RoundJudged {
+			a.Flow = flow
+			return a
+		})
 	}
 
 	if decode, ok := fromPayload[e.Action]; ok {
@@ -167,6 +190,7 @@ var fromPayload = map[string]func(string) (fsm.Action, error){
 	actionSetKnob:     decodeJSON[fsm.SetKnob],
 	actionSetBudget:   decodeJSON[fsm.SetBudget],
 	actionBlock:       decodeJSON[fsm.Block],
+	actionFact:        decodeJSON[fsm.FactDiscovered],
 }
 
 // decodeWithFlow rebuilds an action and supplies the flow it should check

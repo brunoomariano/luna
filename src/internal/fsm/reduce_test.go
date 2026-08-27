@@ -148,8 +148,8 @@ func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
 	// `commit` was the last stage until integration left Luna's scope. On a chore
 	// the flow now ends after verify: `review` is the only stage past it, and it
 	// is not-chore.
-	state := atStage(t, KindChore, "verify")
-	stage := stageIn(DefaultFlow(), "verify")
+	state := atStage(t, KindChore, "review")
+	stage := stageIn(DefaultFlow(), "review")
 
 	// verify owes `dod_checked` to a human, so the delivery has to include
 	// ProducesForHuman — the exit check counts both fields (INV-3).
@@ -177,8 +177,8 @@ func TestAdvanceEndsTheFlowAfterTheLastStage(t *testing.T) {
 //
 // The delivered artifacts enter the context, and the task is ready to advance.
 func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
-	stage := stageIn(DefaultFlow(), "build")
+	state := atStage(t, KindFeature, "shipping")
+	stage := stageIn(DefaultFlow(), "shipping")
 
 	evidence := passing(stage, stage.Produces)
 	evidence["tests_green"] = Evidence{
@@ -212,13 +212,13 @@ func TestCompleteClosesAStageThatDeliveredEverything(t *testing.T) {
 // delivered it, not verified it, and closing on that is the laundering the
 // scopes exist to prevent.
 func TestCompleteRefusesEvidenceWeakerThanTheContract(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
-	stage := stageIn(DefaultFlow(), "build")
+	state := atStage(t, KindFeature, "forge")
+	stage := stageIn(DefaultFlow(), "forge")
 
 	evidence := passing(stage, stage.Produces)
 	// Everything as the contract asked, except the one artifact that owed a
 	// command and arrived witnessed instead.
-	evidence["tests_green"] = Exists(0)
+	evidence["ci_green"] = Exists(0)
 
 	state, err := Reduce(state, Complete{Delivered: stage.Produces, Evidence: evidence})
 	if err != nil {
@@ -228,15 +228,15 @@ func TestCompleteRefusesEvidenceWeakerThanTheContract(t *testing.T) {
 	if state.Status != StatusBlocked {
 		t.Errorf("want blocked when the check was weaker than declared, got %q", state.Status)
 	}
-	if !strings.Contains(state.Blocked, "tests_green") {
+	if !strings.Contains(state.Blocked, "ci_green") {
 		t.Errorf("the block must name the artifact that was under-proven, got %q", state.Blocked)
 	}
-	if state.Context.HasArtifact("tests_green") {
+	if state.Context.HasArtifact("ci_green") {
 		t.Error("nothing enters the context when the stage does not close")
 	}
 	// The audit needs the record even so: what arrived is what explains the block.
-	if state.Evidence["tests_green"].Scope != ScopeExistence {
-		t.Errorf("the evidence that caused the block must be kept, got %+v", state.Evidence["tests_green"])
+	if state.Evidence["ci_green"].Scope != ScopeExistence {
+		t.Errorf("the evidence that caused the block must be kept, got %+v", state.Evidence["ci_green"])
 	}
 }
 
@@ -248,8 +248,8 @@ func TestCompleteRefusesEvidenceWeakerThanTheContract(t *testing.T) {
 // rule is that evidence never claims *more* than the check proved, not that it
 // must claim exactly what was asked.
 func TestStrongerEvidenceThanAskedForIsAccepted(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
-	stage := stageIn(DefaultFlow(), "build")
+	state := atStage(t, KindFeature, "shipping")
+	stage := stageIn(DefaultFlow(), "shipping")
 
 	evidence := passing(stage, stage.Produces)
 	// `code` is declared Existence; this run proved more.
@@ -272,7 +272,7 @@ func TestStrongerEvidenceThanAskedForIsAccepted(t *testing.T) {
 // handoff is written — the hole is caught where it is born rather than two stages
 // downstream.
 func TestCompleteRefusesAPartialDelivery(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "forge")
 
 	state, err := Reduce(state, Complete{Delivered: []Artifact{"code"}})
 	if err != nil {
@@ -297,7 +297,7 @@ func TestCompleteRefusesAPartialDelivery(t *testing.T) {
 // agent that delivered everything but one handover got none — straight to a block,
 // with the retry budget untouched and the socket still open.
 func TestAPartialDeliveryIsAskedAgainAndThenBlocks(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "shipping")
 
 	var err error
 	for attempt := 1; attempt <= state.Retry.Max; attempt++ {
@@ -307,7 +307,7 @@ func TestAPartialDeliveryIsAskedAgainAndThenBlocks(t *testing.T) {
 		if state.Status != StatusRunning {
 			t.Fatalf("attempt %d ended as %q rather than being asked again", attempt, state.Status)
 		}
-		if len(state.StillOwed) != 1 || state.StillOwed[0] != "tests_green" {
+		if len(state.StillOwed) != 1 || state.StillOwed[0] != "shipped" {
 			t.Errorf("attempt %d does not name what is missing: %v", attempt, state.StillOwed)
 		}
 	}
@@ -328,8 +328,8 @@ func TestAPartialDeliveryIsAskedAgainAndThenBlocks(t *testing.T) {
 // a stage that committed its work and forgot one handover finishes it, and what it
 // delivered the first time is not thrown away.
 func TestFinishingTheContractOnASecondAttemptCloses(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
-	stage := stageIn(DefaultFlow(), "build")
+	state := atStage(t, KindFeature, "shipping")
+	stage := stageIn(DefaultFlow(), "shipping")
 
 	state, err := Reduce(state, Complete{
 		Delivered: []Artifact{"code"},
@@ -365,7 +365,7 @@ func TestFinishingTheContractOnASecondAttemptCloses(t *testing.T) {
 // consumer in the flow, so nothing downstream would ever miss it: without this
 // check it would simply never be written.
 func TestCompleteRequiresTheHumanReport(t *testing.T) {
-	state := atStage(t, KindFeature, "verify")
+	state := atStage(t, KindFeature, "review")
 
 	// verify produces ci_green for the flow and dod_checked for a person.
 	state, err := Reduce(state, Complete{Delivered: []Artifact{"ci_green"}})
@@ -376,7 +376,7 @@ func TestCompleteRequiresTheHumanReport(t *testing.T) {
 	if state.Status == StatusStageDone {
 		t.Error("a stage closed without the report only a person reads")
 	}
-	if len(state.StillOwed) != 1 || state.StillOwed[0] != "dod_checked" {
+	if len(state.StillOwed) != 1 || state.StillOwed[0] != "review_report" {
 		t.Errorf("the missing report is not named for the next attempt: %v", state.StillOwed)
 	}
 }
@@ -387,8 +387,8 @@ func TestCompleteRequiresTheHumanReport(t *testing.T) {
 // context would let it satisfy some stage's requires, which is the very thing
 // separating `Produces` from `ProducesForHuman` prevents.
 func TestAuditReportDoesNotEnterTheFlowContext(t *testing.T) {
-	state := atStage(t, KindFeature, "verify")
-	stage := stageIn(DefaultFlow(), "verify")
+	state := atStage(t, KindFeature, "review")
+	stage := stageIn(DefaultFlow(), "review")
 
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	state, err := Reduce(state, Complete{Delivered: owed, Evidence: passing(stage, owed)})
@@ -411,7 +411,7 @@ func TestAuditReportDoesNotEnterTheFlowContext(t *testing.T) {
 // Two attempts with the error in context, then a block that notifies. No infinite
 // retry, and no silent death.
 func TestFailRetriesTwiceThenBlocks(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "shipping")
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		var err error
@@ -538,7 +538,7 @@ func TestGateRejectSendsTheStageBack(t *testing.T) {
 // the stages downstream cannot be satisfied by a verification that ran against
 // code which no longer exists.
 func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
-	state := atStage(t, KindFeature, "audit")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 
 	state, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "wrong boundary"})
@@ -546,8 +546,8 @@ func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Stage != "build" {
-		t.Errorf("an aligned finding goes back to build, got %q", state.Stage)
+	if state.Stage != "forge" {
+		t.Errorf("an aligned finding goes back to the loop, got %q", state.Stage)
 	}
 	if state.Context.HasArtifact("ci_green") {
 		t.Error("the green must be invalidated on the way back")
@@ -559,7 +559,7 @@ func TestAlignedFindingInvalidatesTheGreen(t *testing.T) {
 // Out of scope becomes someone else's task. The flow carries on, and the green
 // stays valid because the code did not change.
 func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
-	state := atStage(t, KindFeature, "audit")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 
 	state, err := Reduce(state, ReviewFinding{Aligned: false, Summary: "unrelated debt"})
@@ -567,7 +567,7 @@ func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if state.Stage != "audit" {
+	if state.Stage != "review" {
 		t.Errorf("an unaligned finding does not move the task, got %q", state.Stage)
 	}
 	if !state.Context.HasArtifact("ci_green") {
@@ -581,7 +581,7 @@ func TestUnalignedFindingLeavesTheFlowAlone(t *testing.T) {
 // implementer send its own work back, which is the separation the flow
 // guarantees.
 func TestFindingFromANonReviewStageIsRejected(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "shipping")
 
 	_, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "self-review"})
 
@@ -597,7 +597,7 @@ func TestFindingFromANonReviewStageIsRejected(t *testing.T) {
 // up here: a gate waits for a human with the history in view, a block reports an
 // anomaly.
 func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
-	state := atStage(t, KindFeature, "audit")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 	state.Loop.Rounds = DefaultLoopLimits().MaxRounds
 
@@ -620,9 +620,9 @@ func TestLoopCeilingOpensAGateRatherThanBlocking(t *testing.T) {
 // simply going round again: one counter for both would let a productive loop and
 // a thrashing one hit the same limit.
 func TestOscillationIsCountedApartFromRounds(t *testing.T) {
-	state := atStage(t, KindFeature, "audit")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
-	state.Loop.Visited = []StageID{"build", "audit"}
+	state.Loop.Visited = []StageID{"forge", "review"}
 
 	state, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "same spot again"})
 	if err != nil {
@@ -657,7 +657,7 @@ func TestIllegalTransitionsAreRefused(t *testing.T) {
 		},
 		{
 			name:   "advancing while blocked",
-			state:  TaskState{Status: StatusBlocked, Stage: "build"},
+			state:  TaskState{Status: StatusBlocked, Stage: "shipping"},
 			action: Advance{Flow: DefaultFlow()},
 		},
 		{
@@ -677,7 +677,7 @@ func TestIllegalTransitionsAreRefused(t *testing.T) {
 		},
 		{
 			name:   "approving a gate that is not open",
-			state:  TaskState{Status: StatusRunning, Stage: "build"},
+			state:  TaskState{Status: StatusRunning, Stage: "shipping"},
 			action: GateApprove{},
 		},
 	}
@@ -699,7 +699,7 @@ func TestIllegalTransitionsAreRefused(t *testing.T) {
 func TestUnblockReturnsTheTaskToItsStage(t *testing.T) {
 	state := TaskState{
 		Status:   StatusBlocked,
-		Stage:    "build",
+		Stage:    "shipping",
 		Blocked:  "tests failed three times",
 		Retry:    Retry{Attempts: 2, Max: 2},
 		Context:  NewTaskContext(KindFeature),
@@ -728,8 +728,8 @@ func TestUnblockReturnsTheTaskToItsStage(t *testing.T) {
 // the caller to infer the difference from what landed in the context. If a stage
 // finished, the status should say so.
 func TestCompleteSaysTheStageIsDone(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
-	stage := stageIn(DefaultFlow(), "build")
+	state := atStage(t, KindFeature, "shipping")
+	stage := stageIn(DefaultFlow(), "shipping")
 
 	state, err := Reduce(state, Complete{
 		Delivered: stage.Produces,
@@ -742,7 +742,7 @@ func TestCompleteSaysTheStageIsDone(t *testing.T) {
 	if state.Status != StatusStageDone {
 		t.Errorf("want stage_done after a stage closes, got %q", state.Status)
 	}
-	if state.Stage != "build" {
+	if state.Stage != "shipping" {
 		t.Errorf("the stage that closed is still named, got %q", state.Stage)
 	}
 }
@@ -752,7 +752,7 @@ func TestCompleteSaysTheStageIsDone(t *testing.T) {
 // Advancing past a node that has not reported would skip its work and its
 // contract check both.
 func TestAdvanceRefusesAStageStillRunning(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "shipping")
 
 	_, err := Reduce(state, Advance{Flow: DefaultFlow()})
 
@@ -767,7 +767,7 @@ func TestAdvanceRefusesAStageStillRunning(t *testing.T) {
 // which left three failures in the log where there had been one decision. The
 // history is the audit trail (INV-2).
 func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "shipping")
 
 	state, err := Reduce(state, Block{Reason: "the judge escalated"})
 	if err != nil {
@@ -791,7 +791,7 @@ func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
 // A task that halts without saying why is the silent failure INV-5 forbids,
 // so the reason is required rather than defaulted to something unhelpful.
 func TestABlockMustSayWhy(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "shipping")
 
 	if _, err := Reduce(state, Block{}); !errors.Is(err, ErrIllegalTransition) {
 		t.Errorf("want ErrIllegalTransition for a reasonless block, got %v", err)
@@ -842,7 +842,7 @@ func TestAbandonEndsATaskFromWhereverItIs(t *testing.T) {
 		state TaskState
 	}{
 		{"ready, before anything ran", readyTask(KindFeature)},
-		{"running mid-flow", atStage(t, KindFeature, "build")},
+		{"running mid-flow", atStage(t, KindFeature, "shipping")},
 		{"waiting at a gate", mustReduce(t, readyTask(KindFeature), Advance{Flow: DefaultFlow()})},
 	} {
 		state, err := Reduce(from.state, Abandon{Reason: "superseded"})
@@ -912,7 +912,7 @@ func TestAbandonNeedsAReason(t *testing.T) {
 // "this is over" — and it is exactly the shortcut that would have made abandon
 // unnecessary and the audit poorer.
 func TestBlockedIsNotTerminal(t *testing.T) {
-	blocked := mustReduce(t, atStage(t, KindFeature, "build"), Block{Reason: "the node died"})
+	blocked := mustReduce(t, atStage(t, KindFeature, "shipping"), Block{Reason: "the node died"})
 
 	if blocked.Status != StatusBlocked {
 		t.Fatalf("setup: want blocked, got %q", blocked.Status)

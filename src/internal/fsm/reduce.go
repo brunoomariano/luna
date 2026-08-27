@@ -307,6 +307,90 @@ type GateJudged struct {
 	Gate GateAccount `json:"gate"`
 }
 
+// LoopOutcome is what a round of a converging stage produced.
+//
+// Four answers rather than a boolean, because "go round again" and "give up" are
+// different decisions with different costs, and so are "this fixed something" and
+// "this traded one problem for another". The middle two are what a scoreboard of
+// exit codes cannot tell apart on its own.
+type LoopOutcome string
+
+const (
+	// OutcomeConverged leaves the loop: the acceptance criteria pass and no
+	// serious hygiene is left. The one outcome the engine checks evidence for.
+	OutcomeConverged LoopOutcome = "converged"
+
+	// OutcomeProgressed goes round again: more passes than before, nothing new
+	// broken. The round attacked the cause.
+	OutcomeProgressed LoopOutcome = "progressed"
+
+	// OutcomeRegressed goes round again having undone the round: something that
+	// passed stopped passing, or the round traded one problem for another. It
+	// counts against the oscillation ceiling rather than the progress one.
+	OutcomeRegressed LoopOutcome = "regressed"
+
+	// OutcomeStuck asks a person immediately, without spending the rest of the
+	// ceiling. It is what an agent says when it can see the loop will not
+	// converge — a criterion that contradicts another, a cause outside the task.
+	OutcomeStuck LoopOutcome = "stuck"
+)
+
+// KnownOutcomes are the verdicts a round may return.
+func KnownOutcomes() []LoopOutcome {
+	return []LoopOutcome{OutcomeConverged, OutcomeProgressed, OutcomeRegressed, OutcomeStuck}
+}
+
+// RoundJudged is a converging stage reporting what its round produced.
+//
+// The verdict is the model's, and deliberately: whether a round progressed or
+// merely swapped one failure for another is a reading of the work, and no exit
+// code answers it. What the model may not do is leave the loop over a command
+// that disagrees — `LoopSpec.ConvergesOn` names the evidence that has to be
+// passing, and the reducer refuses `converged` without it.
+//
+// So the two coexist, which is the whole design: the mechanical check is the
+// floor and the judgement moves within it.
+type RoundJudged struct {
+	Outcome LoopOutcome `json:"outcome"`
+
+	// Summary is what the round did, for the person reading the log. A verdict
+	// with no account is a decision nobody can audit.
+	Summary string `json:"summary,omitempty"`
+
+	// Progress is what the round produced, as an opaque signal compared against
+	// the last one. Two rounds with the same value made no functional change.
+	Progress string `json:"progress,omitempty"`
+
+	// Flow is carried for the reason Advance and Complete carry it: the stage's
+	// own declaration says what its ceilings are and what a regression
+	// invalidates, and a task may run a flow other than the shipped one.
+	Flow []Stage `json:"-"`
+
+	// Gate is what was decided about a ceiling gate this round may open. Zero is
+	// a ceiling nobody answered, and it waits.
+	Gate GateAccount `json:"gate,omitzero"`
+}
+
+// FactDiscovered is something a stage concluded about the task that a later
+// stage's condition reads.
+//
+// It exists because the mechanism for a mid-run condition had no way to fire.
+// `TaskContext.Facts` was read by `HasFact`, a condition was registered against
+// it, and nothing in the whole engine ever wrote to the map — so the one
+// condition keyed on a fact could not become true. A floor nobody can reach
+// teaches a reader not to believe the floor.
+//
+// The fact is named rather than free text, and the reducer refuses one it does
+// not know: a typo fails in the permissive direction otherwise — the condition is
+// simply never true and the stage it gates never runs, with nothing saying so.
+type FactDiscovered struct {
+	Fact Fact `json:"fact"`
+
+	// Why is what the stage concluded it from, for the person reading the log
+	// later. A fact with no reason is a decision nobody can audit.
+	Why string `json:"why,omitempty"`
+}
+
 // ReviewFinding is what a review stage found. Aligned sends the work back to
 // build; out of scope becomes a separate task and the flow carries on. The
 // distinction is a judgement call, which is why it arrives as a decision rather
@@ -422,6 +506,8 @@ func (GateAdjust) isAction()         {}
 func (GateReject) isAction()         {}
 func (GateJudged) isAction()         {}
 func (ReviewFinding) isAction()      {}
+func (FactDiscovered) isAction()     {}
+func (RoundJudged) isAction()        {}
 func (Block) isAction()              {}
 func (Unblock) isAction()            {}
 func (Abandon) isAction()            {}
@@ -477,6 +563,10 @@ func Reduce(state TaskState, action Action) (TaskState, error) {
 // flow, everything here is a person changing the terms the flow runs under.
 func reduceRunControl(state TaskState, action Action) (TaskState, error) {
 	switch a := action.(type) {
+	case FactDiscovered:
+		return factDiscovered(state, a)
+	case RoundJudged:
+		return roundJudged(state, a)
 	case Block:
 		return block(state, a)
 	case Unblock:
@@ -715,6 +805,38 @@ func askAgain(state TaskState, a Complete, owed, missing []Artifact) TaskState {
 	return state
 }
 
+// shortOfTheContract decides what a delivery that fell short means.
+//
+// A converging stage is allowed to end a round short of what it converges on —
+// that is what a round *is*. Asking again would spend the retry budget on the
+// ordinary case, and blocking would end the task at the first red pipeline, which
+// is the failure the loop exists to work through.
+//
+// Only the convergence artifacts get this. Anything else missing is a stage that
+// did not do its job, and the loop is not a way out of the contract.
+func shortOfTheContract(state TaskState, a Complete, stage Stage, owed, missing []Artifact) TaskState {
+	if stage.Loop != nil && onlyConvergence(missing, stage.Loop.ConvergesOn) {
+		state.StillOwed = missing
+		state.Status = StatusStageDone
+		return state
+	}
+	return askAgain(state, a, owed, missing)
+}
+
+// onlyConvergence reports whether everything missing is something the loop is
+// still working towards, rather than part of the stage's ordinary debt.
+func onlyConvergence(missing, converges []Artifact) bool {
+	if len(converges) == 0 {
+		return false
+	}
+	for _, artifact := range missing {
+		if !containsArtifact(converges, artifact) {
+			return false
+		}
+	}
+	return true
+}
+
 // whyItFellShort turns a shortfall into a reason somebody can act on.
 //
 // A stage falls short in two different ways and they were reported as one. The
@@ -804,7 +926,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 	// (INV-3).
 	owed := append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	if missing := missingFromList(owed, a.Delivered); len(missing) > 0 {
-		return askAgain(state, a, owed, missing), nil
+		return shortOfTheContract(state, a, stage, owed, missing), nil
 	}
 
 	// The stage delivered everything it owed, so nothing is outstanding. Cleared
@@ -951,6 +1073,150 @@ func answerGate(state TaskState, action Action) (TaskState, error) {
 		state.Blocked = ""
 	}
 
+	return state, nil
+}
+
+// factDiscovered records what a stage concluded, so a later stage's condition can
+// read it.
+//
+// Recorded rather than acted on: nothing about the flow changes here. Stage
+// selection consults the context the next time it runs, which is what keeps this
+// a fact about the task rather than a jump.
+func factDiscovered(state TaskState, a FactDiscovered) (TaskState, error) {
+	if _, err := ParseFact(string(a.Fact)); err != nil {
+		return state, fmt.Errorf("%w: %w", ErrIllegalTransition, err)
+	}
+	if state.Stage == "" {
+		return state, fmt.Errorf("%w: a fact is discovered by a stage, and none is running", ErrIllegalTransition)
+	}
+
+	// Copied rather than written through: the map is shared with the state the
+	// caller still holds, and a reducer that edits it in place would change the
+	// past for everyone still looking at it.
+	facts := make(map[Fact]bool, len(state.Context.Facts)+1)
+	for fact, known := range state.Context.Facts {
+		facts[fact] = known
+	}
+	facts[a.Fact] = true
+	state.Context.Facts = facts
+	return state, nil
+}
+
+// roundJudged folds one round of a converging stage.
+//
+// The stage stays where it is on every outcome but the first. That is what makes
+// this a loop rather than a jump: nothing is sent anywhere, the same stage simply
+// runs again with the counters one round further along.
+func roundJudged(state TaskState, a RoundJudged) (TaskState, error) {
+	flow := a.Flow
+	if len(flow) == 0 {
+		flow = flowFallback(state)
+	}
+
+	stage := stageIn(flow, state.Stage)
+	if stage.Loop == nil {
+		return state, fmt.Errorf("%w: %q does not converge, so it has no round to judge",
+			ErrIllegalTransition, state.Stage)
+	}
+	if _, err := parseEnum(string(a.Outcome), KnownOutcomes(), "loop outcome"); err != nil {
+		return state, fmt.Errorf("%w: %w", ErrIllegalTransition, err)
+	}
+
+	if a.Outcome == OutcomeConverged {
+		return converge(state, stage)
+	}
+
+	state = countRound(state, stage, a.Outcome, a.Progress)
+	state.Status = StatusRunning
+
+	if reason := whyTheLoopStops(state, stage, a); reason != "" {
+		return stopAtCeiling(state, a.Gate, reason)
+	}
+	return state, nil
+}
+
+// countRound folds one round into the counters the ceilings read.
+//
+// A regression counts against oscillation rather than against progress. The two
+// ceilings ask different questions — "is this going anywhere" and "is this going
+// back and forth" — and a round that undid itself is the second.
+//
+// Counted from the verdict rather than from having seen this stage before, which
+// is what the multi-stage loop measured. A stage that converges by running again
+// would trip that on its second round every time.
+func countRound(state TaskState, stage Stage, outcome LoopOutcome, progress string) TaskState {
+	state.Loop.Rounds++
+	state.Loop.Visited = append(state.Loop.Visited, state.Stage)
+	state.Loop = countProgress(state.Loop, progress)
+
+	if outcome != OutcomeRegressed {
+		return state
+	}
+
+	state.Loop.Oscillation++
+	stale(state.Evidence, stage.Loop.Invalidates, state.Seq)
+	for _, artifact := range stage.Loop.Invalidates {
+		delete(state.Context.Artifacts, artifact)
+	}
+	return state
+}
+
+// whyTheLoopStops names what ends the loop short of converging, or returns empty.
+//
+// `stuck` is the agent saying the ceiling is beside the point — it can see the
+// loop will not converge, and spending the remaining rounds to find that out
+// again is the waste the ceiling exists to stop.
+func whyTheLoopStops(state TaskState, stage Stage, a RoundJudged) string {
+	if a.Outcome == OutcomeStuck {
+		if a.Summary != "" {
+			return a.Summary
+		}
+		return "the round reported the loop cannot converge"
+	}
+
+	limits := stage.Loop.Limits
+	if limits == (LoopLimits{}) {
+		limits = DefaultLoopLimits()
+	}
+	return ceilingHit(state.Loop, limits)
+}
+
+// converge is the one outcome that leaves the loop, and the one the engine checks.
+//
+// The evidence has to be passing for every artifact the stage said it converges
+// on. This is the line C4 draws: the model judges the round, and it does not get
+// to call the work finished over a command that says otherwise.
+func converge(state TaskState, stage Stage) (TaskState, error) {
+	for _, artifact := range stage.Loop.ConvergesOn {
+		evidence, proven := state.Evidence[artifact]
+		if !proven || evidence.Verdict != VerdictPassed {
+			return state, fmt.Errorf(
+				"%w: the round was judged converged and %q is not proven — a loop does not close on an opinion",
+				ErrIllegalTransition, artifact)
+		}
+	}
+
+	// Left for the ordinary exit check to close. Converging says the loop is over,
+	// not that the contract is met, and those are two different questions with two
+	// different answers.
+	state.Status = StatusStageDone
+	return state, nil
+}
+
+// stopAtCeiling is what a loop that will not converge does: ask, or block.
+//
+// Shared with the review path because the reasoning is identical and was
+// duplicated — a ceiling nobody is waiting to answer must not resolve itself,
+// which is the infinite loop INV-5 names.
+func stopAtCeiling(state TaskState, gate GateAccount, reason string) (TaskState, error) {
+	if gate.Waits() {
+		state.Status = StatusAwaitingGate
+		state.Gate = &PendingGate{Kind: GateLoopCeiling, Stage: state.Stage, Reason: reason}
+		return state, nil
+	}
+
+	state.Status = StatusBlocked
+	state.Blocked = reason
 	return state, nil
 }
 

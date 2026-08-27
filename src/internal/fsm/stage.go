@@ -4,7 +4,10 @@
 // docs/architecture.md.
 package fsm
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Artifact identifies a product of the flow — what a stage requires to start or
 // delivers when it finishes. It is a named string rather than a raw one so the
@@ -37,12 +40,46 @@ const TaskID Artifact = "task_id"
 // started.
 type Fact string
 
-// TouchesStructure marks that the change altered the system's structure. It is
-// only knowable by looking at what build produced, which is what makes it a Fact
-// rather than part of TaskKind. No shipped stage is gated on it since the review
-// merge; it stays because a project flow can gate one on it, and the mechanism
-// for a mid-run condition has no other example.
-const TouchesStructure Fact = "touches_structure"
+const (
+	// TouchesStructure marks that the change altered the system's structure. It is
+	// only knowable by looking at what build produced, which is what makes it a
+	// Fact rather than part of TaskKind.
+	TouchesStructure Fact = "touches_structure"
+
+	// TriagedBug marks that the intake read the task and the code and concluded
+	// something is broken, rather than missing.
+	//
+	// A fact and not the task's kind, and the difference is the whole reason it
+	// exists: the kind is what a person declared when opening the task, before
+	// anyone read the code. This is what the intake concluded after reading it.
+	// The kind stays where it is — one is a statement of intent, the other a
+	// finding, and collapsing them would lose which of the two a later reader is
+	// looking at.
+	TriagedBug Fact = "triaged_bug"
+)
+
+// KnownFacts are the facts a stage may be discovered to have.
+//
+// A closed set rather than free strings, for the reason the capabilities are one:
+// a typo in a fact fails silent and in the permissive direction — the condition
+// reading it is simply never true, and the stage it gates never runs with nothing
+// saying why.
+func KnownFacts() []Fact { return []Fact{TouchesStructure, TriagedBug} }
+
+// ParseFact turns a recorded name into a fact, refusing what it does not know.
+func ParseFact(name string) (Fact, error) {
+	for _, known := range KnownFacts() {
+		if Fact(name) == known {
+			return known, nil
+		}
+	}
+
+	names := make([]string, 0, len(KnownFacts()))
+	for _, known := range KnownFacts() {
+		names = append(names, string(known))
+	}
+	return "", fmt.Errorf("unknown fact %q (%s)", name, strings.Join(names, ", "))
+}
 
 // TaskContext is what a stage condition consults to decide whether it enters the
 // flow: the nature of the task, the artifacts produced so far, and the facts
@@ -165,6 +202,12 @@ type Stage struct {
 	// emit a ReviewFinding, which is whoever-writes-does-not-review in the engine:
 	// an implementer sending its own work back would be reviewing itself.
 	Review *ReviewSpec
+
+	// Loop declares that this stage converges rather than simply finishing: it
+	// runs, judges the round, and either leaves or goes round again.
+	//
+	// Nil means the stage runs once, which is every other stage.
+	Loop *LoopSpec
 
 	// Guard stops a delivery that touched something too consequential to land
 	// unattended, whatever else the flow decided.
@@ -315,6 +358,35 @@ func (g *GateSpec) Resolved() int {
 		return DefaultAutonomyFloor
 	}
 	return g.AutonomyFloor
+}
+
+// LoopSpec is how a converging stage decides whether to go round again.
+//
+// The stage runs build, then hygiene, then acceptance, and asks what the round
+// produced. Four answers: it converged, it progressed, it regressed, it is stuck.
+// The first leaves the loop; the middle two go round again; the last asks a
+// person.
+type LoopSpec struct {
+	// ConvergesOn names the artifacts whose evidence has to be passing before the
+	// loop may be declared converged.
+	//
+	// This is the boundary between what the model decides and what it may not.
+	// The model reads the round and judges it — that is the point of putting a
+	// model here at all, and a scoreboard of exit codes cannot tell "progressed"
+	// from "swapped one problem for another". What it cannot do is declare the
+	// work finished over a command that says otherwise: leaving the loop is the
+	// one outcome that ends the judging, so it is the one the engine checks.
+	//
+	// Empty means nothing is checked, which the static check warns about — a loop
+	// whose exit nothing proves is a loop that closes on an opinion.
+	ConvergesOn []Artifact
+
+	// Limits are the ceilings for this loop. Zero takes DefaultLoopLimits.
+	Limits LoopLimits
+
+	// Invalidates names what stops being true when a round is judged a regression
+	// and the work goes round again. The green attested to code being reverted.
+	Invalidates []Artifact
 }
 
 // GuardSpec is what a stage refuses to land without a person looking.

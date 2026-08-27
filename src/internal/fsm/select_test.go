@@ -106,7 +106,7 @@ func TestSeveralConditionalsAreSkippedAtOnce(t *testing.T) {
 func TestFlowEndsAfterTheLastStage(t *testing.T) {
 	ctx := NewTaskContext(KindFeature)
 
-	next, ok, err := NextStage(DefaultFlow(), "audit", ctx)
+	next, ok, err := NextStage(DefaultFlow(), "review", ctx)
 	if err != nil {
 		t.Fatalf("reaching the end of the flow is not an error: %v", err)
 	}

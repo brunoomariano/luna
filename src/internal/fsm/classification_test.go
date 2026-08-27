@@ -36,6 +36,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Verifiers":        "history", // partly: the scope it declares, never its command
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
 		"Review":           "history", // decides whether a past finding was legal, and where it went
+		"Loop":             "history", // partly: what it converges on, never its ceilings
 		"Guard":            "policy",  // the node matches it; the reducer reads only whether it fired
 		"Agent":            "policy",  // which harness answered; `--agent` overrides it per run
 		"Brief":            "policy",  // what the agent was told, never what delivering meant

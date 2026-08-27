@@ -252,20 +252,31 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 	// Artifacts no command can prove, each for a reason that is about the artifact
 	// and not about the effort of writing the check.
 	unprovable := map[Artifact]string{
-		"worktree":    "a directory either exists or the stage that makes it failed",
-		"briefing":    "prose: what it says is judgement, and running it is not a thing",
-		"root_cause":  "prose about why something happened",
-		"scenarios":   "prose a person reads to decide whether the work was understood",
-		"approach":    "prose naming what will change",
-		"contract":    "prose stating obligations; whether it is right is the gate's question",
-		"code":        "the compiler is part of `make test`, and a non-empty diff proves nothing",
-		"dod_checked": "a checklist a person reads; recording it as a passing check is a lie about what ran",
+		"worktree":   "a directory either exists or the stage that makes it failed",
+		"briefing":   "prose: what it says is judgement, and running it is not a thing",
+		"root_cause": "prose about why something happened",
+		"scenarios":  "prose a person reads to decide whether the work was understood",
+		"approach":   "prose naming what will change",
+		"contract":   "prose stating obligations; whether it is right is the gate's question",
+		"code":       "the compiler is part of `make ci`, and a non-empty diff proves nothing",
+
+		// What the setup found and what the loop wrote about itself. All three are
+		// documents a person reads to decide something, and a command can only ever
+		// prove that a file was written. They are handed over instead, so at least
+		// the writing is Luna's answer rather than the agent's.
+		"setup_report":     "a summary of the sandbox: whether the mounts are the right ones is the gate's question",
+		"commit_plan":      "prose proposing commits; whether the grouping is right is the gate's question",
+		"delivery_summary": "a summary for a person who will not read the diff",
+
+		// The commits themselves. `existence` is the honest floor: that the work
+		// was committed is checkable, and whether the messages are good is what the
+		// gate before it was for.
+		"shipped": "the commits exist or the stage that wrote them failed",
 
 		// The report. What it says is judgement — whether the review is fair,
 		// whether it found the right gaps — and a command can only ever prove that
-		// a file was written. It is handed over instead, so at least the writing is
-		// Luna's answer rather than the agent's.
-		"audit_report": "a report: whether the review is right is not a thing a command decides",
+		// a file was written.
+		"review_report": "a report: whether the review is right is not a thing a command decides",
 
 		// Deliberately here rather than given a command, and the reason is worth
 		// writing down: `min_case` is a runnable reproduction, so a command *could*
@@ -331,9 +342,9 @@ func TestTheUnprovableListDescribesTheFlowItGuards(t *testing.T) {
 	// Rebuilt rather than shared with the test above, so the two cannot drift into
 	// agreeing with each other about a list neither checks.
 	for _, artifact := range []Artifact{
-		"worktree", "briefing", "root_cause", "scenarios",
-		"approach", "contract", "code", "dod_checked", "min_case",
-		"audit_report",
+		"worktree", "setup_report", "briefing", "root_cause", "min_case",
+		"scenarios", "approach", "contract", "code",
+		"commit_plan", "delivery_summary", "shipped", "review_report",
 	} {
 		if !produced[artifact] {
 			t.Errorf("%s is exempted from proof and no stage produces it — the exemption "+

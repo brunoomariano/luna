@@ -216,8 +216,8 @@ func TestTheBillIsBrokenDownInFlowOrder(t *testing.T) {
 	state := fsm.TaskState{
 		ID: "J-3",
 		Spent: map[fsm.StageID]fsm.Spend{
-			"verify": {CostUSD: 2, InputTokens: 20, Turns: 3, Context: "fresh"},
-			"build":  {CostUSD: 1, InputTokens: 10, Turns: 2, Context: "live"},
+			"shipping": {CostUSD: 2, InputTokens: 20, Turns: 3, Context: "fresh"},
+			"forge":    {CostUSD: 1, InputTokens: 10, Turns: 2, Context: "live"},
 		},
 	}
 
@@ -225,7 +225,7 @@ func TestTheBillIsBrokenDownInFlowOrder(t *testing.T) {
 	if report == nil || len(report.Stages) != 2 {
 		t.Fatalf("want two stages in the breakdown, got %+v", report)
 	}
-	if report.Stages[0].Stage != "build" || report.Stages[1].Stage != "verify" {
+	if report.Stages[0].Stage != "forge" || report.Stages[1].Stage != "shipping" {
 		t.Errorf("the breakdown is not in flow order: %s then %s",
 			report.Stages[0].Stage, report.Stages[1].Stage)
 	}

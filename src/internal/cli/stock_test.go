@@ -204,19 +204,21 @@ func TestTheLeadIsToldAContractAdmitsNoRecommendation(t *testing.T) {
 	}
 }
 
-// TestTheAuditStageDoesNotClaimIndependence is what replaced two tests whose
-// property died with the roles.
+// TestTheJudgingStageIsIndependent is the property the trail was reshaped to get
+// back.
 //
-// They asserted that the judging role could not write — `tools_deny` on a second
-// role, refused a session with the first. With one agent, neither is available:
-// the agent that must edit cannot be denied Edit, and there is no other session
-// to keep it out of. So the claim goes, and the stage is named for what it is.
+// It was lost twice and for different reasons. The roles collapsed once, leaving
+// one agent that had to both write and judge — `tools_deny` cannot separate those
+// when the same process does both. Then `forge` merged the building and the
+// checking on purpose, so the loop could fix what it found without paying a cold
+// start, which makes its own verdict a self-assessment by construction.
 //
-// What survives is `context = "fresh"`. It is the one half of independence a
-// single agent can still have — the same model, re-reading its own work with no
-// memory of having written it — and without it the stage reads its own reasoning
-// back and confirms it, which is the failure a review exists to prevent.
-func TestTheAuditStageDoesNotClaimIndependence(t *testing.T) {
+// Neither is fixable from inside. So the independent read is placed *after* the
+// delivery instead of within it, and it has all three halves this time: a session
+// it did not write (`fresh`), tools it does not hold (`tools_deny`), and work it
+// did not do. A judging stage missing any of them reads its own reasoning back
+// and agrees with it, which is the one failure a review exists to prevent.
+func TestTheJudgingStageIsIndependent(t *testing.T) {
 	var judging []fsm.Stage
 	for _, stage := range fsm.DefaultFlow() {
 		if stage.Review != nil {
@@ -228,13 +230,15 @@ func TestTheAuditStageDoesNotClaimIndependence(t *testing.T) {
 	}
 
 	for _, stage := range judging {
-		if stage.ID == "review" {
-			t.Errorf("a stage still calls itself %q, which claims an independence "+
-				"one agent cannot have", stage.ID)
-		}
 		if stage.Context != fsm.ContextFresh {
 			t.Errorf("stage %q judges delivered work with context %q — it would read "+
 				"back the session that produced it", stage.ID, stage.Context)
+		}
+		if !stage.Gated() {
+			t.Errorf("stage %q judges a delivery and may still edit it", stage.ID)
+		}
+		if stage.Review.SendsBackTo == stage.ID {
+			t.Errorf("stage %q sends work back to itself, which is not a review", stage.ID)
 		}
 	}
 }

@@ -50,7 +50,7 @@ func TestUnknownActionIsRefused(t *testing.T) {
 
 // TestUnblockRefusesATaskThatIsNotBlocked covers the guard in unblock.
 func TestUnblockRefusesATaskThatIsNotBlocked(t *testing.T) {
-	running := TaskState{Status: StatusRunning, Stage: "build"}
+	running := TaskState{Status: StatusRunning, Stage: "shipping"}
 
 	if _, err := Reduce(running, Unblock{}); !errors.Is(err, ErrIllegalTransition) {
 		t.Errorf("want ErrIllegalTransition unblocking a running task, got %v", err)
@@ -99,7 +99,7 @@ func TestEachLoopCeilingIsReportedByName(t *testing.T) {
 // change. Counting only rounds would let it spin to the round limit before anyone
 // noticed.
 func TestNoProgressCeilingOpensAGate(t *testing.T) {
-	state := atStage(t, KindFeature, "audit")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 	state.Loop.NoProgress = DefaultLoopLimits().NoProgress
 
@@ -115,7 +115,7 @@ func TestNoProgressCeilingOpensAGate(t *testing.T) {
 
 // TestCustomLoopLimitsAreHonoured covers the non-default branch of the limits.
 func TestCustomLoopLimitsAreHonoured(t *testing.T) {
-	state := atStage(t, KindFeature, "audit")
+	state := atStage(t, KindFeature, "review")
 	state.Context.Artifacts["ci_green"] = true
 
 	// A single round is enough under a ceiling of zero.

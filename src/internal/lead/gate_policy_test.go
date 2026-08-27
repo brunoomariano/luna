@@ -125,21 +125,44 @@ func flowWithCriticality(t *testing.T, stage fsm.StageID, level int, judge ...st
 	t.Helper()
 
 	flow := fsm.DefaultFlow()
+	found := false
 	for i := range flow {
-		if flow[i].ID != stage {
+		if flow[i].Gate == nil {
 			continue
 		}
-		if flow[i].Gate == nil {
-			t.Fatalf("%s opens no gate to declare criticality on", stage)
-		}
 		declared := *flow[i].Gate
+		// Every gate gets the same floor, not only the named one. The trail opens
+		// three, and a test reading "the first gate" would otherwise be reading one
+		// it never declared — which is how a gate added at `setup` broke tests that
+		// never mentioned setup. Levelling them keeps the knob comparison the same
+		// wherever the run stops.
+		//
+		// The floor is deliberately out of the flow fingerprint, so this does not
+		// make the fixture a different flow. Removing the other gates would, and
+		// was the first attempt.
 		declared.AutonomyFloor = level
-		declared.Judge = judge
+		if flow[i].ID == stage {
+			declared.Judge = judge
+			found = true
+		}
 		flow[i].Gate = &declared
+	}
+	if found {
 		return flow
 	}
 	t.Fatalf("no stage %q in the flow", stage)
 	return nil
+}
+
+// gatesIn counts the stages of a flow that open a gate.
+func gatesIn(flow []fsm.Stage) int {
+	count := 0
+	for _, stage := range flow {
+		if stage.Gate != nil {
+			count++
+		}
+	}
+	return count
 }
 
 // TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate is what the whole feature
@@ -393,9 +416,9 @@ func TestAReviewGateIsJudgedOnceAndNotTwice(t *testing.T) {
 	}
 
 	judged := 0
+	flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
 	l := &Lead{
-		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria"),
+		Store: s, Node: &deliveringNode{}, Flow: flow,
 		Ask: func(context.Context, string) (string, error) {
 			judged++
 			return "APPROVE", nil
@@ -405,8 +428,10 @@ func TestAReviewGateIsJudgedOnceAndNotTwice(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if judged != 1 {
-		t.Errorf("the one gate in this flow was judged %d times", judged)
+	// Once per gate, not once in total: the trail opens three, and what this is
+	// about is a single gate being asked twice.
+	if judged != gatesIn(flow) {
+		t.Errorf("%d gates were judged %d times", gatesIn(flow), judged)
 	}
 	if got := firstGateDecision(t, s, "LUNA-1"); got != fsm.GateDecisionJudged {
 		t.Errorf("and the one that counts recorded %q", got)

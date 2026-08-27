@@ -69,11 +69,27 @@ var (
 		Applies: func(c TaskContext) bool { return c.Kind != KindDocs },
 	}
 
-	// TouchedStructure is the one condition about a fact discovered mid-run rather
-	// than about the nature of the task: you only know the change touched the
-	// structure after looking at what build produced.
+	// TouchedStructure is a condition about a fact discovered mid-run rather than
+	// about the nature of the task: you only know the change touched the structure
+	// after looking at what build produced.
 	TouchedStructure = Condition{
 		Name:    "touched-structure",
 		Applies: func(c TaskContext) bool { return c.HasFact(TouchesStructure) },
+	}
+
+	// TriagedAsBug gates the investigation on what the intake concluded, rather
+	// than on what the person opening the task declared.
+	//
+	// A second condition rather than a widening of IsBug, and the two are not
+	// interchangeable. `fix` is chosen by somebody who already knows what broke and
+	// has no intake to conclude anything, so its investigation has to key on the
+	// kind. `full` reads the task and the code first, and a trail that asks a
+	// person to classify before either has been read is asking too early.
+	//
+	// Widening `is-bug` to mean "either" was the alternative and is worse: one name
+	// for two sources is a condition whose reader cannot tell which answered.
+	TriagedAsBug = Condition{
+		Name:    "triaged-as-bug",
+		Applies: func(c TaskContext) bool { return c.HasFact(TriagedBug) },
 	}
 )

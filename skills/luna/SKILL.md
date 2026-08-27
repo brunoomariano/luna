@@ -89,26 +89,29 @@ which of the three a task opens on, and it cannot change afterwards.
 |---|---|---|
 | `chore` | setup · build · verify | a change with a known shape and nothing to decide |
 | `fix` | setup · **diagnose** · build · verify | something is broken and the cause is not yet known |
-| `full` | setup · intake · **diagnose** · plan · build · refactor · pipeline · verify · **audit** | a change worth planning, reviewing and auditing |
+| `full` | setup · intake · **diagnose** · plan · forge · shipping · review | anything worth planning, and everything worth reviewing |
 
-Bold stages are conditional — they enter on `--kind`, not on `--flow`:
-`diagnose` runs only for a bug, `audit` runs for anything but a chore. So `full
---kind chore` is seven stages, not nine.
+`full` decides for itself whether the investigation runs. `intake` reads the task
+and the code and concludes whether something is *broken* or *missing*; only the
+first opens `diagnose`. You do not have to know which when you open the task.
+
+`fix` is the shortcut for when you already do: it has no intake, so its
+`diagnose` keys on `--kind bug` instead.
 
 ### Choosing from what the task says
 
 Read the task's own words, in this order, and stop at the first that matches:
 
-1. **Does it name something already broken?** — "fails", "returns the wrong",
-   "crashes", "regression", a stack trace, a reproduction. The cause is
-   unknown, so `--kind bug`. Then `fix` when the fix is likely local, `full`
-   when the blast radius is not yet known.
+1. **Do you already know what broke, and roughly where?** — a stack trace, a
+   reproduction, a regression you can point at. `fix --kind bug` skips the
+   reading and goes straight to the investigation.
 2. **Is the shape of the change already settled?** — a version bump, a rename, a
    flag with one obvious implementation, a lint rule. Nothing to plan and
    nothing to judge: `chore --kind chore`.
-3. **Otherwise it is new behaviour** — a feature, an interface, anything whose
-   acceptance criteria could be met several ways. `full --kind feature`, and
-   the `plan` gate is what a person reviews before any code is written.
+3. **Otherwise, `full`** — and it does not matter much whether you call it a
+   bug or a feature: `intake` reads the code and decides whether the
+   investigation runs. What `--kind` still does is keep `chore` off the
+   trail, so use it when the work genuinely is one.
 
 Two traps worth naming, both measured:
 
@@ -117,6 +120,28 @@ Two traps worth naming, both measured:
 - **A vague statement makes the flow moot.** `full` costs the most and buys the
   least when `--acceptance` cannot be run. Fix the statement first; the flow
   cannot rescue it.
+
+### Where it stops, and why
+
+`full` opens three gates and one guard:
+
+| stop | shows you | needs autonomy |
+|---|---|---|
+| `setup` | the sandbox and the workstream, read from `.ai-jail` and `.ai-memory.toml` | 6 |
+| `plan` | the contract every later stage is held to | 9 |
+| `forge` | the commit plan and the delivery summary, **before** anything is committed | 9 |
+| `forge` guard | a delivery touching migrations, credentials or deploy | nothing gets past |
+
+### The loop
+
+`forge` is one stage that builds, cleans, checks, and then judges the round:
+converged leaves, progressed and regressed go again, stuck asks you. Four rounds,
+two without progress, two oscillating — then it stops.
+
+The verdict is the agent's, and the exit is not: `forge` declares what it
+converges on, and Luna refuses "converged" until that command has passed. It
+judges its own rounds, which is fast and biased; `review` afterwards is the
+correction, run cold by an agent that cannot edit.
 
 ### Where the briefing lives
 

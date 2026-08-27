@@ -184,7 +184,7 @@ func TestADryRunDeliversWhatTheHumanWasOwedToo(t *testing.T) {
 	}
 
 	// audit_report is ProducesForHuman only; verify owes dod_checked the same way.
-	for _, owed := range []fsm.Artifact{"audit_report", "dod_checked"} {
+	for _, owed := range []fsm.Artifact{"review_report", "delivery_summary"} {
 		if _, ok := state.Evidence[owed]; !ok {
 			t.Errorf("want %q delivered, got evidence for %v", owed, state.Evidence)
 		}
@@ -255,10 +255,12 @@ func TestAnInteractiveRunStopsAtTheFirstGate(t *testing.T) {
 
 	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run")
 
-	if !strings.Contains(out, "waiting at plan") {
+	// The first gate is `setup`'s, which is the point of it being first: the
+	// sandbox and the workstream are confirmed before anything is paid for.
+	if !strings.Contains(out, "waiting at setup") {
 		t.Errorf("want the stage it stopped at, got %q", out)
 	}
-	if !strings.Contains(out, "review the plan and its contract") {
+	if !strings.Contains(out, "confirm the sandbox and the workstream") {
 		t.Errorf("want the reason it stopped, got %q", out)
 	}
 	if !strings.Contains(out, "luna gate show LUNA-1") {
@@ -683,10 +685,18 @@ func TestAMissingSandboxBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	//
 	// Twice, because `setup` is mechanical and needs no sandbox to close: the
 	// first stage that wants an agent is the one after it, and a test that stopped
-	// at the first would prove the sandbox was never reached.
+	// at the first would prove the sandbox was never reached. The gate `setup`
+	// opens on the way out is answered in between — it is not what this is about.
 	repo := repoWithCommit(t)
 	openStage(t, h, "LUNA-1")
 	h.mustRun(t, "work", "LUNA-1", "--repo", repo)
+	// `setup` opens a gate on the way out, and this test is about the stage after
+	// it — the first one that wants an agent, and so the first that wants a
+	// sandbox. The gate is answered when it is there; `--dry-run` is not in play
+	// here, so whether it opened depends on how far `work` got.
+	if state := mustState(t, h, "LUNA-1"); state.Gate != nil {
+		h.mustRun(t, "gate", "approve", "LUNA-1")
+	}
 	openStage(t, h, "LUNA-1")
 	out := h.mustRun(t, "work", "LUNA-1", "--repo", repo)
 
@@ -1120,6 +1130,11 @@ func TestWorkOpensTheNextStageOfATaskInFlight(t *testing.T) {
 	if err := Run(h.env, []string{"work", "LUNA-1", "--dry-run"}); err != nil {
 		t.Fatalf("working the first stage: %v", err)
 	}
+
+	// The first stage opens a gate when it closes, and a dry run has no lead to
+	// judge it — so it is answered here. What this test is about is what happens
+	// after a stage closes, not the gate.
+	h.mustRun(t, "gate", "approve", "LUNA-1")
 
 	stalled := mustState(t, h, "LUNA-1")
 	if stalled.Status != fsm.StatusStageDone {

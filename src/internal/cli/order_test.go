@@ -117,6 +117,10 @@ func TestOneTurnOfTheLoopByHand(t *testing.T) {
 		t.Fatalf("the stage did not close after delivering everything it owed: %s", out)
 	}
 
+	// `setup` opens a gate when it closes, and the handoff this test is about
+	// happens on the other side of it.
+	h.mustRun(t, "gate", "approve", "LUNA-1")
+
 	// The commit became the base, which is the handoff: the next stage starts
 	// from what the last one produced.
 	second := mustOrderFrom(t, h, "LUNA-1")
@@ -440,12 +444,33 @@ func mustState(t *testing.T, h *harness, id string) fsm.TaskState {
 // next change to the flow.
 func seedAtFirstGate(t *testing.T, h *harness, id string) fsm.StageID {
 	t.Helper()
+	return seedAtGate(t, h, id, "")
+}
+
+// seedAtGate walks a task to a named gate, answering the ones before it.
+//
+// It exists because the trail grew a gate at `setup`, and every test that wanted
+// the plan's gate had been getting the first one it met. Naming the gate says
+// which one the test is about, instead of depending on which happens to come
+// first — the dependency that made one new gate fail thirty tests.
+//
+// An empty name takes the first gate, which is what the walk did before.
+func seedAtGate(t *testing.T, h *harness, id string, want fsm.StageID) fsm.StageID {
+	t.Helper()
 
 	flow := fsm.DefaultFlow()
-	for range flow {
+	// Twice the flow: a gate that is answered and walked past costs an extra turn
+	// of the loop, so the bound has to allow for one per stage.
+	for range 2 * len(flow) {
 		state := mustState(t, h, id)
 		if state.Gate != nil {
-			return state.Stage
+			if want == "" || state.Stage == want {
+				return state.Stage
+			}
+			if err := h.env.Store.AppendActionAt(id, state.Seq, fsm.GateApprove{}); err != nil {
+				t.Fatalf("recording the approval at %s: %v", state.Stage, err)
+			}
+			continue
 		}
 
 		if state.Status == fsm.StatusRunning {
@@ -472,10 +497,10 @@ func seedAtFirstGate(t *testing.T, h *harness, id string) fsm.StageID {
 			Flow: flow,
 			Gate: fsm.GateAccount{Decision: fsm.GateDecisionWaited},
 		}); err != nil {
-			t.Fatalf("walking to the first gate: %v", err)
+			t.Fatalf("walking to the gate: %v", err)
 		}
 	}
-	t.Fatalf("no stage in the flow opens a gate")
+	t.Fatalf("no stage in the flow opens the gate %q", want)
 	return ""
 }
 

@@ -83,6 +83,8 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 		writeGate(&b, stage.Gate)
 		b.WriteString("|")
 		writeReview(&b, stage.Review)
+		b.WriteString("|")
+		writeLoop(&b, stage.Loop)
 		b.WriteString(")")
 	}
 
@@ -90,6 +92,25 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 	// Half the digest: this distinguishes flows a person wrote, not adversarial
 	// collisions, and a short value is one someone can compare by eye in a log.
 	return FlowFingerprint(hex.EncodeToString(sum[:8]))
+}
+
+// writeLoop renders whether a stage converges and on what.
+//
+// What it converges on and nothing else. The reducer reads that list to decide
+// whether a past round was allowed to leave the loop, so it decides what a past
+// event meant — which is the test for being in here at all.
+//
+// The ceilings are out, and for the same reason a gate's criticality is: they
+// change how many rounds a loop may spend, not what any of them delivered. A
+// project that lowers `max_rounds` between two runs of the same task has changed
+// its patience, not its flow, and refusing the replay would be the noise this
+// rule exists to keep out.
+func writeLoop(b *strings.Builder, loop *LoopSpec) {
+	if loop == nil {
+		return
+	}
+	b.WriteString("loop:")
+	writeArtifacts(b, loop.ConvergesOn)
 }
 
 // writeGate renders the gate a stage opens, if it opens one.

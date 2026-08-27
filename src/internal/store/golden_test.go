@@ -217,11 +217,17 @@ func writeReplayCorpus(t *testing.T, path string) {
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
 			// `setup` is the first stage since integration left Luna's scope,
-			// removing `commit`, and `discovery` went with it.
-			Delivered: []fsm.Artifact{"worktree"},
-			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(2)},
-			Flow:      fsm.DefaultFlow(),
+			// removing `commit`, and `discovery` went with it. It reports on the
+			// sandbox as well as opening the worktree, and opens a gate on the way
+			// out — which the corpus answers, so the replay covers a gate too.
+			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Evidence: map[fsm.Artifact]fsm.Evidence{
+				"worktree":     fsm.Exists(2),
+				"setup_report": fsm.Exists(2),
+			},
+			Flow: fsm.DefaultFlow(),
 		},
+		fsm.GateApprove{},
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 	} {
 		if err := s.AppendAction("LUNA-1", action); err != nil {

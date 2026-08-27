@@ -234,58 +234,61 @@ func TestTheFallbackContractIsTheTasksOwn(t *testing.T) {
 	}
 }
 
-// TestNoModelReadsCodeThePipelineHasNotAccepted is the property the split exists
-// for, and it is a property of the contract rather than of an ordering.
+// TestTheLoopCannotCloseOnAnOpinion is the property that replaced the split, and
+// it is what makes the merged loop honest.
 //
-// Putting the command in front of the critic would only reorder two files; making
-// the critic *require* what the command produces is what enforces it, because the
-// entry check refuses a stage whose inputs are not in the context. So there is no
-// path — no knob, no retry, no send-back — on which a model is paid to read a
-// delivery the compiler has not accepted.
-func TestNoModelReadsCodeThePipelineHasNotAccepted(t *testing.T) {
-	flow := DefaultFlow()
-
-	pipeline, carried := findStage(flow, "pipeline")
-	if !carried {
-		t.Fatal("the shipped flow has no pipeline stage")
-	}
-	if !pipeline.Mechanical() {
-		t.Errorf("the pipeline stage pays a model (agent %q)", pipeline.Agent)
-	}
-	if !containsArtifact(pipeline.Produces, "ci_green") {
-		t.Fatalf("the pipeline stage does not produce ci_green: %v", pipeline.Produces)
-	}
-
-	// Every stage that names an agent and comes after the pipeline reads the code,
-	// and each has to require the green rather than merely follow it.
-	seen := false
-	for _, stage := range flow {
-		if stage.ID == "pipeline" {
-			seen = true
-			continue
+// `build`, `pipeline` and `verify` were separate stages so that the judging one
+// could *require* what the command produced — the entry check then meant no model
+// was ever paid to read a delivery the compiler had rejected. Merging them into
+// `forge` gives that ordering back to the agent, which is a real loss and is
+// stated as one in the stage file.
+//
+// What replaces it is narrower and holds where it matters most: the loop may not
+// be *left* on a verdict a command contradicts. The stage declares what it
+// converges on, the reducer refuses `converged` until that evidence passes, and
+// the artifact named has to be proven by something that runs. A loop converging on
+// prose would be a loop closing on an opinion.
+func TestTheLoopCannotCloseOnAnOpinion(t *testing.T) {
+	var looping []Stage
+	for _, stage := range DefaultFlow() {
+		if stage.Loop != nil {
+			looping = append(looping, stage)
 		}
-		if !seen || stage.Mechanical() {
-			continue
+	}
+	if len(looping) == 0 {
+		t.Fatal("no converging stage in the shipped flow — this check covers nothing")
+	}
+
+	for _, stage := range looping {
+		if len(stage.Loop.ConvergesOn) == 0 {
+			t.Errorf("stage %q loops and names nothing it converges on", stage.ID)
 		}
-		if !containsArtifact(stage.Requires, "ci_green") {
-			t.Errorf("stage %q runs a model after the pipeline and does not require ci_green: %v",
-				stage.ID, stage.Requires)
+		for _, artifact := range stage.Loop.ConvergesOn {
+			if _, runs := VerifierFor(stage, artifact).(Command); !runs {
+				t.Errorf("stage %q converges on %q, which nothing runs to prove — "+
+					"the loop would close on an opinion", stage.ID, artifact)
+			}
 		}
 	}
 }
 
-// TestTheJudgementHalfOwesNoCommand. What is left in `verify` after the split is
-// the question no command answers, and if it ever owed one again the split would
-// have quietly undone itself.
-func TestTheJudgementHalfOwesNoCommand(t *testing.T) {
-	verify, carried := findStage(DefaultFlow(), "verify")
-	if !carried {
-		t.Fatal("the shipped flow has no verify stage")
-	}
-
-	for artifact, verifier := range verify.Verifiers {
-		if _, isCommand := verifier.(Command); isCommand {
-			t.Errorf("verify proves %q with a command, which belongs in the pipeline stage", artifact)
+// TestTheLoopHasCeilings is INV-5 on the shipped flow: no infinite retry.
+//
+// A loop whose ceilings are all zero would take the defaults, which is fine — what
+// must not happen is a ceiling that cannot be reached. The engine takes
+// DefaultLoopLimits for a zero value, so this checks the resolved numbers rather
+// than what the file happened to write.
+func TestTheLoopHasCeilings(t *testing.T) {
+	for _, stage := range DefaultFlow() {
+		if stage.Loop == nil {
+			continue
+		}
+		limits := stage.Loop.Limits
+		if limits == (LoopLimits{}) {
+			limits = DefaultLoopLimits()
+		}
+		if limits.MaxRounds < 1 || limits.NoProgress < 1 || limits.Oscillation < 1 {
+			t.Errorf("stage %q loops with a ceiling nothing reaches: %+v", stage.ID, limits)
 		}
 	}
 }

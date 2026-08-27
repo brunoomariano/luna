@@ -103,6 +103,26 @@ func newStore(t *testing.T) *store.Store {
 
 // nightly opens a task that stops at no gate, so a test can watch the lead drive
 // a whole flow without a person in the loop.
+// drivingKnob lets a lead with no model walk past the gates the trail opens.
+//
+// The first is at `setup`, so a run at the default knob stops on stage one —
+// correctly, and a test measuring the walk then measures nothing. An unattended
+// run sets the knob, so this is the realistic shape rather than a way around it.
+func drivingKnob(t *testing.T, s *store.Store, id string) {
+	t.Helper()
+
+	if err := s.AppendAction(id, fsm.SetKnob{Knob: fsm.KnobAll}); err != nil {
+		t.Fatalf("setting the knob: %v", err)
+	}
+}
+
+// approving is the model a driving test wires in so the knob has something to
+// answer with. The knob says the lead *may* judge; with no model there is nothing
+// to ask, and the gate waits either way.
+func approving(context.Context, string) (string, error) {
+	return "APPROVE\n\n1. met — nothing this test is about", nil
+}
+
 func nightly(t *testing.T, s *store.Store, id string, kind fsm.TaskKind) {
 	t.Helper()
 
@@ -197,7 +217,9 @@ func TestTheLeadStopsAtAGate(t *testing.T) {
 	if state.Status != fsm.StatusAwaitingGate {
 		t.Fatalf("want the task waiting, got %q", state.Status)
 	}
-	if state.Stage != "plan" {
+	// `setup` is the first gate: the sandbox and the workstream are confirmed
+	// before anything is paid for.
+	if state.Stage != "setup" {
 		t.Errorf("want it stopped at the first gate, got %q", state.Stage)
 	}
 }
@@ -233,7 +255,7 @@ func TestTheLeadResumesFromWhereItStopped(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 
-	if state.Stage == "plan" && state.Status == fsm.StatusAwaitingGate {
+	if state.Stage == "setup" && state.Status == fsm.StatusAwaitingGate {
 		t.Error("the second lead should have moved past the answered gate")
 	}
 }
@@ -725,9 +747,10 @@ func (n *committingNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage
 func TestTheBaseFollowsWhatTheStageCommitted(t *testing.T) {
 	s := newStore(t)
 	nightly(t, s, "LUNA-1", fsm.KindChore)
+	drivingKnob(t, s, "LUNA-1")
 
 	node := &committingNode{}
-	conductor := &Lead{Store: s, Node: node, Judge: &alwaysRetries{}}
+	conductor := &Lead{Store: s, Node: node, Judge: &alwaysRetries{}, Ask: approving}
 
 	state, err := conductor.Run(context.Background(), "LUNA-1")
 	if err != nil {

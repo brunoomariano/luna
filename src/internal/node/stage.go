@@ -110,7 +110,7 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 	// nothing and can lose something. The verification still runs, so the stage
 	// still has to prove what it produced.
 	if stage.Mechanical() {
-		return r.verify(ctx, state, stage, wt, fsm.Spend{})
+		return r.runMechanically(ctx, state, stage, wt)
 	}
 
 	socket, handsOver, err := r.serveArtifacts(state.ID, stage, wt)
@@ -402,6 +402,48 @@ func handsOver(stage fsm.Stage) bool {
 		}
 	}
 	return false
+}
+
+// runMechanically carries out a stage that starts no agent.
+//
+// Anything such a stage owes through the store is Luna's to write, because the
+// handover socket an agent uses is never opened — so the writing happens here,
+// before the verification rather than inside it: the check asks whether the
+// artifact is there, and something has to have put it there first.
+func (r *Runner) runMechanically(
+	ctx context.Context, state fsm.TaskState, stage fsm.Stage, wt Worktree,
+) (lead.Result, error) {
+	if err := r.writeOwnReports(state, stage); err != nil {
+		return lead.Result{}, err
+	}
+	return r.verify(ctx, state, stage, wt, fsm.Spend{})
+}
+
+// writeOwnReports puts the artifacts Luna itself produces into the store.
+//
+// A mechanical stage runs no agent, so the socket an agent hands artifacts over
+// through is never opened. Anything such a stage owes through the store is
+// therefore Luna's own work, and this is where that work happens.
+//
+// The list is closed and small on purpose. A general "the node can write any
+// artifact" would be a second way for something to enter the store, and the value
+// of one way in is that the audit knows what wrote it.
+func (r *Runner) writeOwnReports(state fsm.TaskState, stage fsm.Stage) error {
+	if r.Artifacts == nil {
+		return nil
+	}
+
+	for _, artifact := range stage.Produces {
+		existence, handed := stage.Verifiers[artifact].(fsm.Existence)
+		if !handed || !existence.Handover || artifact != SetupReport {
+			continue
+		}
+		body := []byte(SandboxReport(r.Repo))
+		if err := r.Artifacts(state.ID).PutArtifact(string(stage.ID), string(artifact), body); err != nil {
+			return fmt.Errorf("writing %s for stage %q: %w", artifact, stage.ID, err)
+		}
+	}
+	return nil
 }
 
 // checkStage refuses a stage Luna cannot run as declared, rather than running it

@@ -51,11 +51,9 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		{"intake", false},
 		{"diagnose", false},
 		{"plan", false},
-		{"build", false},
-		{"refactor", false},
-		{"pipeline", true},
-		{"verify", false},
-		{"audit", false},
+		{"forge", false},
+		{"shipping", false},
+		{"review", false},
 	}
 
 	if len(flow) != len(want) {
@@ -84,8 +82,7 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 // meaning in the flow that matters most.
 func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 	reports := map[StageID]Artifact{
-		"audit":    "audit_report",
-		"verify":   "dod_checked",
+		"review":   "review_report",
 		"diagnose": "min_case",
 	}
 
@@ -110,18 +107,20 @@ func TestAuditReportsAreNotFlowProducts(t *testing.T) {
 // stage where it does not pay off — and nobody notices, because the result stays
 // correct.
 func TestDefaultFlowConditionalStages(t *testing.T) {
+	// The investigation is the one conditional stage, and it turns on a fact the
+	// intake recorded rather than on the kind the task was opened with. Which is
+	// the point: whether something is broken or merely missing is what reading the
+	// code settles, and the kind is typed before anyone has read it.
 	cases := []struct {
 		stage   StageID
-		kind    TaskKind
+		triaged bool
 		applies bool
 	}{
-		{"diagnose", KindBug, true},
-		{"diagnose", KindFeature, false},
-		{"audit", KindChore, false},
-		{"audit", KindFeature, true},
-		{"audit", KindBug, true},
-		{"build", KindDocs, true},
-		{"plan", KindChore, true}, // planning is unconditional now that it carries the contract
+		{"diagnose", true, true},
+		{"diagnose", false, false},
+		{"forge", true, true},
+		{"forge", false, true},
+		{"plan", false, true}, // planning is unconditional; it carries the contract
 	}
 
 	byID := map[StageID]Stage{}
@@ -134,8 +133,12 @@ func TestDefaultFlowConditionalStages(t *testing.T) {
 		if !ok {
 			t.Fatalf("stage %q does not exist in the default flow", c.stage)
 		}
-		if got := stage.AppliesTo(NewTaskContext(c.kind)); got != c.applies {
-			t.Errorf("%q with kind=%q: want applies=%v, got %v", c.stage, c.kind, c.applies, got)
+		ctx := NewTaskContext(KindFeature)
+		if c.triaged {
+			ctx.Facts[TriagedBug] = true
+		}
+		if got := stage.AppliesTo(ctx); got != c.applies {
+			t.Errorf("%q with triaged=%v: want applies=%v, got %v", c.stage, c.triaged, c.applies, got)
 		}
 	}
 }
@@ -309,7 +312,7 @@ func TestACustomReviewSendsWorkWhereItSays(t *testing.T) {
 // custom flow lost the protection silently. Now the refusal comes from the stage's
 // own declaration.
 func TestAStageThatDoesNotReviewCannotSendWorkBack(t *testing.T) {
-	state := atStage(t, KindFeature, "build")
+	state := atStage(t, KindFeature, "forge")
 
 	_, err := Reduce(state, ReviewFinding{Aligned: true, Summary: "my own work looks wrong"})
 	if !errors.Is(err, ErrIllegalTransition) {

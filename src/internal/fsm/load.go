@@ -99,11 +99,8 @@ func ParseStage(content, where string) (Stage, error) {
 	var (
 		stage   Stage
 		section string
-		gate    GateSpec
-		review  ReviewSpec
-		guard   GuardSpec
+		blocks  = stageBlocks{partial: map[Artifact]*verifierSpec{}}
 		verify  = map[Artifact]Verifier{}
-		partial = map[Artifact]*verifierSpec{}
 	)
 
 	lines := strings.Split(content, "\n")
@@ -121,7 +118,7 @@ func ParseStage(content, where string) (Stage, error) {
 		if header, ok := sectionName(line); ok {
 			section = header
 			if artifact, ok := verifySection(header); ok {
-				partial[artifact] = &verifierSpec{}
+				blocks.partial[artifact] = &verifierSpec{}
 			}
 			continue
 		}
@@ -132,12 +129,12 @@ func ParseStage(content, where string) (Stage, error) {
 		}
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 
-		if err := assignStage(&stage, &gate, &review, &guard, partial, section, key, value, at); err != nil {
+		if err := assignStage(&stage, &blocks, section, key, value, at); err != nil {
 			return Stage{}, err
 		}
 	}
 
-	for artifact, spec := range partial {
+	for artifact, spec := range blocks.partial {
 		verifier, err := spec.build(artifact, where)
 		if err != nil {
 			return Stage{}, err
@@ -145,7 +142,7 @@ func ParseStage(content, where string) (Stage, error) {
 		verify[artifact] = verifier
 	}
 
-	return finish(stage, gate, review, guard, verify, where)
+	return finish(stage, blocks, verify, where)
 }
 
 // verifierSpec is a `[verify.<artifact>]` block before it becomes a Verifier.
@@ -248,24 +245,36 @@ func (s *verifierSpec) handedOver(artifact Artifact, where string) (bool, error)
 }
 
 // assignStage puts one key into the stage being built.
-func assignStage(
-	stage *Stage, gate *GateSpec, review *ReviewSpec, guard *GuardSpec,
-	verify map[Artifact]*verifierSpec,
-	section, key, value, at string,
-) error {
+// stageBlocks is every `[...]` section a stage file may open, collected while the
+// file is read and assembled once at the end.
+//
+// A struct rather than five parameters threaded through the parser: the list grew
+// with the loop, and a function taking ten arguments is one where a caller
+// eventually passes two of them in the wrong order.
+type stageBlocks struct {
+	gate    GateSpec
+	review  ReviewSpec
+	guard   GuardSpec
+	loop    LoopSpec
+	partial map[Artifact]*verifierSpec
+}
+
+func assignStage(stage *Stage, blocks *stageBlocks, section, key, value, at string) error {
 	if artifact, ok := verifySection(section); ok {
-		return assignVerify(verify[artifact], key, value, at)
+		return assignVerify(blocks.partial[artifact], key, value, at)
 	}
 
 	switch section {
 	case "":
 		return assignStageField(stage, key, value, at)
 	case "gate":
-		return assignGate(gate, key, value, at)
+		return assignGate(&blocks.gate, key, value, at)
 	case "review":
-		return assignReview(review, key, value, at)
+		return assignReview(&blocks.review, key, value, at)
 	case "guard":
-		return assignGuard(guard, key, value, at)
+		return assignGuard(&blocks.guard, key, value, at)
+	case "loop":
+		return assignLoop(&blocks.loop, key, value, at)
 	default:
 		return fmt.Errorf("%s: unknown section [%s]", at, section)
 	}
@@ -335,6 +344,55 @@ func assignStageAgent(stage *Stage, key, value, at string) error {
 			return err
 		}
 		stage.ToolsDeny = denied
+	}
+	return nil
+}
+
+// assignLoop places one setting inside a `[loop]` block.
+func assignLoop(loop *LoopSpec, key, value, at string) error {
+	switch key {
+	case "converges_on":
+		artifacts, err := parseArtifacts(value, at)
+		if err != nil {
+			return err
+		}
+		loop.ConvergesOn = artifacts
+	case "invalidates":
+		artifacts, err := parseArtifacts(value, at)
+		if err != nil {
+			return err
+		}
+		loop.Invalidates = artifacts
+	case "max_rounds", "no_progress", "oscillation":
+		return assignLoopLimit(&loop.Limits, key, value, at)
+	default:
+		return fmt.Errorf("%s: unknown key %q in [loop] "+
+			"(expected converges_on, invalidates, max_rounds, no_progress, oscillation)", at, key)
+	}
+	return nil
+}
+
+// assignLoopLimit reads one ceiling, refusing a value that cannot bound anything.
+//
+// Zero is refused rather than taken as "no limit": a ceiling of zero is either a
+// loop that stops before its first round or one that never stops, depending on
+// which comparison reads it, and neither is what somebody typing it meant.
+func assignLoopLimit(limits *LoopLimits, key, value, at string) error {
+	rounds, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("%s: %s has to be a number, got %q", at, key, value)
+	}
+	if rounds < 1 {
+		return fmt.Errorf("%s: %s has to be at least 1, got %d", at, key, rounds)
+	}
+
+	switch key {
+	case "max_rounds":
+		limits.MaxRounds = rounds
+	case "no_progress":
+		limits.NoProgress = rounds
+	case "oscillation":
+		limits.Oscillation = rounds
 	}
 	return nil
 }
@@ -549,20 +607,30 @@ func assignVerify(spec *verifierSpec, key, value, at string) error {
 }
 
 // finish assembles the stage and checks what only the whole file can answer.
-func finish(stage Stage, gate GateSpec, review ReviewSpec, guard GuardSpec, verify map[Artifact]Verifier, where string) (Stage, error) {
+func finish(stage Stage, blocks stageBlocks, verify map[Artifact]Verifier, where string) (Stage, error) {
 	if stage.ID == "" {
 		return Stage{}, fmt.Errorf("%s: the stage declares no id", where)
 	}
-	if gate.declared() {
+	if blocks.gate.declared() {
+		gate := blocks.gate
 		stage.Gate = &gate
 	}
-	if review.SendsBackTo != "" || len(review.Invalidates) > 0 {
+	if blocks.review.SendsBackTo != "" || len(blocks.review.Invalidates) > 0 {
+		review := blocks.review
 		stage.Review = &review
 	}
 	// Paths rather than a reason: a guard with a reason and nothing to match on
 	// would stop nothing while reading like protection.
-	if len(guard.Paths) > 0 {
+	if len(blocks.guard.Paths) > 0 {
+		guard := blocks.guard
 		stage.Guard = &guard
+	}
+	// What it converges on rather than the limits: a loop declaring only ceilings
+	// is one whose exit nothing proves, and that is the shape this refuses to
+	// read as a loop at all.
+	if len(blocks.loop.ConvergesOn) > 0 {
+		loop := blocks.loop
+		stage.Loop = &loop
 	}
 	if len(verify) > 0 {
 		stage.Verifiers = verify

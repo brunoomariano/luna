@@ -59,7 +59,7 @@ Luna ships three, and a task picks one when it is created:
 
 | Flow | Stages | For |
 |---|---|---|
-| `full` | setup → intake → plan → build → refactor → pipeline → verify → audit | new behaviour, uncertain design; the only one with a gate |
+| `full` | setup → intake → *diagnose* → plan → **forge** → shipping → review | new behaviour or a defect; the trail with the gates and the loop |
 | `fix` | setup → diagnose → build → verify | a bug with a reproduction: the reproduction is the specification |
 | `chore` | setup → build → verify | mechanical work — a bump, a rename, a formatting pass |
 
@@ -80,10 +80,12 @@ Two consequences worth stating, because both were surprises:
 - **The command runs before the model, everywhere.** `ci_green` is proven by
   running `make ci`, and nothing about it is a judgement — `judgement` in
   `capability.go` does not list it — so the stage that owes it names no agent and
-  starts none. Under `full` that is the `pipeline` stage, and `verify` *requires*
-  what it produces: the entry check refuses the judging stage until the pipeline
-  has passed, so no model is ever paid to read code the compiler has not accepted.
-  The lean flows have the same stage with nothing after it.
+  starts none. Under the lean flows that is `verify`, with nothing after it.
+  Under `full` the command runs inside `forge`, which is the price of merging the
+  loop into one stage: the ordering is the agent's to keep rather than the
+  engine's to enforce. What the engine still holds is the exit — `forge` declares
+  what it converges on, and a round may not be judged converged until that command
+  has passed.
 - **A lean flow is a different fingerprint, and that is the point.** Dropping
   `plan` changes stage ids, order, `requires` and `produces` — all history. So a
   task that ran without planning is not replayable as though it had planned, which
@@ -122,10 +124,10 @@ those, carrying what its verifiers actually observed.
 A stage is a TOML file in `src/stock/flows/<flow>/`. This is the whole shape:
 
 ```toml
-id                 = "verify"
+id                 = "review"
 agent              = "claude"
-brief              = "You are checking the delivery against its contract. …"
-requires           = ["code", "scenarios"]
+brief              = "You are reading a delivery you did not write. …"
+requires           = ["code", "shipped"]
 produces           = ["ci_green"]
 produces_for_human = ["dod_checked"]
 
@@ -152,6 +154,48 @@ no upgrade path — a stage cannot launder `existence` into `full`.
 
 `handover = "store"` means the artifact is handed to Luna instead of committed. It changes
 what delivering *means*, so it is part of the flow fingerprint; `path` is not.
+
+## The convergent loop
+
+`forge` is one stage where there were five. It builds, cleans and checks, then judges what
+the round produced and either leaves or goes again:
+
+```
+   ┌──────────────────────────────────────────────┐
+   ▼                                              │
+ build → hygiene → acceptance → JUDGE THE ROUND ──┤
+                                     │            │
+                    converged ───────┘            │
+                    progressed ───────────────────┤
+                    regressed  → undo, then ──────┤
+                    stuck      → a person
+```
+
+**Why merge them.** A failure found by acceptance goes straight back into building, in one
+session, with the reasoning still in context — instead of a send-back paying a cold start
+to re-read code the same agent wrote an hour ago.
+
+**What it costs, stated rather than hidden.** Four contract boundaries. The one that
+mattered was `verify requires ci_green`, which kept a model from being paid to read code
+the compiler had not accepted — measured at $1.62, every cent spent before the pipeline
+had said anything. Inside one stage that ordering is the agent's to keep, and the brief
+says so.
+
+**Who decides.** The verdict is the model's: no exit code distinguishes *this round fixed
+something* from *this round traded one failure for another*, and that distinction is what
+separates a loop that converges from one that burns its ceiling going nowhere. What the
+model may not do is leave. `[loop] converges_on` names the evidence that has to be passing,
+and the reducer refuses `converged` without it — so the mechanical check is the floor and
+the judgement moves inside it.
+
+**Where it stops.** Three ceilings, in `LoopLimits`: four rounds, two without progress, two
+oscillating. A regression counts against oscillation rather than progress, because the two
+ask different questions. Reaching one opens a gate when somebody is waiting and blocks when
+nobody is — a ceiling that resolved itself would be the infinite retry INV-5 names.
+
+**Where independence went.** An agent judging its own rounds is fast and biased, and the
+bias is not fixable from inside. So the independent read is a separate stage after the
+delivery: `review` runs cold, on work it did not write, with `Edit` and `Write` denied.
 
 ## How an agent is run
 
@@ -180,14 +224,15 @@ Three things follow from the transport:
   **The brief is what keys it, and that is stricter than the role it replaced.** While
   the flow had twelve roles for twelve stages, every stage started cold by construction
   and the setting had nowhere to apply. Collapsing them gave it somewhere — but a role
-  covered stages told different things: `verify` and `audit` held one role, so under it
-  they could have shared a session neither should inherit from the other. Comparing the
+  covered stages told different things — one label over a builder and a judge — so
+  under it they could have shared a session neither should inherit from the other. Comparing the
   brief closes that: two stages told the same thing are one worker, and two told
   differently are two.
 
   A solo run gives every stage one brief, so each stage after the first continues the
-  session before it, except `audit`, which is deliberately `fresh`. A pack gives each
-  stage its own, so every stage starts cold — seven cold starts in the shipped flow.
+  session before it, except `review`, which is deliberately `fresh`. A pack gives
+  each stage its own, so every stage starts cold — six cold starts in the shipped
+  trail.
 
   Those cold starts are not economies to be recovered. `AuditContextChain` refuses a live
   stage whose predecessor is briefed differently, and it is right to: a coder continuing
@@ -216,7 +261,7 @@ brief = "You are building the delivery. …"
 |---|---|---|
 | `chore` | build | setup, verify |
 | `fix` | diagnose, build | setup, verify |
-| `full` | intake, diagnose, plan, build, refactor, verify, audit | setup, pipeline |
+| `full` | intake, diagnose, plan, forge, shipping, review | setup |
 
 A stage is **mechanical** when it names no agent — that is the whole test, and it reads the
 field that decides whether anything starts rather than a label beside it. A worktree is
@@ -226,14 +271,14 @@ drops the denials, which is the independence solo already says it does not have.
 **Why the brief moved.** A role table was a pointer a stage followed to find out what it
 was told, and the two drifted: the table said one role shipped while the stock held five.
 One file per stage answers "what happens here" without a second lookup, and a brief written
-for one stage can say things a shared one cannot. The cost is real and was weighed — `verify`
-and `audit` are both judging stages and now carry their own text, so keeping them consistent
-is a person's job rather than a file's.
+for one stage can say things a shared one cannot. The cost is real and was weighed: two
+stages doing similar work now carry their own text, so keeping them consistent is a
+person's job rather than a file's.
 
 **Why the role went too.** Absorbing the brief left `role` a field that resolved to nothing,
 and it was not merely idle: `luna flow check` counted distinct role names and reported "pack
-of 5" for a flow that runs seven differently briefed agents, because `verify` and `audit`
-share a label. A name that makes the tool undercount is worse than no name. What it did is
+of 5" for a flow that ran seven differently briefed agents, because a builder and a
+judge shared a label. A name that makes the tool undercount is worse than no name. What it did is
 now done by what it was standing in for — the brief keys a continued session, the stage id
 names the worktree, and the agent decides whether a stage is mechanical.
 

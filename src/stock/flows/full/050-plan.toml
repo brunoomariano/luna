@@ -1,25 +1,23 @@
 # Scenarios, approach and contract in one stage, because they were one piece of
-# work billed as two. Measured on the first full run under the headless
-# transport: `scenarios` cost $2.02 and `spec` $2.12, together 61% of a $6.78
-# task whose entire content was a `--loud` flag — and `contract`, the artifact
-# the second stage existed to produce, is required by no stage in the flow.
+# work billed as two. Measured on the first full run under the headless transport:
+# `scenarios` cost $2.02 and `spec` $2.12, together 61% of a $6.78 task.
 #
-# It is not waste, though: the obligations the contract created are where that
-# run's unrequested quality came from (a shellcheck pass, idempotent repeated
-# flags, exit 2 with a diagnostic). So the contract stays an artifact and the
-# gate that reviews it stays; what goes is the second cold start, the second
-# session and the lower of the two gates.
+# Spec-anchored, and the three words matter. The plan is not spec-first — nothing
+# here becomes an RFC, a PRD or an ADR, and no document is written into the
+# repository. It is not spec-source either — the code is not generated from it.
+# It is the anchor the delivery is held against, it lives in the store for the
+# length of the task, and it is thrown away after.
 
 id       = "plan"
 agent    = "claude"
-brief    = "You are planning the change. You owe three things: the scenarios that say what the delivery has to do, the approach that says how, and the contract every later stage is held to. The contract is the one a person reviews at the gate after you, so it states what is required and what is forbidden — never a suggestion, and never an obligation the task did not ask for. You turn what a person asked for into obligations somebody can be held to. You do not write the code, and you do not decide how it will be built beyond what the task already says. When what you owe is a contract, every sentence in it binds someone: an obligation, a prohibition, or a statement of fact a checker can settle by running a command. It carries no recommendations, no notes to whoever builds next, and no section for them — a sentence saying one option is preferable, or that something is worth doing, is one a checker cannot act on and it does not belong in the document. Where two forms are genuinely both acceptable, say that both satisfy the contract and stop; the choice belongs to whoever builds, and the contract has nothing further to add. Anything you want to say that is not binding belongs in the approach, not the contract. Every acceptance criterion the task states has to appear as an obligation, in the contract's own words, and an obligation that contradicts another is a defect in the document rather than a question for later."
-# Fresh, not live, and the static check is what said so: on a bug task
-# `diagnose` runs immediately before this, so continuing "the previous session"
-# would mean continuing the investigator's. AuditContextChain refuses a live
-# stage whose predecessor holds a different role, and it refused this one.
+# Fresh, not live, and the static check is what said so: on a bug task `diagnose`
+# runs immediately before this, so continuing "the previous session" would mean
+# continuing the investigator's. AuditContextChain refuses a live stage briefed
+# differently from its predecessor, and it refused this one.
 context  = "fresh"
 requires = ["briefing"]
 produces = ["scenarios", "approach", "contract"]
+brief    = "You are planning the change, and the plan is read by a person who will approve or adjust it. You owe three things. The scenarios: what the delivery has to do, one behaviour per entry, each written as an observable result rather than an intention — `./tally.sh --avg 1 2 3 prints 2`, not `averaging works`. Every acceptance criterion in the task appears as a scenario; a criterion you leave out is one nothing will check. On a bug, the first scenario is the minimised case from the investigation, so the fix is pinned by a regression before anything else is added. The approach: how you intend to build it, and the alternatives you considered and rejected, with the reason. Say plainly where the approach is genuinely open rather than inventing a constraint — a design line that invents one becomes an obligation somebody has to satisfy. The contract: what is required and what is forbidden, as obligations a checker can settle. Every sentence in it binds someone. It carries no recommendations, no notes for later and no section for them: a sentence saying one option is preferable is one a checker cannot act on, and it does not belong in the document. Where two forms genuinely both satisfy it, say that both do and stop. Finally, the open questions: anything the task leaves ambiguous enough that two readings produce different deliveries. State each as a question with the options, not as an assumption you already made — this is the one place where a person can still answer cheaply. Keep the whole thing structured and free of ceremony; it is a working document, not a deliverable."
 
 [verify.scenarios]
 kind     = "existence"
@@ -37,30 +35,15 @@ handover = "store"
 kind     = "review-artifact"
 artifact = "contract"
 reason   = "review the plan and its contract"
-# The higher of the two gates this stage replaces. The plan's `confirm` at 8 was
-# approving something the contract gate re-approved forty turns later; a contract
-# is what every later stage is held to, and a wrong one surfaces at `verify`.
+# The plan fixes the whole boundary of the delivery at once, and everything after
+# it runs against that boundary. A wrong contract surfaces at the far end of the
+# loop, after the rounds have been paid for.
 autonomy_floor = 9
 # Every criterion is about the contract, because the contract is what the gate
-# attaches — a gate carries one artifact, and criteria about the other two
-# arrived when `scenarios` and `spec` merged into this stage. A real judgement
-# found it: asked about the scenarios, the lead correctly answered UNSUPPORTED,
-# because it had been given a document that only *references* them. Asking about
-# what is not shown is how a gate teaches whoever answers it to guess.
-#
-# The scenarios and the approach are still handed over and still readable with
-# `luna artifact get`. What is not claimed is that this gate reviewed them.
-# The third criterion asks only what the contract settles about itself. It read
-# "none is impossible to satisfy", and that is a question about code: whether an
-# obligation can be met depends on the script being modified, which this gate
-# does not show. The lead answered it honestly — "depends on what today's
-# tally.sh actually contains, which I cannot read" — and had to mark it
-# unsupported, which sends the gate to a person at any autonomy.
-#
-# It is the same lesson as the paragraph above, in a different criterion: asking
-# about what is not shown teaches whoever answers to guess. Whether the delivery
-# actually satisfies the contract is `verify`'s question now — that stage
-# requires the contract and has the code.
+# attaches — a gate carries one artifact. A real judgement found this: asked about
+# the scenarios, the lead correctly answered UNSUPPORTED, because it had been given
+# a document that only *references* them. Asking about what is not shown is how a
+# gate teaches whoever answers it to guess.
 judge = [
   "The contract states what is required and what is forbidden, with no suggestions",
   "Every acceptance criterion in the task appears as an obligation",
@@ -69,11 +52,8 @@ judge = [
 
 # All of them, because this gate asks about prose that has not become code yet:
 # there is nothing to run a check against, and without this the lead marks every
-# criterion unsupported and the gate goes to a person at any autonomy. Measured
-# on TALLY-3, which stopped here under `nightly`.
-#
-# It does not mean the artifact is believed. The brief still refuses its verdict
-# about itself and asks for the line that settles each criterion.
+# criterion unsupported and the gate goes to a person at any autonomy. Measured on
+# TALLY-3, which stopped here under `nightly`.
 judge_by_reading = [
   "The contract states what is required and what is forbidden, with no suggestions",
   "Every acceptance criterion in the task appears as an obligation",

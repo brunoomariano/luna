@@ -40,7 +40,7 @@ func ParseGateKind(name string) (GateKind, error) {
 // A flow that needs a condition this build has never heard of needs a build that
 // has, which is the same trade the harness table makes.
 func ShippedConditions() []Condition {
-	return []Condition{IsBug, IsFeatureOrBug, NotChore, NotDocs, TouchedStructure}
+	return []Condition{IsBug, IsFeatureOrBug, NotChore, NotDocs, TouchedStructure, TriagedAsBug}
 }
 
 // ParseCondition resolves a condition by name.
