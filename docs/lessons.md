@@ -169,8 +169,9 @@ same defect the whole time and nobody knew, because nothing there ever tested a 
 against a process that ignores it. Writing that test while moving the code took the
 package's suite from 60 seconds to 0.4 — the tests had been *waiting out* the bug.
 
-**A collapsed name turns a survivable failure into a blocking one.** A branch is named for
-the task and the role. While every stage had its own role, a stage killed mid-flight
+**A collapsed name turns a survivable failure into a blocking one.** A branch was named for
+the task and the role, and is now named for the task and the stage. While every stage had
+its own role, a stage killed mid-flight
 stranded a registration git still held — and nothing ever asked for that name again, so
 nobody noticed. With one `maker` across plan, build and refactor, the very next stage asks
 for exactly that name and the task blocks on `already used by worktree at …`, pointing at

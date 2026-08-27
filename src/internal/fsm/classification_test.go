@@ -37,7 +37,6 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
 		"Review":           "history", // decides whether a past finding was legal, and where it went
 		"Guard":            "policy",  // the node matches it; the reducer reads only whether it fired
-		"Role":             "policy",  // only internal/node reads it: the branch, and a live stage's session
 		"Agent":            "policy",  // which harness answered; `--agent` overrides it per run
 		"Brief":            "policy",  // what the agent was told, never what delivering meant
 		"Skills":           "policy",  // read when the agent starts
@@ -81,7 +80,6 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		Gate:             &GateSpec{Kind: GateConfirm, Reason: "confirm something"},
 		Review:           &ReviewSpec{SendsBackTo: "only", Invalidates: []Artifact{"a"}},
 		Verifiers:        map[Artifact]Verifier{"a": Command{Run: "make test", Scope: ScopeTargeted}},
-		Role:             "somebody",
 	}}
 	want := Fingerprint(base)
 
@@ -117,8 +115,8 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 	// And what is deliberately excluded must not move it, or every reworded prompt
 	// and renamed Makefile target becomes a refused replay.
 	unmoved := map[string]func(*Stage){
-		"Role, which only internal/node reads": func(s *Stage) {
-			s.Role = "somebody-else"
+		"the brief, which only internal/node reads": func(s *Stage) {
+			s.Brief = "told something else entirely"
 		},
 		"a gate's reason, which is prose a person reads at the moment they are asked": func(s *Stage) {
 			s.Gate = &GateSpec{Kind: GateConfirm, Reason: "reworded entirely"}

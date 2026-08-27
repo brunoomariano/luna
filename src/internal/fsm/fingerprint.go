@@ -39,7 +39,8 @@ type FlowFingerprint string
 //
 // Not covered:
 //
-//   - Role, which only internal/node reads. Verified by grep, not by assumption.
+//   - The brief and the agent, which only internal/node read. Verified by grep,
+//     not by assumption.
 //   - The verifier's command. `make test` becoming `go test ./...` changes how an
 //     artifact is proven, not how much was proven, and evidence records what
 //     actually ran. Including it would refuse a replay because someone

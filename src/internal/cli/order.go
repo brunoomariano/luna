@@ -232,8 +232,12 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 	if name, err := env.Store.FlowNameOf(state.ID); err == nil {
 		line("flow", "%s/%s · %s", name, fsm.Fingerprint(flow), state.Context.Kind)
 	}
-	if roles := packRoles(flow); len(roles) > 0 {
-		line("pack", "%s", strings.Join(roles, ", "))
+	if members := packStages(flow); len(members) > 0 {
+		names := make([]string, len(members))
+		for i, id := range members {
+			names[i] = string(id)
+		}
+		line("pack", "%s", strings.Join(names, ", "))
 	}
 	if state.Memory.Named() {
 		line("workstream", "%s", state.Memory.Workstream)
@@ -270,11 +274,11 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 func printStatusStages(env Env, state fsm.TaskState, flow []fsm.Stage, report StatusReport) {
 	for _, mark := range report.Stages {
 		stage := stageIn(flow, mark.ID)
-		line := fmt.Sprintf("  %-3s %-10s %-13s %s",
-			mark.Mark, mark.ID, stage.Role, stageCostLine(state, stage))
-		// A mechanical stage has no role and no cost, so the columns after it are
-		// padding — and trailing whitespace is what makes a diff of two runs noisy
-		// for a reason that has nothing to do with the runs.
+		line := fmt.Sprintf("  %-3s %-10s %s",
+			mark.Mark, mark.ID, stageCostLine(state, stage))
+		// A mechanical stage has no cost, so the columns after it are padding —
+		// and trailing whitespace is what makes a diff of two runs noisy for a
+		// reason that has nothing to do with the runs.
 		fmt.Fprintln(env.Out, strings.TrimRight(line, " "))
 	}
 
@@ -307,15 +311,16 @@ func stageCostLine(state fsm.TaskState, stage fsm.Stage) string {
 // answer to "where is this work" is a path that is there while the stage runs and
 // gone after. Naming it either way beats making somebody guess the convention.
 func printWorktrees(env Env, state fsm.TaskState, flow []fsm.Stage) {
-	roles := packRoles(flow)
-	if len(roles) == 0 {
+	if len(flow) == 0 {
 		return
 	}
 
 	fmt.Fprintln(env.Out)
 	fmt.Fprintln(env.Out, "  worktrees")
-	for _, role := range roles {
-		path, err := node.WorktreePath(".", state.ID, role)
+	// Every stage, not only the ones that start an agent: a worktree is opened per
+	// stage, so listing the pack would have named fewer paths than exist.
+	for _, stage := range flow {
+		path, err := node.WorktreePath(".", state.ID, string(stage.ID))
 		if err != nil {
 			continue
 		}
@@ -323,7 +328,7 @@ func printWorktrees(env Env, state fsm.TaskState, flow []fsm.Stage) {
 		if _, err := os.Stat(path); err == nil {
 			here = "  (open)"
 		}
-		fmt.Fprintf(env.Out, "    %-13s %s%s\n", role, nearby(path), here)
+		fmt.Fprintf(env.Out, "    %-13s %s%s\n", stage.ID, nearby(path), here)
 	}
 }
 

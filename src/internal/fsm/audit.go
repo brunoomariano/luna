@@ -56,27 +56,27 @@ func missingFrom(required []Artifact, available map[Artifact]bool) []Artifact {
 	return missing
 }
 
-// RoleGap is a stage that produces something only judgement can produce and names
-// no role to produce it.
-type RoleGap struct {
+// AgentGap is a stage that produces something only judgement can produce and
+// names no agent to produce it.
+type AgentGap struct {
 	Stage    StageID
 	Produces []Artifact
 }
 
-// AuditRoles reports every stage that needs an agent and has none.
+// AuditAgents reports every stage that needs an agent and has none.
 //
-// It exists because the mechanical path is silent by nature. A stage with no role
-// runs without an agent, which is right for `setup` and `commit` and
+// It exists because the mechanical path is silent by nature. A stage naming no
+// agent runs without one, which is right for `setup` and `pipeline` and
 // catastrophic for one that was supposed to write a contract: it would run,
 // deliver nothing, and look like it worked.
 //
 // Like AuditContract, this catches a flow broken on paper — before any agent is
 // called, and before a task spends an afternoon producing nothing.
-func AuditRoles(flow []Stage) []RoleGap {
-	var gaps []RoleGap
+func AuditAgents(flow []Stage) []AgentGap {
+	var gaps []AgentGap
 
 	for _, stage := range flow {
-		if !stage.NeedsRole() {
+		if !stage.NeedsAgent() {
 			continue
 		}
 
@@ -86,7 +86,7 @@ func AuditRoles(flow []Stage) []RoleGap {
 				needing = append(needing, artifact)
 			}
 		}
-		gaps = append(gaps, RoleGap{Stage: stage.ID, Produces: needing})
+		gaps = append(gaps, AgentGap{Stage: stage.ID, Produces: needing})
 	}
 
 	return gaps
@@ -133,15 +133,14 @@ const nameComponentLimit = 128
 type ContextGap struct {
 	Stage StageID
 
-	// From is the stage whose session this one would have inherited, and Role is
-	// what that stage ran as. Both are in the report because the reason is the
-	// pair: continuing is fine, continuing across a change of role is not.
+	// From is the stage whose session this one would have inherited. It is in the
+	// report because the reason is the pair: continuing is fine, continuing from a
+	// stage told something else is not.
 	From StageID
-	Role string
 }
 
 // AuditContextChain reports every stage declaring `context = "live"` that would
-// inherit a session from a different role.
+// inherit a session from a stage briefed differently.
 //
 // When fresh context stopped being a rule, one part of it did not: a reviewer
 // must not continue the implementer's session. It would be reading its own
@@ -162,17 +161,21 @@ func AuditContextChain(flow []Stage) []ContextGap {
 	if first := flow[0]; !first.Context.Fresh() {
 		// Named as a gap against itself, so the report says what is wrong rather
 		// than pointing at a stage that is absent.
-		gaps = append(gaps, ContextGap{Stage: first.ID, Role: first.Role})
+		gaps = append(gaps, ContextGap{Stage: first.ID})
 	}
 
 	// The rest walk as pairs rather than by index, which is what the rule
 	// actually is — a stage and the one whose session it would inherit.
 	for i, stage := range flow[1:] {
 		previous := flow[i]
-		if stage.Context.Fresh() || previous.Role == stage.Role {
+		// Compared by brief rather than by name, and it is stricter than the role
+		// it replaced: `verify` and `audit` held one role and are told different
+		// things, so under the old test they could have shared a session that
+		// neither should inherit from the other.
+		if stage.Context.Fresh() || previous.Brief == stage.Brief {
 			continue
 		}
-		gaps = append(gaps, ContextGap{Stage: stage.ID, From: previous.ID, Role: previous.Role})
+		gaps = append(gaps, ContextGap{Stage: stage.ID, From: previous.ID})
 	}
 	return gaps
 }

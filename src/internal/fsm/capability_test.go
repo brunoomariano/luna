@@ -6,82 +6,82 @@ import (
 )
 
 // TestTheShippedFlowLeavesNoStageWithoutAnAgentItNeeds is the static check
-// AuditRoles exists for.
+// AuditAgents exists for.
 //
-// A stage that produces judgement and names no role runs mechanically: it
+// A stage that produces judgement and names no agent runs mechanically: it
 // delivers nothing and looks like it worked. Catching that here means it fails in
 // `make ci` rather than after an afternoon of a task producing nothing.
 func TestTheShippedFlowLeavesNoStageWithoutAnAgentItNeeds(t *testing.T) {
-	if gaps := AuditRoles(DefaultFlow()); len(gaps) > 0 {
+	if gaps := AuditAgents(DefaultFlow()); len(gaps) > 0 {
 		for _, gap := range gaps {
-			t.Errorf("stage %q produces %v and names no role", gap.Stage, gap.Produces)
+			t.Errorf("stage %q produces %v and names no agent", gap.Stage, gap.Produces)
 		}
 	}
 }
 
-// TestAStageThatProducesJudgementNeedsARole covers the detection itself.
-func TestAStageThatProducesJudgementNeedsARole(t *testing.T) {
+// TestAStageThatProducesJudgementNeedsAnAgent covers the detection itself.
+func TestAStageThatProducesJudgementNeedsAnAgent(t *testing.T) {
 	writing := Stage{ID: "spec", Produces: []Artifact{"contract"}}
-	if !writing.NeedsRole() {
+	if !writing.NeedsAgent() {
 		t.Error("a stage that writes a contract needs someone to write it")
 	}
 
-	// The same stage with a role is fine.
-	writing.Role = "specifier"
-	if writing.NeedsRole() {
-		t.Error("a stage that names a role does not need one")
+	// The same stage with an agent is fine.
+	writing.Agent = "claude"
+	if writing.NeedsAgent() {
+		t.Error("a stage that names an agent does not need one")
 	}
 }
 
-// TestAMechanicalStageNeedsNoRole covers the other direction, which is the whole
+// TestAMechanicalStageNeedsNoAgent covers the other direction, which is the whole
 // reason the mechanical path exists.
-func TestAMechanicalStageNeedsNoRole(t *testing.T) {
+func TestAMechanicalStageNeedsNoAgent(t *testing.T) {
 	for _, stage := range []Stage{
 		{ID: "setup", Produces: []Artifact{"worktree"}},
 		{ID: "commit", Produces: []Artifact{"commit_sha"}},
 	} {
 		if !stage.Mechanical() {
-			t.Errorf("%q names no role, so it is mechanical", stage.ID)
+			t.Errorf("%q names no agent, so it is mechanical", stage.ID)
 		}
-		if stage.NeedsRole() {
+		if stage.NeedsAgent() {
 			t.Errorf("%q produces nothing that needs judgement", stage.ID)
 		}
 	}
 }
 
-// TestAHumanReportStillNeedsARole covers the artifact that revealed the rule.
+// TestAHumanReportStillNeedsAnAgent covers the artifact that revealed the rule.
 //
 // `verify` produces ci_green from a command and dod_checked from a person's
 // judgement. The artifact that needs an agent decides for the stage — a mixed
 // stage is not mechanical.
-func TestAHumanReportStillNeedsARole(t *testing.T) {
+func TestAHumanReportStillNeedsAnAgent(t *testing.T) {
 	mixed := Stage{
 		ID:               "verify",
 		Produces:         []Artifact{"ci_green"},
 		ProducesForHuman: []Artifact{"dod_checked"},
 	}
 
-	if !mixed.NeedsRole() {
+	if !mixed.NeedsAgent() {
 		t.Error("a checklist is judgement even when the pipeline beside it is not")
 	}
 }
 
-// TestAuditRolesNamesTheStageAndWhatItOwes covers the report itself.
+// TestAuditAgentsNamesTheStageAndWhatItOwes covers the report itself.
 //
 // The shipped flow has no gaps, so this builds one: a message that only said "a
-// stage is missing a role" would cost a search through the flow to find which.
-func TestAuditRolesNamesTheStageAndWhatItOwes(t *testing.T) {
+// stage is missing an agent" would cost a search through the flow to find which.
+func TestAuditAgentsNamesTheStageAndWhatItOwes(t *testing.T) {
 	broken := []Stage{
-		{ID: "setup", Produces: []Artifact{"worktree"}},                  // mechanical, fine
-		{ID: "spec", Produces: []Artifact{"contract"}},                   // needs a role
-		{ID: "diagnose", ProducesForHuman: []Artifact{"min_case"}},       // needs one too
-		{ID: "build", Role: "implementer", Produces: []Artifact{"code"}}, // has one
+		{ID: "setup", Produces: []Artifact{"worktree"}},              // mechanical, fine
+		{ID: "spec", Produces: []Artifact{"contract"}},               // needs an agent
+		{ID: "diagnose", ProducesForHuman: []Artifact{"min_case"}},   // needs one too
+		{ID: "build", Produces: []Artifact{"code"}, Agent: "claude"}, // has one
 	}
 
-	gaps := AuditRoles(broken)
+	gaps := AuditAgents(broken)
 
 	if len(gaps) != 2 {
-		t.Fatalf("want the two stages that need a role, got %+v", gaps)
+		t.Fatalf("want the two stages that need an agent, got %+v", gaps)
 	}
 	if gaps[0].Stage != "spec" || gaps[1].Stage != "diagnose" {
 		t.Errorf("want the gaps in flow order, got %+v", gaps)
@@ -98,15 +98,15 @@ func TestAuditRolesNamesTheStageAndWhatItOwes(t *testing.T) {
 	}
 }
 
-// TestAuditRolesIgnoresAStageThatOnlyRunsCommands covers the silence that is
+// TestAuditAgentsIgnoresAStageThatOnlyRunsCommands covers the silence that is
 // correct.
-func TestAuditRolesIgnoresAStageThatOnlyRunsCommands(t *testing.T) {
+func TestAuditAgentsIgnoresAStageThatOnlyRunsCommands(t *testing.T) {
 	mechanical := []Stage{
 		{ID: "setup", Produces: []Artifact{"worktree"}},
 		{ID: "commit", Produces: []Artifact{"commit_sha"}},
 	}
 
-	if gaps := AuditRoles(mechanical); len(gaps) != 0 {
+	if gaps := AuditAgents(mechanical); len(gaps) != 0 {
 		t.Errorf("git needs no agent, got %+v", gaps)
 	}
 }
@@ -136,7 +136,7 @@ func TestParseCapabilityRefusesWhatItDoesNotKnow(t *testing.T) {
 		}
 	}
 
-	// Case matters: the role file holds the capability, and `edit` is a harness's
+	// Case matters: the stage file holds the capability, and `edit` is a harness's
 	// spelling rather than the capability's name.
 	for _, bad := range []string{"Edt", "edit", "", "Delete"} {
 		if _, err := ParseCapability(bad); err == nil {

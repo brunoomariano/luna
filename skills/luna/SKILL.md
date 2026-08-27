@@ -124,9 +124,10 @@ A stage file holds everything about that stage: its contract
 (`requires`/`produces`), how each artifact is proven, its gate if it has one,
 and the **brief** its agent is given. One file answers what a stage is for.
 
-Roles no longer resolve to anything: `role` is what groups a stage's branch, and
-a solo run collapses every stage onto one brief. So "which role does this" is
-not a question you configure — it is what the stage file already says.
+There is no role. A stage names its own `agent` and `brief`, a stage that names
+no agent is mechanical, and a solo run collapses every stage onto one brief. So
+"who does this" is not a question you configure — it is what the stage file
+already says.
 
 ```sh
 luna flow check          # what each flow carries, its gate, its guard
@@ -171,18 +172,17 @@ luna task statement AVG-1 --acceptance "…"
 
 ```sh
 luna lead      AVG-1     # solo — one agent carries the task end to end
-luna fleet run AVG-1     # pack — the lead conducts, the flow's roles do the work
+luna fleet run AVG-1     # pack — the lead conducts, each stage runs on its own brief
 ```
 
 **Solo** is one agent, one worktree, one session across every stage. Cheapest,
 and its `audit` re-reads its own work with no memory of writing it — the one
 half of independence a single agent can have.
 
-**Pack** is the lead plus the roles the flow declares, each with its own
+**Pack** is the lead plus one agent per brief the flow declares, each with its own
 worktree and session. It costs a conductor billed every turn and a cold start at
-every role change. What it buys is an audit that is actually independent: the
-`auditor` role is denied `Edit` and `Write`, which one agent doing everything
-cannot be.
+every stage. What it buys is an audit that is actually independent: `verify` and
+`audit` are denied `Edit` and `Write`, which one agent doing everything cannot be.
 
 Default to solo. Reach for the pack when the change is large enough that you
 want the judging done by something that cannot edit.

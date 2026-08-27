@@ -29,7 +29,6 @@ import (
 func theRunningFlow() []Stage {
 	return []Stage{{
 		ID:        "build",
-		Role:      "implementer",
 		Requires:  []Artifact{TaskID},
 		Produces:  []Artifact{"code"},
 		Verifiers: map[Artifact]Verifier{"code": Existence{}},
@@ -176,7 +175,6 @@ func TestEveryActionIsCoveredAbove(t *testing.T) {
 func TestAStageDoesNotCloseWithoutItsHumanFacingArtifact(t *testing.T) {
 	flow := []Stage{{
 		ID:               "qa",
-		Role:             "qa",
 		Requires:         []Artifact{TaskID},
 		Produces:         []Artifact{"verdict"},
 		ProducesForHuman: []Artifact{"qa_report"},

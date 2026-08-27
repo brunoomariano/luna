@@ -79,8 +79,8 @@ Two consequences worth stating, because both were surprises:
 
 - **The command runs before the model, everywhere.** `ci_green` is proven by
   running `make ci`, and nothing about it is a judgement — `judgement` in
-  `role.go` does not list it — so the stage that owes it names no role and starts
-  no agent. Under `full` that is the `pipeline` stage, and `verify` *requires*
+  `capability.go` does not list it — so the stage that owes it names no agent and
+  starts none. Under `full` that is the `pipeline` stage, and `verify` *requires*
   what it produces: the entry check refuses the judging stage until the pipeline
   has passed, so no model is ever paid to read code the compiler has not accepted.
   The lean flows have the same stage with nothing after it.
@@ -106,7 +106,7 @@ luna done <id> --delivered <a,b> --commit <sha>   # a stage carried out by hand
 `next` prints how each owed artifact is proven, beside what is owed, so nobody has
 to go and read the stage file to find out what they are held to. It carries the
 same brief the agent would get — contract duty, gate criteria, what is handed over
-rather than committed — rather than the role's own sentence about itself.
+rather than committed.
 
 There was a third verb, `start`, and a hand-driven mode built around it. Both are
 gone: a mode where the work is not the lead's is a third way to reach the same
@@ -123,7 +123,8 @@ A stage is a TOML file in `src/stock/flows/<flow>/`. This is the whole shape:
 
 ```toml
 id                 = "verify"
-role               = "lead"
+agent              = "claude"
+brief              = "You are checking the delivery against its contract. …"
 requires           = ["code", "scenarios"]
 produces           = ["ci_green"]
 produces_for_human = ["dod_checked"]
@@ -170,22 +171,26 @@ Three things follow from the transport:
   agent's tool list rather than discouraged in its brief.
 - **Cost is recorded.** Tokens, cache and price land in the log per stage, so what
   orchestration costs is a measurement instead of an argument.
-- **A stage can continue.** `context = "live"` resumes the previous session for the same
-  role, which is roughly an order of magnitude cheaper than starting cold. It is refused
-  across a change of role: a reviewer inheriting the implementer's session would read its
-  own reasoning instead of the delivery, and `luna flow check` says so before anything
-  runs.
+- **A stage can continue.** `context = "live"` resumes the session of an identically
+  briefed stage, which is roughly an order of magnitude cheaper than starting cold. It is
+  refused across a change of brief: a judging stage inheriting the builder's session would
+  read its own reasoning instead of the delivery, and `luna flow check` says so before
+  anything runs.
 
-  **The shipped flow uses it, and that is what collapsing the roles bought.** While the
-  flow had twelve roles for twelve stages, every stage started cold by construction and
-  the setting had nowhere to apply. Three roles brought it to two cold starts a run; one
-  role, so how many there are is the mode. A solo run collapses every stage onto one role
-  and each stage after the first continues the session before it, except `audit`, which is
-  deliberately `fresh`. A pack keeps a session per role, so a cold start happens wherever
-  the flow changes role — which is `build` and `refactor` in the shipped one.
+  **The brief is what keys it, and that is stricter than the role it replaced.** While
+  the flow had twelve roles for twelve stages, every stage started cold by construction
+  and the setting had nowhere to apply. Collapsing them gave it somewhere — but a role
+  covered stages told different things: `verify` and `audit` held one role, so under it
+  they could have shared a session neither should inherit from the other. Comparing the
+  brief closes that: two stages told the same thing are one worker, and two told
+  differently are two.
+
+  A solo run gives every stage one brief, so each stage after the first continues the
+  session before it, except `audit`, which is deliberately `fresh`. A pack gives each
+  stage its own, so every stage starts cold — seven cold starts in the shipped flow.
 
   Those cold starts are not economies to be recovered. `AuditContextChain` refuses a live
-  stage whose predecessor holds a different role, and it is right to: a coder continuing
+  stage whose predecessor is briefed differently, and it is right to: a coder continuing
   the planner's session reads the plan's reasoning instead of the plan, and a cleaner
   continuing the coder's reads its reasoning instead of its output.
 
@@ -196,16 +201,15 @@ Three things follow from the transport:
   fresh rather than failing the stage, and the retry reports `fresh`, so the cost column
   never claims a resumption that did not happen.
 
-## Roles and briefs
+## Briefs
 
-There is no role file. A stage's TOML holds everything about that stage — its contract, how
-each artifact is proven, its gate, and the **brief** its agent is given:
+There is no role, and no role file. A stage's TOML holds everything about that stage — its
+contract, how each artifact is proven, its gate, and the **brief** its agent is given:
 
 ```toml
-id     = "build"
-role   = "coder"
-agent  = "claude"
-brief  = "You are building the delivery. …"
+id    = "build"
+agent = "claude"
+brief = "You are building the delivery. …"
 ```
 
 | Flow | Stages with a brief | Mechanical |
@@ -214,11 +218,10 @@ brief  = "You are building the delivery. …"
 | `fix` | diagnose, build | setup, verify |
 | `full` | intake, diagnose, plan, build, refactor, verify, audit | setup, pipeline |
 
-`role` no longer resolves to anything. What it still does is **group**: two stages sharing
-a role share a branch, so a base handed forward means the same thing whether or not the
-stage changed, and an empty one is what makes a stage mechanical. A solo run
-(`fsm.Solo`) collapses every stage onto one brief and drops the denials, which is the
-independence solo already says it does not have.
+A stage is **mechanical** when it names no agent — that is the whole test, and it reads the
+field that decides whether anything starts rather than a label beside it. A worktree is
+named after the stage. A solo run (`fsm.Solo`) collapses every stage onto one brief and
+drops the denials, which is the independence solo already says it does not have.
 
 **Why the brief moved.** A role table was a pointer a stage followed to find out what it
 was told, and the two drifted: the table said one role shipped while the stock held five.
@@ -226,6 +229,13 @@ One file per stage answers "what happens here" without a second lookup, and a br
 for one stage can say things a shared one cannot. The cost is real and was weighed — `verify`
 and `audit` are both judging stages and now carry their own text, so keeping them consistent
 is a person's job rather than a file's.
+
+**Why the role went too.** Absorbing the brief left `role` a field that resolved to nothing,
+and it was not merely idle: `luna flow check` counted distinct role names and reported "pack
+of 5" for a flow that runs seven differently briefed agents, because `verify` and `audit`
+share a label. A name that makes the tool undercount is worse than no name. What it did is
+now done by what it was standing in for — the brief keys a continued session, the stage id
+names the worktree, and the agent decides whether a stage is mechanical.
 
 **What that costs.** Whoever writes now reviews. The judging stage is `audit` rather than
 `review`, because a review is independent or it is not one, and the name would claim a

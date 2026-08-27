@@ -719,11 +719,11 @@ func TestStatusAnswersWhatSomebodyWouldOtherwiseAskFourCommandsFor(t *testing.T)
 	for what, want := range map[string]string{
 		"which flow, with its fingerprint": "fix/",
 		"what kind of task":                "bug",
-		"how many agents it keeps":         "investigator, coder",
+		"how many agents it keeps":         "diagnose, build",
 		"which ledger it writes to":        "nightly",
 		"what the knob means here":         "autonomy   7",
 		"the ceiling and what is left":     "$12.00",
-		"where each role works":            "wt-",
+		"where each stage works":           "wt-",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status does not say %s (%q):\n%s", what, want, out)
@@ -791,8 +791,8 @@ func TestStatusSaysWhichWorktreeIsOpen(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "S-11", "--kind", "bug", "--flow", "fix")
 
-	// One role's checkout exists, the other's does not.
-	open, err := node.WorktreePath(".", "S-11", "coder")
+	// One stage's checkout exists, the others' do not.
+	open, err := node.WorktreePath(".", "S-11", "build")
 	if err != nil {
 		t.Fatalf("resolving the path: %v", err)
 	}
@@ -803,7 +803,7 @@ func TestStatusSaysWhichWorktreeIsOpen(t *testing.T) {
 
 	out := h.mustRun(t, "status", "S-11")
 
-	if !strings.Contains(out, "coder") || !strings.Contains(out, "(open)") {
+	if !strings.Contains(out, "build") || !strings.Contains(out, "(open)") {
 		t.Errorf("status does not mark the checkout that exists:\n%s", out)
 	}
 	if strings.Count(out, "(open)") != 1 {
@@ -854,7 +854,7 @@ func TestAPathIsShortenedAgainstWhereYouAreStanding(t *testing.T) {
 // will answer for it, which is what somebody is deciding about.
 func TestAStageThatHasNotRunSaysWhatItWillRunOn(t *testing.T) {
 	state := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{}}
-	build := fsm.Stage{ID: "build", Role: "coder", Agent: "codex"}
+	build := fsm.Stage{ID: "build", Agent: "codex"}
 
 	if got := stageCostLine(state, build); got != "codex" {
 		t.Errorf("a stage that has not run reports %q", got)

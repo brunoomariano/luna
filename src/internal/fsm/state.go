@@ -453,7 +453,7 @@ func ShippedProfiles() []Profile {
 
 // TaskMemory is the durable memory one task runs inside.
 //
-// A property of the task and not of a stage or a role, which is the whole of the
+// A property of the task and not of a stage, which is the whole of the
 // design: every agent a task starts writes to one ledger, so what the planner
 // learned is there for the coder, and what this task learned is there for the
 // next one over the same ground. A stage choosing its own would split one task's

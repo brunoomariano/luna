@@ -249,8 +249,9 @@ declares `fresh` rather than inheriting like every other stage after the first.
 `AuditContextChain` earned its keep the first time the flow tried to use `live` in
 earnest: `plan` was declared live, and on a bug task `diagnose` ran immediately before it —
 so "continue the previous session" would have meant continuing the investigation's. It
-refused that statically, before a task ran. With one role it has nothing left to refuse and
-it stays anyway, for the day the packs come back.
+refused that statically, before a task ran. It compares briefs now rather than role names,
+which is stricter: `verify` and `audit` held one role and are told different things, so the
+old test would have let them share a session neither should inherit from the other.
 
 **A prose summary never crosses the handoff.** Still true in the code — the payload is
 synthesized by Luna, and the agent fills structured fields. It is a design rule rather

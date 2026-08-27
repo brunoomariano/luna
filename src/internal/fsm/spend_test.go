@@ -93,8 +93,7 @@ func TestTotalSpendSumsTheStages(t *testing.T) {
 // through the only door it has: a Complete that passed its checks.
 func TestSpendIsRecordedWhenAStageCloses(t *testing.T) {
 	flow := []Stage{{
-		ID: "build", Role: "implementer",
-		Requires: []Artifact{TaskID},
+		ID: "build", Requires: []Artifact{TaskID},
 		Produces: []Artifact{"code"},
 	}}
 
@@ -138,8 +137,7 @@ func nearly(got, want float64) bool { return math.Abs(got-want) < 0.001 }
 // the flow that fails most would read as the cheapest one to run.
 func TestABlockedStageIsStillBilled(t *testing.T) {
 	flow := []Stage{{
-		ID: "scenarios", Role: "gherkin",
-		Requires: []Artifact{TaskID},
+		ID: "scenarios", Requires: []Artifact{TaskID},
 		Produces: []Artifact{"scenarios", "approach"},
 	}}
 
@@ -172,8 +170,7 @@ func TestABlockedStageIsStillBilled(t *testing.T) {
 // worked.
 func TestAStageIsBilledOnceWhenItCloses(t *testing.T) {
 	flow := []Stage{{
-		ID: "build", Role: "implementer",
-		Requires: []Artifact{TaskID},
+		ID: "build", Requires: []Artifact{TaskID},
 		Produces: []Artifact{"code"},
 	}}
 
@@ -236,7 +233,7 @@ func TestTheSessionSurvivesAReplay(t *testing.T) {
 
 // TestTheLastSessionOfARoleIsWhatALiveStageContinues answers the question the
 // node layer actually asks: not "what did this stage do" but "what session is
-// this role in".
+// this worker in".
 //
 // This is what a pack buys and a solo run cannot have. `planner` owns intake and
 // plan, so its session is the later of those two; `auditor` owns verify and audit
@@ -245,34 +242,43 @@ func TestTheSessionSurvivesAReplay(t *testing.T) {
 //
 // It walks the flow rather than the map, because map order would make "the last
 // one" mean whatever Go felt like.
-func TestTheLastSessionOfARoleIsWhatALiveStageContinues(t *testing.T) {
+func TestTheLastSessionOfABriefIsWhatALiveStageContinues(t *testing.T) {
+	// Two stages told the same thing, and a third told something else. The briefs
+	// are the fixture's own rather than the shipped ones, so the test says what it
+	// is about instead of depending on which stock text happens to repeat.
+	building, judging := "You build.", "You judge."
+	flow := []Stage{
+		{ID: "first", Agent: "claude", Brief: building},
+		{ID: "second", Agent: "claude", Brief: building},
+		{ID: "third", Agent: "claude", Brief: judging},
+	}
 	state := TaskState{
 		Spent: map[StageID]Spend{
-			"intake": {Session: "sess-planner-1", Turns: 1},
-			"plan":   {Session: "sess-planner-2", Turns: 1},
-			"verify": {Session: "sess-auditor", Turns: 1},
+			"first":  {Session: "sess-build-1", Turns: 1},
+			"second": {Session: "sess-build-2", Turns: 1},
+			"third":  {Session: "sess-judge", Turns: 1},
 		},
 	}
 
-	if got := state.SessionOf(DefaultFlow(), "planner"); got != "sess-planner-2" {
-		t.Errorf("a role continues the last session it opened, got %q", got)
+	if got := state.SessionOf(flow, building); got != "sess-build-2" {
+		t.Errorf("a worker continues the last session it opened, got %q", got)
 	}
-	// Not the planner's, which is the whole point of keeping them apart: an
-	// auditor continuing the planner's session reads the plan's reasoning rather
-	// than the delivery.
-	if got := state.SessionOf(DefaultFlow(), "auditor"); got != "sess-auditor" {
-		t.Errorf("a role must not continue another role's session, got %q", got)
+	// Not the builder's, which is the whole point of keeping them apart: a judge
+	// continuing the builder's session reads its reasoning rather than the
+	// delivery.
+	if got := state.SessionOf(flow, judging); got != "sess-judge" {
+		t.Errorf("a worker must not continue another's session, got %q", got)
 	}
-	if got := state.SessionOf(DefaultFlow(), "nobody"); got != "" {
-		t.Errorf("a role that has not run has no session to continue, got %q", got)
+	if got := state.SessionOf(flow, "told nothing of the sort"); got != "" {
+		t.Errorf("a brief that has not run has no session to continue, got %q", got)
 	}
 }
 
 // TestSoloCollapsesEveryRoleOntoOne is the mode `luna lead` runs.
 //
 // One agent carrying the task means one worktree and one session, and both are
-// keyed by role — so the collapse is what makes them survive from stage to stage.
-// A mechanical stage keeps its empty role: a stage that starts no agent has
+// keyed by the brief — so the collapse is what makes them survive from stage to
+// stage. A mechanical stage is left alone: a stage that starts no agent has
 // nobody to be.
 func TestSoloCollapsesEveryRoleOntoOne(t *testing.T) {
 	pack := DefaultFlow()
@@ -284,23 +290,25 @@ func TestSoloCollapsesEveryRoleOntoOne(t *testing.T) {
 
 	for i, stage := range solo {
 		switch {
-		case pack[i].Mechanical() && stage.Role != "":
-			t.Errorf("%q starts no agent and was given the role %q", stage.ID, stage.Role)
-		case !pack[i].Mechanical() && stage.Role != SoloRole:
-			t.Errorf("%q runs under %q rather than the one solo role", stage.ID, stage.Role)
+		case pack[i].Mechanical() && stage.Agent != "":
+			t.Errorf("%q starts no agent and was given %q", stage.ID, stage.Agent)
+		case !pack[i].Mechanical() && stage.Brief != SoloBrief:
+			t.Errorf("%q kept its own brief rather than the one solo brief", stage.ID)
+		case !pack[i].Mechanical() && len(stage.ToolsDeny) != 0:
+			t.Errorf("%q kept denials a single agent cannot honour: %v", stage.ID, stage.ToolsDeny)
 		}
 	}
 
-	// The pack it was built from keeps its own roles: the collapse copies rather
+	// The pack it was built from keeps its own briefs: the collapse copies rather
 	// than editing a flow the caller may still be holding.
-	if stageIn(pack, "build").Role != "coder" {
+	if stageIn(pack, "build").Brief == SoloBrief {
 		t.Error("collapsing wrote through the flow it was given")
 	}
 }
 
 // TestSoloIsNotInTheFingerprint is what lets a task change mode mid-run.
 //
-// `Role` is policy rather than history — the reducer never reads it, only the
+// The brief is policy rather than history — the reducer never reads it, only the
 // node does — so it is out of the fingerprint by the same rule that keeps gate
 // criteria and verifier commands out. A task begun solo replays against a pack
 // and the other way round; if it did not, choosing the mode would be a decision

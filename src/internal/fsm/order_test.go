@@ -10,7 +10,6 @@ func orderFlow() []Stage {
 	return []Stage{
 		{
 			ID:       "build",
-			Role:     "implementer",
 			Agent:    "claude",
 			Brief:    "write the code",
 			Skills:   []string{"go"},
@@ -19,7 +18,6 @@ func orderFlow() []Stage {
 		},
 		{
 			ID:               "review",
-			Role:             "reviewer",
 			Agent:            "codex",
 			Brief:            "review it",
 			ToolsDeny:        []Capability{CapEdit, CapWrite},
@@ -45,19 +43,19 @@ func TestTheFirstOrderNamesTheFlowsFirstStage(t *testing.T) {
 		t.Errorf("stage = %q, want build", order.Stage)
 	}
 	if order.Agent != "claude" {
-		t.Errorf("agent = %q, want claude — the catalogue resolves the role", order.Agent)
+		t.Errorf("agent = %q, want claude — the stage carries its own", order.Agent)
 	}
-	if order.Worktree != "luna-LUNA-1-implementer" {
-		t.Errorf("worktree = %q, want luna-LUNA-1-implementer", order.Worktree)
+	if order.Worktree != "luna-LUNA-1-build" {
+		t.Errorf("worktree = %q, want luna-LUNA-1-build", order.Worktree)
 	}
 	if order.Base != "" {
 		t.Errorf("base = %q, want empty: nothing has been delivered yet", order.Base)
 	}
 }
 
-// TestTheOrderCarriesWhatTheRoleMayNotDo is the role's denials reaching the lead.
-// A denial that stays in the catalogue is a denial the harness never applies.
-func TestTheOrderCarriesWhatTheRoleMayNotDo(t *testing.T) {
+// TestTheOrderCarriesWhatTheStageMayNotDo is the stage's denials reaching the
+// lead. A denial that stays in the file is one the harness never applies.
+func TestTheOrderCarriesWhatTheStageMayNotDo(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 	state.Status = StatusStageDone
 	state.Stage = "build"
@@ -68,13 +66,13 @@ func TestTheOrderCarriesWhatTheRoleMayNotDo(t *testing.T) {
 		t.Fatalf("NextOrder: %v", err)
 	}
 
-	if order.Role != "reviewer" {
-		t.Fatalf("role = %q, want reviewer", order.Role)
+	if order.Stage != "review" {
+		t.Fatalf("stage = %q, want review", order.Stage)
 	}
 	if len(order.Deny) != 2 {
 		t.Fatalf("deny = %v, want Edit and Write", order.Deny)
 	}
-	if order.Worktree == WorktreeName("LUNA-1", "implementer") {
+	if order.Worktree == WorktreeName("LUNA-1", "build") {
 		t.Error("the reviewer got the implementer's worktree — the separation is " +
 			"filesystem-deep in this design, and sharing the directory gives that away")
 	}
@@ -251,19 +249,21 @@ func TestAStageWithNoAgentStillProducesAnOrder(t *testing.T) {
 	}
 }
 
-// TestAMechanicalStageNamesNoRole covers the stages Luna runs itself: setup is a
+// TestAMechanicalStageNamesNoAgent covers the stages Luna runs itself: setup is a
 // worktree, commit is git.
-func TestAMechanicalStageNamesNoRole(t *testing.T) {
+func TestAMechanicalStageNamesNoAgent(t *testing.T) {
 	flow := []Stage{{ID: "setup", Requires: []Artifact{TaskID}, Produces: []Artifact{"worktree"}}}
 	state := NewTaskState("LUNA-1", KindFeature)
 
 	order, _ := NextOrder(state, flow)
 
-	if order.Role != "" || order.Agent != "" {
-		t.Errorf("role=%q agent=%q, want both empty on a mechanical stage", order.Role, order.Agent)
+	if order.Agent != "" {
+		t.Errorf("agent = %q, want empty on a mechanical stage", order.Agent)
 	}
-	if order.Worktree != "luna-LUNA-1" {
-		t.Errorf("worktree = %q, want the task's own", order.Worktree)
+	// Named after the stage like any other: a mechanical stage has a worktree too,
+	// and the special case that gave it the task's own bare name is gone.
+	if order.Worktree != "luna-LUNA-1-setup" {
+		t.Errorf("worktree = %q, want luna-LUNA-1-setup", order.Worktree)
 	}
 }
 
@@ -291,7 +291,6 @@ func TestTheBaseIsThePreviousStagesCommit(t *testing.T) {
 func TestWorkThatDidNotPassNeverBecomesTheBase(t *testing.T) {
 	flow := []Stage{{
 		ID:        "build",
-		Role:      "implementer",
 		Requires:  []Artifact{TaskID},
 		Produces:  []Artifact{"code"},
 		Verifiers: map[Artifact]Verifier{"code": Command{Run: "make test", Scope: ScopeTargeted}},
@@ -400,9 +399,8 @@ func TestTheOrderRendersAsKeyValues(t *testing.T) {
 		"kind=run",
 		"task=LUNA-1",
 		"stage=review",
-		"role=reviewer",
 		"agent=codex",
-		"worktree=luna-LUNA-1-reviewer",
+		"worktree=luna-LUNA-1-review",
 		"deny=Edit,Write",
 	} {
 		if !strings.Contains(text.Text(), want) {

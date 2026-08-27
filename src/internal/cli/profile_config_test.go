@@ -294,7 +294,7 @@ func TestEveryGatedStageShipsOnAHarnessThatCanGateIt(t *testing.T) {
 // supposed to lose, and nothing saying so — which is the failure the separation cares
 // about most.
 func TestAnUnknownCapabilityIsRefused(t *testing.T) {
-	_, err := fsm.ParseStage("id = \"audit\"\nrole = \"auditor\"\ntools_deny = [\"Edt\"]\n", "audit.toml")
+	_, err := fsm.ParseStage("id = \"audit\"\ntools_deny = [\"Edt\"]\n", "audit.toml")
 
 	if err == nil {
 		t.Fatal("a misspelled capability must stop the load")
@@ -362,7 +362,7 @@ func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
 		"never closed":      {`tools_deny = ["Edit"`, `has to close with ]`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := fsm.ParseStage("id = \"audit\"\nrole = \"auditor\"\n"+malformed.line+"\n", "audit.toml")
+			_, err := fsm.ParseStage("id = \"audit\"\n"+malformed.line+"\n", "audit.toml")
 
 			if err == nil {
 				t.Fatalf("%s was accepted as a list", name)

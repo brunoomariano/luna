@@ -44,12 +44,12 @@ func runFlow(env Env, args []string) error {
 // something Luna checks about Luna.
 func reportFlowGaps(env Env, flow []fsm.Stage) {
 	contract := fsm.AuditContract(flow)
-	roles := fsm.AuditRoles(flow)
+	agents := fsm.AuditAgents(flow)
 	names := fsm.AuditFlowNames(flow)
 	contexts := fsm.AuditContextChain(flow)
 	criteria := fsm.AuditGateCriteria(flow)
 
-	if len(contract)+len(roles)+len(names)+len(contexts)+len(criteria) == 0 {
+	if len(contract)+len(agents)+len(names)+len(contexts)+len(criteria) == 0 {
 		fmt.Fprintf(env.Out, "the contract holds: every stage's inputs are produced before it\n")
 		return
 	}
@@ -58,8 +58,8 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 		fmt.Fprintf(env.Out, "  %s requires %v, which no earlier stage produces\n",
 			gap.Stage, gap.Missing)
 	}
-	for _, gap := range roles {
-		fmt.Fprintf(env.Out, "  %s produces %v and names no role — nothing but judgement makes those\n",
+	for _, gap := range agents {
+		fmt.Fprintf(env.Out, "  %s produces %v and names no agent — nothing but judgement makes those\n",
 			gap.Stage, gap.Produces)
 	}
 	for _, gap := range names {
@@ -76,8 +76,8 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 				gap.Stage)
 			continue
 		}
-		fmt.Fprintf(env.Out, "  %s asks to continue %s, which ran as %q — a session does not cross a change of role\n",
-			gap.Stage, gap.From, gap.Role)
+		fmt.Fprintf(env.Out, "  %s asks to continue %s, which is briefed differently — a session does not cross that\n",
+			gap.Stage, gap.From)
 	}
 }
 
@@ -236,9 +236,13 @@ func auditFlows(env Env, names []string) error {
 		// and it is a reading of the flow rather than a setting beside it: how many
 		// agents `luna fleet run` will keep, and what each one is for. `luna lead`
 		// collapses all of them onto one.
-		if roles := packRoles(flow); len(roles) > 0 {
+		if members := packStages(flow); len(members) > 0 {
+			names := make([]string, len(members))
+			for i, id := range members {
+				names[i] = string(id)
+			}
 			fmt.Fprintf(env.Out, "pack of %d: %s — `luna lead` runs the same flow with one\n",
-				len(roles), strings.Join(roles, ", "))
+				len(members), strings.Join(names, ", "))
 		}
 
 		reportWhatItCost(env, name, flow)

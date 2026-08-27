@@ -247,8 +247,7 @@ func TestGateShowPrintsAHandedOverArtifact(t *testing.T) {
 	h := newHarness(t)
 
 	flow := []fsm.Stage{{
-		ID:   "spec",
-		Role: "specifier",
+		ID: "spec",
 		Gate: &fsm.GateSpec{
 			Kind: fsm.GateReviewArtifact, Artifact: "contract", Reason: "review the contract",
 		},

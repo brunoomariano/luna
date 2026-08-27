@@ -110,10 +110,6 @@ func mustShippedFlows() map[string][]Stage {
 // stock rather than a private copy of an existing one — the difference is that
 // the first is visible to everyone and the second was visible to nobody.
 
-// SoloRole is the role every stage runs under when one agent carries the whole
-// task. It is the only role a solo run resolves, and the stock ships it.
-const SoloRole = "lead"
-
 // SoloAgent is the harness a solo run uses, and SoloBrief is what it is told.
 //
 // One brief covering every stage, where a pack gives each stage its own. That is
@@ -122,32 +118,31 @@ const SoloRole = "lead"
 // written for the stage in front of it.
 //
 // It lived in `stock/roles/lead.toml` while roles were a table a stage pointed
-// into. With the brief absorbed into the stages, a file holding one role that no
-// stage names would be a table with a single row — so the row moved here, next to
-// the function that is the only thing which ever read it.
+// into. With the brief absorbed into the stages, a file holding one role no stage
+// names would be a table with a single row — so the row moved here, next to the
+// function that is the only thing which ever read it.
 const (
 	SoloAgent = "claude"
 	SoloBrief = "You carry out one stage at a time, and Luna decides which. Do what the stage says it owes and nothing further: a stage that delivers more than its contract asks has done work nobody can check. When what you owe is a contract, every sentence in it binds someone — an obligation, a prohibition, or a statement of fact a checker can settle. It carries no recommendations, no notes for later, and no section for them: a sentence saying one option is preferable is one a checker cannot act on, and it does not belong in the document. Where two forms are genuinely both acceptable, say that both satisfy the contract and stop. When you are asked to find a root cause, find the cause and the smallest case that shows it, and do not fix it in that stage. When you are asked to judge what was delivered, you are re-reading your own work with no memory of writing it, and that is worth saying to yourself: look for what the contract obliges that you cannot find satisfied, and treat an obligation you cannot locate as a finding whatever the suite says. Apply each lens the work admits and say what each found, including when it found nothing. correctness: does the code do what the scenarios and the contract say, including where those two disagree? coverage: what does the suite not cover — the case that would still pass if the behaviour were absent? robustness: what breaks under load, attack or absence — empty input, a failing dependency, a concurrent caller? structure: did the change move the system's shape, and does the shape still hold? A finding names the file and the line, what goes wrong, and the input that makes it go wrong; a finding you cannot state that way is an impression and belongs in the report as one. Every finding opens with exactly one tag on its own line, in square brackets, and Luna reads only the tag: [BLOCKING] this change introduced the defect, or it breaks a stated acceptance criterion — this and only this sends the work back; [SHOULD-FIX] a real defect this change did not introduce, or that no acceptance criterion covers; [NIT] a preference; [UNCERTAIN] you suspect a defect and cannot confirm it, and you say what would confirm it. An untagged finding is invisible to Luna, so a defect you describe without a tag is one you did not report. Do not reach for [BLOCKING] because a defect is serious: a serious defect that was already there is [SHOULD-FIX], and blocking on it reopens the work to fix something nobody asked about. Ask what this change did, not what the file deserves."
 )
 
-// Solo collapses a flow's roles onto one, for the mode where a single agent
+// Solo collapses a flow's briefs onto one, for the mode where a single agent
 // carries the task from end to end.
 //
-// The pack declares a role per specialism — planner, coder, auditor — and each
-// one buys a worktree of its own, a session of its own, and the tool denials that
-// make an audit independent. A solo run buys none of that and does not pretend
-// to: one agent, one worktree, one session, and the `audit` stage re-reading its
-// own work with no memory of writing it, which is the one half of independence a
-// single agent can have.
+// A pack gives each stage its own brief, its own session and the tool denials
+// that make an audit independent. A solo run buys none of that and does not
+// pretend to: one agent, one brief, one continuing session, and the `audit`
+// stage re-reading its own work with no memory of writing it, which is the one
+// half of independence a single agent can have.
 //
 // Safe to apply after a task has started, and that is not an accident of the
-// implementation. `Role` is policy rather than history — the reducer never reads
-// it, only the node does — so it is out of the flow fingerprint by the same rule
-// that keeps gate criteria and verifier commands out. A task begun solo replays
-// against a pack and the other way round.
+// implementation. The brief and the agent are policy rather than history — the
+// reducer never reads either, only the node does — so they are out of the flow
+// fingerprint by the same rule that keeps gate criteria and verifier commands
+// out. A task begun solo replays against a pack and the other way round.
 //
-// Mechanical stages keep their empty role: a stage that starts no agent has
-// nobody to be.
+// Mechanical stages are left alone: a stage that starts no agent has nobody to
+// be, and giving it one here would invent a process the flow never asked for.
 func Solo(flow []Stage) []Stage {
 	solo := make([]Stage, len(flow))
 	copy(solo, flow)
@@ -156,7 +151,6 @@ func Solo(flow []Stage) []Stage {
 		if solo[i].Mechanical() {
 			continue
 		}
-		solo[i].Role = SoloRole
 		solo[i].Agent = SoloAgent
 		solo[i].Brief = SoloBrief
 

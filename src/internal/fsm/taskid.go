@@ -9,15 +9,17 @@ import (
 //
 // The id is a component of two names, and the shorter of the two decides:
 //
-//   - a directory, `wt-<repo>-<id>-<role>`, a sibling of the repository
+//   - a directory, `wt-<repo>-<id>-<stage>`, a sibling of the repository
 //     (node.OpenWorktree). One path component, so the filesystem's own 255-byte
-//     limit applies to the whole of it — repository name and role included.
-//   - a git branch, `luna/<task>/<role>` (node.stageBranch), stored as a path
+//     limit applies to the whole of it — repository name and stage id included.
+//   - a git branch, `luna/<task>/<stage>` (node.stageBranch), stored as a path
 //     under `.git/refs/heads/`, so the same component limit applies again.
 //
 // 64 is what is left over once the parts around the id are accounted for and a
-// margin is kept for the repository and role names, which vary per project and
-// which nothing here can measure. It is not a computed ceiling — it is a limit
+// margin is kept for the repository name, which varies per project and which
+// nothing here can measure. The trailing component was a role name until roles
+// went; a stage id is shorter than the longest of those was (`refactor` at 8
+// against `investigator` at 12), so the margin only grew. It is not a computed ceiling — it is a limit
 // low enough that neither name can reach 255 and high enough that no tracker id
 // anyone types comes close.
 const MaxTaskIDLen = 64
@@ -27,8 +29,8 @@ var ErrInvalidTaskID = fmt.Errorf("invalid task id")
 
 // ValidateTaskID refuses an id that cannot survive what is done with it.
 //
-// A task id is not only a key. It becomes a directory name — `wt-<repo>-<id>-<role>`,
-// joined onto a path — and a git branch, `luna/<task>/<role>`. Both have
+// A task id is not only a key. It becomes a directory name — `wt-<repo>-<id>-<stage>`,
+// joined onto a path — and a git branch, `luna/<task>/<stage>`. Both have
 // requirements, and neither validated them: an id containing `..` composed a path
 // somewhere else entirely.
 //
@@ -64,7 +66,7 @@ func ValidateTaskID(id string) error {
 
 // taskIDBudget explains the limit in the error rather than making the reader
 // find this file.
-const taskIDBudget = "wt-<repo>-<id>-<role> and luna/<id>/<role>, each one path component"
+const taskIDBudget = "wt-<repo>-<id>-<stage> and luna/<id>/<stage>, each one path component"
 
 // idRune reports whether a character may appear in a task id.
 //

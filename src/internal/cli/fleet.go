@@ -254,20 +254,25 @@ func fleetRun(env Env, args []string) error {
 	return nil
 }
 
-// packRoles is what a flow's pack is made of, in the order the flow meets them.
+// packStages is what a flow's pack is made of, in the order the flow meets them.
 //
-// Reported rather than configured: the roles are declared per stage, so the pack
-// is a reading of the flow and never a second place that could disagree with it.
-func packRoles(flow []fsm.Stage) []string {
-	var roles []string
+// Reported rather than configured: it is a reading of the flow and never a second
+// place that could disagree with it.
+//
+// Counted by distinct brief, which is what a pack member actually is. It counted
+// distinct role names until the briefs moved onto the stages, and then it
+// undercounted: `verify` and `audit` share a role, are told different things, and
+// the flow reported five members where seven agents run.
+func packStages(flow []fsm.Stage) []fsm.StageID {
+	var members []fsm.StageID
 	seen := map[string]bool{}
 
 	for _, stage := range flow {
-		if stage.Mechanical() || seen[stage.Role] {
+		if stage.Mechanical() || seen[stage.Brief] {
 			continue
 		}
-		seen[stage.Role] = true
-		roles = append(roles, stage.Role)
+		seen[stage.Brief] = true
+		members = append(members, stage.ID)
 	}
-	return roles
+	return members
 }

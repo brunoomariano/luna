@@ -1467,19 +1467,20 @@ func withSpend(spent map[StageID]Spend, stage StageID, add Spend) map[StageID]Sp
 // SessionOf is the conversation a role is in, and it is what a stage declaring
 // `context = "live"` continues.
 //
-// Keyed by role rather than by stage, because a session belongs to the
-// conversation a role has been having: `build` continues what `plan` opened, not
-// whatever stage happened to run last. Reading it from the log rather than from
-// a map on a struct is what lets that survive a gate, a restart or a crash — the
-// map did not, and the shipped flow gates in the middle of the maker's run.
+// Keyed by the brief rather than by the stage, because a session belongs to the
+// conversation one worker has been having: a stage continues what an identically
+// briefed stage opened, not whatever ran last. Reading it from the log rather
+// than from a map on a struct is what lets that survive a gate, a restart or a
+// crash — the map did not, and the shipped flow gates mid-run.
 //
-// The flow says which stage belongs to which role; the state says what each
-// stage spent. The last stage of that role to have opened a session wins, since
-// a role that ran twice is better continued from where it actually left off.
-func (s TaskState) SessionOf(flow []Stage, role string) string {
+// The brief replaced a role name here, and is stricter than it was: two stages
+// told different things are two workers even where one label used to cover both.
+// The last identically briefed stage to have opened a session wins, since a
+// worker that ran twice is better continued from where it actually left off.
+func (s TaskState) SessionOf(flow []Stage, brief string) string {
 	session := ""
 	for _, stage := range flow {
-		if stage.Role != role {
+		if stage.Brief != brief {
 			continue
 		}
 		if spent, ran := s.Spent[stage.ID]; ran && spent.Session != "" {

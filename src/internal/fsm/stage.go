@@ -90,17 +90,10 @@ func (c TaskContext) HasArtifact(a Artifact) bool {
 type Stage struct {
 	ID StageID
 
-	// Role is what this stage's work is grouped under: the branch its worktree
-	// lands on, and the session a live stage continues.
-	//
-	// It stopped being a pointer into a table of roles when the brief moved here.
-	// What it still does is group — two stages sharing a role share a branch, so
-	// a base handed forward means the same thing whether or not the stage changed
-	// — and an empty one is what makes a stage mechanical.
-	Role string
-
 	// Agent is the harness kind that runs this stage, travelling to the node
-	// layer as agent.Call.Kind. Empty on a mechanical stage, which starts none.
+	// layer as agent.Call.Kind. Empty on a mechanical stage, which starts none —
+	// and that emptiness is what Mechanical reads, so it is the field that
+	// decides whether anything runs at all.
 	Agent string
 
 	// Brief is what the agent is told: what happens here, what it owes, and what

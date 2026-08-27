@@ -275,8 +275,6 @@ func assignStageField(stage *Stage, key, value, at string) error {
 	switch key {
 	case "id":
 		stage.ID = StageID(unquote(value))
-	case "role":
-		stage.Role = unquote(value)
 	case "agent", "brief", "skills", "tools_deny":
 		return assignStageAgent(stage, key, value, at)
 	case "when":
@@ -291,6 +289,13 @@ func assignStageField(stage *Stage, key, value, at string) error {
 			return err
 		}
 		stage.Context = context
+	case "role":
+		// Refused rather than ignored, the same way `memory` is. A stage file still
+		// carrying the key would read as configuration that groups something, and
+		// nothing groups any more: the brief is the stage's own, the worktree is
+		// named after the stage, and a stage is mechanical when it names no agent.
+		return fmt.Errorf("%s: `role` is gone — a stage names its own `agent` and "+
+			"`brief`, and a stage with neither is mechanical", at)
 	case "memory":
 		// Refused rather than ignored. Memory is the task's now — one workstream
 		// for every agent a task starts — and a stage file still carrying the old

@@ -303,7 +303,7 @@ func TestAReviewFindingMakesTheGreenStale(t *testing.T) {
 // and gateless.
 func gatedFlow() []Stage {
 	return []Stage{{
-		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
+		ID: "gated", Requires: []Artifact{TaskID},
 		Produces: []Artifact{"thing"},
 		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
 	}}

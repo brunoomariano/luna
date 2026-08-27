@@ -1700,7 +1700,7 @@ func TestAWorkstreamFlagWithNoNameIsRefused(t *testing.T) {
 // something — which is what it was for the whole time it existed and no shipped
 // stage turned it on.
 func TestAStageStillDeclaringMemoryIsRefused(t *testing.T) {
-	_, err := fsm.ParseStage("id = \"build\"\nrole = \"coder\"\nmemory = \"on\"\n", "a stage")
+	_, err := fsm.ParseStage("id = \"build\"\nmemory = \"on\"\n", "a stage")
 	if err == nil {
 		t.Fatal("a stage declaring `memory` was accepted")
 	}

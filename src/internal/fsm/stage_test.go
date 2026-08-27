@@ -8,7 +8,6 @@ import "testing"
 func auditOnlyStage() Stage {
 	return Stage{
 		ID:               "qa",
-		Role:             "qa",
 		Requires:         []Artifact{"ci_green", "briefing"},
 		Produces:         nil,
 		ProducesForHuman: []Artifact{"qa_report"},

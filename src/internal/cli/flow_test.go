@@ -384,9 +384,9 @@ func TestAGateDeclaringNoCriticalityReportsTheDefault(t *testing.T) {
 func TestFlowCheckReportsEachKindOfGap(t *testing.T) {
 	for name, flow := range map[string][]fsm.Stage{
 		"an input nothing produces": {
-			{ID: "build", Requires: []fsm.Artifact{"a_spec_nobody_wrote"}, Produces: []fsm.Artifact{"code"}, Role: "implementer"},
+			{ID: "build", Requires: []fsm.Artifact{"a_spec_nobody_wrote"}, Produces: []fsm.Artifact{"code"}, Agent: "claude", Brief: "You build."},
 		},
-		"a stage with no role": {
+		"a stage with no agent": {
 			{ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"}},
 		},
 		"a name too long for an agent": {
@@ -394,7 +394,6 @@ func TestFlowCheckReportsEachKindOfGap(t *testing.T) {
 				ID:       fsm.StageID(strings.Repeat("verylongstagename", 8)),
 				Requires: []fsm.Artifact{fsm.TaskID},
 				Produces: []fsm.Artifact{"code"},
-				Role:     "implementer",
 			},
 		},
 	} {
@@ -483,18 +482,18 @@ func TestFlowCheckNamesAStageThatWouldInheritTheWrongSession(t *testing.T) {
 	}{
 		"a reviewer continuing the implementer": {
 			flow: []fsm.Stage{
-				{ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"}, Role: "implementer"},
+				{ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"}, Agent: "claude", Brief: "You build."},
 				{
 					ID: "code-review", Requires: []fsm.Artifact{"code"}, Produces: []fsm.Artifact{"review"},
-					Role: "reviewer", Context: fsm.ContextLive,
+					Agent: "claude", Brief: "You judge.", Context: fsm.ContextLive,
 				},
 			},
-			says: []string{"code-review", "build", "implementer"},
+			says: []string{"code-review", "build", "briefed differently"},
 		},
 		"the first stage having nothing to continue": {
 			flow: []fsm.Stage{{
 				ID: "build", Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"},
-				Role: "implementer", Context: fsm.ContextLive,
+				Agent: "claude", Brief: "You build.", Context: fsm.ContextLive,
 			}},
 			says: []string{"build", "there is none to continue"},
 		},

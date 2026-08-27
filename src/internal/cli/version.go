@@ -30,7 +30,7 @@ func versionCommand(env Env, args []string) error {
 	for _, name := range shippedFlowNames() {
 		flow := shippedFlow(name)
 		fmt.Fprintf(env.Out, "  flow %s/%s (%d stages, pack of %d)\n",
-			name, fsm.Fingerprint(flow), len(flow), len(packRoles(flow)))
+			name, fsm.Fingerprint(flow), len(flow), len(packStages(flow)))
 	}
 	return nil
 }

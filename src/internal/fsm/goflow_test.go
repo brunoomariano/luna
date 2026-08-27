@@ -17,14 +17,12 @@ func goFlow() []Stage {
 		},
 		{
 			ID:        "intake",
-			Role:      "maker",
 			Requires:  []Artifact{TaskID, "worktree"},
 			Produces:  []Artifact{"briefing"},
 			Verifiers: map[Artifact]Verifier{"briefing": Existence{Handover: true}},
 		},
 		{
 			ID:               "diagnose",
-			Role:             "investigator",
 			Requires:         []Artifact{"briefing"},
 			Produces:         []Artifact{"root_cause"},
 			ProducesForHuman: []Artifact{"min_case"},
@@ -32,8 +30,7 @@ func goFlow() []Stage {
 			When:             IsBug,
 		},
 		{
-			ID:   "plan",
-			Role: "maker",
+			ID: "plan",
 			// Scenarios, approach and contract in one stage. The two it replaces
 			// were 61% of the first measured task's cost, and `contract` — the
 			// artifact the second existed to produce — was required by no stage.
@@ -50,8 +47,7 @@ func goFlow() []Stage {
 			},
 		},
 		{
-			ID:   "build",
-			Role: "maker",
+			ID: "build",
 			// `contract` can be required now that it comes from an unconditional
 			// stage. While `spec` was conditional, requiring its output would have
 			// stalled every chore and docs task.
@@ -70,7 +66,6 @@ func goFlow() []Stage {
 		},
 		{
 			ID:       "refactor",
-			Role:     "maker",
 			Requires: []Artifact{"code", "tests_green"},
 			Produces: []Artifact{"code", "tests_green"},
 			Verifiers: map[Artifact]Verifier{
@@ -81,7 +76,7 @@ func goFlow() []Stage {
 			},
 		},
 		{
-			// The command half, in front of the judgement half and with no role, so
+			// The command half, in front of the judgement half and with no agent, so
 			// a red pipeline stops the task before a model is paid to read code the
 			// compiler has not accepted.
 			ID:       "pipeline",
@@ -95,8 +90,7 @@ func goFlow() []Stage {
 		},
 		{
 			ID: "verify",
-			// The checklist is a judgement, so this half keeps the role.
-			Role: "critic",
+			// The checklist is a judgement, so this half keeps its agent.
 			// The contract as well, because this stage is the one asked whether the
 			// delivery honours it — and it was not given it. `ci_green` too, which
 			// is what makes the split enforce something rather than merely reorder
@@ -119,8 +113,7 @@ func goFlow() []Stage {
 			// One stage where four stood: identical review block, identical
 			// verifier, identical handover, four conditions. They read the same
 			// code and the same green, so running them apart paid to ingest one
-			// diff four times. The lenses live in the role's brief.
-			Role:             "critic",
+			// diff four times. The lenses live in the stage's brief.
 			Requires:         []Artifact{"code", "ci_green"},
 			ProducesForHuman: []Artifact{"audit_report"},
 			Verifiers:        map[Artifact]Verifier{"audit_report": Existence{Handover: true}},
@@ -162,7 +155,7 @@ func TestTheStockIsTheFlowTheEngineShipped(t *testing.T) {
 	// three. `scenarios` and `spec` merged into `plan`, and the four review
 	// stages into `review`. The argument is cost measured on a real task —
 	// the two planning stages were 61% of it — and the fact that both merges
-	// joined stages that already shared a role's denial, a session and their
+	// joined stages that already shared a denial, a session and their
 	// input. No task was open when it changed.
 	//
 	// The fourth is `verify` gaining `contract` among its inputs. The argument is

@@ -207,12 +207,12 @@ func (r *Runner) call(
 		call.Env = append(call.Env, socketEnv+"="+SocketName)
 	}
 
-	// A stage asking to continue gets the session its role was last using, read
-	// from the log. An absent one means there is nothing to continue — the first
-	// stage a role runs — and starting fresh is the honest answer rather than an
-	// error.
+	// A stage asking to continue gets the session an identically briefed stage was
+	// last using, read from the log. An absent one means there is nothing to
+	// continue — the first stage told this — and starting fresh is the honest
+	// answer rather than an error.
 	if !stage.Context.Fresh() {
-		if session := state.SessionOf(r.Flow, stage.Role); session != "" {
+		if session := state.SessionOf(r.Flow, stage.Brief); session != "" {
 			call.Context, call.Session = agent.Live, session
 		}
 	}
@@ -412,10 +412,16 @@ func handsOver(stage fsm.Stage) bool {
 // what is left to check is the one thing a file can still get wrong.
 func checkStage(stage fsm.Stage) error {
 	if stage.Mechanical() {
+		// A stage is mechanical because it names no agent, so "mechanical" and
+		// "unrunnable" are now the same condition and only the contract tells them
+		// apart. This is the runtime half of AuditAgents: a stage owing something
+		// no command can produce would otherwise run as mechanical, deliver
+		// nothing, and look like it worked.
+		if stage.NeedsAgent() {
+			return fmt.Errorf("stage %q owes %v and names no agent to produce it",
+				stage.ID, append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...))
+		}
 		return nil
-	}
-	if stage.Agent == "" {
-		return fmt.Errorf("stage %q names the role %q and no agent to run it", stage.ID, stage.Role)
 	}
 
 	// A stage that withholds capabilities on a harness Luna cannot gate stops
@@ -639,7 +645,7 @@ func join(artifacts []fsm.Artifact) string {
 // is not a thing a retry can fix — spending the retry budget on it leaves none
 // for the failure it was meant for.
 func (r *Runner) openWorktree(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (Worktree, error) {
-	wt, err := OpenWorktree(ctx, r.Repo, state.ID, stage.Role, state.Base)
+	wt, err := OpenWorktree(ctx, r.Repo, state.ID, string(stage.ID), state.Base)
 	if err == nil {
 		return wt, nil
 	}

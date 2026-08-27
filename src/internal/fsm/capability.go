@@ -70,19 +70,24 @@ func capabilityList() string {
 
 // Mechanical reports whether a stage runs without an agent at all.
 //
-// `setup` is a worktree, `verify` is the pipeline, `commit` is git. Luna already
-// runs commands with a real exit code, so those stages produce their
-// artifact and their evidence with no model in the loop — the project's premise
-// applied to the stages where it is easiest to forget.
-func (s Stage) Mechanical() bool { return s.Role == "" }
+// `setup` is a worktree, `pipeline` is `make ci`. Luna already runs commands with
+// a real exit code, so those stages produce their artifact and their evidence
+// with no model in the loop — the project's premise applied to the stages where
+// it is easiest to forget.
+//
+// It reads Agent rather than a separate marker, and that is the whole of the
+// test: a stage is mechanical because nothing starts, not because a label says
+// so. While the label existed the two could disagree — a stage naming an agent
+// and no role read as mechanical, and its agent was never started.
+func (s Stage) Mechanical() bool { return s.Agent == "" }
 
-// NeedsRole reports a stage that produces something only judgement can produce and
-// names no role to produce it.
+// NeedsAgent reports a stage that produces something only judgement can produce
+// and names no agent to produce it.
 //
 // It exists because the mechanical path is silent by nature: a stage that should
-// have had a role runs, delivers nothing, and looks like it worked. The static
+// have had an agent runs, delivers nothing, and looks like it worked. The static
 // check turns that into a failure at build time rather than a mystery at run time.
-func (s Stage) NeedsRole() bool {
+func (s Stage) NeedsAgent() bool {
 	if !s.Mechanical() {
 		return false
 	}

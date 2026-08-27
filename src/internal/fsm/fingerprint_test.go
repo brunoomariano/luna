@@ -66,7 +66,7 @@ func TestFingerprintCoversWhatChangesHistory(t *testing.T) {
 		{
 			what: "a changed role — read at the moment of use, so history is untouched",
 			flow: []Stage{
-				{ID: "first", Role: "somebody-else", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}},
+				{ID: "first", Requires: []Artifact{TaskID}, Produces: []Artifact{"a"}},
 				{ID: "second", Requires: []Artifact{"a"}, Produces: []Artifact{"b"}, ProducesForHuman: []Artifact{"report"}},
 			},
 			alike: true,

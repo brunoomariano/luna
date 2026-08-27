@@ -182,8 +182,7 @@ func TestEmptyFlowReportsNoGap(t *testing.T) {
 // arriving silently through a spelling mistake.
 func TestAReadableCriterionMustBeOneTheGateActuallyJudges(t *testing.T) {
 	flow := []Stage{{
-		ID: "plan", Role: "maker",
-		Produces: []Artifact{"contract"},
+		ID: "plan", Produces: []Artifact{"contract"},
 		Gate: &GateSpec{
 			Kind:          GateReviewArtifact,
 			Artifact:      "contract",
@@ -205,8 +204,7 @@ func TestAReadableCriterionMustBeOneTheGateActuallyJudges(t *testing.T) {
 // cannot pass by reporting everything.
 func TestAGateWhoseReadableCriteriaAllMatchIsClean(t *testing.T) {
 	flow := []Stage{{
-		ID: "plan", Role: "maker",
-		Produces: []Artifact{"contract"},
+		ID: "plan", Produces: []Artifact{"contract"},
 		Gate: &GateSpec{
 			Kind:          GateReviewArtifact,
 			Artifact:      "contract",

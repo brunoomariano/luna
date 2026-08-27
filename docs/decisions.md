@@ -309,6 +309,24 @@ Luna was paying a model to run `git commit`.
 > *Rejected: a project overriding a role in `config.toml`.* Same reason `.luna/stock/` went
 > — the thing it enabled is drift. One build, one set of flows, every repository the same.
 
+**There is no role at all.** Absorbing the brief left `role` a field resolving to nothing,
+kept as the branch grouping it had also always been. It did not survive the next reading:
+`luna flow check` counted distinct role names and reported *"pack of 5"* for a flow that
+runs seven differently briefed agents, because `verify` and `audit` share a label. A name
+that makes the tool undercount is worse than no name.
+
+Each of its jobs went to what it had been standing in for. A stage is mechanical when it
+names no `agent` — the field that actually decides whether anything starts, where the label
+could disagree with it: a stage naming an agent and no role read as mechanical and its agent
+was never started. A worktree is named after the stage. A live stage continues the session
+of an identically briefed one.
+
+> *Rejected: keeping `role` as a display label.* It is what "pack of 5" was, and a label
+> nothing enforces is the drift this whole change was about.
+>
+> *Rejected: keying the continued session on the stage id.* A stage runs once, so it would
+> only ever find its own retry — `live` would be dead while looking alive.
+
 **Four harnesses, four gating mechanisms; a stage declares a capability and Luna
 translates.** The table is closed: an unlisted harness is refused, because guessing fails
 open.

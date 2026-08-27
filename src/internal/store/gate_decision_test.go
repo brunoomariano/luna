@@ -119,7 +119,7 @@ func appendAll(t *testing.T, s *Store, taskID string, actions ...fsm.Action) {
 // `setup` first and gateless.
 func gatedFlow() []fsm.Stage {
 	return []fsm.Stage{{
-		ID: "gated", Role: "someone", Requires: []fsm.Artifact{fsm.TaskID},
+		ID: "gated", Requires: []fsm.Artifact{fsm.TaskID},
 		Produces: []fsm.Artifact{"thing"},
 		Gate:     &fsm.GateSpec{Kind: fsm.GateConfirm, Reason: "confirm it"},
 	}}

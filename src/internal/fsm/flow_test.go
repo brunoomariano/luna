@@ -26,9 +26,10 @@ func TestDefaultFlowHasNoContractGap(t *testing.T) {
 // DefaultFlow without disappearing from the documentation leaves the two out of
 // sync, and the documentation is the contract.
 //
-// The role is compared too, and that is not decoration. Comparing IDs and order
+// Whether a stage is mechanical is compared too, and that is not decoration.
+// Comparing IDs and order
 // alone let the table claim for a long time that diagnose, spec and verify were
-// mechanical while the flow gave all three a role — and Stage.Mechanical decides
+// mechanical while the flow gave all three an agent — and Stage.Mechanical decides
 // whether an agent starts at all, so the table was wrong about who runs the work.
 func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	flow := DefaultFlow()
@@ -38,23 +39,23 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	// this table is about what the flow *declares* and not about what every mode
 	// resolves.
 	//
-	// The empty role is how the table writes "—". There are two mechanical stages:
-	// `setup`, because a worktree is git, and `pipeline`, because `ci_green` is a
-	// command's verdict and nothing about it is a judgement. A third would be a
-	// change to the contract. `commit` was one until integration left Luna's scope.
+	// There are two mechanical stages: `setup`, because a worktree is git, and
+	// `pipeline`, because `ci_green` is a command's verdict and nothing about it is
+	// a judgement. A third would be a change to the contract. `commit` was one
+	// until integration left Luna's scope.
 	want := []struct {
-		ID   StageID
-		Role string
+		ID         StageID
+		Mechanical bool
 	}{
-		{"setup", ""},
-		{"intake", "planner"},
-		{"diagnose", "investigator"},
-		{"plan", "planner"},
-		{"build", "coder"},
-		{"refactor", "cleaner"},
-		{"pipeline", ""},
-		{"verify", "auditor"},
-		{"audit", "auditor"},
+		{"setup", true},
+		{"intake", false},
+		{"diagnose", false},
+		{"plan", false},
+		{"build", false},
+		{"refactor", false},
+		{"pipeline", true},
+		{"verify", false},
+		{"audit", false},
 	}
 
 	if len(flow) != len(want) {
@@ -68,9 +69,9 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 		if flow[i].ID != documented.ID {
 			t.Errorf("position %d: want %q, got %q", i, documented.ID, flow[i].ID)
 		}
-		if flow[i].Role != documented.Role {
-			t.Errorf("%q: docs say role %q, flow declares %q",
-				documented.ID, documented.Role, flow[i].Role)
+		if flow[i].Mechanical() != documented.Mechanical {
+			t.Errorf("%q: docs say mechanical=%v, flow declares %v",
+				documented.ID, documented.Mechanical, flow[i].Mechanical())
 		}
 	}
 }
@@ -155,10 +156,9 @@ func TestTheEngineDoesNotDependOnTheShippedFlow(t *testing.T) {
 	// stage names, different artifacts, a conditional stage, and a mechanical one.
 	custom := []Stage{
 		{ID: "gather", Requires: []Artifact{TaskID}, Produces: []Artifact{"notes"}},
-		{ID: "draft", Role: "writer", Requires: []Artifact{"notes"}, Produces: []Artifact{"text"}},
+		{ID: "draft", Requires: []Artifact{"notes"}, Produces: []Artifact{"text"}},
 		{
-			ID: "translate", Role: "translator",
-			Requires: []Artifact{"text"}, Produces: []Artifact{"translated"},
+			ID: "translate", Requires: []Artifact{"text"}, Produces: []Artifact{"translated"},
 			When: Condition{Name: "is-feature", Applies: func(c TaskContext) bool { return c.Kind == KindFeature }},
 		},
 		{ID: "publish", Requires: []Artifact{"text"}, Produces: []Artifact{"url"}},

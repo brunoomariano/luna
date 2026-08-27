@@ -125,8 +125,7 @@ func TestTheOrderIsWhatTheLeadIsGiven(t *testing.T) {
 		Kind:     fsm.OrderRun,
 		TaskID:   "LUNA-1",
 		Stage:    "build",
-		Role:     "implementer",
-		Worktree: "luna-LUNA-1-implementer",
+		Worktree: "luna-LUNA-1-build",
 		Base:     "d34db33f",
 	}
 
@@ -135,7 +134,7 @@ func TestTheOrderIsWhatTheLeadIsGiven(t *testing.T) {
 	}
 
 	prompt := lead.saw[0]
-	for _, want := range []string{"stage=build", "role=implementer", "base=d34db33f"} {
+	for _, want := range []string{"stage=build", "base=d34db33f"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the lead was not told %q:\n%s", want, prompt)
 		}
@@ -149,7 +148,7 @@ func TestTheLeadIsNotShownWhatComesAfterItsOrder(t *testing.T) {
 	lead := &disobedientLead{says: "done"}
 	agent := &Agent{Ask: lead.ask}
 
-	order := fsm.Order{Kind: fsm.OrderRun, TaskID: "LUNA-1", Stage: "build", Role: "implementer"}
+	order := fsm.Order{Kind: fsm.OrderRun, TaskID: "LUNA-1", Stage: "build"}
 	if _, err := agent.Conduct(context.Background(), order); err != nil {
 		t.Fatalf("Conduct: %v", err)
 	}

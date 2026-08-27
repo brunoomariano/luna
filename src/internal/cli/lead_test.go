@@ -563,13 +563,13 @@ func TestTheAccountIsInTheJSONAndNotOnlyInTheProse(t *testing.T) {
 // soloNode reports that every stage delivered exactly what it declared, and
 // remembers the role each one ran under.
 //
-// A named fake rather than an inline stub, and it records the role because that
-// is the whole difference between the two modes: a solo run resolves one role for
-// every stage, a pack resolves the one each stage declares.
-type soloNode struct{ roles []string }
+// A named fake rather than an inline stub, and it records the brief because that
+// is the whole difference between the two modes: a solo run gives every stage one
+// brief, a pack gives each stage the one it declares.
+type soloNode struct{ briefs []string }
 
 func (n *soloNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
-	n.roles = append(n.roles, stage.Role)
+	n.briefs = append(n.briefs, stage.Brief)
 
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 	evidence := map[fsm.Artifact]fsm.Evidence{}
@@ -581,7 +581,7 @@ func (n *soloNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) 
 	return lead.Result{Delivered: owed, Evidence: evidence, Commit: state.Base}, nil
 }
 
-// TestASoloRunCarriesEveryStageUnderOneRole is the mode `luna lead` runs.
+// TestASoloRunCarriesEveryStageUnderOneBrief is the mode `luna lead` runs.
 //
 // One agent for the whole task, which is what a person asking for a single agent
 // means — and the role is how it is one: the worktree and the session are both
@@ -589,7 +589,7 @@ func (n *soloNode) Run(_ context.Context, state fsm.TaskState, stage fsm.Stage) 
 // stage. A run that resolved the flow's declared roles would open a worktree per
 // specialism and start a cold agent in each, which is the pack and is the other
 // command.
-func TestASoloRunCarriesEveryStageUnderOneRole(t *testing.T) {
+func TestASoloRunCarriesEveryStageUnderOneBrief(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "S-1", "--kind", "chore", "--flow", "chore")
 
@@ -604,27 +604,27 @@ func TestASoloRunCarriesEveryStageUnderOneRole(t *testing.T) {
 		t.Fatalf("lead: %v", err)
 	}
 
-	if len(node.roles) == 0 {
+	if len(node.briefs) == 0 {
 		t.Fatal("no stage ran, so this test measures nothing")
 	}
-	for _, role := range node.roles {
+	for _, brief := range node.briefs {
 		// A mechanical stage has none, and keeps none: a stage that starts no agent
-		// has nobody to be.
-		if role != "" && role != fsm.SoloRole {
-			t.Errorf("a solo run started a stage under %q rather than the one role", role)
+		// is told nothing.
+		if brief != "" && brief != fsm.SoloBrief {
+			t.Error("a solo run started a stage on its own brief rather than the one solo brief")
 		}
 	}
 
-	// And the flow it ran still declares its pack, untouched: the collapse is a
-	// reading of the flow for one run, never an edit to it.
-	if stageIn(fsm.DefaultFlow(), "build").Role != "coder" {
-		t.Error("a solo run rewrote the flow's declared roles")
+	// And the flow it ran still declares its own briefs, untouched: the collapse
+	// is a reading of the flow for one run, never an edit to it.
+	if stageIn(fsm.DefaultFlow(), "build").Brief == fsm.SoloBrief {
+		t.Error("a solo run rewrote the flow's declared briefs")
 	}
 }
 
-// TestAPackRunResolvesTheRolesTheFlowDeclares is the other half, and the two
+// TestAPackRunKeepsTheBriefsTheFlowDeclares is the other half, and the two
 // together are the whole difference between the modes.
-func TestAPackRunResolvesTheRolesTheFlowDeclares(t *testing.T) {
+func TestAPackRunKeepsTheBriefsTheFlowDeclares(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "P-1", "--kind", "bug", "--flow", "fix")
 
@@ -654,16 +654,16 @@ func TestAPackRunResolvesTheRolesTheFlowDeclares(t *testing.T) {
 	}
 
 	var sawSpecialist bool
-	for _, role := range node.roles {
-		if role == fsm.SoloRole {
-			t.Errorf("a pack run collapsed a stage onto the solo role")
+	for _, brief := range node.briefs {
+		if brief == fsm.SoloBrief {
+			t.Error("a pack run collapsed a stage onto the solo brief")
 		}
-		if role != "" {
+		if brief != "" {
 			sawSpecialist = true
 		}
 	}
 	if !sawSpecialist {
-		t.Fatal("no stage with a role ran, so this test measures nothing")
+		t.Fatal("no briefed stage ran, so this test measures nothing")
 	}
 }
 

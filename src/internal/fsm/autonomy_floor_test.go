@@ -155,7 +155,6 @@ func TestAnUnclosedListIsRefused(t *testing.T) {
 // above states only the line it is about.
 func stageWithGate(gateLines string) string {
 	return `id = "review"
-role = "reviewer"
 requires = ["task_id"]
 produces_for_human = ["review_report"]
 

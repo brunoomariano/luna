@@ -10,7 +10,6 @@ import (
 func TestAStageFileBecomesAStage(t *testing.T) {
 	stage, err := ParseStage(`
 id                 = "build"
-role               = "implementer"
 when               = "is-bug"
 requires           = ["scenarios", "approach"]
 produces           = ["code"]
@@ -32,8 +31,8 @@ invalidates   = ["ci_green"]
 		t.Fatalf("ParseStage: %v", err)
 	}
 
-	if stage.ID != "build" || stage.Role != "implementer" {
-		t.Errorf("id=%q role=%q", stage.ID, stage.Role)
+	if stage.ID != "build" {
+		t.Errorf("id=%q", stage.ID)
 	}
 	if stage.When.Name != "is-bug" {
 		t.Errorf("when = %q, want the named condition", stage.When.Name)
@@ -69,7 +68,6 @@ invalidates   = ["ci_green"]
 func TestAnArtifactWithNoVerifierIsRefused(t *testing.T) {
 	_, err := ParseStage(`
 id       = "build"
-role     = "implementer"
 requires = ["scenarios"]
 produces = ["code", "tests_green"]
 
@@ -93,7 +91,6 @@ kind = "existence"
 func TestExistenceIsWrittenDownRatherThanDefaulted(t *testing.T) {
 	stage, err := ParseStage(`
 id       = "discovery"
-role     = "scout"
 requires = ["task_id"]
 produces = ["repos"]
 
@@ -115,7 +112,6 @@ kind = "existence"
 func TestAHumanFacingArtifactNeedsNoVerifier(t *testing.T) {
 	_, err := ParseStage(`
 id                 = "qa"
-role               = "qa"
 requires           = ["ci_green"]
 produces_for_human = ["qa_report"]
 `, "qa.toml")
@@ -130,7 +126,6 @@ produces_for_human = ["qa_report"]
 func TestACommandWithNoScopeIsRefused(t *testing.T) {
 	_, err := ParseStage(`
 id       = "verify"
-role     = "verifier"
 requires = ["code"]
 produces = ["ci_green"]
 
@@ -153,7 +148,6 @@ run = "make ci"
 func TestTheLoaderRefusesWhatItCannotRead(t *testing.T) {
 	for name, content := range map[string]string{
 		"no id": `
-role     = "scout"
 produces = ["repos"]
 [verify.repos]
 kind = "existence"`,
@@ -356,7 +350,6 @@ func TestTheShippedConditionsAreNamedAndClosed(t *testing.T) {
 func TestEveryKeyOfEveryBlockIsRead(t *testing.T) {
 	stage, err := ParseStage(`
 id       = "spec"
-role     = "specifier"
 requires = ["approach"]
 produces = ["contract"]
 

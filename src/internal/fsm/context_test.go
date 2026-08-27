@@ -75,8 +75,8 @@ func TestAnEmptyFlowHasNoChainToBreak(t *testing.T) {
 // failure looks exactly like a stage that went well.
 func TestAReviewerCannotContinueTheImplementersSession(t *testing.T) {
 	flow := []Stage{
-		{ID: "build", Role: "implementer"},
-		{ID: "code-review", Role: "reviewer", Context: ContextLive},
+		{ID: "build", Agent: "claude", Brief: "You build."},
+		{ID: "code-review", Agent: "claude", Brief: "You judge.", Context: ContextLive},
 	}
 
 	gaps := AuditContextChain(flow)
@@ -86,21 +86,18 @@ func TestAReviewerCannotContinueTheImplementersSession(t *testing.T) {
 	if gaps[0].Stage != "code-review" || gaps[0].From != "build" {
 		t.Errorf("want code-review named as continuing build, got %+v", gaps[0])
 	}
-	if gaps[0].Role != "implementer" {
-		t.Errorf("want the report to name the role being inherited, got %q", gaps[0].Role)
-	}
 }
 
-// TestOneRoleAcrossTwoStagesMayContinue is the case the setting exists for: the
-// same role carrying on, which is where the cost saving lives.
-func TestOneRoleAcrossTwoStagesMayContinue(t *testing.T) {
+// TestOneBriefAcrossTwoStagesMayContinue is the case the setting exists for: the
+// same worker carrying on, which is where the cost saving lives.
+func TestOneBriefAcrossTwoStagesMayContinue(t *testing.T) {
 	flow := []Stage{
-		{ID: "build", Role: "implementer"},
-		{ID: "refactor", Role: "implementer", Context: ContextLive},
+		{ID: "build", Agent: "claude", Brief: "You build."},
+		{ID: "refactor", Agent: "claude", Brief: "You build.", Context: ContextLive},
 	}
 
 	if gaps := AuditContextChain(flow); len(gaps) != 0 {
-		t.Errorf("want one role continuing to be allowed, got %+v", gaps)
+		t.Errorf("want one brief continuing to be allowed, got %+v", gaps)
 	}
 }
 
@@ -108,7 +105,7 @@ func TestOneRoleAcrossTwoStagesMayContinue(t *testing.T) {
 // before anything has run. The harness would start a fresh conversation and
 // report success, so the stage would silently lose what it asked to keep.
 func TestTheFirstStageHasNothingToContinue(t *testing.T) {
-	flow := []Stage{{ID: "setup", Role: "implementer", Context: ContextLive}}
+	flow := []Stage{{ID: "setup", Context: ContextLive}}
 
 	gaps := AuditContextChain(flow)
 	if len(gaps) != 1 {
@@ -137,12 +134,12 @@ func TestTheShippedFlowAsksForNothingItCannotHave(t *testing.T) {
 // which is the same reasoning that keeps an artifact's path out.
 func TestContextDoesNotMoveTheFingerprint(t *testing.T) {
 	fresh := []Stage{
-		{ID: "build", Role: "implementer", Produces: []Artifact{"code"}},
-		{ID: "refactor", Role: "implementer", Requires: []Artifact{"code"}},
+		{ID: "build", Produces: []Artifact{"code"}},
+		{ID: "refactor", Requires: []Artifact{"code"}},
 	}
 	live := []Stage{
-		{ID: "build", Role: "implementer", Produces: []Artifact{"code"}},
-		{ID: "refactor", Role: "implementer", Requires: []Artifact{"code"}, Context: ContextLive},
+		{ID: "build", Produces: []Artifact{"code"}},
+		{ID: "refactor", Requires: []Artifact{"code"}, Context: ContextLive},
 	}
 
 	if Fingerprint(fresh) != Fingerprint(live) {
@@ -171,7 +168,7 @@ func TestMemoryIsTheTasksAndNotTheStages(t *testing.T) {
 	// And a stage file still carrying the old key is refused rather than ignored:
 	// configuration that reads as though it does something, and does not, is worse
 	// than configuration that fails.
-	_, err := ParseStage("id = \"build\"\nrole = \"coder\"\nmemory = \"on\"\n", "a stage")
+	_, err := ParseStage("id = \"build\"\nmemory = \"on\"\n", "a stage")
 	if err == nil {
 		t.Fatal("a stage still declaring `memory` was accepted")
 	}

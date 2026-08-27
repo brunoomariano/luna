@@ -37,8 +37,8 @@ const (
 // prevent. The lead is an agent so a person can talk to
 // it, and an agent that *chooses* the next stage is the model holding flow
 // control. So the FSM does not describe the situation and let the lead work out
-// what to do — it names the stage, the role, the agent, the worktree, the base
-// commit and what the role may not touch. The lead executes it and reports back.
+// what to do — it names the stage, the agent, the worktree, the base commit and
+// what the stage may not touch. The lead executes it and reports back.
 //
 // What is deliberately absent is as load-bearing as what is present: the order
 // carries no list of remaining stages and no view of the flow. A lead that can
@@ -50,12 +50,11 @@ type Order struct {
 	Kind   OrderKind `json:"kind"`
 	TaskID string    `json:"task_id"`
 
-	// Stage and Role are what to run. Empty on every kind but OrderRun.
+	// Stage is what to run. Empty on every kind but OrderRun.
 	Stage StageID `json:"stage,omitempty"`
-	Role  string  `json:"role,omitempty"`
 
-	// Agent is the harness that runs the role — resolved from configuration
-	// outside the engine and carried here so the lead does not have to look it up.
+	// Agent is the harness that runs the stage — carried here so the lead does not
+	// have to open the flow to find it.
 	// Empty means the stage is mechanical: Luna runs it itself, with
 	// no agent at all.
 	Agent string `json:"agent,omitempty"`
@@ -190,9 +189,8 @@ func runOrder(state TaskState, stage Stage) Order {
 		Kind:     OrderRun,
 		TaskID:   state.ID,
 		Stage:    stage.ID,
-		Role:     stage.Role,
 		Agent:    stage.Agent,
-		Worktree: WorktreeName(state.ID, stage.Role),
+		Worktree: WorktreeName(state.ID, stage.ID),
 		Base:     state.Base,
 		Brief:    stage.Brief,
 		Deny:     stage.ToolsDeny,
@@ -221,18 +219,17 @@ func provenBy(stage Stage) []string {
 
 // WorktreeName is where a role works on a task.
 //
-// One per task *and* role, which is the amendment swarm-forge's own history
-// argued for: a per-role worktree that outlives the task accumulates drift that
-// "compounds at every hop". This one is branched from the previous
-// stage's commit and removed when the stage ends.
+// One per task *and* stage, which is the amendment swarm-forge's own history
+// argued for: a worktree that outlives the task accumulates drift that
+// "compounds at every hop". This one is branched from the previous stage's
+// commit and removed when the stage ends.
 //
-// A mechanical stage names no role, and its worktree is the task's own — there
-// is no agent to keep apart from anyone.
-func WorktreeName(taskID, role string) string {
-	if role == "" {
-		return "luna-" + taskID
-	}
-	return "luna-" + taskID + "-" + role
+// Named after the stage rather than the role it used to share with another
+// stage. Nothing was lost: the base a stage starts from is handed forward in the
+// state, so which branch name it lands on was never what carried the work
+// between two stages.
+func WorktreeName(taskID string, stage StageID) string {
+	return "luna-" + taskID + "-" + string(stage)
 }
 
 func terminalReason(state TaskState) string {
@@ -275,7 +272,6 @@ func (o Order) Text() string {
 	line("kind", string(o.Kind))
 	line("task", o.TaskID)
 	line("stage", string(o.Stage))
-	line("role", o.Role)
 	line("agent", o.Agent)
 	line("worktree", o.Worktree)
 	line("base", o.Base)

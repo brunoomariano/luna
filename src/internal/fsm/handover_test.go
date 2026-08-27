@@ -66,7 +66,6 @@ func TestHandoverProvesNothingMoreThanExistence(t *testing.T) {
 func TestACommandAndAHandoverAreRefused(t *testing.T) {
 	_, err := fsm.ParseStage(`
 id       = "spec"
-role     = "specifier"
 requires = ["approach"]
 produces = ["contract"]
 
@@ -87,7 +86,6 @@ handover = "store"
 func TestAPathAndAHandoverAreRefused(t *testing.T) {
 	_, err := fsm.ParseStage(`
 id       = "qa"
-role     = "qa"
 requires = ["ci_green"]
 produces_for_human = ["qa_report"]
 
@@ -109,7 +107,6 @@ handover = "store"
 func TestAnUnknownHandoverDestinationIsRefused(t *testing.T) {
 	_, err := fsm.ParseStage(`
 id       = "spec"
-role     = "specifier"
 requires = ["approach"]
 produces = ["contract"]
 
@@ -129,7 +126,6 @@ handover = "stoer"
 func TestAHandoverParsesIntoTheVerifier(t *testing.T) {
 	stage, err := fsm.ParseStage(`
 id       = "spec"
-role     = "specifier"
 requires = ["approach"]
 produces = ["contract"]
 

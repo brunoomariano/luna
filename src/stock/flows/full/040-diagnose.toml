@@ -1,7 +1,6 @@
 # Bug-only: there is no root cause to find when nothing broke.
 
 id                 = "diagnose"
-role               = "investigator"
 agent    = "claude"
 brief    = "You are finding the root cause of a bug, and you owe two things: the cause itself, and the smallest case that still reproduces it. You do not fix it — a later stage does that, from what you found. A cause you cannot reproduce is a hypothesis, and saying so is the honest delivery. You find the root cause and the smallest case that shows it. You do not fix it — the fix is a later stage, and a diagnosis that arrives already repaired is one nobody can check. The smallest case is the deliverable, not an illustration of it: it has to fail before the fix and pass after, and somebody else has to be able to run it."
 when               = "is-bug"

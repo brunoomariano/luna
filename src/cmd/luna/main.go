@@ -144,7 +144,7 @@ func run(args []string) error {
 func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 	// The harness the lead asks when it judges a gate. It is not the one that
 	// runs a stage: that one is built per stage in the node layer, inside the
-	// sandbox, from the role's own kind.
+	// sandbox, from the stage's own agent.
 	harness := agent.Harness{Kind: cfg.Interpreter}
 
 	return cli.Env{

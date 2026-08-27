@@ -33,8 +33,8 @@ func TestEveryShippedFlowPassesEveryStaticCheck(t *testing.T) {
 			t.Errorf("%s: stage %q requires %v, which no earlier stage produces",
 				name, gap.Stage, gap.Missing)
 		}
-		for _, gap := range AuditRoles(flow) {
-			t.Errorf("%s: stage %q produces %v and names no role",
+		for _, gap := range AuditAgents(flow) {
+			t.Errorf("%s: stage %q produces %v and names no agent",
 				name, gap.Stage, gap.Produces)
 		}
 		for _, gap := range AuditFlowNames(flow) {
@@ -42,8 +42,8 @@ func TestEveryShippedFlowPassesEveryStaticCheck(t *testing.T) {
 				name, gap.Stage, gap.Budget)
 		}
 		for _, gap := range AuditContextChain(flow) {
-			t.Errorf("%s: stage %q asks to continue %q, which ran as %q",
-				name, gap.Stage, gap.From, gap.Role)
+			t.Errorf("%s: stage %q asks to continue %q, which is briefed differently",
+				name, gap.Stage, gap.From)
 		}
 		for _, gap := range AuditGateCriteria(flow) {
 			t.Errorf("%s: stage %q declares %q readable and judges no such criterion",
@@ -131,8 +131,8 @@ func TestTheLeanFlowsSkipTheStagesTheyExistToSkip(t *testing.T) {
 
 // TestTheLeanFlowsProveTheGreenWithACommandAndNoAgent is the cost claim those
 // flows are built on, as a test rather than a comment: `ci_green` is a command's
-// verdict, so the stage that owes only it needs no role — and a stage with no role
-// starts no agent.
+// verdict, so the stage that owes only it needs no agent, and a stage naming
+// none starts none.
 func TestTheLeanFlowsProveTheGreenWithACommandAndNoAgent(t *testing.T) {
 	for _, name := range []string{"fix", "chore"} {
 		flow, err := FlowNamed(name)
@@ -145,7 +145,7 @@ func TestTheLeanFlowsProveTheGreenWithACommandAndNoAgent(t *testing.T) {
 			t.Fatalf("flow %q has no verify stage", name)
 		}
 		if !verify.Mechanical() {
-			t.Errorf("flow %q pays a model for verify (role %q)", name, verify.Role)
+			t.Errorf("flow %q pays a model for verify (agent %q)", name, verify.Agent)
 		}
 		command, declared := verify.Verifiers["ci_green"].(Command)
 		if !declared {
@@ -250,13 +250,13 @@ func TestNoModelReadsCodeThePipelineHasNotAccepted(t *testing.T) {
 		t.Fatal("the shipped flow has no pipeline stage")
 	}
 	if !pipeline.Mechanical() {
-		t.Errorf("the pipeline stage pays a model (role %q)", pipeline.Role)
+		t.Errorf("the pipeline stage pays a model (agent %q)", pipeline.Agent)
 	}
 	if !containsArtifact(pipeline.Produces, "ci_green") {
 		t.Fatalf("the pipeline stage does not produce ci_green: %v", pipeline.Produces)
 	}
 
-	// Every stage that names a role and comes after the pipeline reads the code,
+	// Every stage that names an agent and comes after the pipeline reads the code,
 	// and each has to require the green rather than merely follow it.
 	seen := false
 	for _, stage := range flow {

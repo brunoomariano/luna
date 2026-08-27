@@ -14,13 +14,11 @@ func reviewFlow() []fsm.Stage {
 	return []fsm.Stage{
 		{
 			ID:       "build",
-			Role:     "implementer",
 			Requires: []fsm.Artifact{fsm.TaskID},
 			Produces: []fsm.Artifact{"code", "ci_green"},
 		},
 		{
-			ID:   "code-review",
-			Role: "reviewer",
+			ID: "code-review",
 			Review: &fsm.ReviewSpec{
 				SendsBackTo: "build",
 				Invalidates: []fsm.Artifact{"ci_green"},
@@ -166,7 +164,6 @@ func TestOnlyAReviewStageCanSendWorkBack(t *testing.T) {
 	// A flow whose only stage produces a report and reviews nothing.
 	flow := []fsm.Stage{{
 		ID:               "build",
-		Role:             "implementer",
 		Requires:         []fsm.Artifact{fsm.TaskID},
 		Produces:         []fsm.Artifact{"code"},
 		ProducesForHuman: []fsm.Artifact{"review_report"},

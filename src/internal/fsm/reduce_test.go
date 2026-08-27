@@ -444,7 +444,7 @@ func TestGateApproveResumesTheStage(t *testing.T) {
 	// A one-stage flow with a gate: what this is about is the approve, not which
 	// shipped stage happens to carry one.
 	gated := []Stage{{
-		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
+		ID: "gated", Requires: []Artifact{TaskID},
 		Produces: []Artifact{"thing"},
 		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
 	}}
@@ -868,7 +868,7 @@ func TestAbandonEndsATaskFromWhereverItIs(t *testing.T) {
 // forever, waiting for a decision that no longer means anything (INV-5).
 func TestAbandonClearsAPendingGate(t *testing.T) {
 	gated := []Stage{{
-		ID: "gated", Role: "someone", Requires: []Artifact{TaskID},
+		ID: "gated", Requires: []Artifact{TaskID},
 		Produces: []Artifact{"thing"},
 		Gate:     &GateSpec{Kind: GateConfirm, Reason: "confirm it"},
 	}}
