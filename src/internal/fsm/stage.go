@@ -88,8 +88,47 @@ func (c TaskContext) HasArtifact(a Artifact) bool {
 // read by a person and is exempt from it — nobody consuming it is not a defect.
 // See docs/decisions.md.
 type Stage struct {
-	ID   StageID
+	ID StageID
+
+	// Role is what this stage's work is grouped under: the branch its worktree
+	// lands on, and the session a live stage continues.
+	//
+	// It stopped being a pointer into a table of roles when the brief moved here.
+	// What it still does is group — two stages sharing a role share a branch, so
+	// a base handed forward means the same thing whether or not the stage changed
+	// — and an empty one is what makes a stage mechanical.
 	Role string
+
+	// Agent is the harness kind that runs this stage, travelling to the node
+	// layer as agent.Call.Kind. Empty on a mechanical stage, which starts none.
+	Agent string
+
+	// Brief is what the agent is told: what happens here, what it owes, and what
+	// its delivery is held against.
+	//
+	// It lives on the stage rather than in a shared role file because a brief is
+	// about the work, and the work is what a stage is. The cost is real and was
+	// weighed: two stages doing the same kind of judging now each carry their own
+	// text, and keeping them consistent is a person's job rather than a file's.
+	// What it buys is that one file answers what a stage is for, and that a stage
+	// briefed for its own contract can say things no shared text could.
+	//
+	// It is instruction, not enforcement: a restriction that lives only here is
+	// the violation INV-4 names, and closing that gap needs ToolsDeny, which the
+	// harness applies before the agent starts.
+	Brief string
+
+	// Skills are the capability bundles this stage loads.
+	Skills []string
+
+	// ToolsDeny names capabilities this stage must not have — `Edit`, `Write`.
+	//
+	// It names what the stage cannot do, never how a harness spells it: claude
+	// says `Edit`, pi says `edit`, codex takes no names at all and denies writing
+	// with a sandbox mode. Keeping the vocabulary out of here is what lets a
+	// stage move from one agent to another without being rewritten, and what
+	// stops it from silently ceasing to deny anything when its agent changes.
+	ToolsDeny []Capability
 
 	// Requires is what must be in the context for the stage to start.
 	Requires []Artifact
@@ -207,14 +246,19 @@ type GateSpec struct {
 	// kinds that only ask yes or no.
 	Artifact Artifact
 
-	// Criticality is how much this gate matters, 1–10, higher being more critical.
-	// The knob absorbs every gate whose criticality is at or below it.
+	// AutonomyFloor is the lowest autonomy setting that absorbs this gate, 1–10.
+	// The lead may answer the gate on its own when `knob >= AutonomyFloor`.
+	//
+	// Named after the knob it is compared against, because it was `criticality`
+	// and that made two names for one mechanism: a reader had to be told that the
+	// stage's number and the task's number met in `Judges`. The floor says it —
+	// this is the autonomy the gate needs before nobody is asked.
 	//
 	// The range starts at 1 rather than 0 because a gate exists precisely because
-	// something about it matters: a criticality of zero would be a gate every knob
+	// something about it matters: a floor of zero would be a gate every knob
 	// setting absorbs, including the most conservative one. Zero here means the
-	// stage declared nothing, and DefaultCriticality is what that resolves to.
-	Criticality int
+	// stage declared nothing, and DefaultAutonomyFloor is what that resolves to.
+	AutonomyFloor int
 
 	// Judge is what the lead is asked to decide, one criterion per entry.
 	//
@@ -253,20 +297,20 @@ func (g GateSpec) declared() bool {
 	return g.Kind != "" ||
 		g.Reason != "" ||
 		g.Artifact != "" ||
-		g.Criticality != 0 ||
+		g.AutonomyFloor != 0 ||
 		len(g.Judge) > 0
 }
 
-// DefaultCriticality is what a gate that declares none is treated as.
+// DefaultAutonomyFloor is what a gate that declares none is treated as.
 //
 // The highest value, so only the most autonomous setting absorbs it. Refusing to
 // load such a gate was the louder alternative and is wrong for this feature
-// specifically: every shipped stage declares no criticality today, so refusing
-// would break every existing flow the moment the field arrived. Defaulting to the
+// specifically: every shipped stage declares no floor today, so refusing would
+// break every existing flow the moment the field arrived. Defaulting to the
 // safest value is what keeps "declare nothing, change nothing" true.
-const DefaultCriticality = 10
+const DefaultAutonomyFloor = 10
 
-// Resolved is the criticality the stage declared, or the default when it
+// Resolved is the autonomy floor the stage declared, or the default when it
 // declared nothing.
 //
 // A method rather than a value filled in at load time: the zero value has to keep
@@ -274,10 +318,10 @@ const DefaultCriticality = 10
 // else, and a loader that normalised it would make that indistinguishable from a
 // deliberate 10.
 func (g *GateSpec) Resolved() int {
-	if g == nil || g.Criticality == 0 {
-		return DefaultCriticality
+	if g == nil || g.AutonomyFloor == 0 {
+		return DefaultAutonomyFloor
 	}
-	return g.Criticality
+	return g.AutonomyFloor
 }
 
 // GuardSpec is what a stage refuses to land without a person looking.

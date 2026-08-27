@@ -1675,9 +1675,9 @@ func TestEverySettingSurvivesAProjectWithNoProfiles(t *testing.T) {
 	if cfg.Memory() != "kept" {
 		t.Errorf("the workstream was lost: %q", cfg.Memory())
 	}
-	// And the shipped sets still fill in, which is what the fallback is for.
-	if len(cfg.Profiles) == 0 || len(cfg.Roles) == 0 {
-		t.Error("the shipped profiles and roles stopped filling in")
+	// And the shipped profiles still fill in, which is what the fallback is for.
+	if len(cfg.Profiles) == 0 {
+		t.Error("the shipped profiles stopped filling in")
 	}
 }
 

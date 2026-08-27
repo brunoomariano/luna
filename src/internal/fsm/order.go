@@ -51,8 +51,8 @@ type Order struct {
 	TaskID string    `json:"task_id"`
 
 	// Stage and Role are what to run. Empty on every kind but OrderRun.
-	Stage StageID  `json:"stage,omitempty"`
-	Role  RoleName `json:"role,omitempty"`
+	Stage StageID `json:"stage,omitempty"`
+	Role  string  `json:"role,omitempty"`
 
 	// Agent is the harness that runs the role — resolved from configuration
 	// outside the engine and carried here so the lead does not have to look it up.
@@ -104,15 +104,14 @@ type Order struct {
 
 // NextOrder turns a task's state into the order the lead executes.
 //
-// It is a pure function of state, flow and catalogue — no clock, no filesystem,
+// It is a pure function of state and flow — no clock, no filesystem,
 // no process. That is what lets the order be tested without
 // infrastructure and reproduced from the log.
 //
-// The catalogue may be nil. A stage whose role nothing defines still produces a
-// runnable order with an empty Agent, and the layer that starts processes
-// refuses it there — an engine that refused it here would make the flow
-// undrivable on a machine whose config had not loaded yet.
-func NextOrder(state TaskState, flow []Stage, catalogue map[RoleName]Role) (Order, error) {
+// A stage that names no agent still produces a runnable order with an empty
+// Agent, and the layer that starts processes refuses it there — an engine that
+// refused it here would make the flow undrivable before anything had been read.
+func NextOrder(state TaskState, flow []Stage) (Order, error) {
 	order := Order{TaskID: state.ID}
 
 	switch {
@@ -149,7 +148,7 @@ func NextOrder(state TaskState, flow []Stage, catalogue map[RoleName]Role) (Orde
 		return order, nil
 	}
 
-	return runOrder(state, *stage, catalogue), nil
+	return runOrder(state, *stage), nil
 }
 
 // stageToRun answers which stage the order should name, or nil when the flow is
@@ -186,21 +185,18 @@ func entryPoint(state TaskState) StageID {
 }
 
 // runOrder fills in everything the lead needs to start one stage.
-func runOrder(state TaskState, stage Stage, catalogue map[RoleName]Role) Order {
-	role := RoleName(stage.Role)
-	definition := catalogue[role]
-
+func runOrder(state TaskState, stage Stage) Order {
 	return Order{
 		Kind:     OrderRun,
 		TaskID:   state.ID,
 		Stage:    stage.ID,
-		Role:     role,
-		Agent:    definition.Agent,
-		Worktree: WorktreeName(state.ID, role),
+		Role:     stage.Role,
+		Agent:    stage.Agent,
+		Worktree: WorktreeName(state.ID, stage.Role),
 		Base:     state.Base,
-		Brief:    definition.Brief,
-		Deny:     definition.ToolsDeny,
-		Skills:   definition.Skills,
+		Brief:    stage.Brief,
+		Deny:     stage.ToolsDeny,
+		Skills:   stage.Skills,
 		Produces: append(append([]Artifact{}, stage.Produces...), stage.ProducesForHuman...),
 		Proves:   provenBy(stage),
 	}
@@ -232,11 +228,11 @@ func provenBy(stage Stage) []string {
 //
 // A mechanical stage names no role, and its worktree is the task's own — there
 // is no agent to keep apart from anyone.
-func WorktreeName(taskID string, role RoleName) string {
+func WorktreeName(taskID, role string) string {
 	if role == "" {
 		return "luna-" + taskID
 	}
-	return "luna-" + taskID + "-" + string(role)
+	return "luna-" + taskID + "-" + role
 }
 
 func terminalReason(state TaskState) string {
@@ -279,7 +275,7 @@ func (o Order) Text() string {
 	line("kind", string(o.Kind))
 	line("task", o.TaskID)
 	line("stage", string(o.Stage))
-	line("role", string(o.Role))
+	line("role", o.Role)
 	line("agent", o.Agent)
 	line("worktree", o.Worktree)
 	line("base", o.Base)

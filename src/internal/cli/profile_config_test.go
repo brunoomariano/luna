@@ -139,14 +139,12 @@ func TestANestedProfileNameIsRejected(t *testing.T) {
 // The list is hand-parsed, and a trailing comma is the one piece of TOML slack
 // worth keeping: it is what someone leaves behind after deleting an entry.
 func TestATrailingCommaInAListIsTolerated(t *testing.T) {
-	cfg := load(t, "[role.gherkin]\nskills = [\"scenarios\", ]\n")
-
-	role, ok := cfg.Roles["gherkin"]
-	if !ok {
-		t.Fatal("want the role the config defined")
+	list, err := parseStringArray(`["scenarios", ]`, "config.toml:1")
+	if err != nil {
+		t.Fatalf("parseStringArray: %v", err)
 	}
-	if len(role.Skills) != 1 || role.Skills[0] != "scenarios" {
-		t.Errorf("the entry before the trailing comma still counts, got %q", role.Skills)
+	if len(list) != 1 || list[0] != "scenarios" {
+		t.Errorf("the entry before the trailing comma still counts, got %q", list)
 	}
 }
 
@@ -193,128 +191,36 @@ func TestAMalformedBudgetIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProjectCanDefineARole covers what a role declaration makes configurable.
-func TestAProjectCanDefineARole(t *testing.T) {
-	cfg := load(t, `
-[role.reviewer]
-agent  = "codex"
-brief  = "You review. You do not write."
-skills = ["code-review", "security"]
-`)
-
-	role, ok := cfg.Role("reviewer")
-	if !ok {
-		t.Fatal("want the configured role")
-	}
-	if role.Agent != "codex" {
-		t.Errorf("want the configured agent, got %q", role.Agent)
-	}
-	if role.Brief != "You review. You do not write." {
-		t.Errorf("want the configured brief, got %q", role.Brief)
-	}
-	if len(role.Skills) != 2 {
-		t.Errorf("want both skills, got %v", role.Skills)
-	}
-}
-
-// TestNamingOneRoleKeepsTheOthers covers the difference from profiles.
+// TestEveryStageTheShippedFlowRunsCarriesWhatItNeeds is the check that replaced
+// the role catalogue's own.
 //
-// A config that names profiles replaces the whole set, because a project may want
-// `nightly` gone. Roles are the opposite: the flow names roles the config never
-// mentions, and deleting them would leave a stage with nothing to run.
-func TestNamingOneRoleKeepsTheOthers(t *testing.T) {
-	// Two roles the config itself defines, because the shipped stock has one now
-	// and the property under test is the merge, not the stock.
-	cfg := load(t, "[role.lead]\nagent = \"codex\"\n\n[role.scribe]\nagent = \"claude\"\n")
-
-	if role, _ := cfg.Role("lead"); role.Agent != "codex" {
-		t.Errorf("the named role is replaced, got %q", role.Agent)
-	}
-	if _, ok := cfg.Role("scribe"); !ok {
-		t.Error("naming one role must not delete the others")
-	}
-}
-
-// TestEveryRoleTheShippedFlowNamesResolves is the check that keeps the two in
-// step.
-//
-// A stage whose role resolves to nothing stops the task, so a role added to the
-// flow without a default is a task that dies on that stage.
-func TestEveryRoleTheShippedFlowNamesResolves(t *testing.T) {
-	cfg := Config{Roles: ShippedRoles()}
-
+// A stage used to name a role that a table resolved, and the failure mode was a
+// stage naming one nothing defined. With the brief absorbed, the same gap is a
+// stage shipping with no agent or no brief — the file is the only place either
+// can come from now, so this is what "it resolves" means.
+func TestEveryStageTheShippedFlowRunsCarriesWhatItNeeds(t *testing.T) {
 	for _, stage := range fsm.DefaultFlow() {
 		if stage.Mechanical() {
 			continue
 		}
-		role, ok := cfg.Role(fsm.RoleName(stage.Role))
-		if !ok {
-			t.Errorf("stage %q names role %q, which ships with nothing", stage.ID, stage.Role)
-			continue
+		if stage.Agent == "" {
+			t.Errorf("stage %q ships without an agent to run it", stage.ID)
 		}
-		if role.Agent == "" {
-			t.Errorf("role %q ships without an agent to run it", stage.Role)
+		if stage.Brief == "" {
+			t.Errorf("stage %q ships without a brief, so its agent is told nothing", stage.ID)
 		}
 	}
 }
 
-// TestAnUnknownRoleKeyIsRefused covers the strict parsing, for the same reason it
-// applies to profiles: a misspelled `agent` would leave the role resolving to
-// nothing and the stage stopping for a reason nobody could see.
-func TestAnUnknownRoleKeyIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[role.reviewer]\nagnet = \"codex\"\n"))
-
-	if err == nil {
-		t.Fatal("an unknown key inside a role must be reported")
-	}
-	if !strings.Contains(err.Error(), "agnet") {
-		t.Errorf("the error should name what was typed, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "agent") {
-		t.Errorf("the error should name what was expected, got %v", err)
-	}
-}
-
-// TestAnUnknownSectionKindIsRefused covers the header now that two kinds exist.
+// TestAnUnknownSectionKindIsRefused covers the header.
 func TestAnUnknownSectionKindIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[roles.reviewer]\nagent = \"codex\"\n"))
+	_, err := LoadConfig(writeConfig(t, "[profiles.nightly]\nturn_budget = \"1h\"\n"))
 
 	if err == nil {
 		t.Fatal("a mistyped section must be reported")
 	}
-	if !strings.Contains(err.Error(), "role.<name>") {
+	if !strings.Contains(err.Error(), "profile.<name>") {
 		t.Errorf("the error should say what a section looks like, got %v", err)
-	}
-}
-
-// TestRolesAndProfilesCoexist covers a file that declares both.
-func TestRolesAndProfilesCoexist(t *testing.T) {
-	cfg := load(t, `
-editor = "hx"
-
-[profile.paranoid]
-
-[role.reviewer]
-agent = "codex"
-`)
-
-	if cfg.Editor != "hx" {
-		t.Errorf("want the root setting, got %q", cfg.Editor)
-	}
-	if !cfg.Defines("paranoid") {
-		t.Error("want the profile")
-	}
-	if role, _ := cfg.Role("reviewer"); role.Agent != "codex" {
-		t.Errorf("want the role, got %q", role.Agent)
-	}
-}
-
-// TestAMalformedRoleSkillListIsRefused covers the array inside a role section.
-func TestAMalformedRoleSkillListIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[role.reviewer]\nskills = \"code-review\"\n"))
-
-	if err == nil {
-		t.Fatal("skills that are not a list must be reported")
 	}
 }
 
@@ -334,14 +240,28 @@ func TestASectionWithNoNameIsRefused(t *testing.T) {
 //
 // Denying the implementer would stop the task rather than protect it — gating is
 // for the roles that judge, not for every role.
-func TestTheRolesThatWriteAreNotGated(t *testing.T) {
-	roles := ShippedRoles()
-
-	for _, name := range []fsm.RoleName{"lead"} {
-		if role := roles[name]; role.Gated() {
-			t.Errorf("%q produces work and must keep its tools, got %v", name, role.ToolsDeny)
+func TestTheStagesThatWriteAreNotGated(t *testing.T) {
+	for _, stage := range fsm.DefaultFlow() {
+		if stage.Mechanical() || len(stage.Produces) == 0 {
+			continue
+		}
+		// A stage that produces code has to be able to write it. Denying a tool
+		// here would not make the delivery safer — it would make it impossible,
+		// and the stage would fail for a reason nothing in the flow explains.
+		if stage.Gated() && containsArtifact(stage.Produces, "code") {
+			t.Errorf("stage %q produces code and must keep its tools, got %v", stage.ID, stage.ToolsDeny)
 		}
 	}
+}
+
+// containsArtifact reports whether the list names the artifact.
+func containsArtifact(list []fsm.Artifact, want fsm.Artifact) bool {
+	for _, a := range list {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestEveryGatedRoleShipsOnAHarnessThatCanGateIt guards the seam between the two
@@ -349,37 +269,22 @@ func TestTheRolesThatWriteAreNotGated(t *testing.T) {
 //
 // A role denying tools on an agent Luna cannot gate stops the task. Shipping that
 // combination by default would mean every review stage fails on a fresh install.
-func TestEveryGatedRoleShipsOnAHarnessThatCanGateIt(t *testing.T) {
-	for name, role := range ShippedRoles() {
-		if !role.Gated() {
-			continue
+func TestEveryGatedStageShipsOnAHarnessThatCanGateIt(t *testing.T) {
+	for _, name := range fsm.FlowNames() {
+		flow, err := fsm.FlowNamed(name)
+		if err != nil {
+			t.Fatalf("FlowNamed(%q): %v", name, err)
 		}
-		if !agent.CanGate(role.Agent) {
-			t.Errorf("role %q denies tools on %q, which Luna cannot gate", name, role.Agent)
+
+		for _, stage := range flow {
+			if !stage.Gated() {
+				continue
+			}
+			if !agent.CanGate(stage.Agent) {
+				t.Errorf("flow %q stage %q denies tools on %q, which Luna cannot gate",
+					name, stage.ID, stage.Agent)
+			}
 		}
-	}
-}
-
-// TestAProjectCanDenyToolsOnItsOwnRole covers the configured path.
-func TestAProjectCanDenyToolsOnItsOwnRole(t *testing.T) {
-	cfg := load(t, `
-[role.auditor]
-agent      = "pi"
-tools_deny = ["Edit", "Write"]
-`)
-
-	role, ok := cfg.Role("auditor")
-	if !ok {
-		t.Fatal("want the configured role")
-	}
-	if len(role.ToolsDeny) != 2 {
-		t.Errorf("want both capabilities denied, got %v", role.ToolsDeny)
-	}
-	// The path stays live even though no shipped role uses it: a config may still
-	// deny a tool, and the harness removes it from the request rather than
-	// discouraging it in a brief.
-	if !role.Gated() {
-		t.Error("a role that denies tools is not reported as gated")
 	}
 }
 
@@ -389,7 +294,7 @@ tools_deny = ["Edit", "Write"]
 // supposed to lose, and nothing saying so — which is the failure the separation cares
 // about most.
 func TestAnUnknownCapabilityIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[role.auditor]\ntools_deny = [\"Edt\"]\n"))
+	_, err := fsm.ParseStage("id = \"audit\"\nrole = \"auditor\"\ntools_deny = [\"Edt\"]\n", "audit.toml")
 
 	if err == nil {
 		t.Fatal("a misspelled capability must stop the load")
@@ -447,19 +352,17 @@ func TestANonPositiveBudgetIsNotABudget(t *testing.T) {
 // written badly, each with its own message.
 //
 // `tools_deny` is the config's only list now — the profile section holds no
-// settings at all, so the parser is only ever reached through a role. A refusal
-// that did not quote what was typed would put a person in a hand-written TOML
-// file hunting a bracket, and the direction the mistake fails in is the
-// dangerous one: a list that did not load is a role that keeps the tool it was
-// supposed to lose.
+// A refusal that did not quote what was typed would put a person in a
+// hand-written TOML file hunting a bracket, and the direction the mistake fails
+// in is the dangerous one: a list that did not load is a stage that keeps the
+// tool it was supposed to lose.
 func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
 	for name, malformed := range map[string]struct{ line, says string }{
 		"not a list at all": {`tools_deny = "Edit"`, `expected a list`},
-		"never closed":      {`tools_deny = ["Edit"`, `close on the same line`},
-		"an unquoted entry": {`tools_deny = [Edit]`, `quoted strings`},
+		"never closed":      {`tools_deny = ["Edit"`, `has to close with ]`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := LoadConfig(writeConfig(t, "[role.auditor]\n"+malformed.line+"\n"))
+			_, err := fsm.ParseStage("id = \"audit\"\nrole = \"auditor\"\n"+malformed.line+"\n", "audit.toml")
 
 			if err == nil {
 				t.Fatalf("%s was accepted as a list", name)
@@ -467,10 +370,10 @@ func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
 			if !strings.Contains(err.Error(), malformed.says) {
 				t.Errorf("the refusal does not say what is wrong with it, got %v", err)
 			}
-			// And it quotes the offending line back, so the fix does not need a
-			// second pass over the file to find which one it meant.
-			if !strings.Contains(err.Error(), "Edit") {
-				t.Errorf("the refusal must carry what was written, got %v", err)
+			// And it says where, so the fix does not need a second pass over the
+			// file to find which line it meant.
+			if !strings.Contains(err.Error(), "audit.toml") {
+				t.Errorf("the refusal must say where it was written, got %v", err)
 			}
 		})
 	}

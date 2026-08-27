@@ -114,18 +114,18 @@ func TestAuditRolesIgnoresAStageThatOnlyRunsCommands(t *testing.T) {
 // TestGatedReportsWhetherAnythingWasDenied covers the question the node asks
 // before starting an agent.
 func TestGatedReportsWhetherAnythingWasDenied(t *testing.T) {
-	if (Role{Agent: "claude"}).Gated() {
-		t.Error("a role that denies nothing is not gated")
+	if (Stage{Agent: "claude"}).Gated() {
+		t.Error("a stage that denies nothing is not gated")
 	}
-	if !(Role{Agent: "claude", ToolsDeny: []Capability{CapEdit}}).Gated() {
-		t.Error("a role that denies anything is gated")
+	if !(Stage{Agent: "claude", ToolsDeny: []Capability{CapEdit}}).Gated() {
+		t.Error("a stage that denies anything is gated")
 	}
 }
 
 // TestParseCapabilityRefusesWhatItDoesNotKnow covers the direction a typo fails
 // in.
 //
-// A misspelled capability that parsed would leave the role running with the tool
+// A misspelled capability that parsed would leave the stage running with the tool
 // it was supposed to lose, and nothing saying so — the failure the containment
 // INV-4 requires cares about most.
 func TestParseCapabilityRefusesWhatItDoesNotKnow(t *testing.T) {

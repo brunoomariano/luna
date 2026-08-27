@@ -45,7 +45,7 @@ func showAutonomy(env Env, state fsm.TaskState) error {
 	if state.Knob == fsm.KnobAsk {
 		fmt.Fprintf(env.Out, "  gates:    every gate with criteria goes to a person\n")
 	} else {
-		fmt.Fprintf(env.Out, "  gates:    the lead judges gates up to criticality %d\n", state.Knob)
+		fmt.Fprintf(env.Out, "  gates:    the lead judges gates needing autonomy %d or less\n", state.Knob)
 	}
 	fmt.Fprintf(env.Out, "  failures: retry once, then %s\n", state.Knob.Autonomy())
 

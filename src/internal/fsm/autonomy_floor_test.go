@@ -13,16 +13,16 @@ import (
 func TestAGateDeclaringNothingIsTheMostCritical(t *testing.T) {
 	gate := &GateSpec{Kind: GateConfirm, Reason: "approve the plan"}
 
-	if got := gate.Resolved(); got != DefaultCriticality {
-		t.Errorf("an undeclared criticality resolved to %d, want %d", got, DefaultCriticality)
+	if got := gate.Resolved(); got != DefaultAutonomyFloor {
+		t.Errorf("an undeclared criticality resolved to %d, want %d", got, DefaultAutonomyFloor)
 	}
 
-	for knob := 0; knob < DefaultCriticality; knob++ {
+	for knob := 0; knob < DefaultAutonomyFloor; knob++ {
 		if Knob(knob).Judges(gate.Resolved()) {
 			t.Errorf("knob %d absorbed a gate that declared no criticality", knob)
 		}
 	}
-	if !Knob(DefaultCriticality).Judges(gate.Resolved()) {
+	if !Knob(DefaultAutonomyFloor).Judges(gate.Resolved()) {
 		t.Error("the highest knob did not absorb an undeclared gate")
 	}
 }
@@ -34,7 +34,7 @@ func TestAGateDeclaringNothingIsTheMostCritical(t *testing.T) {
 // comparison that nothing in production reached. One comparison, one
 // implementation, and the test now covers the one that decides.
 func TestTheKnobAbsorbsUpToTheDeclaredLevel(t *testing.T) {
-	gate := &GateSpec{Kind: GateReviewArtifact, Criticality: 7}
+	gate := &GateSpec{Kind: GateReviewArtifact, AutonomyFloor: 7}
 
 	for knob := 0; knob <= 6; knob++ {
 		if Knob(knob).Judges(gate.Resolved()) {
@@ -54,8 +54,8 @@ func TestTheKnobAbsorbsUpToTheDeclaredLevel(t *testing.T) {
 // zero is the floor of the knob's range precisely so that "judge nothing" is
 // expressible, and a criticality of 1 absorbed by knob 0 would make it a lie.
 func TestKnobZeroJudgesNothing(t *testing.T) {
-	for level := 1; level <= DefaultCriticality; level++ {
-		gate := &GateSpec{Kind: GateConfirm, Criticality: level}
+	for level := 1; level <= DefaultAutonomyFloor; level++ {
+		gate := &GateSpec{Kind: GateConfirm, AutonomyFloor: level}
 		if Knob(0).Judges(gate.Resolved()) {
 			t.Errorf("knob 0 absorbed a gate of criticality %d", level)
 		}
@@ -66,11 +66,11 @@ func TestKnobZeroJudgesNothing(t *testing.T) {
 func TestCriticalityIsParsedAndBounded(t *testing.T) {
 	accepted := map[string]int{"1": 1, "7": 7, "10": 10}
 	for value, want := range accepted {
-		stage, err := ParseStage(stageWithGate("criticality = "+value), "stage.toml")
+		stage, err := ParseStage(stageWithGate("autonomy_floor = "+value), "stage.toml")
 		if err != nil {
 			t.Fatalf("criticality %s was refused: %v", value, err)
 		}
-		if got := stage.Gate.Criticality; got != want {
+		if got := stage.Gate.AutonomyFloor; got != want {
 			t.Errorf("criticality %s parsed as %d", value, got)
 		}
 	}
@@ -80,7 +80,7 @@ func TestCriticalityIsParsedAndBounded(t *testing.T) {
 	// out is how a person says nothing, and that resolves to the opposite end.
 	refused := []string{"0", "11", "-1", "high", "7.5", ""}
 	for _, value := range refused {
-		if _, err := ParseStage(stageWithGate("criticality = "+value), "stage.toml"); err == nil {
+		if _, err := ParseStage(stageWithGate("autonomy_floor = "+value), "stage.toml"); err == nil {
 			t.Errorf("criticality %q was accepted", value)
 		}
 	}

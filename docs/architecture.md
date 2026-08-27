@@ -196,27 +196,36 @@ Three things follow from the transport:
   fresh rather than failing the stage, and the retry reports `fresh`, so the cost column
   never claims a resumption that did not happen.
 
-## Roles
+## Roles and briefs
 
-A role is a TOML file in `src/stock/roles/` — one ships:
+There is no role file. A stage's TOML holds everything about that stage — its contract, how
+each artifact is proven, its gate, and the **brief** its agent is given:
 
 ```toml
-agent = "claude"
-brief = "You carry out one stage at a time, and Luna decides which. …"
+id     = "build"
+role   = "coder"
+agent  = "claude"
+brief  = "You are building the delivery. …"
 ```
 
-| Role | Stages | Denies |
+| Flow | Stages with a brief | Mechanical |
 |---|---|---|
-| `lead` | intake, diagnose, plan, build, refactor, verify, audit | — |
-| — | setup, pipeline | mechanical: no agent runs |
+| `chore` | build | setup, verify |
+| `fix` | diagnose, build | setup, verify |
+| `full` | intake, diagnose, plan, build, refactor, verify, audit | setup, pipeline |
 
-The stage names its role, not the reverse — the flow is the single place that decides who
-runs what. Separation is by negation: whoever writes does not review.
+`role` no longer resolves to anything. What it still does is **group**: two stages sharing
+a role share a branch, so a base handed forward means the same thing whether or not the
+stage changed, and an empty one is what makes a stage mechanical. A solo run
+(`fsm.Solo`) collapses every stage onto one brief and drops the denials, which is the
+independence solo already says it does not have.
 
-**Why one.** There were twelve, then three, now one. The test never changed: a role is
-worth splitting from another only when it denies a different tool, cannot inherit the
-previous session, or runs on a different harness. With one agent conducting and doing the
-work, none of the three applies.
+**Why the brief moved.** A role table was a pointer a stage followed to find out what it
+was told, and the two drifted: the table said one role shipped while the stock held five.
+One file per stage answers "what happens here" without a second lookup, and a brief written
+for one stage can say things a shared one cannot. The cost is real and was weighed — `verify`
+and `audit` are both judging stages and now carry their own text, so keeping them consistent
+is a person's job rather than a file's.
 
 **What that costs.** Whoever writes now reviews. The judging stage is `audit` rather than
 `review`, because a review is independent or it is not one, and the name would claim a
@@ -317,7 +326,7 @@ stopped last week. A diff that cannot be read counts as every pattern matched, w
 one place in the node where the cautious answer is the noisy one.
 
 Who answers is the autonomy knob, `0`–`10` per task. `0` sends every gate to a person;
-higher lets the lead judge gates at or below that criticality; declared checks are answered
+higher lets the lead judge gates whose `autonomy_floor` it reaches; declared checks are answered
 by their exit code before any model is involved. Profiles ship for the common settings:
 `interactive`, `turbo`, `nightly`.
 

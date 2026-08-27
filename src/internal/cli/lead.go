@@ -280,7 +280,7 @@ func orderFor(env Env, id string) (fsm.TaskState, fsm.Order, error) {
 	if err != nil {
 		return fsm.TaskState{}, fsm.Order{}, err
 	}
-	order, err := fsm.NextOrder(state, flow, env.profiles().Roles)
+	order, err := fsm.NextOrder(state, flow)
 	if err != nil {
 		return fsm.TaskState{}, fsm.Order{}, err
 	}

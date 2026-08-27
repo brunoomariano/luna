@@ -5,32 +5,24 @@ import (
 	"testing"
 )
 
-// catalogue is the role definitions an order is filled from. Named rather than
-// inline so the tests below read as "this role denies writing" instead of as a
-// literal.
-func catalogue() map[RoleName]Role {
-	return map[RoleName]Role{
-		"implementer": {Agent: "claude", Brief: "write the code", Skills: []string{"go"}},
-		"reviewer": {
-			Agent:     "codex",
-			Brief:     "review it",
-			ToolsDeny: []Capability{CapEdit, CapWrite},
-		},
-	}
-}
-
 // orderFlow is a two-stage flow: one that writes and one that reviews.
 func orderFlow() []Stage {
 	return []Stage{
 		{
 			ID:       "build",
 			Role:     "implementer",
+			Agent:    "claude",
+			Brief:    "write the code",
+			Skills:   []string{"go"},
 			Requires: []Artifact{TaskID},
 			Produces: []Artifact{"code"},
 		},
 		{
 			ID:               "review",
 			Role:             "reviewer",
+			Agent:            "codex",
+			Brief:            "review it",
+			ToolsDeny:        []Capability{CapEdit, CapWrite},
 			Requires:         []Artifact{"code"},
 			Produces:         []Artifact{"verdict"},
 			ProducesForHuman: []Artifact{"report"},
@@ -41,7 +33,7 @@ func orderFlow() []Stage {
 func TestTheFirstOrderNamesTheFlowsFirstStage(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 
-	order, err := NextOrder(state, orderFlow(), catalogue())
+	order, err := NextOrder(state, orderFlow())
 	if err != nil {
 		t.Fatalf("NextOrder: %v", err)
 	}
@@ -71,7 +63,7 @@ func TestTheOrderCarriesWhatTheRoleMayNotDo(t *testing.T) {
 	state.Stage = "build"
 	state.Context.Artifacts["code"] = true
 
-	order, err := NextOrder(state, orderFlow(), catalogue())
+	order, err := NextOrder(state, orderFlow())
 	if err != nil {
 		t.Fatalf("NextOrder: %v", err)
 	}
@@ -96,7 +88,7 @@ func TestTheOrderOwesWhatTheContractOwes(t *testing.T) {
 	state.Stage = "build"
 	state.Context.Artifacts["code"] = true
 
-	order, _ := NextOrder(state, orderFlow(), catalogue())
+	order, _ := NextOrder(state, orderFlow())
 
 	got := JoinArtifacts(order.Produces)
 	if got != "report,verdict" {
@@ -112,11 +104,11 @@ func TestARunningTaskGetsTheSameOrderTwice(t *testing.T) {
 	state.Status = StatusRunning
 	state.Stage = "build"
 
-	first, err := NextOrder(state, orderFlow(), catalogue())
+	first, err := NextOrder(state, orderFlow())
 	if err != nil {
 		t.Fatalf("NextOrder: %v", err)
 	}
-	second, _ := NextOrder(state, orderFlow(), catalogue())
+	second, _ := NextOrder(state, orderFlow())
 
 	if first.Stage != "build" || second.Stage != "build" {
 		t.Errorf("asking twice moved the stage: %q then %q", first.Stage, second.Stage)
@@ -132,7 +124,7 @@ func TestAGateIsAnOrderToWaitNotToRun(t *testing.T) {
 	state.Stage = "build"
 	state.Gate = &PendingGate{Kind: GateConfirm, Stage: "build", Reason: "about to write"}
 
-	order, err := NextOrder(state, orderFlow(), catalogue())
+	order, err := NextOrder(state, orderFlow())
 	if err != nil {
 		t.Fatalf("NextOrder: %v", err)
 	}
@@ -165,7 +157,7 @@ func TestAGateWithNothingToSayStillSaysSomething(t *testing.T) {
 			state.Status = StatusAwaitingGate
 			state.Gate = tc.gate
 
-			order, err := NextOrder(state, orderFlow(), catalogue())
+			order, err := NextOrder(state, orderFlow())
 			if err != nil {
 				t.Fatalf("NextOrder: %v", err)
 			}
@@ -181,7 +173,7 @@ func TestABlockedTaskSaysWhy(t *testing.T) {
 	state.Status = StatusBlocked
 	state.Blocked = "the build never came back"
 
-	order, _ := NextOrder(state, orderFlow(), catalogue())
+	order, _ := NextOrder(state, orderFlow())
 
 	if order.Kind != OrderBlocked {
 		t.Errorf("kind = %q, want %q", order.Kind, OrderBlocked)
@@ -201,8 +193,8 @@ func TestAnAbandonedTaskIsDoneButNotFinished(t *testing.T) {
 	finished := NewTaskState("LUNA-2", KindFeature)
 	finished.Status = StatusDone
 
-	a, _ := NextOrder(abandoned, orderFlow(), catalogue())
-	f, _ := NextOrder(finished, orderFlow(), catalogue())
+	a, _ := NextOrder(abandoned, orderFlow())
+	f, _ := NextOrder(finished, orderFlow())
 
 	if a.Kind != OrderDone || f.Kind != OrderDone {
 		t.Fatalf("both should be done: %q and %q", a.Kind, f.Kind)
@@ -218,7 +210,7 @@ func TestTheEndOfTheFlowIsAnOrderToStop(t *testing.T) {
 	state.Status = StatusStageDone
 	state.Stage = "review" // the last stage of orderFlow
 
-	order, err := NextOrder(state, orderFlow(), catalogue())
+	order, err := NextOrder(state, orderFlow())
 	if err != nil {
 		t.Fatalf("NextOrder: %v", err)
 	}
@@ -232,20 +224,24 @@ func TestAStageOutsideTheFlowIsRefused(t *testing.T) {
 	state.Status = StatusRunning
 	state.Stage = "invented"
 
-	if _, err := NextOrder(state, orderFlow(), catalogue()); err == nil {
+	if _, err := NextOrder(state, orderFlow()); err == nil {
 		t.Fatal("a stage the flow has never heard of produced an order instead of an error")
 	}
 }
 
-// TestAnUnknownRoleStillProducesAnOrder is the deliberate non-refusal. The engine
-// holds the name and configuration holds the meaning; refusing here
-// would make the flow undrivable on a machine whose config had not loaded.
-func TestAnUnknownRoleStillProducesAnOrder(t *testing.T) {
+// TestAStageWithNoAgentStillProducesAnOrder is the deliberate non-refusal. The
+// engine says which stage runs; whether anything can run it is the node layer's
+// question, and refusing here would make the flow undrivable rather than
+// diagnosable.
+func TestAStageWithNoAgentStillProducesAnOrder(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 
-	order, err := NextOrder(state, orderFlow(), nil)
+	flow := orderFlow()
+	flow[0].Agent = ""
+
+	order, err := NextOrder(state, flow)
 	if err != nil {
-		t.Fatalf("NextOrder with no catalogue: %v", err)
+		t.Fatalf("NextOrder with no agent: %v", err)
 	}
 	if order.Kind != OrderRun || order.Stage != "build" {
 		t.Errorf("got %q on %q, want a run order on build", order.Kind, order.Stage)
@@ -261,7 +257,7 @@ func TestAMechanicalStageNamesNoRole(t *testing.T) {
 	flow := []Stage{{ID: "setup", Requires: []Artifact{TaskID}, Produces: []Artifact{"worktree"}}}
 	state := NewTaskState("LUNA-1", KindFeature)
 
-	order, _ := NextOrder(state, flow, catalogue())
+	order, _ := NextOrder(state, flow)
 
 	if order.Role != "" || order.Agent != "" {
 		t.Errorf("role=%q agent=%q, want both empty on a mechanical stage", order.Role, order.Agent)
@@ -280,7 +276,7 @@ func TestTheBaseIsThePreviousStagesCommit(t *testing.T) {
 	state.Context.Artifacts["code"] = true
 	state.Base = "d34db33f"
 
-	order, _ := NextOrder(state, orderFlow(), catalogue())
+	order, _ := NextOrder(state, orderFlow())
 
 	if order.Base != "d34db33f" {
 		t.Errorf("base = %q, want the commit the previous stage delivered", order.Base)
@@ -384,7 +380,7 @@ func TestACompleteWithoutACommitLeavesTheBaseAlone(t *testing.T) {
 func TestTheOrderCarriesNoViewOfTheFlow(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
 
-	order, _ := NextOrder(state, orderFlow(), catalogue())
+	order, _ := NextOrder(state, orderFlow())
 	text := order.Text()
 
 	if strings.Contains(text, "review") {
@@ -398,7 +394,7 @@ func TestTheOrderRendersAsKeyValues(t *testing.T) {
 	state.Stage = "build"
 	state.Context.Artifacts["code"] = true
 
-	text, _ := NextOrder(state, orderFlow(), catalogue())
+	text, _ := NextOrder(state, orderFlow())
 
 	for _, want := range []string{
 		"kind=run",
@@ -419,11 +415,11 @@ func TestTheOrderRendersAsKeyValues(t *testing.T) {
 // A brief is prose and a person is the reader; escaping the newlines would make
 // the one field that has to be read the one field nobody can.
 func TestAMultiLineBriefStaysReadable(t *testing.T) {
-	roles := catalogue()
-	roles["implementer"] = Role{Agent: "claude", Brief: "first line\nsecond line"}
+	flow := orderFlow()
+	flow[0].Brief = "first line\nsecond line"
 
 	state := NewTaskState("LUNA-1", KindFeature)
-	text := mustOrder(t, state, orderFlow(), roles).Text()
+	text := mustOrder(t, state, flow).Text()
 
 	if strings.Contains(text, `\n`) {
 		t.Errorf("the brief was escaped rather than indented:\n%s", text)
@@ -438,7 +434,7 @@ func TestAMultiLineBriefStaysReadable(t *testing.T) {
 // task never having had one.
 func TestAnEmptyFieldIsAbsentRatherThanBlank(t *testing.T) {
 	state := NewTaskState("LUNA-1", KindFeature)
-	text := mustOrder(t, state, orderFlow(), catalogue()).Text()
+	text := mustOrder(t, state, orderFlow()).Text()
 
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasSuffix(line, "=") {
@@ -447,9 +443,9 @@ func TestAnEmptyFieldIsAbsentRatherThanBlank(t *testing.T) {
 	}
 }
 
-func mustOrder(t *testing.T, state TaskState, flow []Stage, roles map[RoleName]Role) Order {
+func mustOrder(t *testing.T, state TaskState, flow []Stage) Order {
 	t.Helper()
-	order, err := NextOrder(state, flow, roles)
+	order, err := NextOrder(state, flow)
 	if err != nil {
 		t.Fatalf("NextOrder: %v", err)
 	}

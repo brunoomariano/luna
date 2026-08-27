@@ -292,11 +292,24 @@ the credential of truth.
 
 ## Agents, roles and the sandbox
 
-**A role per stage.** A role resolves to an agent kind, a brief and a capability list. A
-stage with no role runs mechanically, with no agent — Luna was paying a model to run
-`git commit`.
+**The brief belongs to the stage, not to a role.** A stage's TOML holds its contract, its
+verifiers, its gate *and* what its agent is told. A stage with no agent runs mechanically —
+Luna was paying a model to run `git commit`.
 
-**Four harnesses, four gating mechanisms; a role declares a capability and Luna
+> *Rejected: a role table a stage points into.* It is what shipped first, and the pointer
+> drifted from what it pointed at — `architecture.md` described one role while the stock
+> held five, and nothing failed. A stage file that answers "what happens here" without a
+> second lookup cannot drift from itself.
+>
+> *Rejected: keeping the table for the stages that share a brief.* `verify` and `audit` are
+> both judging stages, so absorbing duplicates ~300 words between two files. Weighed and
+> accepted: the duplication is visible and a person can diff it, where the indirection hid
+> which stage was told what. `role` survives as the branch grouping it always also was.
+>
+> *Rejected: a project overriding a role in `config.toml`.* Same reason `.luna/stock/` went
+> — the thing it enabled is drift. One build, one set of flows, every repository the same.
+
+**Four harnesses, four gating mechanisms; a stage declares a capability and Luna
 translates.** The table is closed: an unlisted harness is refused, because guessing fails
 open.
 

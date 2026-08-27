@@ -37,7 +37,11 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Gate":             "history", // gateFor decides whether a past Advance suspended
 		"Review":           "history", // decides whether a past finding was legal, and where it went
 		"Guard":            "policy",  // the node matches it; the reducer reads only whether it fired
-		"Role":             "policy",  // only internal/node reads it
+		"Role":             "policy",  // only internal/node reads it: the branch, and a live stage's session
+		"Agent":            "policy",  // which harness answered; `--agent` overrides it per run
+		"Brief":            "policy",  // what the agent was told, never what delivering meant
+		"Skills":           "policy",  // read when the agent starts
+		"ToolsDeny":        "policy",  // the node applies it before the process exists
 		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
 	}
 
@@ -129,7 +133,7 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		// strand every open task the moment a project declared criticality, for a
 		// change that cannot alter how one past event reads.
 		"a gate's criticality, which decides who is asked and not what happened": func(s *Stage) {
-			s.Gate = &GateSpec{Kind: GateConfirm, Reason: "confirm something", Criticality: 3}
+			s.Gate = &GateSpec{Kind: GateConfirm, Reason: "confirm something", AutonomyFloor: 3}
 		},
 		"a gate's judgement criteria, for the same reason": func(s *Stage) {
 			s.Gate = &GateSpec{

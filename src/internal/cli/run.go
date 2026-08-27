@@ -200,6 +200,11 @@ func parseRunOptions(args []string) (runOptions, error) {
 // The node is chosen here and nowhere else: swapping how a stage is run is one
 // more branch in this function, not a change to the lead or the engine.
 func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*lead.Lead, func(), error) {
+	// Applied once, here, so the lead and the node see the same flow: the two are
+	// given it separately below, and an override landing on only one of them would
+	// make the log disagree with what ran.
+	flow = forceAgent(flow, opts.Agent)
+
 	// The judge is what makes the retry budget real: without one the lead blocks on
 	// the first failure and the retry budget is never spent. This one
 	// carries no model — it reads the budget the task already has.
@@ -275,7 +280,6 @@ func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(),
 		// The stage's role decides which agent runs it. --agent overrides every
 		// role, which is what makes a run reproducible against one harness while
 		// the roles are still being tuned.
-		Roles:  rolesFor(cfg, opts.Agent),
 		Budget: cfg.Turn(),
 
 		// The socket a contained agent hands artifacts over through, opened inside
@@ -343,20 +347,27 @@ func checkGateWith(s *store.Store, repo string) func(context.Context, string, fs
 	}
 }
 
-// rolesFor resolves roles from the config, optionally forcing one agent.
+// forceAgent pins every non-mechanical stage to one harness.
 //
 // The override exists for the same reason `--dry-run` does: pinning every stage
-// to one harness makes a run reproducible while the roles are still being tuned.
-// It changes which agent runs, never which role the stage names — so the flow and
-// the log stay honest about who was supposed to do what.
-func rolesFor(cfg Config, override string) func(fsm.RoleName) (fsm.Role, bool) {
-	return func(name fsm.RoleName) (fsm.Role, bool) {
-		role, ok := cfg.Role(name)
-		if ok && override != "" {
-			role.Agent = override
-		}
-		return role, ok
+// to one harness makes a run reproducible while the briefs are still being tuned.
+// It changes which agent runs, never what the stage names itself — so the flow
+// and the log stay honest about who was supposed to do what.
+//
+// An empty override returns the flow untouched, and a mechanical stage is left
+// alone: it starts no agent, so giving it one would invent a process.
+func forceAgent(flow []fsm.Stage, override string) []fsm.Stage {
+	if override == "" {
+		return flow
 	}
+	forced := make([]fsm.Stage, len(flow))
+	copy(forced, flow)
+	for i := range forced {
+		if !forced[i].Mechanical() {
+			forced[i].Agent = override
+		}
+	}
+	return forced
 }
 
 // dryNode delivers whatever the contract asks for, without running anything.

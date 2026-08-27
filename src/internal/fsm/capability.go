@@ -5,50 +5,10 @@ import (
 	"strings"
 )
 
-// RoleName is what a stage calls the kind of worker it needs.
+// Capability is something a stage may be denied.
 //
-// The engine holds the name and nothing else. What the name *means* — which agent
-// runs it, what it is told, what it can do — is configuration, resolved outside
-// the reducer the same way a profile is. That is what lets a project
-// put a different model behind `reviewer` than behind `implementer` without the
-// engine growing a list of agents.
-type RoleName string
-
-// Role is what a project decides a role means.
-//
-// It is a declaration, never an execution. Nothing here starts a process or reads
-// a file; the node layer does that, and what comes back arrives inside an action
-// the reducer folds into state.
-type Role struct {
-	// Agent is the harness kind that runs this role, travelling to the node layer
-	// as agent.Call.Kind. Two roles naming different agents is the cheapest
-	// independence available before real tool gating exists.
-	Agent string
-
-	// Brief is what the agent is told about being this role. It is instruction,
-	// not enforcement: a restriction that lives only here is the violation INV-4
-	// names, and closing that gap needs tool denial the harness applies before the
-	// agent starts.
-	Brief string
-
-	// Skills are the capability bundles this role loads.
-	Skills []string
-
-	// ToolsDeny names capabilities this role must not have — `Edit`, `Write`.
-	//
-	// It names what the role cannot do, never how a harness spells it: claude says
-	// `Edit`, pi says `edit`, codex takes no names at all and denies writing with
-	// a sandbox mode. Keeping the vocabulary out of here is what lets a project
-	// move `reviewer` from one agent to another without rewriting the role, and
-	// what stops a role from silently ceasing to deny anything when its agent
-	// changes.
-	ToolsDeny []Capability
-}
-
-// Capability is something a role may be denied.
-//
-// A closed set rather than free strings: a typo in a denial fails open — the role
-// runs with the tool it was supposed to lose, and nothing says so. That is the
+// A closed set rather than free strings: a typo in a denial fails open — the
+// stage runs with the tool it was supposed to lose, and nothing says so. That is the
 // direction the containment INV-4 requires cares about most.
 type Capability string
 
@@ -60,7 +20,7 @@ const (
 	CapWrite Capability = "Write"
 )
 
-// KnownCapabilities are the ones a role may name.
+// KnownCapabilities are the ones a stage may name.
 func KnownCapabilities() []Capability { return []Capability{CapEdit, CapWrite} }
 
 // CapBash is naming a shell, which Luna knows about and cannot deny.
@@ -89,7 +49,7 @@ func ParseCapability(name string) (Capability, error) {
 	// ["Bash"]` is asking for something coherent, and telling them it is a name
 	// Luna never heard of would be answering a different question.
 	if Capability(name) == CapBash {
-		return "", fmt.Errorf("%q cannot be denied: a role with no shell cannot run the tests "+
+		return "", fmt.Errorf("%q cannot be denied: a stage with no shell cannot run the tests "+
 			"it is reviewing, and denying Edit and Write with a shell open does not stop "+
 			"writing (see INV-4). Confining what a process may touch belongs to a sandbox",
 			name)
@@ -97,8 +57,8 @@ func ParseCapability(name string) (Capability, error) {
 	return "", fmt.Errorf("unknown capability %q (%s)", name, capabilityList())
 }
 
-// Gated reports whether this role must be started with something denied.
-func (r Role) Gated() bool { return len(r.ToolsDeny) > 0 }
+// Gated reports whether this stage must be started with something denied.
+func (s Stage) Gated() bool { return len(s.ToolsDeny) > 0 }
 
 func capabilityList() string {
 	names := make([]string, 0, len(KnownCapabilities()))

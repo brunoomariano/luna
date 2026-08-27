@@ -11,48 +11,11 @@ import (
 	"github.com/brunoomariano/luna/src/stock"
 )
 
-// LoadRoles reads the role definitions from a stock directory.
-//
-// One file per role, named after it — `reviewer.toml` defines `reviewer`. The
-// name comes from the filename rather than a field so it cannot disagree with
-// itself, which is the mistake a `[role.reviewer]` header inside `scout.toml`
-// invites.
-//
-// The keys are exactly the ones `[role.*]` accepts in a project's config, and
-// they are parsed by the same code. A stock file and an override are the same
-// format, so learning one teaches the other.
-func LoadRoles(files fs.FS, dir string) (map[fsm.RoleName]fsm.Role, error) {
-	names, err := tomlFiles(files, dir)
-	if err != nil {
-		return nil, err
-	}
-
-	roles := map[fsm.RoleName]fsm.Role{}
-	cfg := Config{Roles: roles, Profiles: map[fsm.Profile]bool{}}
-
-	for _, file := range names {
-		name := strings.TrimSuffix(file, ".toml")
-
-		content, err := fs.ReadFile(files, path.Join(dir, file))
-		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", file, err)
-		}
-		if err := eachSetting(string(content), file, func(key, value, at string) error {
-			return assignRole(&cfg, name, key, value, at)
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	if len(roles) == 0 {
-		return nil, fmt.Errorf("no role files in %s: a flow names roles, and none would resolve", dir)
-	}
-	return roles, nil
-}
-
 // LoadProfiles reads the profile definitions from a stock directory.
 //
-// The same shape as roles: one file per profile, named after it.
+// One file per profile, named after it — `nightly.toml` defines `nightly`. The
+// name comes from the filename rather than a field so it cannot disagree with
+// itself.
 func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]bool, error) {
 	names, err := tomlFiles(files, dir)
 	if err != nil {
@@ -60,7 +23,7 @@ func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]bool, error) {
 	}
 
 	profiles := map[fsm.Profile]bool{}
-	cfg := Config{Roles: map[fsm.RoleName]fsm.Role{}, Profiles: profiles}
+	cfg := Config{Profiles: profiles}
 
 	for _, file := range names {
 		name := strings.TrimSuffix(file, ".toml")
@@ -134,17 +97,11 @@ func tomlFiles(files fs.FS, dir string) ([]string, error) {
 	return names, nil
 }
 
-// shippedRoles and shippedProfiles parse the embedded stock once.
+// shippedProfiles parses the embedded stock once.
 //
-// Cached for the same reason the flow is: they are read on every command, and
-// re-parsing a dozen files each time would put a cost on something that never
+// Cached for the same reason the flow is: it is read on every command, and
+// re-parsing the files each time would put a cost on something that never
 // changes within a process.
-var (
-	shippedRoles = sync.OnceValues(func() (map[fsm.RoleName]fsm.Role, error) {
-		return LoadRoles(stock.Files, stock.RolesDir)
-	})
-
-	shippedProfiles = sync.OnceValues(func() (map[fsm.Profile]bool, error) {
-		return LoadProfiles(stock.Files, stock.ProfilesDir)
-	})
-)
+var shippedProfiles = sync.OnceValues(func() (map[fsm.Profile]bool, error) {
+	return LoadProfiles(stock.Files, stock.ProfilesDir)
+})

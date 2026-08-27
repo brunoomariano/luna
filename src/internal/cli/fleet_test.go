@@ -194,7 +194,7 @@ func (l *fleetLead) ask(_ context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	order, err := fsm.NextOrder(state, flow, l.h.env.profiles().Roles)
+	order, err := fsm.NextOrder(state, flow)
 	if err != nil {
 		return "", err
 	}

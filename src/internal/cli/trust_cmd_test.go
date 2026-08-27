@@ -91,7 +91,7 @@ func TestKnobNoteNamesEachRegime(t *testing.T) {
 	for knob, want := range map[fsm.Knob]string{
 		fsm.KnobAsk: "every gate goes to a person",
 		fsm.KnobAll: "judge every gate",
-		5:           "up to this criticality",
+		5:           "needing this much autonomy or less",
 	} {
 		if got := knobNote(knob); !strings.Contains(got, want) {
 			t.Errorf("knob %d: want %q in %q", knob, want, got)

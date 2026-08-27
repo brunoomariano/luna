@@ -370,9 +370,9 @@ func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 func TestAGateDeclaringNoCriticalityReportsTheDefault(t *testing.T) {
 	gate := &fsm.GateSpec{Kind: fsm.GateConfirm, Reason: "approve it"}
 
-	if got := gate.Resolved(); got != fsm.DefaultCriticality {
+	if got := gate.Resolved(); got != fsm.DefaultAutonomyFloor {
 		t.Errorf("an undeclared criticality resolved to %d, want %d",
-			got, fsm.DefaultCriticality)
+			got, fsm.DefaultAutonomyFloor)
 	}
 }
 
@@ -434,7 +434,7 @@ func TestFlowGatesNamesTheKnobThatReachesEach(t *testing.T) {
 	h := newHarness(t)
 
 	reportGates(h.env, []fsm.Stage{
-		{ID: "plan", Gate: &fsm.GateSpec{Kind: fsm.GateConfirm, Criticality: 3, Judge: []string{"is it in scope"}}},
+		{ID: "plan", Gate: &fsm.GateSpec{Kind: fsm.GateConfirm, AutonomyFloor: 3, Judge: []string{"is it in scope"}}},
 		{ID: "spec", Gate: &fsm.GateSpec{Kind: fsm.GateReviewArtifact}},
 	})
 

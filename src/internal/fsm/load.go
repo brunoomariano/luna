@@ -277,6 +277,8 @@ func assignStageField(stage *Stage, key, value, at string) error {
 		stage.ID = StageID(unquote(value))
 	case "role":
 		stage.Role = unquote(value)
+	case "agent", "brief", "skills", "tools_deny":
+		return assignStageAgent(stage, key, value, at)
 	case "when":
 		condition, err := ParseCondition(unquote(value))
 		if err != nil {
@@ -300,6 +302,34 @@ func assignStageField(stage *Stage, key, value, at string) error {
 		return assignArtifactList(stage, key, value, at)
 	default:
 		return fmt.Errorf("%s: unknown key %q in a stage", at, key)
+	}
+	return nil
+}
+
+// assignStageAgent puts one of the four fields describing who runs the stage.
+//
+// Split from the switch above for the reason assignArtifactList was: four keys
+// inline pushed one function past the complexity the linter gates on, and what
+// they have in common — they describe the agent rather than the contract — is
+// worth saying with a function name.
+func assignStageAgent(stage *Stage, key, value, at string) error {
+	switch key {
+	case "agent":
+		stage.Agent = unquote(value)
+	case "brief":
+		stage.Brief = unquote(value)
+	case "skills":
+		skills, err := parseStrings(value, at)
+		if err != nil {
+			return err
+		}
+		stage.Skills = skills
+	case "tools_deny":
+		denied, err := parseCapabilities(value, at)
+		if err != nil {
+			return err
+		}
+		stage.ToolsDeny = denied
 	}
 	return nil
 }
@@ -337,12 +367,12 @@ func assignGate(gate *GateSpec, key, value, at string) error {
 		gate.Reason = unquote(value)
 	case "artifact":
 		gate.Artifact = Artifact(unquote(value))
-	case "criticality":
-		level, err := parseCriticality(value, at)
+	case "autonomy_floor":
+		level, err := parseAutonomyFloor(value, at)
 		if err != nil {
 			return err
 		}
-		gate.Criticality = level
+		gate.AutonomyFloor = level
 	case "judge", "judge_by_reading":
 		return assignGateCriteria(gate, key, value, at)
 	default:
@@ -368,21 +398,42 @@ func assignGateCriteria(gate *GateSpec, key, value, at string) error {
 	return nil
 }
 
-// parseCriticality reads how much a gate matters, refusing anything outside 1–10.
+// parseAutonomyFloor reads the lowest autonomy that absorbs a gate, refusing
+// anything outside 1–10.
 //
 // Zero is refused rather than accepted as "undeclared": writing it is a person
 // asking for a gate that every knob setting absorbs, including the one that is
 // supposed to judge nothing. Leaving the key out is how you say nothing, and that
-// resolves to DefaultCriticality — the opposite end.
-func parseCriticality(value, at string) (int, error) {
+// resolves to DefaultAutonomyFloor — the opposite end.
+func parseAutonomyFloor(value, at string) (int, error) {
 	level, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil {
-		return 0, fmt.Errorf("%s: criticality has to be a number 1-10, got %q", at, value)
+		return 0, fmt.Errorf("%s: autonomy_floor has to be a number 1-10, got %q", at, value)
 	}
-	if level < 1 || level > DefaultCriticality {
-		return 0, fmt.Errorf("%s: criticality has to be 1-10, got %d", at, level)
+	if level < 1 || level > DefaultAutonomyFloor {
+		return 0, fmt.Errorf("%s: autonomy_floor has to be 1-10, got %d", at, level)
 	}
 	return level, nil
+}
+
+// parseCapabilities reads a tools_deny list, refusing a name Luna does not know.
+//
+// A typo here fails open — the stage would run with the tool it was supposed to
+// lose — so an unknown name is an error rather than a skipped entry.
+func parseCapabilities(value, at string) ([]Capability, error) {
+	names, err := parseStrings(value, at)
+	if err != nil {
+		return nil, err
+	}
+	denied := make([]Capability, 0, len(names))
+	for _, name := range names {
+		capability, err := ParseCapability(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", at, err)
+		}
+		denied = append(denied, capability)
+	}
+	return denied, nil
 }
 
 // parseStrings reads a list of quoted strings, for the values that are prose

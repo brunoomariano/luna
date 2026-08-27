@@ -39,7 +39,7 @@ func TestTheKnobSurvivesTheProcess(t *testing.T) {
 	if !strings.Contains(out, "autonomy 7") {
 		t.Errorf("the knob did not come back from the log:\n%s", out)
 	}
-	if !strings.Contains(out, "up to criticality 7") {
+	if !strings.Contains(out, "needing autonomy 7 or less") {
 		t.Errorf("the reading does not say what 7 reaches:\n%s", out)
 	}
 }

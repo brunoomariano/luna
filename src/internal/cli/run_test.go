@@ -600,13 +600,15 @@ func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 		t.Fatalf("want the stage runner, got %T", conductor.Node)
 	}
 
-	// --agent overrides every role's agent, which is what makes a run
-	// reproducible against one harness while the roles are still being tuned.
-	if runner.Roles == nil {
-		t.Fatal("the runner needs roles to resolve")
-	}
-	if role, ok := runner.Roles("lead"); !ok || role.Agent != "codex" {
-		t.Errorf("want the override applied to every role, got %+v (found=%v)", role, ok)
+	// --agent overrides every stage's agent, which is what makes a run
+	// reproducible against one harness while the briefs are still being tuned.
+	for _, stage := range runner.Flow {
+		if stage.Mechanical() {
+			continue
+		}
+		if stage.Agent != "codex" {
+			t.Errorf("stage %q kept %q instead of the override", stage.ID, stage.Agent)
+		}
 	}
 	if runner.Repo != "/some/repo" {
 		t.Errorf("want the runner pointed at the repository, got %q", runner.Repo)

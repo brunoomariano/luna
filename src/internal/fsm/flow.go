@@ -44,19 +44,18 @@ func FlowNames() []string {
 	return names
 }
 
-// DefaultFlow is the flow Luna ships with — the eight stages of
+// DefaultFlow is the flow Luna ships with — the nine stages of
 // docs/architecture.md.
 //
-// It is not mandatory: stages can be disabled, edited or replaced, and new ones
-// created. What does not change is the contract — every stage declares
-// what it requires and what it produces.
+// Which flow runs is a task's choice (`--flow`); what a flow contains is not
+// anyone's, and a project does not edit one. What every stage declares is the
+// same either way — what it requires and what it produces.
 //
 // Order is significant: AuditContract checks precedence, not existence.
 //
 // It reads the stock embedded in the binary rather than returning Go literals.
-// The files are the source, so the surface a project edits and the
-// flow Luna runs are the same thing rather than two descriptions of it — which
-// is what makes "a project brings its own flow" true rather than aspirational.
+// The files are the source, so the flow under review and the flow Luna runs are
+// the same thing rather than two descriptions of it.
 //
 // A stock that does not parse is a panic, and deliberately: it is embedded at
 // build time, so a broken one is a broken binary rather than a bad input. Every
@@ -115,6 +114,22 @@ func mustShippedFlows() map[string][]Stage {
 // task. It is the only role a solo run resolves, and the stock ships it.
 const SoloRole = "lead"
 
+// SoloAgent is the harness a solo run uses, and SoloBrief is what it is told.
+//
+// One brief covering every stage, where a pack gives each stage its own. That is
+// the trade solo makes: the same agent does the planning, the building and the
+// judging, so what it is told has to hold for all three at once rather than being
+// written for the stage in front of it.
+//
+// It lived in `stock/roles/lead.toml` while roles were a table a stage pointed
+// into. With the brief absorbed into the stages, a file holding one role that no
+// stage names would be a table with a single row — so the row moved here, next to
+// the function that is the only thing which ever read it.
+const (
+	SoloAgent = "claude"
+	SoloBrief = "You carry out one stage at a time, and Luna decides which. Do what the stage says it owes and nothing further: a stage that delivers more than its contract asks has done work nobody can check. When what you owe is a contract, every sentence in it binds someone — an obligation, a prohibition, or a statement of fact a checker can settle. It carries no recommendations, no notes for later, and no section for them: a sentence saying one option is preferable is one a checker cannot act on, and it does not belong in the document. Where two forms are genuinely both acceptable, say that both satisfy the contract and stop. When you are asked to find a root cause, find the cause and the smallest case that shows it, and do not fix it in that stage. When you are asked to judge what was delivered, you are re-reading your own work with no memory of writing it, and that is worth saying to yourself: look for what the contract obliges that you cannot find satisfied, and treat an obligation you cannot locate as a finding whatever the suite says. Apply each lens the work admits and say what each found, including when it found nothing. correctness: does the code do what the scenarios and the contract say, including where those two disagree? coverage: what does the suite not cover — the case that would still pass if the behaviour were absent? robustness: what breaks under load, attack or absence — empty input, a failing dependency, a concurrent caller? structure: did the change move the system's shape, and does the shape still hold? A finding names the file and the line, what goes wrong, and the input that makes it go wrong; a finding you cannot state that way is an impression and belongs in the report as one. Every finding opens with exactly one tag on its own line, in square brackets, and Luna reads only the tag: [BLOCKING] this change introduced the defect, or it breaks a stated acceptance criterion — this and only this sends the work back; [SHOULD-FIX] a real defect this change did not introduce, or that no acceptance criterion covers; [NIT] a preference; [UNCERTAIN] you suspect a defect and cannot confirm it, and you say what would confirm it. An untagged finding is invisible to Luna, so a defect you describe without a tag is one you did not report. Do not reach for [BLOCKING] because a defect is serious: a serious defect that was already there is [SHOULD-FIX], and blocking on it reopens the work to fix something nobody asked about. Ask what this change did, not what the file deserves."
+)
+
 // Solo collapses a flow's roles onto one, for the mode where a single agent
 // carries the task from end to end.
 //
@@ -142,6 +157,14 @@ func Solo(flow []Stage) []Stage {
 			continue
 		}
 		solo[i].Role = SoloRole
+		solo[i].Agent = SoloAgent
+		solo[i].Brief = SoloBrief
+
+		// The denials go with the briefs they belonged to. A solo run is one agent
+		// doing every stage, so a stage that denied Edit would be denying it to
+		// the same process that has to build — which is the independence solo
+		// already says it does not have, rather than one it can keep by half.
+		solo[i].ToolsDeny = nil
 	}
 	return solo
 }

@@ -1,5 +1,7 @@
 id       = "refactor"
 role     = "cleaner"
+agent    = "claude"
+brief    = "You are cleaning up code that is already green, and the green is yours to re-earn: the tests attested to code you are about to change. Behaviour does not move — if a test has to change to pass, you have changed behaviour and that is the thing you must not do. You clean up without changing behaviour. Everything the code did before your change it still does after, and the suite is how you show it — you re-run it and you re-earn the green, because a refactor that inherits somebody else's passing run has proved nothing. You do not add features, you do not widen scope, and you do not fix a defect you find: a defect is a finding, and it belongs in the report with the file, the line and the input that triggers it. What you may do is take out duplication, name what is unnamed, cut a function that grew past reading, and move a boundary that is in the wrong place."
 # Fresh, and the pack is what made it so. A cleaner continuing the coder's
 # session reads its reasoning instead of its output, and the whole reason this
 # stage is a separate role is that it has to re-earn the green over code it did

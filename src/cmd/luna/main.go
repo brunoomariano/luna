@@ -138,7 +138,7 @@ func run(args []string) error {
 // Extracted from run so a test can assert on it. That is not a style preference:
 // `Lead` was declared, read in two places and set by nothing but tests, so
 // `luna lead` reported "no lead is configured" on every real machine and a knob
-// raised past a gate's criticality quietly sent it to a person. Both failed
+// raised past a gate's autonomy floor quietly sent it to a person. Both failed
 // safe, neither said why, and no test could see it while this was a literal
 // inside a function that also opens a database.
 func environment(s *store.Store, cfg cli.Config, root string) cli.Env {

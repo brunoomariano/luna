@@ -8,7 +8,7 @@ import "testing"
 // A design that ran them and then asked a person anyway would have made the
 // declaration meaningless, and the person who wrote it would learn not to bother.
 func TestPassingChecksApproveWithoutAsking(t *testing.T) {
-	gate := &GateSpec{Kind: GateConfirm, Criticality: 3}
+	gate := &GateSpec{Kind: GateConfirm, AutonomyFloor: 3}
 	passed := GateChecksOutcome{Passed: true}
 
 	// True at every knob setting, including the one that judges nothing: the knob
@@ -27,9 +27,9 @@ func TestPassingChecksApproveWithoutAsking(t *testing.T) {
 // model is never the thing standing between a failing test and an approval.
 func TestAFailingCheckRejectsAndNothingIsJudged(t *testing.T) {
 	gate := &GateSpec{
-		Kind:        GateReviewArtifact,
-		Criticality: 1,
-		Judge:       []string{"the contract states what is forbidden"},
+		Kind:          GateReviewArtifact,
+		AutonomyFloor: 1,
+		Judge:         []string{"the contract states what is forbidden"},
 	}
 
 	// Criticality 1 with the knob at 10: the lead would judge this gate if it ever
@@ -44,7 +44,7 @@ func TestAFailingCheckRejectsAndNothingIsJudged(t *testing.T) {
 // Nobody got an answer, so there is nothing to conclude — and RF4's rule is that
 // the fallback is always the human.
 func TestACheckThatCannotRunGoesToAPerson(t *testing.T) {
-	gate := &GateSpec{Kind: GateConfirm, Criticality: 1, Judge: []string{"anything"}}
+	gate := &GateSpec{Kind: GateConfirm, AutonomyFloor: 1, Judge: []string{"anything"}}
 
 	if got := ResolveGate(gate, GateChecksOutcome{Unrunnable: true}, KnobAll); got != AnswerPerson {
 		t.Errorf("an unrunnable check did not fall to a person, got %v", got)
@@ -69,9 +69,9 @@ func TestAGateWithNothingDeclaredAsksAPerson(t *testing.T) {
 // changes.
 func TestTheKnobDecidesWhoJudges(t *testing.T) {
 	gate := &GateSpec{
-		Kind:        GateReviewArtifact,
-		Criticality: 7,
-		Judge:       []string{"every acceptance criterion appears as an obligation"},
+		Kind:          GateReviewArtifact,
+		AutonomyFloor: 7,
+		Judge:         []string{"every acceptance criterion appears as an obligation"},
 	}
 
 	for knob := KnobAsk; knob <= KnobAll; knob++ {
@@ -91,7 +91,7 @@ func TestTheKnobDecidesWhoJudges(t *testing.T) {
 // across every declared level rather than at one.
 func TestKnobZeroJudgesNothingAnywhere(t *testing.T) {
 	for level := 1; level <= int(KnobAll); level++ {
-		gate := &GateSpec{Kind: GateConfirm, Criticality: level, Judge: []string{"a criterion"}}
+		gate := &GateSpec{Kind: GateConfirm, AutonomyFloor: level, Judge: []string{"a criterion"}}
 
 		if got := ResolveGate(gate, GateChecksOutcome{}, KnobAsk); got != AnswerPerson {
 			t.Errorf("knob 0 did not ask a person about criticality %d, got %v", level, got)
@@ -106,9 +106,9 @@ func TestKnobZeroJudgesNothingAnywhere(t *testing.T) {
 // judgement somebody asked for.
 func TestChecksAndCriteriaCoexist(t *testing.T) {
 	gate := &GateSpec{
-		Kind:        GateReviewArtifact,
-		Criticality: 5,
-		Judge:       []string{"the contract states what is forbidden"},
+		Kind:          GateReviewArtifact,
+		AutonomyFloor: 5,
+		Judge:         []string{"the contract states what is forbidden"},
 	}
 	passed := GateChecksOutcome{Passed: true}
 
@@ -238,14 +238,14 @@ func TestSetKnobRefusesWhatCannotBeHonoured(t *testing.T) {
 func TestGateSpecInFindsWhatTheStageDeclared(t *testing.T) {
 	flow := []Stage{
 		{ID: "plain"},
-		{ID: "gated", Gate: &GateSpec{Kind: GateConfirm, Criticality: 4, Judge: []string{"a criterion"}}},
+		{ID: "gated", Gate: &GateSpec{Kind: GateConfirm, AutonomyFloor: 4, Judge: []string{"a criterion"}}},
 	}
 
 	spec := GateSpecIn(flow, "gated")
 	if spec == nil {
 		t.Fatal("the declared gate was not found")
 	}
-	if spec.Criticality != 4 || len(spec.Judge) != 1 {
+	if spec.AutonomyFloor != 4 || len(spec.Judge) != 1 {
 		t.Errorf("the declaration did not survive: %+v", spec)
 	}
 

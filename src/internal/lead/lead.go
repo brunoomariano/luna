@@ -296,7 +296,7 @@ func (l *Lead) Enter(ctx context.Context, taskID string) error {
 	// opens on the way *out* of the stage that produced its artifact, so the task
 	// sits at that status and the decision is taken on the next Advance. Refusing
 	// it meant the knob could not reach the only gate the shipped flow has:
-	// measured on TALLY-5 at knob 9 against a criticality-9 gate, where the loop
+	// measured on TALLY-5 at knob 9 against a floor-9 gate, where the loop
 	// ended at "wait" every time. The driving loop never had this, because its own step
 	// advances from any status that is not running.
 	//

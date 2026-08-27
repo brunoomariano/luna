@@ -36,14 +36,8 @@ buys ceremony and a bill.
 
 They are independent, and the defaults are not the cheap ones.
 
-**The flow** decides how many stages run. `--flow` defaults to `full`.
-
-```
-chore   setup · build · verify                                      3 stages
-fix     setup · diagnose · build · verify                           4 stages
-full    setup · intake · diagnose · plan · build · refactor ·       9 stages
-        pipeline · verify · audit
-```
+**The flow** decides how many stages run. `--flow` defaults to `full`. The three
+are fixed — see *The three flows* below for what each carries and how to pick.
 
 Pick by how much ceremony the work deserves, not by how important it feels.
 Measured: `diagnose` costs $0.88 over 19 turns on the task class it exists for
@@ -55,7 +49,7 @@ and not for a feature, `audit` runs for a feature and not for a chore. It
 defaults to `feature`.
 
 ```sh
-luna flow check          # what each flow carries, and the pack it declares
+luna flow check          # what each flow carries, its gate, its guard
 ```
 
 `--flow` cannot change after the task opens: the flow's identity goes into the
@@ -84,6 +78,59 @@ workstream = "the-project"
 Luna opens a clean worktree **per stage**, so without this every stage
 rediscovers that step and the ones that cannot fail on a check that was never
 about the work. It cost a real task $10.36 of $19.13 to learn that.
+
+## The three flows
+
+They ship inside the binary. There is no project override and no file to edit:
+one build, one set of flows, every repository the same. Your one decision is
+which of the three a task opens on, and it cannot change afterwards.
+
+| flow | stages | for |
+|---|---|---|
+| `chore` | setup · build · verify | a change with a known shape and nothing to decide |
+| `fix` | setup · **diagnose** · build · verify | something is broken and the cause is not yet known |
+| `full` | setup · intake · **diagnose** · plan · build · refactor · pipeline · verify · **audit** | a change worth planning, reviewing and auditing |
+
+Bold stages are conditional — they enter on `--kind`, not on `--flow`:
+`diagnose` runs only for a bug, `audit` runs for anything but a chore. So `full
+--kind chore` is seven stages, not nine.
+
+### Choosing from what the task says
+
+Read the task's own words, in this order, and stop at the first that matches:
+
+1. **Does it name something already broken?** — "fails", "returns the wrong",
+   "crashes", "regression", a stack trace, a reproduction. The cause is
+   unknown, so `--kind bug`. Then `fix` when the fix is likely local, `full`
+   when the blast radius is not yet known.
+2. **Is the shape of the change already settled?** — a version bump, a rename, a
+   flag with one obvious implementation, a lint rule. Nothing to plan and
+   nothing to judge: `chore --kind chore`.
+3. **Otherwise it is new behaviour** — a feature, an interface, anything whose
+   acceptance criteria could be met several ways. `full --kind feature`, and
+   the `plan` gate is what a person reviews before any code is written.
+
+Two traps worth naming, both measured:
+
+- **Importance is not ceremony.** An urgent one-line fix is still a `chore`.
+  What earns `full` is a change with decisions in it, not a change that matters.
+- **A vague statement makes the flow moot.** `full` costs the most and buys the
+  least when `--acceptance` cannot be run. Fix the statement first; the flow
+  cannot rescue it.
+
+### Where the briefing lives
+
+A stage file holds everything about that stage: its contract
+(`requires`/`produces`), how each artifact is proven, its gate if it has one,
+and the **brief** its agent is given. One file answers what a stage is for.
+
+Roles no longer resolve to anything: `role` is what groups a stage's branch, and
+a solo run collapses every stage onto one brief. So "which role does this" is
+not a question you configure — it is what the stage file already says.
+
+```sh
+luna flow check          # what each flow carries, its gate, its guard
+```
 
 ## Opening a task
 
@@ -148,8 +195,10 @@ The mode is not recorded, so a task begun solo can be continued as a pack.
 luna autonomy AVG-1 7 "unattended overnight"
 ```
 
-One number, 0–10: the criticality up to which the lead may answer a gate on its
-own. `0` judges nothing and is the default. It moves mid-run, and moving it
+One number, 0–10: the autonomy a gate needs before the lead may answer it alone.
+Each gate declares an `autonomy_floor`, and the lead judges it when `knob >=
+floor`. `0` judges nothing and is the default; a gate that declares no floor
+resolves to 10, so only the most autonomous setting absorbs it. It moves mid-run, and moving it
 writes an event with the reason — a gate already open still goes to a person.
 
 A guard gate is the exception and no setting reaches it. It opens on what the

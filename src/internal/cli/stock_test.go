@@ -8,50 +8,6 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// TestTheStockRolesAreTheRolesTheEngineShipped is the acceptance criterion for
-// moving the roles out of Go.
-//
-// The Go map is gone, so the comparison is against what it produced, written
-// here. That is weaker than the flow's fingerprint check and it is the honest
-// shape available: a role is configuration, not history, so nothing records what
-// it was.
-func TestTheStockRolesAreTheRolesTheEngineShipped(t *testing.T) {
-	roles := ShippedRoles()
-
-	// The pack the shipped flows name, plus the one a solo run collapses onto. A
-	// flow whose role does not resolve stops loudly, so a missing file here is a
-	// stage that cannot run. (`setup` and `pipeline` name none: a worktree is git
-	// and `ci_green` is a command's verdict, and there is no judgement in either.)
-	for _, name := range []string{"lead", "planner", "investigator", "coder", "cleaner", "auditor"} {
-		role, ok := roles[fsm.RoleName(name)]
-		if !ok {
-			t.Errorf("%s has no definition — every stage that names it cannot run", name)
-			continue
-		}
-		if role.Agent != "claude" {
-			t.Errorf("%s runs on %q, want claude", name, role.Agent)
-		}
-		if role.Brief == "" {
-			t.Errorf("%s has no brief", name)
-		}
-	}
-
-	// The auditor is the one that has to deny, and it is what a pack buys back:
-	// with a single agent doing everything, `tools_deny` cannot separate writing
-	// from judging, so the audit was not independent and did not claim to be. A
-	// different agent makes the denial mean something again.
-	if len(roles["auditor"].ToolsDeny) == 0 {
-		t.Error("the auditor denies nothing, so it can edit what it is judging")
-	}
-
-	// Six, and the number is the point rather than an accident: five specialisms
-	// plus the solo role. A seventh file appearing here is a design change that
-	// has to be argued rather than typed.
-	if len(roles) != 6 {
-		t.Errorf("got %d roles, want the 6 the flows name", len(roles))
-	}
-}
-
 // TestTheStockProfilesMatchTheShippedPolicy ties the files to the function that
 // replays old logs.
 //
@@ -70,39 +26,15 @@ func TestTheStockProfilesMatchTheShippedPolicy(t *testing.T) {
 	}
 }
 
-// TestARoleFileIsNamedByItsFile. The name comes from the filename so it cannot
-// disagree with itself — which is what a `[role.reviewer]` header inside
-// `scout.toml` would do.
-func TestARoleFileIsNamedByItsFile(t *testing.T) {
-	files := fstest.MapFS{
-		"roles/reviewer.toml": &fstest.MapFile{Data: []byte(`
-agent      = "codex"
-brief      = "you review"
-tools_deny = ["Edit", "Write"]
-`)},
-	}
-
-	roles, err := LoadRoles(files, "roles")
-	if err != nil {
-		t.Fatalf("LoadRoles: %v", err)
-	}
-	if roles["reviewer"].Agent != "codex" {
-		t.Errorf("agent = %q, want codex", roles["reviewer"].Agent)
-	}
-	if len(roles["reviewer"].ToolsDeny) != 2 {
-		t.Errorf("the denial did not survive the parse: %v", roles["reviewer"].ToolsDeny)
-	}
-}
-
 // TestAStockFileHasNoSections. Its name is the filename, so a `[header]` is a
 // file written against the config's format — refused rather than ignored, since
 // ignoring it would silently drop everything under it.
 func TestAStockFileHasNoSections(t *testing.T) {
 	files := fstest.MapFS{
-		"roles/reviewer.toml": &fstest.MapFile{Data: []byte("[role.reviewer]\nagent = \"codex\"\n")},
+		"profiles/nightly.toml": &fstest.MapFile{Data: []byte("[profile.nightly]\nturn_budget = \"1h\"\n")},
 	}
 
-	_, err := LoadRoles(files, "roles")
+	_, err := LoadProfiles(files, "profiles")
 	if err == nil {
 		t.Fatal("a sectioned stock file was accepted")
 	}
@@ -111,16 +43,11 @@ func TestAStockFileHasNoSections(t *testing.T) {
 	}
 }
 
-// TestAnEmptyStockIsRefused. A flow names roles and every task carries a
-// profile, so neither directory may come back empty.
+// TestAnEmptyStockIsRefused. Every task carries a profile, so the directory may
+// not come back empty.
 func TestAnEmptyStockIsRefused(t *testing.T) {
-	empty := fstest.MapFS{"roles/README.md": &fstest.MapFile{Data: []byte("nothing")}}
-
-	if _, err := LoadRoles(empty, "roles"); err == nil {
-		t.Error("a directory with no role files produced a role set")
-	}
-	if _, err := LoadRoles(empty, "nowhere"); err == nil {
-		t.Error("a directory that does not exist produced a role set")
+	if _, err := LoadProfiles(fstest.MapFS{}, "nowhere"); err == nil {
+		t.Error("a directory that does not exist produced a profile set")
 	}
 
 	noProfiles := fstest.MapFS{"profiles/README.md": &fstest.MapFile{Data: []byte("nothing")}}
@@ -176,13 +103,11 @@ func TestASettingInAStockProfileIsRefused(t *testing.T) {
 func TestABrokenStockFileIsRefused(t *testing.T) {
 	for name, content := range map[string]string{
 		"not a key = value": "this is not toml\n",
-		"unknown key":       "agent = \"claude\"\nnonsense = \"x\"\n",
-		"unknown capability": "agent = \"claude\"\n" +
-			"tools_deny = [\"Telepathy\"]\n",
+		"unknown key":       "nonsense = \"x\"\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			files := fstest.MapFS{"roles/x.toml": &fstest.MapFile{Data: []byte(content)}}
-			if _, err := LoadRoles(files, "roles"); err == nil {
+			files := fstest.MapFS{"profiles/x.toml": &fstest.MapFile{Data: []byte(content)}}
+			if _, err := LoadProfiles(files, "profiles"); err == nil {
 				t.Error("accepted")
 			}
 		})
@@ -191,42 +116,6 @@ func TestABrokenStockFileIsRefused(t *testing.T) {
 	files := fstest.MapFS{"profiles/x.toml": &fstest.MapFile{Data: []byte("turn_budget = \"not a duration\"\n")}}
 	if _, err := LoadProfiles(files, "profiles"); err == nil {
 		t.Error("a profile whose budget cannot be read was accepted")
-	}
-}
-
-// TestAProjectStillOverridesTheRole. The stock is the default; a project's
-// config.toml is what changes it, and naming one field must not clear the rest.
-//
-// This is the last override a project has, now that flows come only from the
-// binary. It is narrower than it looks: it changes which harness runs a stage or
-// what it is told, and it cannot change what the stage owes or how that is proven.
-func TestAProjectStillOverridesTheRole(t *testing.T) {
-	cfg, err := parseConfig(`
-[role.lead]
-agent = "codex"
-
-[role.scribe]
-agent = "claude"
-brief = "You write things down."
-`, "config.toml")
-	if err != nil {
-		t.Fatalf("parseConfig: %v", err)
-	}
-
-	if cfg.Roles["lead"].Agent != "codex" {
-		t.Errorf("the override did not take: %+v", cfg.Roles["lead"])
-	}
-	// The other role is untouched. A config that names one role must not clear the
-	// rest: the flow names roles a config never mentions, and deleting them would
-	// leave a stage with nothing to run.
-	if cfg.Roles["scribe"].Brief == "" {
-		t.Error("naming one role cleared another's brief")
-	}
-	// The stock's roles plus the one the project added: naming one role must not
-	// clear the rest.
-	if len(cfg.Roles) != len(ShippedRoles())+1 {
-		t.Errorf("got %d roles, want the stock's %d plus the project's one",
-			len(cfg.Roles), len(ShippedRoles()))
 	}
 }
 
@@ -242,13 +131,10 @@ brief = "You write things down."
 // heading called "Findings" in prose, and the parser read nothing. The flow
 // carried on and four verified defects moved nothing.
 func TestTheLeadIsTaughtTheVocabularyLunaReads(t *testing.T) {
-	critic, ok := ShippedRoles()["lead"]
-	if !ok {
-		t.Fatal("the shipped stock has no lead role")
-	}
+	critic := fsm.SoloBrief
 
 	for _, severity := range fsm.KnownSeverities() {
-		if !strings.Contains(critic.Brief, "["+string(severity)+"]") {
+		if !strings.Contains(critic, "["+string(severity)+"]") {
 			t.Errorf("the critic is never told about [%s], so a finding it tags that way "+
 				"is one Luna cannot read", severity)
 		}
@@ -258,8 +144,8 @@ func TestTheLeadIsTaughtTheVocabularyLunaReads(t *testing.T) {
 	// the vocabulary is narrow: an agent told only that BLOCKING exists reaches
 	// for it on any defect it considers serious, and every inherited one reopens
 	// the work.
-	if !strings.Contains(critic.Brief, "introduced") {
-		t.Errorf("the critic is not told what may block, only that blocking exists:\n%s", critic.Brief)
+	if !strings.Contains(critic, "introduced") {
+		t.Errorf("the critic is not told what may block, only that blocking exists:\n%s", critic)
 	}
 }
 
@@ -309,14 +195,11 @@ func TestThePlanGateAsksOnlyWhatItShows(t *testing.T) {
 // second one titled "Note for the maker". That is an agent being helpful in a
 // document with no room for help.
 func TestTheLeadIsToldAContractAdmitsNoRecommendation(t *testing.T) {
-	maker, ok := ShippedRoles()["lead"]
-	if !ok {
-		t.Fatal("the shipped stock has no lead role")
-	}
+	maker := fsm.SoloBrief
 
 	for _, want := range []string{"contract", "recommendation", "obligation"} {
-		if !strings.Contains(maker.Brief, want) {
-			t.Errorf("the maker is not told what a contract admits (%q):\n%s", want, maker.Brief)
+		if !strings.Contains(maker, want) {
+			t.Errorf("the maker is not told what a contract admits (%q):\n%s", want, maker)
 		}
 	}
 }

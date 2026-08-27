@@ -30,7 +30,7 @@ func (o *obedientLead) ask(_ context.Context, prompt string) (string, error) {
 	o.turns++
 
 	state := mustState(o.t, o.h, "LUNA-1")
-	order, err := fsm.NextOrder(state, fsm.DefaultFlow(), o.h.env.profiles().Roles)
+	order, err := fsm.NextOrder(state, fsm.DefaultFlow())
 	if err != nil {
 		return "", err
 	}
@@ -346,7 +346,7 @@ func TestTheLeadCanCloseTheStageItWasHandedIsTheWholeLoop(t *testing.T) {
 	h.env.Lead = func(context.Context, string) (string, error) {
 		reported++
 		state := mustState(t, h, "LUNA-1")
-		order, err := fsm.NextOrder(state, fsm.DefaultFlow(), h.env.profiles().Roles)
+		order, err := fsm.NextOrder(state, fsm.DefaultFlow())
 		if err != nil {
 			return "", err
 		}

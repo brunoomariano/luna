@@ -1,9 +1,11 @@
-// Package stock is what Luna ships with: the flows, the roles, the profiles.
+// Package stock is what Luna ships with: the flows and the profiles.
 //
 // The files are embedded in the binary rather than read from beside it, so a
-// Luna moved to another machine still has a flow. `luna init` writes a copy into
-// a project's `.luna/stock/`, and from then on the copy is what runs — which is
-// how the replaceable flow stops being a promise and becomes an edit.
+// Luna moved to another machine still has a flow. There is no project override
+// and no copy on disk: one build, one set of flows, every repository the same.
+// Changing a flow for everybody is an edit here and a rebuild, which keeps a
+// flow where a flow belongs — in version control, under review, changed
+// atomically. See flow.go for why the `.luna/stock/` override was removed.
 package stock
 
 import "embed"
@@ -13,7 +15,7 @@ import "embed"
 // The stage loader takes an fs.FS rather than a path precisely so that this and
 // a project's directory on disk are the same thing to it.
 //
-//go:embed flows/*/*.toml roles/*.toml profiles/*.toml
+//go:embed flows/*/*.toml profiles/*.toml
 var Files embed.FS
 
 // Where each kind of stock lives inside Files.
@@ -26,6 +28,5 @@ var Files embed.FS
 // different files rather than one file with a condition in it.
 const (
 	FlowsDir    = "flows"
-	RolesDir    = "roles"
 	ProfilesDir = "profiles"
 )

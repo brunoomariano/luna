@@ -42,14 +42,6 @@ type Runner struct {
 	// for a real process.
 	Agent agent.Runner
 
-	// Roles resolves a stage's role to the agent that runs it, the brief that
-	// opens its context and what it is denied.
-	//
-	// A lookup rather than a map because an override (`--agent`) applies at the
-	// point of use: rebuilding a map to carry one would put the same rule in two
-	// places.
-	Roles func(fsm.RoleName) (fsm.Role, bool)
-
 	// Artifacts opens the store a stage's handover is written to.
 	//
 	// A factory rather than an instance because the store is scoped to one task,
@@ -78,7 +70,7 @@ type Runner struct {
 
 	// Brief overrides what an agent is told. Injected for tests; production
 	// leaves it nil and Brief below is what runs.
-	Brief func(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string
+	Brief func(state fsm.TaskState, stage fsm.Stage) string
 
 	// Warn reports something that went wrong without failing the stage — a
 	// worktree that would not go away, a socket that would not close. Nil
@@ -88,8 +80,7 @@ type Runner struct {
 
 // Run executes one stage and returns what it delivered.
 func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
-	role, err := r.roleFor(stage)
-	if err != nil {
+	if err := checkStage(stage); err != nil {
 		return lead.Result{}, err
 	}
 
@@ -134,7 +125,7 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 		}()
 	}
 
-	spend, said, err := r.call(ctx, state, stage, role, wt, handsOver)
+	spend, said, err := r.call(ctx, state, stage, wt, handsOver)
 	if err != nil {
 		return lead.Result{}, err
 	}
@@ -180,7 +171,6 @@ func (r *Runner) call(
 	ctx context.Context,
 	state fsm.TaskState,
 	stage fsm.Stage,
-	role fsm.Role,
 	wt Worktree,
 	handsOver bool,
 ) (fsm.Spend, string, error) {
@@ -193,11 +183,11 @@ func (r *Runner) call(
 	}
 
 	call := agent.Call{
-		Kind:    role.Agent,
+		Kind:    stage.Agent,
 		Dir:     wt.Path,
-		Prompt:  r.brief(state, stage, role),
-		System:  role.Brief,
-		Deny:    denied(role),
+		Prompt:  r.brief(state, stage),
+		System:  stage.Brief,
+		Deny:    denied(stage),
 		Budget:  r.Budget,
 		Context: agent.Fresh,
 		Env:     identity.Env(),
@@ -414,38 +404,38 @@ func handsOver(stage fsm.Stage) bool {
 	return false
 }
 
-// roleFor resolves the stage's role. An unknown one stops the stage rather than
-// running it unbriefed and ungated, which would look like a stage that worked.
-func (r *Runner) roleFor(stage fsm.Stage) (fsm.Role, error) {
+// checkStage refuses a stage Luna cannot run as declared, rather than running it
+// unbriefed or ungated — either of which would look like a stage that worked.
+//
+// The role used to be looked up in a catalogue here, and the lookup could fail.
+// It cannot now: the agent, the brief and the denials are the stage's own, so
+// what is left to check is the one thing a file can still get wrong.
+func checkStage(stage fsm.Stage) error {
 	if stage.Mechanical() {
-		return fsm.Role{}, nil
+		return nil
 	}
-	if r.Roles == nil {
-		return fsm.Role{}, fmt.Errorf("stage %q names the role %q and no roles are configured", stage.ID, stage.Role)
-	}
-	role, ok := r.Roles(fsm.RoleName(stage.Role))
-	if !ok {
-		return fsm.Role{}, fmt.Errorf("stage %q names the role %q, which is not configured", stage.ID, stage.Role)
+	if stage.Agent == "" {
+		return fmt.Errorf("stage %q names the role %q and no agent to run it", stage.ID, stage.Role)
 	}
 
-	// A role that withholds capabilities on a harness Luna cannot gate stops the
-	// stage rather than running ungated. The alternative is a reviewer that keeps
+	// A stage that withholds capabilities on a harness Luna cannot gate stops
+	// rather than running ungated. The alternative is a judging stage that keeps
 	// every tool it was supposed to lose, with nothing saying so — and a review
 	// written by something that could edit the work is the one failure the flow
 	// cannot catch downstream.
-	if role.Gated() && !agent.CanGate(role.Agent) {
-		return fsm.Role{}, fmt.Errorf(
-			"stage %q runs %q on %q, which denies %v — and Luna cannot withhold a capability on that harness",
-			stage.ID, stage.Role, role.Agent, role.ToolsDeny,
+	if stage.Gated() && !agent.CanGate(stage.Agent) {
+		return fmt.Errorf(
+			"stage %q runs on %q, which denies %v — and Luna cannot withhold a capability on that harness",
+			stage.ID, stage.Agent, stage.ToolsDeny,
 		)
 	}
-	return role, nil
+	return nil
 }
 
-// denied renders a role's withheld capabilities as the tool names to remove.
-func denied(role fsm.Role) []string {
-	names := make([]string, 0, len(role.ToolsDeny))
-	for _, capability := range role.ToolsDeny {
+// denied renders a stage's withheld capabilities as the tool names to remove.
+func denied(stage fsm.Stage) []string {
+	names := make([]string, 0, len(stage.ToolsDeny))
+	for _, capability := range stage.ToolsDeny {
 		names = append(names, string(capability))
 	}
 	return names
@@ -465,11 +455,11 @@ func spendOf(result agent.Result, ctx agent.Context) fsm.Spend {
 	}
 }
 
-func (r *Runner) brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
+func (r *Runner) brief(state fsm.TaskState, stage fsm.Stage) string {
 	if r.Brief != nil {
-		return r.Brief(state, stage, role)
+		return r.Brief(state, stage)
 	}
-	return Brief(state, stage, role)
+	return Brief(state, stage)
 }
 
 func (r *Runner) warn(format string, args ...any) {
@@ -487,7 +477,7 @@ func (r *Runner) warn(format string, args ...any) {
 //
 // Generated here rather than written by an agent, which is what stops one stage
 // from injecting narrative into the next.
-func Brief(state fsm.TaskState, stage fsm.Stage, role fsm.Role) string {
+func Brief(state fsm.TaskState, stage fsm.Stage) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Task %s (%s), stage %s.\n", state.ID, state.Context.Kind, stage.ID)

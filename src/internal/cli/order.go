@@ -41,7 +41,7 @@ func nextCommand(env Env, args []string) error {
 		return err
 	}
 
-	order, err := fsm.NextOrder(state, flow, env.profiles().Roles)
+	order, err := fsm.NextOrder(state, flow)
 	if err != nil {
 		return err
 	}
@@ -268,12 +268,10 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 // differ per stage in a pack — and "which model answered" is a question about one
 // stage, not about the task.
 func printStatusStages(env Env, state fsm.TaskState, flow []fsm.Stage, report StatusReport) {
-	roles := env.profiles().Roles
-
 	for _, mark := range report.Stages {
 		stage := stageIn(flow, mark.ID)
 		line := fmt.Sprintf("  %-3s %-10s %-13s %s",
-			mark.Mark, mark.ID, stage.Role, stageCostLine(state, roles, stage))
+			mark.Mark, mark.ID, stage.Role, stageCostLine(state, stage))
 		// A mechanical stage has no role and no cost, so the columns after it are
 		// padding — and trailing whitespace is what makes a diff of two runs noisy
 		// for a reason that has nothing to do with the runs.
@@ -284,13 +282,13 @@ func printStatusStages(env Env, state fsm.TaskState, flow []fsm.Stage, report St
 }
 
 // stageCostLine is what one stage cost, or what it will run on if it has not.
-func stageCostLine(state fsm.TaskState, roles map[fsm.RoleName]fsm.Role, stage fsm.Stage) string {
+func stageCostLine(state fsm.TaskState, stage fsm.Stage) string {
 	spend, ran := state.Spent[stage.ID]
 	if !ran {
 		if stage.Mechanical() {
 			return ""
 		}
-		return roles[fsm.RoleName(stage.Role)].Agent
+		return stage.Agent
 	}
 
 	// The model rather than the harness: the harness is which CLI was called and
@@ -298,7 +296,7 @@ func stageCostLine(state fsm.TaskState, roles map[fsm.RoleName]fsm.Role, stage f
 	// only when exactly one model answered a stage.
 	answered := spend.Model
 	if answered == "" {
-		answered = roles[fsm.RoleName(stage.Role)].Agent
+		answered = stage.Agent
 	}
 	return fmt.Sprintf("%-24s %-6s %3dt  $%.4f", answered, spend.Context, spend.Turns, spend.CostUSD)
 }
@@ -340,7 +338,7 @@ func knobMeaning(knob fsm.Knob, flow []fsm.Stage) string {
 			continue
 		}
 		total++
-		if knob.Judges(stage.Gate.Criticality) {
+		if knob.Judges(stage.Gate.AutonomyFloor) {
 			reachable++
 		}
 	}
@@ -524,8 +522,7 @@ func fullyBriefed(order fsm.Order, state fsm.TaskState, flow []fsm.Stage, cfg Co
 		if stage.ID != order.Stage || stage.Mechanical() {
 			continue
 		}
-		role, _ := cfg.Role(fsm.RoleName(stage.Role))
-		order.Brief = node.Brief(state, stage, role)
+		order.Brief = node.Brief(state, stage)
 		break
 	}
 	return order

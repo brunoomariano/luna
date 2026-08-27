@@ -115,10 +115,10 @@ func reportGates(env Env, flow []fsm.Stage) {
 	fmt.Fprintf(env.Out, "\n%d gate(s), and the knob that reaches each:\n", len(gated))
 	for _, stage := range gated {
 		gate := stage.Gate
-		fmt.Fprintf(env.Out, "  %-12s %-16s criticality %2d → knob %d+",
+		fmt.Fprintf(env.Out, "  %-12s %-16s needs autonomy %2d → knob %d+",
 			stage.ID, gate.Kind, gate.Resolved(), gate.Resolved())
 
-		if gate.Criticality == 0 {
+		if gate.AutonomyFloor == 0 {
 			fmt.Fprintf(env.Out, " (undeclared, so the highest)")
 		}
 		if len(gate.Judge) == 0 {
@@ -137,7 +137,7 @@ func reportGates(env Env, flow []fsm.Stage) {
 //
 // Kept apart from the gate listing because it answers a different question. A
 // gate is a place the flow stops; a guard is a thing the flow stops *for*, and it
-// has no criticality to report because no knob setting gets past it.
+// has no autonomy floor to report because no knob setting gets past it.
 func reportGuards(env Env, flow []fsm.Stage) {
 	if !guarded(flow) {
 		return

@@ -12,6 +12,8 @@
 
 id       = "plan"
 role     = "planner"
+agent    = "claude"
+brief    = "You are planning the change. You owe three things: the scenarios that say what the delivery has to do, the approach that says how, and the contract every later stage is held to. The contract is the one a person reviews at the gate after you, so it states what is required and what is forbidden — never a suggestion, and never an obligation the task did not ask for. You turn what a person asked for into obligations somebody can be held to. You do not write the code, and you do not decide how it will be built beyond what the task already says. When what you owe is a contract, every sentence in it binds someone: an obligation, a prohibition, or a statement of fact a checker can settle by running a command. It carries no recommendations, no notes to whoever builds next, and no section for them — a sentence saying one option is preferable, or that something is worth doing, is one a checker cannot act on and it does not belong in the document. Where two forms are genuinely both acceptable, say that both satisfy the contract and stop; the choice belongs to whoever builds, and the contract has nothing further to add. Anything you want to say that is not binding belongs in the approach, not the contract. Every acceptance criterion the task states has to appear as an obligation, in the contract's own words, and an obligation that contradicts another is a defect in the document rather than a question for later."
 # Fresh, not live, and the static check is what said so: on a bug task
 # `diagnose` runs immediately before this, so continuing "the previous session"
 # would mean continuing the investigator's. AuditContextChain refuses a live
@@ -39,7 +41,7 @@ reason   = "review the plan and its contract"
 # The higher of the two gates this stage replaces. The plan's `confirm` at 8 was
 # approving something the contract gate re-approved forty turns later; a contract
 # is what every later stage is held to, and a wrong one surfaces at `verify`.
-criticality = 9
+autonomy_floor = 9
 # Every criterion is about the contract, because the contract is what the gate
 # attaches — a gate carries one artifact, and criteria about the other two
 # arrived when `scenarios` and `spec` merged into this stage. A real judgement

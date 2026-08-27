@@ -133,7 +133,7 @@ func flowWithCriticality(t *testing.T, stage fsm.StageID, level int, judge ...st
 			t.Fatalf("%s opens no gate to declare criticality on", stage)
 		}
 		declared := *flow[i].Gate
-		declared.Criticality = level
+		declared.AutonomyFloor = level
 		declared.Judge = judge
 		flow[i].Gate = &declared
 		return flow

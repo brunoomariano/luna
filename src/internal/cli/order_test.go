@@ -853,22 +853,22 @@ func TestAPathIsShortenedAgainstWhereYouAreStanding(t *testing.T) {
 // cost to report and there is still an answer worth having — the harness that
 // will answer for it, which is what somebody is deciding about.
 func TestAStageThatHasNotRunSaysWhatItWillRunOn(t *testing.T) {
-	roles := map[fsm.RoleName]fsm.Role{"coder": {Agent: "codex"}}
 	state := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{}}
+	build := fsm.Stage{ID: "build", Role: "coder", Agent: "codex"}
 
-	if got := stageCostLine(state, roles, fsm.Stage{ID: "build", Role: "coder"}); got != "codex" {
+	if got := stageCostLine(state, build); got != "codex" {
 		t.Errorf("a stage that has not run reports %q", got)
 	}
 	// A mechanical stage starts no agent, so it has nothing to report either way.
-	if got := stageCostLine(state, roles, fsm.Stage{ID: "setup"}); got != "" {
+	if got := stageCostLine(state, fsm.Stage{ID: "setup"}); got != "" {
 		t.Errorf("a mechanical stage was given a harness: %q", got)
 	}
 	// And a stage that ran without the harness reporting a model falls back to the
-	// role's, rather than leaving the column blank on a stage that cost money.
+	// stage's, rather than leaving the column blank on a stage that cost money.
 	ran := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{
 		"build": {CostUSD: 0.5, Turns: 3, Context: "fresh"},
 	}}
-	if got := stageCostLine(ran, roles, fsm.Stage{ID: "build", Role: "coder"}); !strings.Contains(got, "codex") {
+	if got := stageCostLine(ran, build); !strings.Contains(got, "codex") {
 		t.Errorf("a stage whose model went unreported names nothing: %q", got)
 	}
 }

@@ -77,12 +77,6 @@ type Config struct {
 	// --profile` refuses one nobody defined — and history, since a task records
 	// the profile it ran under.
 	Profiles map[fsm.Profile]bool
-
-	// Roles are what each role name resolves to: the agent that runs it, what it
-	// is told, and the skills it loads. A project that names none inherits the
-	// shipped set; naming one replaces just that one, because a flow names roles
-	// the config never mentions.
-	Roles map[fsm.RoleName]fsm.Role
 }
 
 // sectionKind is which `[...]` block the parser is inside.
@@ -91,7 +85,6 @@ type sectionKind int
 const (
 	sectionNone sectionKind = iota
 	sectionProfile
-	sectionRole
 )
 
 // sectionRef is the section currently open, and what it names.
@@ -179,7 +172,7 @@ func (c Config) ProfileNames() []string {
 func LoadConfig(path string) (Config, error) {
 	content, err := os.ReadFile(path) //nolint:gosec // the path comes from the CLI, not from input
 	if os.IsNotExist(err) {
-		return Config{Profiles: ShippedProfiles(), Roles: ShippedRoles()}, nil
+		return Config{Profiles: ShippedProfiles()}, nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
@@ -199,10 +192,7 @@ func LoadConfig(path string) (Config, error) {
 // line worth keeping; if the config ever takes a shape not listed above, that is
 // the point to replace this rather than extend it.
 func parseConfig(content, path string) (Config, error) {
-	cfg := Config{
-		Profiles: map[fsm.Profile]bool{},
-		Roles:    map[fsm.RoleName]fsm.Role{},
-	}
+	cfg := Config{Profiles: map[fsm.Profile]bool{}}
 	var section sectionRef
 
 	for number, raw := range strings.Split(content, "\n") {
@@ -234,13 +224,10 @@ func parseConfig(content, path string) (Config, error) {
 	}
 
 	// A file that names no profiles still gets the shipped ones, so setting an
-	// editor does not silently cost someone their `--profile nightly`. Roles work
-	// the same way: declaring one role must not delete the other eleven, because a
-	// flow names roles the config never mentions.
+	// editor does not silently cost someone their `--profile nightly`.
 	if len(cfg.Profiles) == 0 {
 		cfg.Profiles = ShippedProfiles()
 	}
-	cfg.Roles = withShippedRoles(cfg.Roles)
 	return cfg, nil
 }
 
@@ -264,8 +251,6 @@ func openSection(cfg *Config, header, where string) (sectionRef, error) {
 		return sectionRef{}, fmt.Errorf("%s: section [%s] names nothing", where, header)
 	case sectionProfile:
 		cfg.Profiles[fsm.Profile(parsed.name)] = true
-	case sectionRole:
-		cfg.Roles[fsm.RoleName(parsed.name)] = fsm.Role{}
 	}
 	return parsed, nil
 }
@@ -275,66 +260,9 @@ func assign(cfg *Config, section sectionRef, key, value, where string) error {
 	switch section.kind {
 	case sectionProfile:
 		return assignProfile(cfg, section.name, key, value, where)
-	case sectionRole:
-		return assignRole(cfg, section.name, key, value, where)
 	default:
 		return assignRoot(cfg, key, value, where)
 	}
-}
-
-// assignRole places one setting inside a `[role.<name>]` section.
-func assignRole(cfg *Config, name, key, value, where string) error {
-	role := cfg.Roles[fsm.RoleName(name)]
-
-	switch key {
-	case "agent":
-		role.Agent = strings.Trim(value, `"`)
-	case "brief":
-		role.Brief = strings.Trim(value, `"`)
-	case "skills":
-		skills, err := parseStringArray(value, where)
-		if err != nil {
-			return err
-		}
-		role.Skills = skills
-	case "tools_deny":
-		denied, err := parseCapabilities(value, where, name)
-		if err != nil {
-			return err
-		}
-		role.ToolsDeny = denied
-	default:
-		// An unknown key is an error rather than a warning, for the same reason it
-		// is in a profile: a misspelled `agent` would leave the role resolving to
-		// nothing and the stage running with whatever the fallback is.
-		return fmt.Errorf("%s: unknown setting %q in [role.%s] (expected agent, brief, skills, tools_deny)",
-			where, key, name)
-	}
-
-	cfg.Roles[fsm.RoleName(name)] = role
-	return nil
-}
-
-// parseCapabilities reads `tools_deny`, refusing a name Luna does not know.
-//
-// A typo here fails open — the role runs with the tool it was supposed to lose,
-// and nothing says so. That is the direction the write/review separation cares about most, which
-// is why an unknown capability stops the load rather than being skipped.
-func parseCapabilities(value, where, role string) ([]fsm.Capability, error) {
-	names, err := parseStringArray(value, where)
-	if err != nil {
-		return nil, err
-	}
-
-	denied := make([]fsm.Capability, 0, len(names))
-	for _, name := range names {
-		capability, err := fsm.ParseCapability(name)
-		if err != nil {
-			return nil, fmt.Errorf("%s: [role.%s]: %w", where, role, err)
-		}
-		denied = append(denied, capability)
-	}
-	return denied, nil
 }
 
 // assignProfile refuses every setting inside a `[profile.<name>]` section.
@@ -405,7 +333,7 @@ func sectionName(line string) (string, bool) {
 func parseSection(header, where string) (sectionRef, error) {
 	kind, name, found := strings.Cut(header, ".")
 	if !found || name == "" {
-		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>] or [role.<name>])", where, header)
+		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>])", where, header)
 	}
 	if strings.Contains(name, ".") {
 		return sectionRef{}, fmt.Errorf("%s: names hold no dots, got %q", where, name)
@@ -415,62 +343,9 @@ func parseSection(header, where string) (sectionRef, error) {
 	switch kind {
 	case "profile":
 		return sectionRef{kind: sectionProfile, name: name}, nil
-	case "role":
-		return sectionRef{kind: sectionRole, name: name}, nil
 	default:
-		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>] or [role.<name>])", where, header)
+		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>])", where, header)
 	}
-}
-
-// ShippedRoles is what each role in the default flow resolves to before a project
-// says otherwise.
-//
-// It reads `src/stock/roles/*.toml`, embedded in the binary. The
-// definitions used to be a Go map, which meant a project could override a role
-// and could not see what it was overriding.
-//
-// Every role names the same agent kind today, which is honest: the independence
-// that matters is the one the separation asks for — the reviewer not HAVING Edit —
-// and that needs tool denial rather than a different vendor. Naming different
-// agents there is available to a project and is not pretended to be a substitute.
-//
-// A stock that does not parse panics, for the same reason the flow does: it is
-// embedded at build time, so a broken one is a broken binary.
-func ShippedRoles() map[fsm.RoleName]fsm.Role {
-	roles, err := shippedRoles()
-	if err != nil {
-		panic(fmt.Sprintf("the embedded roles do not parse, which is a broken build: %v", err))
-	}
-
-	// A copy per call: the map is handed to callers that merge a project's
-	// overrides into it, and they must not edit the shipped one for everybody.
-	out := make(map[fsm.RoleName]fsm.Role, len(roles))
-	for name, role := range roles {
-		out[name] = role
-	}
-	return out
-}
-
-// withShippedRoles fills in the roles a project did not name.
-//
-// Naming one role must not delete the other eleven: a flow names roles the config
-// never mentions, and a stage whose role vanished would have nothing to run.
-func withShippedRoles(configured map[fsm.RoleName]fsm.Role) map[fsm.RoleName]fsm.Role {
-	roles := ShippedRoles()
-	for name, role := range configured {
-		roles[name] = role
-	}
-	return roles
-}
-
-// Role resolves a name to what runs it.
-//
-// A name with no role is reported rather than defaulted: a stage whose role does
-// not resolve must stop loudly, because the alternative is running it with some
-// fallback agent and calling the result the reviewer's opinion.
-func (c Config) Role(name fsm.RoleName) (fsm.Role, bool) {
-	role, ok := c.Roles[name]
-	return role, ok
 }
 
 // parseStringArray reads `["a", "b"]` on a single line.

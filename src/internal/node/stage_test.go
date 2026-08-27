@@ -83,10 +83,9 @@ func TestTheStageRunsInItsOwnWorktree(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude", Brief: "You build."}}),
 	}
 
-	stage := fsm.Stage{ID: "build", Role: "implementer"}
+	stage := fsm.Stage{ID: "build", Role: "implementer", Agent: "claude", Brief: "You build."}
 	if _, err := r.Run(context.Background(), runningState("T-1"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -110,10 +109,9 @@ func TestTheWorktreeIsRemovedWhenTheStageEnds(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
-	stage := fsm.Stage{ID: "build", Role: "implementer"}
+	stage := fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"}
 	if _, err := r.Run(context.Background(), runningState("T-2"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -163,10 +161,9 @@ func TestTheStageRecordsWhatItCost(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
-	result, err := r.Run(context.Background(), runningState("T-4"), fsm.Stage{ID: "build", Role: "implementer"})
+	result, err := r.Run(context.Background(), runningState("T-4"), fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -196,13 +193,12 @@ func TestALiveStageContinuesItsRolesSession(t *testing.T) {
 	repo := repoWithCommit(t)
 	fake := &recordingAgent{result: agent.Result{Text: "done", Session: "s-first"}}
 
-	first := fsm.Stage{ID: "build", Role: "implementer"}
-	second := fsm.Stage{ID: "refactor", Role: "implementer", Context: fsm.ContextLive}
+	first := fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"}
+	second := fsm.Stage{ID: "refactor", Role: "implementer", Agent: "claude", Context: fsm.ContextLive}
 
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 		Flow:  []fsm.Stage{first, second},
 	}
 
@@ -242,15 +238,18 @@ func TestAFreshStageStartsCleanEvenWithASessionAvailable(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-6")
-	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), state, fsm.Stage{
+		ID:    "build",
+		Role:  "implementer",
+		Agent: "some-unknown-harness",
+	}); err != nil {
 		t.Fatalf("first stage: %v", err)
 	}
 	// No context declared: the default is fresh.
-	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "refactor", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "refactor", Role: "implementer", Agent: "claude"}); err != nil {
 		t.Fatalf("second stage: %v", err)
 	}
 
@@ -269,14 +268,15 @@ func TestARoleStartsWithoutWhatItIsDenied(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"reviewer": {
-			Agent:     "claude",
-			Brief:     "You review. You do not edit.",
-			ToolsDeny: []fsm.Capability{fsm.CapEdit, fsm.CapWrite},
-		}}),
 	}
 
-	stage := fsm.Stage{ID: "code-review", Role: "reviewer"}
+	stage := fsm.Stage{
+		ID:        "code-review",
+		Role:      "reviewer",
+		Agent:     "claude",
+		Brief:     "You review. You do not edit.",
+		ToolsDeny: []fsm.Capability{fsm.CapEdit, fsm.CapWrite},
+	}
 	if _, err := r.Run(context.Background(), runningState("T-7"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -293,15 +293,15 @@ func TestARoleStartsWithoutWhatItIsDenied(t *testing.T) {
 // TestAnUnknownRoleStopsTheStage covers the refusal that keeps a misconfigured
 // flow from running unbriefed and ungated — which would look like a stage that
 // simply went badly.
-func TestAnUnknownRoleStopsTheStage(t *testing.T) {
+func TestAStageWithNoAgentStopsRatherThanRunning(t *testing.T) {
 	repo := repoWithCommit(t)
 	fake := &recordingAgent{result: agent.Result{Text: "done"}}
 
-	r := &Runner{Repo: repo, Agent: fake, Roles: roleLookup(map[fsm.RoleName]fsm.Role{})}
+	r := &Runner{Repo: repo, Agent: fake}
 
 	_, err := r.Run(context.Background(), runningState("T-8"), fsm.Stage{ID: "build", Role: "implementer"})
 	if err == nil {
-		t.Fatal("want a refusal for an unconfigured role, got a run")
+		t.Fatal("want a refusal for a stage with no agent, got a run")
 	}
 	if !strings.Contains(err.Error(), "implementer") {
 		t.Errorf("want the refusal to name the role, got %q", err)
@@ -320,10 +320,9 @@ func TestAMissingHarnessIsInfrastructure(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
-	_, err := r.Run(context.Background(), runningState("T-9"), fsm.Stage{ID: "build", Role: "implementer"})
+	_, err := r.Run(context.Background(), runningState("T-9"), fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"})
 	if !errors.Is(err, lead.ErrInfrastructure) {
 		t.Fatalf("want the failure classified as infrastructure, got %v", err)
 	}
@@ -340,7 +339,6 @@ func TestAHandedOverArtifactIsProvenByTheStore(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
 		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
 		Stored: func(_, stage, artifact string) (string, error) {
 			asked = stage + "/" + artifact
@@ -350,6 +348,7 @@ func TestAHandedOverArtifactIsProvenByTheStore(t *testing.T) {
 
 	stage := fsm.Stage{
 		ID: "qa", Role: "qa",
+		Agent:            "claude",
 		ProducesForHuman: []fsm.Artifact{"qa_report"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"qa_report": fsm.Existence{Handover: true},
@@ -382,7 +381,6 @@ func TestAMissingHandoverFailsRatherThanPasses(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
 		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
 		Stored: func(_, _, _ string) (string, error) {
 			return "", errors.New("no such artifact")
@@ -391,6 +389,7 @@ func TestAMissingHandoverFailsRatherThanPasses(t *testing.T) {
 
 	stage := fsm.Stage{
 		ID: "qa", Role: "qa",
+		Agent:            "claude",
 		ProducesForHuman: []fsm.Artifact{"qa_report"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"qa_report": fsm.Existence{Handover: true},
@@ -418,13 +417,14 @@ func TestAMissingHandoverFailsRatherThanPasses(t *testing.T) {
 func TestTheBriefNamesWhatIsHandedOverRatherThanCommitted(t *testing.T) {
 	stage := fsm.Stage{
 		ID: "spec", Role: "specifier",
+		Agent:    "claude",
 		Produces: []fsm.Artifact{"contract"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"contract": fsm.Existence{Handover: true},
 		},
 	}
 
-	brief := Brief(runningState("T-12"), stage, fsm.Role{Agent: "claude"})
+	brief := Brief(runningState("T-12"), stage)
 
 	if !strings.Contains(brief, "contract") {
 		t.Error("the brief does not name the artifact owed")
@@ -462,13 +462,6 @@ func (m *memoryArtifacts) GetArtifact(stage, artifact string) ([]byte, error) {
 
 // roleLookup adapts a plain map to the lookup the runner takes, so a test can
 // declare its roles as data.
-func roleLookup(roles map[fsm.RoleName]fsm.Role) func(fsm.RoleName) (fsm.Role, bool) {
-	return func(name fsm.RoleName) (fsm.Role, bool) {
-		role, ok := roles[name]
-		return role, ok
-	}
-}
-
 // TestWarningsReachTheCallerWhenThereIsOne covers the reporting channel for what
 // goes wrong beside the work rather than in it. A worktree that will not go away
 // does not fail the stage, but a checkout left behind on every run eventually
@@ -502,11 +495,12 @@ func TestTheBriefCarriesTheStatementTheTaskWasOpenedWith(t *testing.T) {
 
 	stage := fsm.Stage{
 		ID: "build", Role: "implementer",
+		Agent:    "claude",
 		Requires: []fsm.Artifact{"scenarios"},
 		Produces: []fsm.Artifact{"code"},
 	}
 
-	brief := Brief(state, stage, fsm.Role{Agent: "claude"})
+	brief := Brief(state, stage)
 
 	for _, want := range []string{
 		"add a --loud flag",      // what the task is about
@@ -526,7 +520,7 @@ func TestTheBriefCarriesTheStatementTheTaskWasOpenedWith(t *testing.T) {
 // described. It still runs every stage; the agent is simply left with less to go
 // on, and an empty statement must not produce an empty instruction.
 func TestAStageWithNothingToSayStillGetsAUsableBrief(t *testing.T) {
-	brief := Brief(runningState("T-21"), fsm.Stage{ID: "setup"}, fsm.Role{})
+	brief := Brief(runningState("T-21"), fsm.Stage{ID: "setup"})
 
 	if !strings.Contains(brief, "T-21") {
 		t.Error("the brief does not name the task")
@@ -549,12 +543,12 @@ func TestAHandoverWithNoStoreStopsTheStage(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
 		// No Artifacts, and the stage below hands one over.
 	}
 
 	stage := fsm.Stage{
 		ID: "qa", Role: "qa",
+		Agent:            "claude",
 		ProducesForHuman: []fsm.Artifact{"qa_report"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"qa_report": fsm.Existence{Handover: true},
@@ -586,10 +580,9 @@ func TestAFailedAgentStopsTheStageAndKeepsTheBill(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
-	_, err := r.Run(context.Background(), runningState("T-31"), fsm.Stage{ID: "build", Role: "implementer"})
+	_, err := r.Run(context.Background(), runningState("T-31"), fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"})
 	if err == nil {
 		t.Fatal("want the stage to fail when the agent does, got success")
 	}
@@ -608,13 +601,13 @@ func TestAStageProvesEveryArtifactItOwes(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
 		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
 		Stored:    func(_, _, _ string) (string, error) { return "hash", nil },
 	}
 
 	stage := fsm.Stage{
 		ID: "qa", Role: "qa",
+		Agent:            "claude",
 		Produces:         []fsm.Artifact{"qa_done"},
 		ProducesForHuman: []fsm.Artifact{"qa_report"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
@@ -641,7 +634,6 @@ func TestAVerificationStageCanProveTheCommitItReceived(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"qa": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-33")
@@ -649,6 +641,7 @@ func TestAVerificationStageCanProveTheCommitItReceived(t *testing.T) {
 	stage := fsm.Stage{
 		ID:       "verify",
 		Role:     "qa",
+		Agent:    "claude",
 		Produces: []fsm.Artifact{"ci_green"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"ci_green": fsm.Command{Run: "true", Scope: fsm.ScopeFull},
@@ -676,7 +669,6 @@ func TestAStageThatOwesCodeStillCannotProveTheBase(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-34")
@@ -684,6 +676,7 @@ func TestAStageThatOwesCodeStillCannotProveTheBase(t *testing.T) {
 	stage := fsm.Stage{
 		ID:       "build",
 		Role:     "implementer",
+		Agent:    "claude",
 		Produces: []fsm.Artifact{"code", "tests_green"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
 			"tests_green": fsm.Command{Run: "true", Scope: fsm.ScopeTargeted},
@@ -713,13 +706,16 @@ func TestTheBriefCanBeReplacedWithoutTouchingTheRunner(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
-		Brief: func(fsm.TaskState, fsm.Stage, fsm.Role) string {
+		Brief: func(fsm.TaskState, fsm.Stage) string {
 			return "do exactly this and nothing else"
 		},
 	}
 
-	if _, err := r.Run(context.Background(), runningState("T-40"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), runningState("T-40"), fsm.Stage{
+		ID:    "build",
+		Role:  "implementer",
+		Agent: "some-unknown-harness",
+	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -742,14 +738,13 @@ func TestEveryStageOfATaskRunsInTheTasksWorkstream(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-41")
 	state.Memory = fsm.TaskMemory{Workstream: "nightly"}
 
 	for _, id := range []fsm.StageID{"intake", "build"} {
-		if _, err := r.Run(context.Background(), state, fsm.Stage{ID: id, Role: "analyst"}); err != nil {
+		if _, err := r.Run(context.Background(), state, fsm.Stage{ID: id, Role: "analyst", Agent: "claude"}); err != nil {
 			t.Fatalf("running %s: %v", id, err)
 		}
 		if got := fake.last(t).Workstream; got != "nightly" {
@@ -771,10 +766,9 @@ func TestATaskWithNoWorkstreamRunsWithNoMemoryAtAll(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 	}
 
-	stage := fsm.Stage{ID: "build", Role: "analyst"}
+	stage := fsm.Stage{ID: "build", Role: "analyst", Agent: "claude"}
 	if _, err := r.Run(context.Background(), runningState("T-42"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -792,13 +786,12 @@ func TestOnlyATaskThatAskedMayOpenAWorkstream(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 	}
 
 	state := runningState("T-43")
 	state.Memory = fsm.TaskMemory{Workstream: "brand-new", MayCreate: true}
 
-	stage := fsm.Stage{ID: "build", Role: "analyst"}
+	stage := fsm.Stage{ID: "build", Role: "analyst", Agent: "claude"}
 	if _, err := r.Run(context.Background(), state, stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -817,12 +810,11 @@ func TestTheSocketIsOpenedOnlyForAStageThatHandsSomethingOver(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
 	}
 
 	// A stage that commits everything it owes gets no socket in its environment.
-	plain := fsm.Stage{ID: "build", Role: "implementer", Produces: []fsm.Artifact{"code"}}
+	plain := fsm.Stage{ID: "build", Role: "implementer", Agent: "claude", Produces: []fsm.Artifact{"code"}}
 	if _, err := r.Run(context.Background(), runningState("T-42"), plain); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -845,13 +837,12 @@ func TestAMissingGitIsInfrastructureRatherThanAFailedStage(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
 	// A PATH with nothing on it, so opening the worktree cannot find git.
 	t.Setenv("PATH", t.TempDir())
 
-	_, err := r.Run(context.Background(), runningState("T-50"), fsm.Stage{ID: "build", Role: "implementer"})
+	_, err := r.Run(context.Background(), runningState("T-50"), fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"})
 	if !errors.Is(err, lead.ErrInfrastructure) {
 		t.Fatalf("want a missing git classified as infrastructure, got %v", err)
 	}
@@ -869,10 +860,9 @@ func TestAStageOnAMissingRepositoryFailsWithoutClassifyingIt(t *testing.T) {
 	r := &Runner{
 		Repo:  filepath.Join(t.TempDir(), "not-a-repository"),
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
-	_, err := r.Run(context.Background(), runningState("T-51"), fsm.Stage{ID: "build", Role: "implementer"})
+	_, err := r.Run(context.Background(), runningState("T-51"), fsm.Stage{ID: "build", Role: "implementer", Agent: "claude"})
 	if err == nil {
 		t.Fatal("want an error for a repository that is not there, got a run")
 	}
@@ -896,13 +886,14 @@ func TestAGatedRoleOnAnUngateableHarnessStopsTheStage(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"reviewer": {
-			Agent:     "some-unknown-harness",
-			ToolsDeny: []fsm.Capability{fsm.CapEdit, fsm.CapWrite},
-		}}),
 	}
 
-	_, err := r.Run(context.Background(), runningState("T-60"), fsm.Stage{ID: "code-review", Role: "reviewer"})
+	_, err := r.Run(context.Background(), runningState("T-60"), fsm.Stage{
+		ID:        "code-review",
+		Role:      "reviewer",
+		Agent:     "some-unknown-harness",
+		ToolsDeny: []fsm.Capability{fsm.CapEdit, fsm.CapWrite},
+	})
 	if err == nil {
 		t.Fatal("want a refusal for a gated role on an ungateable harness, got a run")
 	}
@@ -924,10 +915,13 @@ func TestAnUngatedRoleRunsOnAnyHarness(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "some-unknown-harness"}}),
 	}
 
-	if _, err := r.Run(context.Background(), runningState("T-61"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), runningState("T-61"), fsm.Stage{
+		ID:    "build",
+		Role:  "implementer",
+		Agent: "some-unknown-harness",
+	}); err != nil {
 		t.Fatalf("an ungated role was refused: %v", err)
 	}
 }
@@ -951,7 +945,6 @@ func TestWhatTheAgentSaidSurvivesAnEmptyDelivery(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 		Warn: func(format string, args ...any) {
 			warned = append(warned, fmt.Sprintf(format, args...))
 		},
@@ -962,7 +955,11 @@ func TestWhatTheAgentSaidSurvivesAnEmptyDelivery(t *testing.T) {
 	state := runningState("T-30")
 	state.Base = head(t, repo)
 
-	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), state, fsm.Stage{
+		ID:    "build",
+		Role:  "implementer",
+		Agent: "some-unknown-harness",
+	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -985,7 +982,6 @@ func TestAStageThatDeliveredDoesNotRepeatTheAgent(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 		Warn: func(format string, args ...any) {
 			warned = append(warned, fmt.Sprintf(format, args...))
 		},
@@ -994,7 +990,11 @@ func TestAStageThatDeliveredDoesNotRepeatTheAgent(t *testing.T) {
 	state := runningState("T-31")
 	state.Base = head(t, repo)
 
-	if _, err := r.Run(context.Background(), state, fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), state, fsm.Stage{
+		ID:    "build",
+		Role:  "implementer",
+		Agent: "some-unknown-harness",
+	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -1016,10 +1016,13 @@ func TestTheAgentIsGivenSomeoneToCommitAs(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"implementer": {Agent: "claude"}}),
 	}
 
-	if _, err := r.Run(context.Background(), runningState("T-32"), fsm.Stage{ID: "build", Role: "implementer"}); err != nil {
+	if _, err := r.Run(context.Background(), runningState("T-32"), fsm.Stage{
+		ID:    "build",
+		Role:  "implementer",
+		Agent: "some-unknown-harness",
+	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -1086,7 +1089,7 @@ func containsArtifact(list []fsm.Artifact, want fsm.Artifact) bool {
 //
 // The agent cannot know where the check runs, so the brief has to say.
 func TestTheBriefSaysAnAbsentToolIsAbsentFromTheSandbox(t *testing.T) {
-	brief := Brief(runningState("T-40"), fsm.Stage{ID: "plan", Role: "maker"}, fsm.Role{Agent: "claude"})
+	brief := Brief(runningState("T-40"), fsm.Stage{ID: "plan", Role: "maker", Agent: "claude"})
 
 	for _, want := range []string{"sandbox", "outside"} {
 		if !strings.Contains(brief, want) {
@@ -1113,11 +1116,12 @@ func TestTheBriefSaysAnAbsentToolIsAbsentFromTheSandbox(t *testing.T) {
 func TestAStageGivenTheContractIsToldToJudgeAgainstIt(t *testing.T) {
 	stage := fsm.Stage{
 		ID: "verify", Role: "critic",
+		Agent:    "claude",
 		Requires: []fsm.Artifact{"code", "scenarios", "contract"},
 		Produces: []fsm.Artifact{"ci_green"},
 	}
 
-	brief := Brief(runningState("T-50"), stage, fsm.Role{Agent: "claude"})
+	brief := Brief(runningState("T-50"), stage)
 
 	for _, want := range []string{
 		"judged against",
@@ -1147,11 +1151,12 @@ func TestAStageGivenTheContractIsToldToJudgeAgainstIt(t *testing.T) {
 func TestAStageWithoutTheContractIsNotToldToJudgeIt(t *testing.T) {
 	stage := fsm.Stage{
 		ID: "intake", Role: "maker",
+		Agent:    "claude",
 		Requires: []fsm.Artifact{"task_id", "worktree"},
 		Produces: []fsm.Artifact{"briefing"},
 	}
 
-	if brief := Brief(runningState("T-51"), stage, fsm.Role{Agent: "claude"}); strings.Contains(brief, "judged against") {
+	if brief := Brief(runningState("T-51"), stage); strings.Contains(brief, "judged against") {
 		t.Errorf("a stage that was not handed the contract is told to judge it:\n%s", brief)
 	}
 }
@@ -1168,6 +1173,7 @@ func TestAStageWithoutTheContractIsNotToldToJudgeIt(t *testing.T) {
 func TestAStageIsShownTheCriteriaItsArtifactWillBeJudgedOn(t *testing.T) {
 	stage := fsm.Stage{
 		ID: "plan", Role: "maker",
+		Agent:    "claude",
 		Produces: []fsm.Artifact{"contract"},
 		Gate: &fsm.GateSpec{
 			Kind:     fsm.GateReviewArtifact,
@@ -1176,7 +1182,7 @@ func TestAStageIsShownTheCriteriaItsArtifactWillBeJudgedOn(t *testing.T) {
 		},
 	}
 
-	brief := Brief(runningState("T-60"), stage, fsm.Role{Agent: "claude"})
+	brief := Brief(runningState("T-60"), stage)
 
 	if !strings.Contains(brief, "with no suggestions") {
 		t.Errorf("the stage writing the artifact is not shown what it is judged on:\n%s", brief)
@@ -1191,7 +1197,7 @@ func TestAStageIsShownTheCriteriaItsArtifactWillBeJudgedOn(t *testing.T) {
 func TestAStageWithNoGateIsShownNoCriteria(t *testing.T) {
 	stage := fsm.Stage{ID: "build", Role: "maker", Produces: []fsm.Artifact{"code"}}
 
-	if brief := Brief(runningState("T-61"), stage, fsm.Role{Agent: "claude"}); strings.Contains(brief, "opens a gate") {
+	if brief := Brief(runningState("T-61"), stage); strings.Contains(brief, "opens a gate") {
 		t.Errorf("a stage with no gate was told its artifact faces one:\n%s", brief)
 	}
 }
@@ -1207,6 +1213,7 @@ func TestARetryIsToldWhatIsStillMissing(t *testing.T) {
 	stage := fsm.Stage{
 		ID:               "verify",
 		Role:             "critic",
+		Agent:            "claude",
 		Produces:         []fsm.Artifact{"ci_green"},
 		ProducesForHuman: []fsm.Artifact{"dod_checked"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{
@@ -1215,7 +1222,7 @@ func TestARetryIsToldWhatIsStillMissing(t *testing.T) {
 		},
 	}
 
-	brief := Brief(state, stage, fsm.Role{Agent: "claude"})
+	brief := Brief(state, stage)
 
 	if !strings.Contains(brief, "dod_checked did not arrive") {
 		t.Errorf("the retry is not told what is outstanding:\n%s", brief)
@@ -1235,11 +1242,12 @@ func TestAFirstAttemptIsNotToldItHasBeenHereBefore(t *testing.T) {
 	stage := fsm.Stage{
 		ID:        "build",
 		Role:      "maker",
+		Agent:     "claude",
 		Produces:  []fsm.Artifact{"code"},
 		Verifiers: map[fsm.Artifact]fsm.Verifier{"code": fsm.Existence{}},
 	}
 
-	if brief := Brief(state, stage, fsm.Role{Agent: "claude"}); strings.Contains(brief, "been here before") {
+	if brief := Brief(state, stage); strings.Contains(brief, "been here before") {
 		t.Errorf("a first attempt is told it is a retry:\n%s", brief)
 	}
 }
@@ -1351,11 +1359,10 @@ func TestAWorktreeIsBootstrappedBeforeTheStageStarts(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 		Bootstrap: "touch " + marker,
 	}
 
-	stage := fsm.Stage{ID: "build", Role: "analyst"}
+	stage := fsm.Stage{ID: "build", Role: "analyst", Agent: "claude"}
 	if _, err := r.Run(context.Background(), runningState("B-1"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1375,11 +1382,10 @@ func TestABootstrapThatFailsIsInfrastructure(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Roles:     roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 		Bootstrap: "echo 'no lockfile here' >&2; exit 1",
 	}
 
-	_, err := r.Run(context.Background(), runningState("B-2"), fsm.Stage{ID: "build", Role: "analyst"})
+	_, err := r.Run(context.Background(), runningState("B-2"), fsm.Stage{ID: "build", Role: "analyst", Agent: "claude"})
 	if !errors.Is(err, lead.ErrInfrastructure) {
 		t.Fatalf("a failed bootstrap was reported as the work failing: %v", err)
 	}
@@ -1404,10 +1410,9 @@ func TestARepositoryThatNeedsNoBootstrapRunsNone(t *testing.T) {
 	r := &Runner{
 		Repo:  repo,
 		Agent: fake,
-		Roles: roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 	}
 
-	if _, err := r.Run(context.Background(), runningState("B-3"), fsm.Stage{ID: "build", Role: "analyst"}); err != nil {
+	if _, err := r.Run(context.Background(), runningState("B-3"), fsm.Stage{ID: "build", Role: "analyst", Agent: "claude"}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(fake.calls) != 1 {
@@ -1425,12 +1430,11 @@ func TestABootstrapThatNeverFinishesIsStuckRatherThanSlow(t *testing.T) {
 	r := &Runner{
 		Repo:             repo,
 		Agent:            fake,
-		Roles:            roleLookup(map[fsm.RoleName]fsm.Role{"analyst": {Agent: "claude"}}),
 		Bootstrap:        "sleep 30",
 		BootstrapTimeout: 20 * time.Millisecond,
 	}
 
-	_, err := r.Run(context.Background(), runningState("B-4"), fsm.Stage{ID: "build", Role: "analyst"})
+	_, err := r.Run(context.Background(), runningState("B-4"), fsm.Stage{ID: "build", Role: "analyst", Agent: "claude"})
 	if !errors.Is(err, lead.ErrInfrastructure) {
 		t.Fatalf("a bootstrap that hung was reported as the work failing: %v", err)
 	}

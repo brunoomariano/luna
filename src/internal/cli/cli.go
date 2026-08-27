@@ -643,9 +643,6 @@ func (e Env) profiles() Config {
 	if len(cfg.Profiles) == 0 {
 		cfg.Profiles = ShippedProfiles()
 	}
-	if len(cfg.Roles) == 0 {
-		cfg.Roles = ShippedRoles()
-	}
 	return cfg
 }
 
@@ -812,7 +809,7 @@ func blockNote(state fsm.TaskState) string {
 //
 // The two ends are the ones worth naming: 0 is the default and sends every gate
 // to a person, and 10 lets the lead judge all of them. In between, the number is
-// only meaningful against `luna flow` — which lists each gate's criticality — so
+// only meaningful against `luna flow` — which lists each gate's autonomy floor — so
 // that is what it points at.
 func knobNote(knob fsm.Knob) string {
 	switch knob {
@@ -821,7 +818,7 @@ func knobNote(knob fsm.Knob) string {
 	case fsm.KnobAll:
 		return "  (the lead may judge every gate)"
 	default:
-		return "  (the lead judges gates up to this criticality — see `luna flow`)"
+		return "  (the lead judges gates needing this much autonomy or less — see `luna flow`)"
 	}
 }
 
