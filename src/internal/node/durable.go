@@ -54,12 +54,12 @@ var ErrGhostStore = errors.New("the log is on a filesystem that will not keep it
 // tmpfs, so the pair is always consistent from inside anyway. Removing it costs
 // one stat and one read per command, and takes a file out of every project that
 // runs Luna.
-func EnsureDurable(dir string) error {
-	if hollow, why := hollowRoot(dir); hollow {
+func EnsureDurable(repo, dir string) error {
+	if hollow, why := hollowRoot(repo, dir); hollow {
 		return fmt.Errorf("%w: %s", ErrGhostStore, why)
 	}
 
-	return recordLogLocation(dir)
+	return recordLogLocation(repo, dir)
 }
 
 // hollowRoot reports whether the log's directory is one this process cannot
@@ -81,8 +81,19 @@ func EnsureDurable(dir string) error {
 // it was written for. Outside, the anchor is there and so is the log. Inside, the
 // anchor is readable and the directory it points at does not exist — which is the
 // contradiction nothing else in the system reports.
-func hollowRoot(dir string) (bool, string) {
-	gitDir := filepath.Join(filepath.Dir(dir), ".git")
+//
+// The repository is passed in rather than derived from the log directory, and
+// that is what kept this working when the log left the checkout. It used to take
+// the log's parent as the repository, which was true only while the log lived
+// inside one; with the log under `$XDG_DATA_HOME` that lookup finds no `.git`,
+// returns "nothing to compare", and the guard goes quietly inert. A guard that
+// stops guarding without saying so is worse than one that was never written.
+//
+// The move also made it *more* sensitive, not less: ai-jail gives a contained
+// process a tmpfs `$HOME`, so a log under it is not merely unreachable — the whole
+// path is absent, which is exactly what this stats for.
+func hollowRoot(repo, dir string) (bool, string) {
+	gitDir := filepath.Join(repo, ".git")
 	if info, err := os.Stat(gitDir); err != nil || !info.IsDir() {
 		// Not a repository, or a linked worktree's `.git` file. Neither is this
 		// failure: Luna runs in plain directories too.
@@ -126,27 +137,29 @@ const gitAnchorName = "luna-log-location"
 
 // recordLogLocation writes down where the log lives, in the one place a contained
 // process can also read.
-func recordLogLocation(dir string) error {
+func recordLogLocation(repo, dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
 	}
-	keepOutOfGit(dir)
+
+	keepOutOfGit(repo)
 
 	// Best effort: a repository Luna cannot write to still gets a working log, and
 	// the guard simply has nothing to compare against next time.
-	gitDir := filepath.Join(filepath.Dir(dir), ".git")
+	gitDir := filepath.Join(repo, ".git")
 	if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
 		_ = os.WriteFile(filepath.Join(gitDir, gitAnchorName), []byte(dir+"\n"), 0o600)
 	}
 	return nil
 }
 
-// keepOutOfGit makes the log directory invisible to git, from inside itself.
+// keepOutOfGit keeps what Luna leaves in a checkout out of a commit.
 //
-// The log holds a task's statement, every document handed over, and what each
-// stage cost. None of that belongs in a commit, and a `git add -A` from an agent
-// working in the repository takes all of it — measured twice on real runs, where
-// a stage's own artifacts ended up committed because nothing stopped them.
+// What is left there is now one thing: the handover socket, at
+// `.luna/artifact.sock` inside a stage's worktree, which is the only position a
+// contained agent can reach. The log used to be here too, and this file was
+// mostly about that — a `git add -A` from an agent working in the repository took
+// the whole thing, measured twice on real runs.
 //
 // Written into `.luna/.gitignore` rather than the project's, because the
 // project's belongs to the project: Luna appending to a file somebody else
@@ -157,20 +170,25 @@ func recordLogLocation(dir string) error {
 // project's settings rather than Luna's state, and a team sharing a workstream
 // and a turn budget shares them through git. That negation only holds when no
 // outer rule already excludes the directory — git does not descend into an
-// ignored directory, so a global `.luna/` makes everything here moot. On the
-// machine this was written on, exactly that was true; on any other, this file is
-// the only thing between the log and a commit.
+// ignored directory, so a global `.luna/` makes everything here moot.
 //
 // Best effort, like the anchor beside it: a repository Luna cannot write to still
 // gets a working log. What it loses is the protection, not the run.
-func keepOutOfGit(dir string) {
-	const ignore = `# Written by Luna. The log holds task statements, handed-over
-# documents and what each stage cost — none of it belongs in a commit.
+func keepOutOfGit(repo string) {
+	dir := filepath.Join(repo, ".luna")
+	const ignore = `# Written by Luna. What it leaves in a checkout is scratch — the
+# handover socket a stage opens — and none of it belongs in a commit.
 # config.toml is the exception: it is the project's settings, not Luna's state.
 *
 !.gitignore
 !config.toml
 `
+	// The directory is Luna's to create now: it used to be the log's own, made
+	// before this ran, and the log has left the checkout.
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return
+	}
+
 	path := filepath.Join(dir, ".gitignore")
 	if _, err := os.Stat(path); err == nil {
 		// Somebody may have edited it, and overwriting would be Luna deciding it

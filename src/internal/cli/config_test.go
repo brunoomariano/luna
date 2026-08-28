@@ -97,7 +97,7 @@ func TestAnUnreadableConfigIsReported(t *testing.T) {
 
 // TestConfigSitsNextToTheStore covers the path convention.
 func TestConfigSitsNextToTheStore(t *testing.T) {
-	got := ConfigPath("/home/someone/project/.luna/luna.db")
+	got := ConfigPath("/home/someone/project")
 
 	if got != "/home/someone/project/.luna/config.toml" {
 		t.Errorf("want the config beside the store, got %q", got)

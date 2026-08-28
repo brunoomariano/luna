@@ -377,7 +377,16 @@ func stripComment(line string) string {
 	return line
 }
 
-// ConfigPath is where a project's configuration lives, next to its store.
-func ConfigPath(storePath string) string {
-	return filepath.Join(filepath.Dir(storePath), "config.toml")
+// ConfigPath is where a project's configuration lives: inside the repository.
+//
+// It stays in the checkout after the log left it, and the difference is who the
+// file belongs to. The log is Luna's state about a project; the config is the
+// project's own settings — a bootstrap command, a workstream, a turn budget —
+// and a team shares those through git the way it shares everything else.
+//
+// Derived from the repository rather than from the store path, which is what it
+// used to be. Those were the same directory while the log lived in the checkout,
+// and became different the moment it did not.
+func ConfigPath(repo string) string {
+	return filepath.Join(repo, ".luna", "config.toml")
 }

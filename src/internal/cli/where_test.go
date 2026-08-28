@@ -143,3 +143,22 @@ func TestWithoutAResolverACommandStillSaysWhatIsMissing(t *testing.T) {
 		t.Errorf("the refusal does not name what is missing: %v", err)
 	}
 }
+
+// TestWhereReportsADisagreementItCannotResolve. A person standing in a checkout
+// cannot see that its branch and its path say different things, and that is the
+// one thing this command is uniquely placed to tell them.
+func TestWhereReportsADisagreementItCannotResolve(t *testing.T) {
+	h := standingIn(t, node.Identity{
+		Repo: "/repo", Worktree: "/somewhere/else", Linked: true,
+		Branch: "luna/LUNA-4/build", TaskID: "LUNA-4", Stage: "build",
+	})
+
+	out := h.mustRun(t, "where")
+
+	if !strings.Contains(out, "disagree") {
+		t.Errorf("where hid a disagreement:\n%s", out)
+	}
+	if !strings.Contains(out, "somewhere/else") {
+		t.Errorf("the report does not say where it actually is:\n%s", out)
+	}
+}

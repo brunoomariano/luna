@@ -176,3 +176,24 @@ func TestAStageThatReviewsNothingHasNoReport(t *testing.T) {
 		t.Error("a stage that does not review reported a readable report")
 	}
 }
+
+// TestEverySeverityIsOneTheReportReaderFinds keeps the closed set and the parser
+// in step, the way the facts and the capabilities are kept.
+//
+// The list exists so a caller can ask rather than repeat it — and a list nothing
+// checks is one a new severity can be added to without the reader learning it,
+// which is the failure it was written to prevent one level up.
+func TestEverySeverityIsOneTheReportReaderFinds(t *testing.T) {
+	for _, severity := range KnownSeverities() {
+		report := "[" + string(severity) + "]\nsomething is wrong at a.go:1"
+
+		found := ReadReport(report)
+		if len(found) != 1 {
+			t.Errorf("%s produced %d findings, want 1", severity, len(found))
+			continue
+		}
+		if found[0].Severity != severity {
+			t.Errorf("%s was read as %q", severity, found[0].Severity)
+		}
+	}
+}

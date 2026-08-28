@@ -15,10 +15,10 @@ import (
 func TestAFirstRunAdoptsTheDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".luna")
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("a directory Luna has never seen must be adopted, got %v", err)
 	}
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("the second run must recognise the directory, got %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestAnExistingStoreIsAdopted(t *testing.T) {
 		t.Fatalf("setting up the old store: %v", err)
 	}
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("an existing store must be adopted, got %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestNothingIsLeftBesideTheLog(t *testing.T) {
 	}
 	dir := filepath.Join(root, ".luna")
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("the first run: %v", err)
 	}
 
@@ -82,13 +82,13 @@ func TestALegitimateTmpfsLogIsNotRefused(t *testing.T) {
 	// on. A guard that keyed on the filesystem type would refuse this.
 	dir := filepath.Join(t.TempDir(), ".luna")
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("a volatile but visible log is legitimate, got %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "luna.db"), []byte("real"), 0o600); err != nil {
 		t.Fatalf("writing the store: %v", err)
 	}
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("a store beside its own anchor must pass, got %v", err)
 	}
 }
@@ -109,7 +109,7 @@ func TestAHollowRepositoryIsRefused(t *testing.T) {
 	// What a real run leaves behind: the anchor in the git directory, naming the
 	// log. The jail exposes the git directory, so a contained process reads this.
 	real := filepath.Join(root, ".luna")
-	if err := node.EnsureDurable(real); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(real), real); err != nil {
 		t.Fatalf("the real run: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestAHollowRepositoryIsRefused(t *testing.T) {
 		t.Fatalf("simulating the unreachable log: %v", err)
 	}
 
-	err := node.EnsureDurable(real)
+	err := node.EnsureDurable(filepath.Dir(real), real)
 	if !errors.Is(err, node.ErrGhostStore) {
 		t.Fatalf("a repository with no working tree must be refused, got %v", err)
 	}
@@ -137,7 +137,7 @@ func TestARealCheckoutIsNotRefused(t *testing.T) {
 		t.Fatalf("setting up the repository: %v", err)
 	}
 
-	if err := node.EnsureDurable(filepath.Join(root, ".luna")); err != nil {
+	if err := node.EnsureDurable(root, filepath.Join(root, ".luna")); err != nil {
 		t.Fatalf("a checkout with files is a real one, got %v", err)
 	}
 }
@@ -145,7 +145,7 @@ func TestARealCheckoutIsNotRefused(t *testing.T) {
 // TestAPlainDirectoryIsNotRefused covers Luna running outside a checkout, which
 // Root() deliberately supports.
 func TestAPlainDirectoryIsNotRefused(t *testing.T) {
-	if err := node.EnsureDurable(filepath.Join(t.TempDir(), ".luna")); err != nil {
+	if err := node.EnsureDurable(t.TempDir(), filepath.Join(t.TempDir(), ".luna")); err != nil {
 		t.Fatalf("a directory that is not a repository is not this failure, got %v", err)
 	}
 }
@@ -160,7 +160,7 @@ func TestABrokenDirectoryIsReportedAsItself(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 
-	err := node.EnsureDurable(filepath.Join(root, ".luna"))
+	err := node.EnsureDurable(root, filepath.Join(root, ".luna"))
 	if err == nil {
 		t.Fatal("a directory that cannot be created must be reported")
 	}
@@ -182,7 +182,7 @@ func TestAStaleAnchorIsIgnored(t *testing.T) {
 		t.Fatalf("writing the stale anchor: %v", err)
 	}
 
-	if err := node.EnsureDurable(filepath.Join(root, ".luna")); err != nil {
+	if err := node.EnsureDurable(root, filepath.Join(root, ".luna")); err != nil {
 		t.Fatalf("an anchor naming another directory must be ignored, got %v", err)
 	}
 }
@@ -196,7 +196,7 @@ func TestAnUnwritableDirectoryFailsPlainly(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 
-	err := node.EnsureDurable(filepath.Join(root, ".luna"))
+	err := node.EnsureDurable(root, filepath.Join(root, ".luna"))
 	if err == nil {
 		t.Fatal("a directory that cannot be created must be reported")
 	}
@@ -215,7 +215,7 @@ func TestAWorktreeGitFileIsNotARepositoryRoot(t *testing.T) {
 		t.Fatalf("setting up the worktree marker: %v", err)
 	}
 
-	if err := node.EnsureDurable(filepath.Join(root, ".luna")); err != nil {
+	if err := node.EnsureDurable(root, filepath.Join(root, ".luna")); err != nil {
 		t.Fatalf("a worktree's .git file is not this failure, got %v", err)
 	}
 }
@@ -230,7 +230,7 @@ func TestTheAnchorSurvivesAnUnwritableGitDirectory(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(gitDir, 0o700) })
 
-	if err := node.EnsureDurable(filepath.Join(root, ".luna")); err != nil {
+	if err := node.EnsureDurable(root, filepath.Join(root, ".luna")); err != nil {
 		t.Fatalf("a log must still work beside a read-only .git, got %v", err)
 	}
 }
@@ -247,10 +247,10 @@ func TestRecordedAndVisibleIsTheOrdinaryCase(t *testing.T) {
 	}
 	dir := filepath.Join(root, ".luna")
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("the first run: %v", err)
 	}
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("a recorded directory that is visible must pass, got %v", err)
 	}
 }
@@ -264,7 +264,7 @@ func TestRecordedAndVisibleIsTheOrdinaryCase(t *testing.T) {
 func TestTheLogDirectoryIgnoresItself(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".luna")
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("creating the log directory: %v", err)
 	}
 
@@ -297,7 +297,7 @@ func TestAnIgnoreSomebodyEditedIsLeftAlone(t *testing.T) {
 		t.Fatalf("writing theirs: %v", err)
 	}
 
-	if err := node.EnsureDurable(dir); err != nil {
+	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("recording: %v", err)
 	}
 
@@ -307,5 +307,32 @@ func TestAnIgnoreSomebodyEditedIsLeftAlone(t *testing.T) {
 	}
 	if string(body) != theirs {
 		t.Errorf("Luna overwrote an ignore somebody wrote:\n%s", body)
+	}
+}
+
+// TestAnEditedGitignoreIsLeftAlone. Overwriting it would be Luna deciding it
+// knows better about a file in somebody's repository — and the file exists
+// precisely so a person can adjust what is ignored.
+func TestAnEditedGitignoreIsLeftAlone(t *testing.T) {
+	repo := t.TempDir()
+	dir := filepath.Join(repo, ".luna")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("making the directory: %v", err)
+	}
+	mine := "# mine\n*.scratch\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(mine), 0o600); err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	if err := node.EnsureDurable(repo, filepath.Join(t.TempDir(), "log")); err != nil {
+		t.Fatalf("EnsureDurable: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading it back: %v", err)
+	}
+	if string(body) != mine {
+		t.Errorf("Luna overwrote a file somebody else maintains:\n%s", body)
 	}
 }

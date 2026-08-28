@@ -94,6 +94,34 @@ Two consequences worth stating, because both were surprises:
 `luna flow check` audits every flow, not one: a build that reports "the contract
 holds" about a third of what it runs is saying something true and useless.
 
+## Where the log lives
+
+One log per **project**, outside every checkout of it:
+
+```
+$XDG_DATA_HOME/luna/            (or ~/.local/share/luna)
+  projects/
+    github.com-me-app-1f2e3d4c/
+      luna.db
+```
+
+Outside the checkout because Luna writing into a repository is a change nobody asked
+for — and because a log inside a checkout is a log an agent working in that checkout can
+reach. Per project rather than per repository because a task belongs to a project: a
+worktree opened to review one has to see it, and a second clone is the same work.
+
+Projects get a directory each rather than one file with a column, so two of them cannot
+list each other's gates through a query somebody got wrong.
+
+**A log left in a checkout by an older build is moved on the next run**, not ignored:
+ignoring it would start an empty log beside a task somebody has open, and every command
+would then answer "no such task" about work that is right there. Two logs are refused
+rather than merged — which one holds the work is not a thing Luna can tell.
+
+What stays in the checkout is `.luna/config.toml`, which is the project's own settings
+rather than Luna's state, and the `.gitignore` that keeps a stage's handover socket out of
+a commit.
+
 ## Knowing where you are
 
 A checkout describes itself, and Luna reads it rather than being told. `node.Identify`

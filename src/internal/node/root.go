@@ -2,6 +2,8 @@ package node
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -40,21 +42,55 @@ func Root(ctx context.Context, dir string) (string, error) {
 	return filepath.Dir(common), nil
 }
 
-// DefaultPath is where the log lives for the repository containing dir.
+// DefaultPath is where the log lives for the project containing dir.
 //
-// One log per repository, in the main checkout. Per-repository rather than
-// per-user because tasks belong to a project, and two projects sharing one log
-// would list each other's gates.
+// One log per **project**, outside every checkout of it. It was one per
+// repository, in the main checkout, and both halves of that changed for the same
+// reason: a task belongs to a project rather than to a directory, so a worktree
+// opened to review one has to see it, and a second clone is the same work.
+// `IdentifyProject` is what decides which project a directory is in.
+//
+// Outside the checkout because Luna writing into a repository is a change nobody
+// asked for — and because a log inside a checkout is a log an agent working in
+// that checkout can reach. Projects stay separate from one another: a directory
+// each, not one file with a column, so two projects cannot list each other's
+// gates through a query somebody got wrong.
 //
 // It names the store's file from the node package rather than the other way
 // round, because finding it means running git — and running a process belongs
 // here (.golangci.yaml enforces that boundary).
 func DefaultPath(ctx context.Context, dir string) (string, error) {
-	root, err := Root(ctx, dir)
+	project, err := IdentifyProject(ctx, dir)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, ".luna", "luna.db"), nil
+	home, err := DataHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "projects", project.Key, "luna.db"), nil
+}
+
+// DataHome is where Luna keeps what belongs to the person rather than to a
+// repository.
+//
+// `$XDG_DATA_HOME` when it is set and absolute, `~/.local/share/luna` otherwise.
+// A relative value is refused rather than resolved against the working directory:
+// the point of this path is that it does not depend on where a command was run.
+func DataHome() (string, error) {
+	if set := os.Getenv("XDG_DATA_HOME"); set != "" {
+		if !filepath.IsAbs(set) {
+			return "", fmt.Errorf("XDG_DATA_HOME is %q, which is relative — "+
+				"the log's location cannot depend on the working directory", set)
+		}
+		return filepath.Join(set, "luna"), nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("finding the home directory for the log: %w", err)
+	}
+	return filepath.Join(home, ".local", "share", "luna"), nil
 }
 
 // InsideAWorktree reports whether dir is a linked worktree rather than the main

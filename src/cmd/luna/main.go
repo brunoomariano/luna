@@ -67,17 +67,41 @@ func runInsideAStage(args []string) error {
 // caller cannot really reach answers every read and write and keeps none of
 // them, so the failure has to be caught while there is still nothing to lose.
 func openStore(ctx context.Context) (s *store.Store, cfg cli.Config, path string, err error) {
-	path, err = storePath(ctx)
+	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, cli.Config{}, "", err
 	}
-	if err := node.EnsureDurable(filepath.Dir(path)); err != nil {
+	repo, err := node.Root(ctx, cwd)
+	if err != nil {
+		return nil, cli.Config{}, "", err
+	}
+
+	var chosen bool
+	path, chosen, err = storePath(ctx)
+	if err != nil {
+		return nil, cli.Config{}, "", err
+	}
+	// A log left in the checkout by an older build is moved rather than ignored,
+	// because ignoring it would silently start an empty one beside a task somebody
+	// has open.
+	//
+	// Never when the path was chosen with `LUNA_STORE`. Somebody naming a location
+	// is not asking for a log somewhere else to be moved into it, and doing it
+	// anyway would take a repository's real log away during a test that only meant
+	// to point at a scratch file — which is exactly what happened the first time
+	// this was written without the check.
+	if !chosen {
+		if err := node.AdoptLogInRepo(repo, path); err != nil {
+			return nil, cli.Config{}, "", err
+		}
+	}
+	if err := node.EnsureDurable(repo, filepath.Dir(path)); err != nil {
 		return nil, cli.Config{}, "", err
 	}
 
 	// The config is read before the store is opened: a malformed config should
 	// report itself rather than being discovered halfway through a command.
-	cfg, err = cli.LoadConfig(cli.ConfigPath(path))
+	cfg, err = cli.LoadConfig(cli.ConfigPath(repo))
 	if err != nil {
 		return nil, cli.Config{}, "", err
 	}
@@ -199,14 +223,15 @@ func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 // `.luna/luna.db` files with the task visible in only one.
 //
 // LUNA_STORE still wins, because a person who names a path means it.
-func storePath(ctx context.Context) (string, error) {
+func storePath(ctx context.Context) (path string, chosen bool, err error) {
 	if fromEnv := os.Getenv("LUNA_STORE"); fromEnv != "" {
-		return fromEnv, nil
+		return fromEnv, true, nil
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("finding the working directory: %w", err)
+		return "", false, fmt.Errorf("finding the working directory: %w", err)
 	}
-	return node.DefaultPath(ctx, cwd)
+	path, err = node.DefaultPath(ctx, cwd)
+	return path, false, err
 }

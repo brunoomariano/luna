@@ -73,8 +73,10 @@ func TestTheLogBelongsToTheMainRepositoryNotTheWorktree(t *testing.T) {
 		t.Errorf("the worktree got its own log:\n  main:     %s\n  worktree: %s\n"+
 			"a log inside an ephemeral checkout is deleted with it", fromMain, fromWorktree)
 	}
-	if !strings.HasPrefix(fromMain, main) {
-		t.Errorf("the log landed outside the main repository: %s", fromMain)
+	// And it is outside both, which is the move: a log inside any checkout is a
+	// log an agent working in that checkout can reach.
+	if strings.HasPrefix(fromMain, main) || strings.HasPrefix(fromMain, worktree) {
+		t.Errorf("the log is inside a checkout: %s", fromMain)
 	}
 }
 
@@ -130,16 +132,19 @@ func TestADirectoryWithNoRepositoryStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultPath outside a repository: %v", err)
 	}
-	if !strings.HasPrefix(got, dir) {
-		t.Errorf("path = %s, want it under %s", got, dir)
+	// Keyed by the directory rather than by a remote, since there is none — a
+	// different guarantee, and one the project identity states rather than hides.
+	if !strings.Contains(got, filepath.Join("luna", "projects")) {
+		t.Errorf("path = %s, want it under the projects directory", got)
 	}
 }
 
-// TestTheLogSitsUnderDotLuna pins the layout rather than leaving it implied.
+// TestTheLogSitsUnderTheDataHome pins the layout rather than leaving it implied.
 //
-// Where the log lives is a fact other things depend on — the config is read from
-// beside it, and a person looking for it looks there.
-func TestTheLogSitsUnderDotLuna(t *testing.T) {
+// Where the log lives is a fact other things depend on — a person looking for it
+// looks there, and the daemon that will own it has to find the same place.
+func TestTheLogSitsUnderTheDataHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	main, _ := repoWithWorktree(t)
 
 	got, err := DefaultPath(context.Background(), main)
@@ -147,8 +152,27 @@ func TestTheLogSitsUnderDotLuna(t *testing.T) {
 		t.Fatalf("DefaultPath: %v", err)
 	}
 
-	if want := filepath.Join(main, ".luna", "luna.db"); got != want {
-		t.Errorf("path = %s, want %s", got, want)
+	home, err := DataHome()
+	if err != nil {
+		t.Fatalf("DataHome: %v", err)
+	}
+	if !strings.HasPrefix(got, filepath.Join(home, "projects")) {
+		t.Errorf("path = %s, want it under %s", got, home)
+	}
+	if filepath.Base(got) != "luna.db" {
+		t.Errorf("path = %s, want the store file", got)
+	}
+}
+
+// TestARelativeDataHomeIsRefused. The point of this path is that it does not
+// depend on where a command was run, so a relative value is the one thing it
+// cannot be — resolving it against the working directory would put a project's
+// log somewhere different for every caller.
+func TestARelativeDataHomeIsRefused(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "relative/share")
+
+	if _, err := DataHome(); err == nil {
+		t.Fatal("a relative XDG_DATA_HOME was accepted")
 	}
 }
 
@@ -168,5 +192,43 @@ func TestAPathBelowTheRootStillFindsIt(t *testing.T) {
 	}
 	if got != main {
 		t.Errorf("Root = %s, want the repository root %s", got, main)
+	}
+}
+
+// TestTheDataHomeFollowsTheEnvironmentThenTheDefault covers both branches, and
+// the reason there are two: XDG says where a person's data lives, and the
+// fallback is what every machine has when they have not said.
+func TestTheDataHomeFollowsTheEnvironmentThenTheDefault(t *testing.T) {
+	set := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", set)
+
+	home, err := DataHome()
+	if err != nil {
+		t.Fatalf("DataHome: %v", err)
+	}
+	if home != filepath.Join(set, "luna") {
+		t.Errorf("home = %s, want it under %s", home, set)
+	}
+
+	// Unset, it is the conventional path rather than a refusal — a machine with
+	// no XDG_DATA_HOME is the ordinary machine.
+	t.Setenv("XDG_DATA_HOME", "")
+	home, err = DataHome()
+	if err != nil {
+		t.Fatalf("DataHome with nothing set: %v", err)
+	}
+	if !strings.HasSuffix(home, filepath.Join(".local", "share", "luna")) {
+		t.Errorf("home = %s, want the conventional path", home)
+	}
+}
+
+// TestARelativeDataHomeStopsThePathFromResolving is the same refusal seen from
+// the caller that matters: nothing should get a log path at all if the location
+// would depend on where the command was run.
+func TestARelativeDataHomeStopsThePathFromResolving(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "share")
+
+	if _, err := DefaultPath(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("a log path resolved under a relative data home")
 	}
 }

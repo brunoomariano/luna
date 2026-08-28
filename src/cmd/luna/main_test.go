@@ -57,33 +57,46 @@ func TestExitCodeSeparatesUsageFromFailure(t *testing.T) {
 func TestStorePathPrefersTheEnvironment(t *testing.T) {
 	t.Setenv("LUNA_STORE", "/tmp/somewhere/luna.db")
 
-	path, err := storePath(context.Background())
+	path, chosen, err := storePath(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if path != "/tmp/somewhere/luna.db" {
 		t.Errorf("want the environment's path, got %q", path)
 	}
+	// And it says the path was named rather than derived, which is what stops a
+	// log somewhere else from being moved into it.
+	if !chosen {
+		t.Error("a path from the environment is a chosen one")
+	}
 }
 
-// TestStorePathDefaultsToTheRepositoryRoot covers the fallback.
+// TestStorePathDefaultsToTheProjectsDirectory covers the fallback.
 //
-// Per-repository rather than per-directory: a stage runs in an ephemeral
-// worktree, so resolving from the cwd would put the log somewhere that is about
-// to be deleted.
-func TestStorePathDefaultsToTheRepositoryRoot(t *testing.T) {
+// Per-project rather than per-directory or per-repository: a stage runs in an
+// ephemeral worktree, and a task belongs to a project rather than to one checkout
+// of it — so the log lives outside every checkout, under the data home.
+func TestStorePathDefaultsToTheProjectsDirectory(t *testing.T) {
 	t.Setenv("LUNA_STORE", "")
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	path, err := storePath(context.Background())
+	path, chosen, err := storePath(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if chosen {
+		t.Error("a derived path is not a chosen one")
 	}
 
 	if filepath.Base(path) != "luna.db" {
 		t.Errorf("want the store file, got %q", path)
 	}
-	if !strings.HasSuffix(filepath.Dir(path), ".luna") {
-		t.Errorf("want it under .luna, got %q", path)
+	if !strings.Contains(path, filepath.Join("luna", "projects")) {
+		t.Errorf("want it under the projects directory, got %q", path)
+	}
+	// And outside the checkout it was resolved from, which is the whole move.
+	if strings.Contains(path, string(filepath.Separator)+".luna"+string(filepath.Separator)) {
+		t.Errorf("the log is still inside a checkout: %q", path)
 	}
 	if !filepath.IsAbs(path) {
 		t.Errorf("want an absolute path, got %q", path)
@@ -172,8 +185,12 @@ func TestRunFromAWorktreeUsesTheMainRepositorysLog(t *testing.T) {
 		}
 	}
 
-	// LUNA_STORE would win, and this is testing what happens without it.
+	// LUNA_STORE would win, and this is testing what happens without it — which
+	// means the log resolves to the data home, so the data home has to be this
+	// test's. Without that a test run writes a project directory into whoever ran
+	// it, which is how this was found.
 	t.Setenv("LUNA_STORE", "")
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
 	inDir(t, main, func() {
 		if err := run([]string{"task", "new", "LUNA-1", "--kind", "feature"}); err != nil {
@@ -308,4 +325,99 @@ func TestArtifactCommandsDoNotNeedTheLog(t *testing.T) {
 	if !strings.Contains(err.Error(), "LUNA_ARTIFACT_SOCKET") {
 		t.Errorf("want the failure to be about the socket, got %q", err)
 	}
+}
+
+// TestALogLeftInACheckoutIsAdoptedOnTheNextRun is phase one end to end.
+//
+// The log used to live inside the checkout. A build that simply looked in the new
+// place would find nothing and start an empty log beside work somebody has open,
+// and every command would then answer "no such task" about a task that exists.
+func TestALogLeftInACheckoutIsAdoptedOnTheNextRun(t *testing.T) {
+	t.Setenv("LUNA_STORE", "")
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.email", "t@t"},
+		{"config", "user.name", "t"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+
+	// A task written where an older build would have put it.
+	old := filepath.Join(repo, ".luna", "luna.db")
+	if err := os.MkdirAll(filepath.Dir(old), 0o750); err != nil {
+		t.Fatalf("making the old log directory: %v", err)
+	}
+	inDir(t, repo, func() {
+		t.Setenv("LUNA_STORE", old)
+		if err := run([]string{"task", "new", "OLD-1", "--kind", "chore"}); err != nil {
+			t.Fatalf("seeding the old log: %v", err)
+		}
+	})
+
+	// And now a run that resolves the location itself.
+	inDir(t, repo, func() {
+		t.Setenv("LUNA_STORE", "")
+		if err := run([]string{"task", "show", "OLD-1"}); err != nil {
+			t.Errorf("the task in the adopted log is invisible: %v", err)
+		}
+	})
+
+	if _, err := os.Stat(old); err == nil {
+		t.Error("the log is still in the checkout")
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".luna", ".gitignore")); err != nil {
+		t.Error("what Luna still leaves in the checkout is not ignored")
+	}
+}
+
+// TestACheckoutWithTwoLogsRefusesRatherThanPicking is the other half of adoption.
+//
+// One of them holds the work and only the person can say which. Picking would be
+// the silent kind of wrong: the command would succeed against a log that is not
+// the one they meant, and nothing would say so.
+func TestACheckoutWithTwoLogsRefusesRatherThanPicking(t *testing.T) {
+	t.Setenv("LUNA_STORE", "")
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init", "-q", "-b", "main")
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+
+	// The new log first, so it is already there — adoption with only an old log
+	// moves it, and the two-log case is the one where both exist.
+	inDir(t, repo, func() {
+		if err := run([]string{"task", "new", "NEW-1", "--kind", "chore"}); err != nil {
+			t.Fatalf("seeding the new log: %v", err)
+		}
+	})
+
+	old := filepath.Join(repo, ".luna", "luna.db")
+	if err := os.WriteFile(old, []byte("an older build's log"), 0o600); err != nil {
+		t.Fatalf("writing the old log: %v", err)
+	}
+
+	inDir(t, repo, func() {
+		err := run([]string{"task", "show", "NEW-1"})
+		if err == nil {
+			t.Fatal("a checkout with two logs was resolved anyway")
+		}
+		// The refusal names both, because which one holds the work is the question
+		// only the person can answer.
+		for _, want := range []string{old, "only one can be the log"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not carry %q: %v", want, err)
+			}
+		}
+	})
 }

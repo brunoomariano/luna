@@ -147,3 +147,46 @@ func TestADirectoryThatIsNotARepositoryIsNotAnError(t *testing.T) {
 		t.Errorf("a plain directory named a task: %q", id.TaskID)
 	}
 }
+
+// TestADetachedHeadNamesNoTask. A checkout with no branch has nothing to read a
+// task out of, and saying so is better than reading one out of the commit.
+func TestADetachedHeadNamesNoTask(t *testing.T) {
+	repo := identifiable(t)
+	head, err := git(context.Background(), repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("reading HEAD: %v", err)
+	}
+	if _, err := git(context.Background(), repo, "checkout", "-q",
+		strings.TrimSpace(head)); err != nil {
+		t.Fatalf("detaching: %v", err)
+	}
+
+	id, err := Identify(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("Identify: %v", err)
+	}
+	if id.TaskID != "" {
+		t.Errorf("a detached head named the task %q", id.TaskID)
+	}
+	// And the cross-check has nothing to disagree about, rather than tripping on
+	// the absence.
+	if agrees, why := id.Agrees(); !agrees {
+		t.Errorf("a checkout naming no task reported a disagreement: %s", why)
+	}
+}
+
+// TestARepositoryWithNoRemoteStillIdentifies. Not every checkout has an origin,
+// and the fields that do not apply are empty rather than guessed.
+func TestARepositoryWithNoRemoteStillIdentifies(t *testing.T) {
+	id, err := Identify(context.Background(), identifiable(t))
+	if err != nil {
+		t.Fatalf("Identify: %v", err)
+	}
+
+	if id.RemoteURL != "" {
+		t.Errorf("a repository with no origin reported %q", id.RemoteURL)
+	}
+	if id.Repo == "" || id.Branch == "" {
+		t.Errorf("what is there was not read: repo=%q branch=%q", id.Repo, id.Branch)
+	}
+}
