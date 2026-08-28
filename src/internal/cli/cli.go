@@ -17,6 +17,7 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
+	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -47,6 +48,16 @@ type Env struct {
 	// injected rather than called directly so a test does not need $EDITOR — and
 	// so that a headless run can fail loudly instead of hanging on a terminal.
 	Edit func(current string) (string, error)
+
+	// Where says what the working directory is already working on, so a command
+	// does not have to be told what the caller is standing in.
+	//
+	// Injected rather than called directly because resolving it runs git, and a
+	// test that wanted to check "the id came from the directory" would otherwise
+	// need a repository to stand in. Nil means nothing can be inferred, which is
+	// the honest answer outside a checkout and the one every caller has to handle
+	// anyway.
+	Where func() (node.Identity, error)
 
 	// Notify tells a person a task stopped. Injected for the same reason as Edit:
 	// a test must not draw a banner, and a machine with no notifier should print
@@ -100,9 +111,9 @@ func Run(env Env, args []string) error {
 	// the dispatch was the most complex function in the package without deciding
 	// anything.
 	//
-	// Built here rather than as a package variable because `chat` runs Luna
-	// commands for you, so its entry refers back to this function — a package-level
-	// table would be an initialisation cycle.
+	// Built here rather than as a package variable because an entry that referred
+	// back to this function would be an initialisation cycle — which one of them
+	// once did.
 	commands := map[string]func(Env, []string) error{
 		"task":     runTask,
 		"work":     workCommand,
@@ -121,6 +132,7 @@ func Run(env Env, args []string) error {
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
 		"version":  versionCommand,
+		"where":    whereCommand,
 	}
 
 	command, ok := commands[args[0]]
@@ -303,7 +315,7 @@ setting the machine up
         tell the harness it trusts the directory Luna makes worktrees in,
         so its agents start at a prompt instead of at a folder dialog.
 
-config:   .luna/config.toml — editor, interpreter, turn_budget,
+config:   .luna/config.toml — editor, lead_harness, turn_budget,
           workstream (the project's default), profiles
 
 kinds:    feature, bug, chore, docs
@@ -635,7 +647,7 @@ func parseTaskOptions(cfg Config, args []string) (taskOptions, error) {
 //
 // It fills in rather than rebuilds, and the difference is a bug this had: the
 // earlier version returned a fresh Config carrying only the editor, so a project
-// that set `turn_budget` or `interpreter` but named no profile silently lost
+// that set `turn_budget` or `lead_harness` but named no profile silently lost
 // both — its watchdog ran on the shipped default and nothing said so. Every
 // setting that is not a profile has to survive a project that has none.
 func (e Env) profiles() Config {

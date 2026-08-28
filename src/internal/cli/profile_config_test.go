@@ -198,6 +198,33 @@ func TestEveryStageTheShippedFlowRunsCarriesWhatItNeeds(t *testing.T) {
 	}
 }
 
+// TestTheOldInterpreterKeyNamesItsReplacement is what a rename owes the people
+// who wrote the old name down.
+//
+// Falling through to the unknown-key error would say the setting is not
+// recognised and not that it moved, and the person would then have to find out
+// which name replaced it — which is the search the rename was meant to end.
+func TestTheOldInterpreterKeyNamesItsReplacement(t *testing.T) {
+	_, err := LoadConfig(writeConfig(t, "interpreter = \"claude\"\n"))
+
+	if err == nil {
+		t.Fatal("the old spelling was accepted silently")
+	}
+	if !strings.Contains(err.Error(), "lead_harness") {
+		t.Errorf("the refusal does not name the replacement: %v", err)
+	}
+}
+
+// TestTheLeadHarnessIsReadUnderItsOwnName is the other half: the new spelling
+// works, so the refusal above is a rename rather than a removal.
+func TestTheLeadHarnessIsReadUnderItsOwnName(t *testing.T) {
+	cfg := load(t, "lead_harness = \"codex\"\n")
+
+	if cfg.LeadHarness != "codex" {
+		t.Errorf("lead_harness = %q, want codex", cfg.LeadHarness)
+	}
+}
+
 // TestAnUnknownSectionKindIsRefused covers the header.
 func TestAnUnknownSectionKindIsRefused(t *testing.T) {
 	_, err := LoadConfig(writeConfig(t, "[profiles.nightly]\nturn_budget = \"1h\"\n"))
@@ -365,17 +392,17 @@ func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
 	}
 }
 
-// TestTheProjectCanNameItsOwnInterpreter covers the setting that decides which
+// TestTheProjectCanNameItsOwnLeadHarness covers the setting that decides which
 // model `luna chat` talks to.
 //
 // It sits beside `editor` in the same switch, and an unrecognised key there is
 // an error — so the failure this catches is the branch quietly going missing:
 // the project would keep a configured interpreter in its file and get "chat
 // needs an interpreter, and none is configured" with nothing pointing at why.
-func TestTheProjectCanNameItsOwnInterpreter(t *testing.T) {
-	cfg := load(t, `interpreter = "claude --model sonnet"`)
+func TestTheProjectCanNameItsOwnLeadHarness(t *testing.T) {
+	cfg := load(t, `lead_harness = "claude --model sonnet"`)
 
-	if cfg.Interpreter != "claude --model sonnet" {
-		t.Errorf("want the configured interpreter, got %q", cfg.Interpreter)
+	if cfg.LeadHarness != "claude --model sonnet" {
+		t.Errorf("want the configured interpreter, got %q", cfg.LeadHarness)
 	}
 }

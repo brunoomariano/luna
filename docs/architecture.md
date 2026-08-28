@@ -94,6 +94,32 @@ Two consequences worth stating, because both were surprises:
 `luna flow check` audits every flow, not one: a build that reports "the contract
 holds" about a third of what it runs is saying something true and useless.
 
+## Knowing where you are
+
+A checkout describes itself, and Luna reads it rather than being told. `node.Identify`
+answers from git and the path alone — nothing is read from a file Luna wrote, because a
+marker file would be a second thing to keep in step with the first.
+
+```
+luna where          # in a stage's worktree
+  repo      /repos/app
+  remote    git@github.com:me/app.git
+  worktree  /repos/wt-app-LUNA-1-forge
+  branch    luna/LUNA-1/forge
+  task      LUNA-1
+  stage     forge
+```
+
+The branch is the authority: `luna/<task>/<stage>` travels with the work, where a
+directory can be moved or made by hand. The directory name is the **cross-check** —
+`wt-<repo>-<task>-<stage>` — and a disagreement is reported, never resolved. Which of
+the two moved is something only the person standing there knows, and a convenience that
+guesses between two sources is worse than one that asks.
+
+Every command that takes an id now takes it optionally: an argument wins when there is
+one, so naming a task still means that task from anywhere. What it removes is having to
+name a task while standing in its own worktree.
+
 ## The lead's own commands
 
 The lead conducts by running these, and they are readable and runnable by a person

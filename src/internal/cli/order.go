@@ -164,12 +164,12 @@ func doneCommand(env Env, args []string) error {
 // Keeping the panorama in a separate command means seeing it is an explicit act
 // rather than something that arrives alongside an instruction.
 func statusCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: status needs a task id", ErrUsage)
+	id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	asJSON, err := wantsJSON(args[1:])
+	asJSON, err := wantsJSON(rest)
 	if err != nil {
 		return err
 	}

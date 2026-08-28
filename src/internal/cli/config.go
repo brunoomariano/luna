@@ -22,14 +22,19 @@ type Config struct {
 	// like `code --wait`.
 	Editor string
 
-	// Interpreter is which official harness the lead asks when it judges a gate.
+	// LeadHarness is which official harness the lead asks when it judges a gate.
 	// Empty means the house default.
 	//
-	// The name outlived the command that gave it: `luna chat` had a model turn a
-	// person's words into a Luna command, and it is gone. The key stays spelled
-	// this way because it is in projects' config files already, and renaming a
-	// setting to match an internal history is a break somebody else pays for.
-	Interpreter string
+	// It is not the harness that runs a stage: that one is the stage's own, built
+	// in the node layer inside the sandbox. This one is the conductor's, and it is
+	// the only model Luna itself talks to.
+	//
+	// It was spelled `interpreter`, after `luna chat` — a command that turned a
+	// person's words into a Luna command, removed long ago. The old spelling was
+	// kept to avoid breaking config files already written; that argument did not
+	// survive the file leaving the repository, and a setting named after a command
+	// nobody can run costs every reader a search.
+	LeadHarness string
 
 	// TurnBudget bounds how long the node waits on an agent that is not reacting.
 	//
@@ -292,9 +297,17 @@ func assignRoot(cfg *Config, key, value, where string) error {
 	case "editor":
 		cfg.Editor = strings.Trim(value, `"`)
 		return nil
-	case "interpreter":
-		cfg.Interpreter = strings.Trim(value, `"`)
+	case "lead_harness":
+		cfg.LeadHarness = strings.Trim(value, `"`)
 		return nil
+	case "interpreter":
+		// Refused rather than accepted quietly. A project carrying the old spelling
+		// would otherwise fall through to the unknown-key error, which says the key
+		// is not recognised and not that it was renamed — and the person then has
+		// to find out which name replaced it.
+		return fmt.Errorf("%s: `interpreter` is now `lead_harness` — it names the harness "+
+			"the lead asks when it judges a gate, and was called after a command that no "+
+			"longer exists", where)
 	case "bootstrap":
 		cfg.Bootstrap = strings.Trim(value, `"`)
 		return nil
@@ -312,7 +325,8 @@ func assignRoot(cfg *Config, key, value, where string) error {
 		// An unknown key is an error rather than a warning: a typo in `editor`
 		// would otherwise leave the setting silently unapplied, and the person
 		// would conclude the feature does not work.
-		return fmt.Errorf("%s: unknown setting %q (expected editor, interpreter, turn_budget)", where, key)
+		return fmt.Errorf("%s: unknown setting %q (expected editor, lead_harness, turn_budget, "+
+			"bootstrap, workstream)", where, key)
 	}
 }
 

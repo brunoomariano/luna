@@ -444,3 +444,45 @@ func TestAListThatDoesNotOpenIsRefused(t *testing.T) {
 		t.Fatal("a list with no opening bracket was accepted")
 	}
 }
+
+// TestAStageDeclaresWhoRunsItAndWhatItIsTold covers the four keys that describe
+// the agent rather than the contract, and the direction each fails in.
+func TestAStageDeclaresWhoRunsItAndWhatItIsTold(t *testing.T) {
+	stage, err := ParseStage(`
+id         = "forge"
+agent      = "claude"
+brief      = "You build."
+skills     = ["go", "testing"]
+tools_deny = ["Edit"]
+produces   = ["code"]
+
+[verify.code]
+kind = "existence"
+`, "forge.toml")
+	if err != nil {
+		t.Fatalf("ParseStage: %v", err)
+	}
+
+	if stage.Agent != "claude" || stage.Brief != "You build." {
+		t.Errorf("agent=%q brief=%q", stage.Agent, stage.Brief)
+	}
+	if len(stage.Skills) != 2 || stage.Skills[0] != "go" {
+		t.Errorf("skills = %v", stage.Skills)
+	}
+	if len(stage.ToolsDeny) != 1 || stage.ToolsDeny[0] != CapEdit {
+		t.Errorf("tools_deny = %v", stage.ToolsDeny)
+	}
+}
+
+// TestAMisspelledCapabilityStopsTheLoad. A denial that did not parse leaves the
+// stage running with the tool it was supposed to lose, and nothing says so.
+func TestAMisspelledCapabilityStopsTheLoad(t *testing.T) {
+	_, err := ParseStage("id = \"forge\"\ntools_deny = [\"Edti\"]\n", "forge.toml")
+
+	if err == nil {
+		t.Fatal("a misspelled capability was accepted")
+	}
+	if !strings.Contains(err.Error(), "Edti") {
+		t.Errorf("the refusal does not name what was written: %v", err)
+	}
+}

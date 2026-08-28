@@ -145,7 +145,7 @@ func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 	// The harness the lead asks when it judges a gate. It is not the one that
 	// runs a stage: that one is built per stage in the node layer, inside the
 	// sandbox, from the stage's own agent.
-	harness := agent.Harness{Kind: cfg.Interpreter}
+	harness := agent.Harness{Kind: cfg.LeadHarness}
 
 	return cli.Env{
 		Store:  s,
@@ -154,6 +154,15 @@ func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 		Err:    os.Stderr,
 		In:     os.Stdin,
 		Edit:   cli.Editor(cfg),
+		// Resolved on demand rather than at startup: it runs git, and most commands
+		// are given an id and never ask.
+		Where: func() (node.Identity, error) {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return node.Identity{}, err
+			}
+			return node.Identify(context.Background(), cwd)
+		},
 		// Luna hosts no model: judging a gate goes out to an official harness run
 		// non-interactively, the same way a stage does.
 		Lead: harness.Ask,

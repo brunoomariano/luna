@@ -1680,14 +1680,14 @@ func TestTheWorkstreamOutlivesAConfigEdit(t *testing.T) {
 func TestEverySettingSurvivesAProjectWithNoProfiles(t *testing.T) {
 	h := newHarness(t)
 	h.env.Config = Config{
-		Interpreter: "codex",
+		LeadHarness: "codex",
 		TurnBudget:  90 * time.Minute,
 		Workstream:  "kept",
 	}
 
 	cfg := h.env.profiles()
-	if cfg.Interpreter != "codex" {
-		t.Errorf("the interpreter was lost: %q", cfg.Interpreter)
+	if cfg.LeadHarness != "codex" {
+		t.Errorf("the interpreter was lost: %q", cfg.LeadHarness)
 	}
 	if cfg.Turn() != 90*time.Minute {
 		t.Errorf("the turn budget was lost: %s", cfg.Turn())
