@@ -291,10 +291,8 @@ type GateSpec struct {
 	// AutonomyFloor is the lowest autonomy setting that absorbs this gate, 1–10.
 	// The lead may answer the gate on its own when `knob >= AutonomyFloor`.
 	//
-	// Named after the knob it is compared against, because it was `criticality`
-	// and that made two names for one mechanism: a reader had to be told that the
-	// stage's number and the task's number met in `Judges`. The floor says it —
-	// this is the autonomy the gate needs before nobody is asked.
+	// Named after the knob it is compared against. The floor is the autonomy the
+	// gate needs before nobody is asked.
 	//
 	// The range starts at 1 rather than 0 because a gate exists precisely because
 	// something about it matters: a floor of zero would be a gate every knob

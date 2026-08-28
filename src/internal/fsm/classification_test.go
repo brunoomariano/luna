@@ -130,9 +130,9 @@ func TestTheFingerprintReactsToEveryHistoryField(t *testing.T) {
 		// asserted rather than assumed. They decide who is asked at a gate opening
 		// now; a gate answered last week replays from its recorded GateDecision and
 		// not from the policy that produced it. Including them would
-		// strand every open task the moment a project declared criticality, for a
+		// strand every open task the moment a project declared an autonomy floor, for a
 		// change that cannot alter how one past event reads.
-		"a gate's criticality, which decides who is asked and not what happened": func(s *Stage) {
+		"a gate's autonomy floor, which decides who is asked and not what happened": func(s *Stage) {
 			s.Gate = &GateSpec{Kind: GateConfirm, Reason: "confirm something", AutonomyFloor: 3}
 		},
 		"a gate's judgement criteria, for the same reason": func(s *Stage) {

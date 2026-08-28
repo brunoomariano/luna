@@ -36,7 +36,7 @@ editor = "vim"
 #   [gate]
 #   kind        = "review-artifact"
 #   artifact    = "contract"
-#   criticality = 9
+#   autonomy_floor = 9
 #   judge = [
 #     "The contract states what is required and what is forbidden",
 #   ]
@@ -44,7 +44,7 @@ editor = "vim"
 # **Who answers one that waited** is the autonomy knob, set per task:
 #
 #   luna autonomy LUNA-1        # show it
-#   luna autonomy LUNA-1 7      # the lead judges gates up to criticality 7
+#   luna autonomy LUNA-1 7      # the lead judges gates up to autonomy floor 7
 #
 # 0 is the default and judges nothing. 10 lets the lead judge every gate — and a
 # lead judging honestly still asks when it cannot decide. Moving it writes an

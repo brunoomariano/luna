@@ -47,7 +47,7 @@ func TestTheKnobSurvivesTheProcess(t *testing.T) {
 // TestMovingTheKnobIsRefusedOutOfRange covers the surface a person types at.
 //
 // The three old names are refused rather than aliased: a value meaning "knob 5"
-// would authorise the lead to judge gates up to criticality 5 without the word
+// would authorise the lead to judge gates up to autonomy floor 5 without the word
 // "gate" appearing anywhere.
 func TestMovingTheKnobIsRefusedOutOfRange(t *testing.T) {
 	for _, value := range []string{"-1", "11", "ask", "retry", "decide", "high", "5.5"} {

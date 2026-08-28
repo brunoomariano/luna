@@ -5,12 +5,12 @@ import (
 	"strconv"
 )
 
-// Knob is how much of the flow runs without a person: the criticality up to
+// Knob is how much of the flow runs without a person: the autonomy floor up to
 // which the lead may answer a gate on its own.
 //
-// One setting on the task, never per gate. What differs between gates is not the
-// setting but the criticality they declare, and a per-gate knob would be a second
-// place deciding which gates matter — competing with the profile's `waits`.
+// One setting on the task, never per gate. What differs between gates is the
+// autonomy floor they declare, and a per-gate knob would be a second place
+// deciding which gates matter — competing with the profile's `waits`.
 type Knob int
 
 const (
@@ -48,8 +48,8 @@ func ParseKnob(value string) (Knob, error) {
 	return Knob(level), nil
 }
 
-// Judges reports whether the lead may judge a gate at this criticality.
-func (k Knob) Judges(criticality int) bool { return int(k) >= criticality }
+// Judges reports whether the lead may judge a gate at this autonomy floor.
+func (k Knob) Judges(autonomyFloor int) bool { return int(k) >= autonomyFloor }
 
 // Autonomy is what this knob means for a failure, rather than for a gate.
 //
@@ -136,7 +136,7 @@ func ResolveGate(gate *GateSpec, checks GateChecksOutcome, knob Knob) GateAnswer
 // GateSpecIn is the gate a named stage declares, or nil.
 //
 // It exists so a caller outside this package can reach a stage's declared
-// criticality and criteria without reaching for the stage itself — the gate is
+// autonomy floor and criteria without reaching for the stage itself — the gate is
 // what they need and the rest of the contract is not theirs to read.
 //
 // A stage the flow does not contain has no gate rather than being an error: the

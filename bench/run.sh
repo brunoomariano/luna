@@ -168,7 +168,7 @@ run_luna() {
   # Autonomy, or a flow with a gate can never finish here. A task is created at 0,
   # which sends every gate with criteria to a person — correct as a default and
   # wrong for a benchmark, where there is nobody to ask. The `full` flow gates its
-  # contract at criticality 9, so an unset knob stopped it there with $2.74 spent
+  # contract at autonomy floor 9, so an unset knob stopped it there with $2.74 spent
   # and seven stages never reached. Gateless flows are unaffected: the knob bounds
   # who answers a gate, and they open none.
   {

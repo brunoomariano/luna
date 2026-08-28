@@ -174,7 +174,7 @@ func TestTheAutonomyKnobReachesTheLead(t *testing.T) {
 // person types at.
 //
 // The three names are refused rather than aliased onto knob values: a flag
-// meaning "knob 5" would authorise the lead to judge gates up to criticality 5
+// meaning "knob 5" would authorise the lead to judge gates up to autonomy floor 5
 // without the word "gate" appearing anywhere.
 func TestTheKnobIsANumberAndTheOldNamesAreGone(t *testing.T) {
 	for _, value := range []string{"ask", "retry", "decide", "whatever", "11", "-1"} {

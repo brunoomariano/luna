@@ -100,7 +100,7 @@ func Fingerprint(flow []Stage) FlowFingerprint {
 // whether a past round was allowed to leave the loop, so it decides what a past
 // event meant — which is the test for being in here at all.
 //
-// The ceilings are out, and for the same reason a gate's criticality is: they
+// The ceilings are out, and for the same reason a gate's autonomy floor is: they
 // change how many rounds a loop may spend, not what any of them delivered. A
 // project that lowers `max_rounds` between two runs of the same task has changed
 // its patience, not its flow, and refusing the replay would be the noise this
@@ -120,7 +120,7 @@ func writeLoop(b *strings.Builder, loop *LoopSpec) {
 // whether a past Advance suspended, and refusing a replay over it would be the
 // noise the history-versus-policy rule keeps out.
 //
-// `criticality` and `judge` are out for the same reason, and it is worth stating
+// `autonomy_floor` and `judge` are out for the same reason, and it is worth stating
 // because the intuition runs the other way. They decide *who is asked* at a gate
 // that is opening now; they cannot change whether a past Advance suspended,
 // because what the reducer replays is the recorded GateDecision and not the
@@ -131,7 +131,7 @@ func writeLoop(b *strings.Builder, loop *LoopSpec) {
 // field only the layer above reads is policy — and it lands opposite to what the
 // gate-knob design assumed. That design expected populating the stock to stop
 // every open task replaying, and planned around it; measured against the rule,
-// the two fields are policy, so a project can declare criticality on a running
+// the two fields are policy, so a project can declare an autonomy floor on a running
 // flow without stranding a single task.
 func writeGate(b *strings.Builder, gate *GateSpec) {
 	if gate == nil {

@@ -92,7 +92,7 @@ const (
 	GateDecisionChecked GateWaited = "checked"
 
 	// GateDecisionJudged means the lead judged the gate against criteria declared
-	// in advance, because the knob reached the gate's criticality.
+	// in advance, because the knob reached the gate's autonomy floor.
 	//
 	// It is separate from GateDecisionPassed for the reason the whole tri-state
 	// exists: "nobody was asked because nothing was declared to ask about" and

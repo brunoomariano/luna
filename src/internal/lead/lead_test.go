@@ -810,9 +810,9 @@ func TestAFailureToLandDoesNotFailTheTask(t *testing.T) {
 // so the task sits at `awaiting_gate` and the decision is taken on the next
 // Advance. Enter refused to advance from that status — reasoning that a gate is
 // waiting for a person — which is true only when nobody is authorised to answer
-// it. With the knob at or above the gate's criticality, somebody is.
+// it. With the knob at or above the gate's autonomy floor, somebody is.
 //
-// Measured on TALLY-5: knob 9, gate criticality 9, `judge_by_reading` declared,
+// Measured on TALLY-5: knob 9, gate autonomy floor 9, `judge_by_reading` declared,
 // and the loop still ended at `wait: review the plan and its contract`. `luna
 // run` never had this — its own step advances from any non-running status.
 func TestEnterAnswersAGateTheKnobReaches(t *testing.T) {
@@ -873,7 +873,7 @@ func TestEnterAnswersAGateTheKnobReaches(t *testing.T) {
 // thing for an audit record and useless to read: a hash contains no obligations,
 // so a lead asked to judge it says so, correctly, every time.
 //
-// Measured on TALLY-5, where the knob and the criticality both said the lead
+// Measured on TALLY-5, where the knob and the autonomy floor both said the lead
 // should answer and the loop ended at "wait" anyway. `gate show` fetches the
 // blob for a person with a comment saying exactly this — "not something a person
 // can review". Neither is a model.

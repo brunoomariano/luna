@@ -545,7 +545,7 @@ func TestConductBuildsADryConductorWithoutTouchingTheOutside(t *testing.T) {
 		t.Error("the conductor must write to the store the command was given")
 	}
 	// The judgement half has to be carried, or a knob raised past a gate's
-	// criticality reaches a lead that is not there and the gate quietly goes to a
+	// autonomy floor reaches a lead that is not there and the gate quietly goes to a
 	// person instead — a feature off on every machine, saying nothing about it.
 	if conductor.Ask == nil {
 		t.Error("the conductor has no model to judge a gate the knob reached")

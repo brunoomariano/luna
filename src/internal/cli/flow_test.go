@@ -340,7 +340,7 @@ func (retryingJudge) OnFailure(context.Context, fsm.TaskState, string) lead.Deci
 //
 // It asserts on a flow this test controls rather than on the shipped stock: what
 // the stock happens to declare is a product decision that will change, and a test
-// that read it would fail every time somebody tuned a criticality.
+// that read it would fail every time somebody tuned an autonomy floor.
 func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 	h := newHarness(t)
 
@@ -365,13 +365,13 @@ func TestFlowCheckSaysWhichKnobReachesEachGate(t *testing.T) {
 	}
 }
 
-// TestAGateDeclaringNoCriticalityReportsTheDefault covers the rendering of an
+// TestAGateDeclaringNoAutonomyFloorReportsTheDefault covers the rendering of an
 // undeclared value, which is the one that must not read as a zero.
-func TestAGateDeclaringNoCriticalityReportsTheDefault(t *testing.T) {
+func TestAGateDeclaringNoAutonomyFloorReportsTheDefault(t *testing.T) {
 	gate := &fsm.GateSpec{Kind: fsm.GateConfirm, Reason: "approve it"}
 
 	if got := gate.Resolved(); got != fsm.DefaultAutonomyFloor {
-		t.Errorf("an undeclared criticality resolved to %d, want %d",
+		t.Errorf("an undeclared autonomy floor resolved to %d, want %d",
 			got, fsm.DefaultAutonomyFloor)
 	}
 }
@@ -443,10 +443,10 @@ func TestFlowGatesNamesTheKnobThatReachesEach(t *testing.T) {
 			t.Errorf("the gate listing does not carry %q:\n%s", want, out)
 		}
 	}
-	// An undeclared criticality is the highest, and saying so is what stops a
+	// An undeclared autonomy floor is the highest, and saying so is what stops a
 	// person reading 10 as a deliberate choice somebody made.
 	if !strings.Contains(out, "undeclared") {
-		t.Errorf("an undeclared criticality was not flagged:\n%s", out)
+		t.Errorf("an undeclared autonomy floor was not flagged:\n%s", out)
 	}
 }
 

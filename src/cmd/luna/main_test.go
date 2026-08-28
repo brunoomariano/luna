@@ -239,7 +239,7 @@ func inDir(t *testing.T, dir string, fn func()) {
 //
 // `Env` is a struct of injected functions, and a field left nil fails *safe*
 // rather than loudly: `luna lead` reported "no lead is configured" on every real
-// machine, and a knob raised past a gate's criticality quietly sent it to a
+// machine, and a knob raised past a gate's autonomy floor quietly sent it to a
 // person. Both are the correct behaviour for a missing model — which is exactly
 // why nothing noticed for two commits.
 //

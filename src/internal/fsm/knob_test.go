@@ -32,7 +32,7 @@ func TestAFailingCheckRejectsAndNothingIsJudged(t *testing.T) {
 		Judge:         []string{"the contract states what is forbidden"},
 	}
 
-	// Criticality 1 with the knob at 10: the lead would judge this gate if it ever
+	// Autonomy floor 1 with the knob at 10: the lead would judge this gate if it ever
 	// reached judgement. It must not.
 	if got := ResolveGate(gate, GateChecksOutcome{Rejected: true}, KnobAll); got != AnswerRejected {
 		t.Errorf("a failing check was not the answer, got %v", got)
@@ -82,7 +82,7 @@ func TestTheKnobDecidesWhoJudges(t *testing.T) {
 			want = AnswerLead
 		}
 		if got != want {
-			t.Errorf("knob %d against criticality 7: want %v, got %v", knob, want, got)
+			t.Errorf("knob %d against autonomy floor 7: want %v, got %v", knob, want, got)
 		}
 	}
 }
@@ -94,7 +94,7 @@ func TestKnobZeroJudgesNothingAnywhere(t *testing.T) {
 		gate := &GateSpec{Kind: GateConfirm, AutonomyFloor: level, Judge: []string{"a criterion"}}
 
 		if got := ResolveGate(gate, GateChecksOutcome{}, KnobAsk); got != AnswerPerson {
-			t.Errorf("knob 0 did not ask a person about criticality %d, got %v", level, got)
+			t.Errorf("knob 0 did not ask a person about autonomy floor %d, got %v", level, got)
 		}
 	}
 }
@@ -120,14 +120,14 @@ func TestChecksAndCriteriaCoexist(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredCriticalityIsReachedOnlyByTheHighestKnob covers the default
+// TestAnUndeclaredAutonomyFloorIsReachedOnlyByTheHighestKnob covers the default
 // where it matters — in the decision, not just in the accessor.
-func TestAnUndeclaredCriticalityIsReachedOnlyByTheHighestKnob(t *testing.T) {
+func TestAnUndeclaredAutonomyFloorIsReachedOnlyByTheHighestKnob(t *testing.T) {
 	gate := &GateSpec{Kind: GateConfirm, Judge: []string{"a criterion"}}
 
 	for knob := KnobAsk; knob < KnobAll; knob++ {
 		if got := ResolveGate(gate, GateChecksOutcome{}, knob); got != AnswerPerson {
-			t.Errorf("knob %d reached a gate that declared no criticality, got %v", knob, got)
+			t.Errorf("knob %d reached a gate that declared no autonomy floor, got %v", knob, got)
 		}
 	}
 	if got := ResolveGate(gate, GateChecksOutcome{}, KnobAll); got != AnswerLead {

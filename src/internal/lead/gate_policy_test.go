@@ -32,7 +32,7 @@ func TestAGateWaitsBecauseTheStageDeclaredSomething(t *testing.T) {
 		want fsm.GateWaited
 	}{
 		"criteria declared, so it waits": {
-			flow: flowWithCriticality(t, "plan", 5, "the plan names what it will change"),
+			flow: flowWithAutonomyFloor(t, "plan", 5, "the plan names what it will change"),
 			want: fsm.GateDecisionWaited,
 		},
 		"nothing declared, so it does not": {
@@ -70,7 +70,7 @@ func TestTheDecisionReachesTheLog(t *testing.T) {
 
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "plan", 5, "a criterion"),
+		Flow: flowWithAutonomyFloor(t, "plan", 5, "a criterion"),
 	}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -119,9 +119,9 @@ func TestAGatelessStageRecordsNoDecision(t *testing.T) {
 	}
 }
 
-// flowWithCriticality is the shipped flow with one gate declared, so a test can
+// flowWithAutonomyFloor is the shipped flow with one gate declared, so a test can
 // say which knob reaches it without depending on the stock's own values.
-func flowWithCriticality(t *testing.T, stage fsm.StageID, level int, judge ...string) []fsm.Stage {
+func flowWithAutonomyFloor(t *testing.T, stage fsm.StageID, level int, judge ...string) []fsm.Stage {
 	t.Helper()
 
 	flow := fsm.DefaultFlow()
@@ -169,16 +169,16 @@ func gatesIn(flow []fsm.Stage) int {
 // comes to: the same flow, the same policy, two knob settings, two different
 // facts in the log.
 func TestTheKnobDecidesWhetherTheLeadAnswersAWaitingGate(t *testing.T) {
-	flow := flowWithCriticality(t, "plan", 5, "the plan covers the acceptance criteria")
+	flow := flowWithAutonomyFloor(t, "plan", 5, "the plan covers the acceptance criteria")
 
 	cases := map[string]struct {
 		knob fsm.Knob
 		want fsm.GateWaited
 	}{
-		"below the gate's criticality, a person answers": {knob: 4, want: fsm.GateDecisionWaited},
-		"at it, the lead judges":                         {knob: 5, want: fsm.GateDecisionJudged},
-		"above it, the lead judges":                      {knob: 10, want: fsm.GateDecisionJudged},
-		"the default judges nothing":                     {knob: fsm.KnobAsk, want: fsm.GateDecisionWaited},
+		"below the gate's autonomy floor, a person answers": {knob: 4, want: fsm.GateDecisionWaited},
+		"at it, the lead judges":                            {knob: 5, want: fsm.GateDecisionJudged},
+		"above it, the lead judges":                         {knob: 10, want: fsm.GateDecisionJudged},
+		"the default judges nothing":                        {knob: fsm.KnobAsk, want: fsm.GateDecisionWaited},
 	}
 
 	for name, c := range cases {
@@ -252,7 +252,7 @@ func firstGateDecision(t *testing.T, s *store.Store, id string) fsm.GateWaited {
 // a defer both land in front of somebody, because the gate is still open and
 // there is no path from here to sending work back.
 func TestWhatTheLeadAnswersDecidesTheGate(t *testing.T) {
-	flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
+	flow := flowWithAutonomyFloor(t, "plan", 1, "the plan covers the acceptance criteria")
 
 	cases := map[string]struct {
 		said string
@@ -316,7 +316,7 @@ func TestWithNoModelTheKnobCannotApproveAnything(t *testing.T) {
 
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "plan", 1, "a criterion"),
+		Flow: flowWithAutonomyFloor(t, "plan", 1, "a criterion"),
 		// No Ask: this is `luna run`.
 	}
 	if _, err := l.Run(context.Background(), "LUNA-1"); err != nil {
@@ -379,7 +379,7 @@ func TestAFailingCheckDoesNotReachTheLead(t *testing.T) {
 	asked := false
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "plan", 1, "a criterion"),
+		Flow: flowWithAutonomyFloor(t, "plan", 1, "a criterion"),
 		CheckGate: func(context.Context, string, fsm.GateKind) fsm.GateChecksOutcome {
 			return fsm.GateChecksOutcome{Rejected: true}
 		},
@@ -416,7 +416,7 @@ func TestAReviewGateIsJudgedOnceAndNotTwice(t *testing.T) {
 	}
 
 	judged := 0
-	flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
+	flow := flowWithAutonomyFloor(t, "plan", 1, "the plan covers the acceptance criteria")
 	l := &Lead{
 		Store: s, Node: &deliveringNode{}, Flow: flow,
 		Ask: func(context.Context, string) (string, error) {
@@ -465,7 +465,7 @@ func TestAGateThatCouldNotBeAskedIsAskedAgain(t *testing.T) {
 				t.Fatalf("setting the knob: %v", err)
 			}
 
-			flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
+			flow := flowWithAutonomyFloor(t, "plan", 1, "the plan covers the acceptance criteria")
 			asked := 0
 			l := &Lead{
 				Store: s, Node: &deliveringNode{}, Flow: flow,
@@ -512,7 +512,7 @@ func TestARunRecoversAGateWhoseAskFailed(t *testing.T) {
 		t.Fatalf("setting the knob: %v", err)
 	}
 
-	flow := flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria")
+	flow := flowWithAutonomyFloor(t, "plan", 1, "the plan covers the acceptance criteria")
 
 	// The first ask fails the way a timeout does; every one after it answers.
 	asks := 0
@@ -549,7 +549,7 @@ func TestARunStopsAtAGateItMayNotAnswer(t *testing.T) {
 	// Knob 0: the gate is a person's, and there is no model configured anyway.
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "plan", 9, "the plan covers the acceptance criteria"),
+		Flow: flowWithAutonomyFloor(t, "plan", 9, "the plan covers the acceptance criteria"),
 	}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
@@ -579,7 +579,7 @@ func TestAnApprovalKeepsItsReason(t *testing.T) {
 	const reason = "every criterion in the task appears as an obligation"
 	l := &Lead{
 		Store: s, Node: &deliveringNode{},
-		Flow: flowWithCriticality(t, "plan", 1, "the plan covers the acceptance criteria"),
+		Flow: flowWithAutonomyFloor(t, "plan", 1, "the plan covers the acceptance criteria"),
 		Ask:  func(context.Context, string) (string, error) { return "APPROVE\n\n" + reason, nil },
 	}
 

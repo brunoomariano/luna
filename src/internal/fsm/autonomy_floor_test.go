@@ -5,21 +5,21 @@ import (
 	"testing"
 )
 
-// TestAGateDeclaringNothingIsTheMostCritical is what keeps this feature additive.
+// TestAGateDeclaringNothingUsesTheHighestAutonomyFloor is what keeps this feature additive.
 //
-// Every stage in the shipped stock declares no criticality, so the undeclared
+// Every stage in the shipped stock declares no autonomy floor, so the undeclared
 // case is the one that has to be safe: only the most autonomous knob reaches it,
 // and the default knob of 0 reaches nothing at all.
-func TestAGateDeclaringNothingIsTheMostCritical(t *testing.T) {
+func TestAGateDeclaringNothingUsesTheHighestAutonomyFloor(t *testing.T) {
 	gate := &GateSpec{Kind: GateConfirm, Reason: "approve the plan"}
 
 	if got := gate.Resolved(); got != DefaultAutonomyFloor {
-		t.Errorf("an undeclared criticality resolved to %d, want %d", got, DefaultAutonomyFloor)
+		t.Errorf("an undeclared autonomy floor resolved to %d, want %d", got, DefaultAutonomyFloor)
 	}
 
 	for knob := 0; knob < DefaultAutonomyFloor; knob++ {
 		if Knob(knob).Judges(gate.Resolved()) {
-			t.Errorf("knob %d absorbed a gate that declared no criticality", knob)
+			t.Errorf("knob %d absorbed a gate that declared no autonomy floor", knob)
 		}
 	}
 	if !Knob(DefaultAutonomyFloor).Judges(gate.Resolved()) {
@@ -38,12 +38,12 @@ func TestTheKnobAbsorbsUpToTheDeclaredLevel(t *testing.T) {
 
 	for knob := 0; knob <= 6; knob++ {
 		if Knob(knob).Judges(gate.Resolved()) {
-			t.Errorf("knob %d absorbed a gate of criticality 7", knob)
+			t.Errorf("knob %d absorbed a gate of autonomy floor 7", knob)
 		}
 	}
 	for knob := 7; knob <= 10; knob++ {
 		if !Knob(knob).Judges(gate.Resolved()) {
-			t.Errorf("knob %d did not absorb a gate of criticality 7", knob)
+			t.Errorf("knob %d did not absorb a gate of autonomy floor 7", knob)
 		}
 	}
 }
@@ -52,26 +52,26 @@ func TestTheKnobAbsorbsUpToTheDeclaredLevel(t *testing.T) {
 //
 // It has to hold for every gate at every declared level, including the lowest:
 // zero is the floor of the knob's range precisely so that "judge nothing" is
-// expressible, and a criticality of 1 absorbed by knob 0 would make it a lie.
+// expressible, and an autonomy floor of 1 absorbed by knob 0 would make it a lie.
 func TestKnobZeroJudgesNothing(t *testing.T) {
 	for level := 1; level <= DefaultAutonomyFloor; level++ {
 		gate := &GateSpec{Kind: GateConfirm, AutonomyFloor: level}
 		if Knob(0).Judges(gate.Resolved()) {
-			t.Errorf("knob 0 absorbed a gate of criticality %d", level)
+			t.Errorf("knob 0 absorbed a gate of autonomy floor %d", level)
 		}
 	}
 }
 
-// TestCriticalityIsParsedAndBounded covers the declaration in the stage file.
-func TestCriticalityIsParsedAndBounded(t *testing.T) {
+// TestAutonomyFloorIsParsedAndBounded covers the declaration in the stage file.
+func TestAutonomyFloorIsParsedAndBounded(t *testing.T) {
 	accepted := map[string]int{"1": 1, "7": 7, "10": 10}
 	for value, want := range accepted {
 		stage, err := ParseStage(stageWithGate("autonomy_floor = "+value), "stage.toml")
 		if err != nil {
-			t.Fatalf("criticality %s was refused: %v", value, err)
+			t.Fatalf("autonomy floor %s was refused: %v", value, err)
 		}
 		if got := stage.Gate.AutonomyFloor; got != want {
-			t.Errorf("criticality %s parsed as %d", value, got)
+			t.Errorf("autonomy floor %s parsed as %d", value, got)
 		}
 	}
 
@@ -81,7 +81,7 @@ func TestCriticalityIsParsedAndBounded(t *testing.T) {
 	refused := []string{"0", "11", "-1", "high", "7.5", ""}
 	for _, value := range refused {
 		if _, err := ParseStage(stageWithGate("autonomy_floor = "+value), "stage.toml"); err == nil {
-			t.Errorf("criticality %q was accepted", value)
+			t.Errorf("autonomy floor %q was accepted", value)
 		}
 	}
 }
