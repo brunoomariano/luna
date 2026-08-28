@@ -214,6 +214,12 @@ func openOwned(path string, owner Owner) (*Store, error) {
 	// Cross-process contention is what busy_timeout above is for.
 	db.SetMaxOpenConns(1)
 
+	// Before the schema, not after: a table left in an older shape satisfies
+	// `IF NOT EXISTS` and would never be corrected.
+	if err := migrate(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("opening %s: %w", path, err)
+	}
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("creating the schema in %s: %w", path, err)

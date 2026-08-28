@@ -257,9 +257,14 @@ func TestADurationIsRoundedForReading(t *testing.T) {
 	}
 }
 
-// TestAStoreReopensWithoutLosingItsColumns is the upgrade path. `CREATE TABLE IF
-// NOT EXISTS` does nothing once the table is there, so a column added later
-// arrives through the migration or not at all.
+// TestAStoreReopensWithoutLosingItsColumns covers the ordinary reopen: every run
+// after the first.
+//
+// It does *not* cover the upgrade path, and its comment used to say it did —
+// there was no migration to arrive through, and this builds its fixture with the
+// current code, so it could only ever show that the current code agrees with
+// itself. The upgrade path is in migrate_test.go, against a database this build
+// did not write.
 func TestAStoreReopensWithoutLosingItsColumns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "luna.db")
 
@@ -277,8 +282,8 @@ func TestAStoreReopensWithoutLosingItsColumns(t *testing.T) {
 		t.Fatalf("closing: %v", err)
 	}
 
-	// Reopening runs the migration a second time. It has to be a no-op rather
-	// than an error: this is every run after the first.
+	// Reopening has to be a no-op rather than an error: this is every run after
+	// the first, and the migration runs on each of them.
 	second, err := OpenAs(path, LunaOwnsTheLog)
 	if err != nil {
 		t.Fatalf("reopening a store that is already current: %v", err)
