@@ -133,6 +133,7 @@ func Run(env Env, args []string) error {
 		"trust":    trustCommand,
 		"version":  versionCommand,
 		"where":    whereCommand,
+		"daemon":   daemonCommand,
 	}
 
 	command, ok := commands[args[0]]

@@ -67,6 +67,22 @@ type Waiting struct {
 	Profile fsm.Profile
 }
 
+// Appender is where an append goes when this store does not own the log.
+//
+// It exists so the ownership rule can be a process boundary rather than a
+// constant. A store opened read-only is still *asked* to append — every command
+// in the CLI does — and instead of refusing, it forwards to whoever owns the
+// file. The daemon's client is what satisfies this.
+//
+// Deliberately not the daemon's own type: the store would then import the daemon,
+// which imports the store. One narrow method, defined where it is used.
+type Appender interface {
+	// AppendEvent records one already-encoded action. A negative `after` is
+	// unconditional; anything else makes the append conditional on the log still
+	// ending there.
+	AppendEvent(taskID string, after int, action, payload string) error
+}
+
 // Store is the append-only log, in one SQLite file in the main repository.
 //
 // The log is all of it. A content-addressed store once sat beside it so a
@@ -83,6 +99,13 @@ type Store struct {
 	// a clock at all.
 	Now func() time.Time
 
+	// Via is who owns the log, when this store does not. An append is forwarded
+	// there instead of written, which is how one process can hold the file open
+	// for writing while every command still calls `Append`.
+	//
+	// Nil is the owner's own store, and the read-only one that refuses.
+	Via Appender
+
 	// As is who this store writes on behalf of. It has to be LunaOwnsTheLog, and
 	// the field exists precisely so that it cannot default to it — a zero value
 	// meaning "Luna" would make the ownership rule true by accident, and a rule
@@ -93,11 +116,14 @@ type Store struct {
 }
 
 // mayWrite reports whether this store is allowed to append.
+// Two ways to be allowed, and they are not the same thing: owning the file, or
+// knowing who does. The second is what lets every command keep calling `Append`
+// while exactly one process holds the database open for writing.
 func (s *Store) mayWrite() error {
-	if s.As != LunaOwnsTheLog {
-		return ErrNotTheOwner
+	if s.As == LunaOwnsTheLog || s.Via != nil {
+		return nil
 	}
-	return nil
+	return ErrNotTheOwner
 }
 
 // now is the store's clock, defaulting to the real one.
@@ -256,6 +282,17 @@ func (s *Store) Append(taskID string, e Event) error {
 	return s.appendTx(taskID, e, unconditional)
 }
 
+// AppendAt records an event only if the log is still where the caller last read
+// it, which is AppendActionAt for something already encoded.
+//
+// It exists for the daemon, which is handed an action that a client encoded: the
+// client is the one holding a state it decided from, so it is the one that knows
+// the sequence to append after. Re-deriving it here would be the daemon deciding
+// on the client's behalf about a window it cannot see.
+func (s *Store) AppendAt(taskID string, after int, e Event) error {
+	return s.appendTx(taskID, e, after)
+}
+
 // AppendAction records a reducer action, which is the form the log actually takes
 // during a run.
 func (s *Store) AppendAction(taskID string, action fsm.Action) error {
@@ -297,6 +334,13 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 	// fifth one added later inherits the rule instead of having to remember it.
 	if err := s.mayWrite(); err != nil {
 		return err
+	}
+
+	// Forwarded rather than written, when this store does not own the file. The
+	// caller's `after` travels with it: the window between reading a state and
+	// appending from it belongs to the caller, and the owner cannot see it.
+	if s.Via != nil {
+		return s.Via.AppendEvent(taskID, after, e.Action, e.Payload)
 	}
 
 	// BEGIN IMMEDIATE rather than a plain Begin, which is the difference between

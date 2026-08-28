@@ -10,7 +10,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
+
+	"github.com/brunoomariano/luna/src/internal/store"
 
 	"github.com/brunoomariano/luna/src/internal/cli"
 )
@@ -420,4 +424,104 @@ func TestACheckoutWithTwoLogsRefusesRatherThanPicking(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestACommandGetsAStoreItDoesNotOwn is phase two's central claim.
+//
+// The ownership rule was a constant checked inside one process. It is a process
+// boundary now: a command opens the log read-only and forwards its appends to the
+// daemon, so exactly one process holds the file open for writing. A command that
+// owned the file would be the old arrangement wearing the new name.
+func TestACommandGetsAStoreItDoesNotOwn(t *testing.T) {
+	t.Setenv("LUNA_STORE", filepath.Join(t.TempDir(), "luna.db"))
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	s, _, _, err := openStore(context.Background())
+	if err != nil {
+		t.Fatalf("openStore: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if s.As == store.LunaOwnsTheLog {
+		t.Error("a command opened the log as its owner")
+	}
+	if s.Via == nil {
+		t.Fatal("a command that does not own the log has nowhere to send an append")
+	}
+}
+
+// TestTheDaemonDoesNotForwardToItself. It is the owner, so going through the
+// ordinary prologue would hand it a read-only store pointing at a daemon — which
+// is the process asking itself to do the thing it was asked to do.
+func TestTheDaemonDoesNotForwardToItself(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "luna-dm-")
+	if err != nil {
+		t.Fatalf("making a directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	// A socket path of its own, so this does not meet a daemon somebody else left
+	// running.
+	socket := filepath.Join(dir, "daemon.sock")
+
+	done := make(chan error, 1)
+	go func() { done <- run([]string{"daemon", "--socket", socket}) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(socket); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := os.Stat(socket); err != nil {
+		t.Fatalf("the daemon never bound its socket: %v", err)
+	}
+
+	if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("signalling: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the daemon did not stop cleanly: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the daemon did not stop when told")
+	}
+}
+
+// TestTheEnvironmentWiresWhatTheCommandsNeed. Every field here is something a
+// command calls and none of them is checked anywhere else: a nil `Where` is a
+// command that cannot infer a task, a nil `Lead` is a gate nothing can judge, and
+// both fail at the point of use rather than at startup.
+func TestTheEnvironmentWiresWhatTheCommandsNeed(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	s, err := store.Open(filepath.Join(t.TempDir(), "luna.db"))
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	env := environment(s, cli.Config{}, t.TempDir())
+
+	if env.Store == nil {
+		t.Error("the environment carries no store")
+	}
+	if env.Where == nil {
+		t.Error("no resolver: a command could not infer the task from the directory")
+	}
+	if env.Lead == nil {
+		t.Error("no lead: a gate the knob reaches could not be judged")
+	}
+	if env.Node == nil {
+		t.Error("no node: nothing could run a stage")
+	}
+
+	// And the resolver answers about somewhere real rather than panicking on a
+	// directory it cannot read.
+	if _, err := env.Where(); err != nil {
+		t.Errorf("the resolver does not work where it was built: %v", err)
+	}
 }

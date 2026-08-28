@@ -14,6 +14,7 @@ import (
 
 	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/cli"
+	"github.com/brunoomariano/luna/src/internal/daemon"
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
@@ -106,9 +107,19 @@ func openStore(ctx context.Context) (s *store.Store, cfg cli.Config, path string
 		return nil, cli.Config{}, "", err
 	}
 
-	s, err = store.OpenAs(path, store.LunaOwnsTheLog)
+	// Read-only, with appends forwarded to the daemon that owns the file. The
+	// ownership rule was a constant checked inside one process; it is a process
+	// boundary now, which is what makes it hold against a `luna` running somewhere
+	// it should not be — inside a sandbox, where the log it would open for itself
+	// is a tmpfs that evaporates.
+	s, err = store.Open(path)
 	if err != nil {
 		return nil, cli.Config{}, "", err
+	}
+	s.Via = daemon.Client{
+		Path:  cli.DaemonSocket(),
+		Store: path,
+		Start: func() error { return daemon.Spawn(cli.DaemonSocket()) },
 	}
 	return s, cfg, path, nil
 }
@@ -118,6 +129,11 @@ func run(args []string) error {
 
 	if insideAStage(args) {
 		return runInsideAStage(args)
+	}
+	// The daemon opens the store itself, as its owner. Going through openStore
+	// would hand it a read-only store forwarding to a daemon — itself.
+	if len(args) > 0 && args[0] == "daemon" {
+		return cli.Run(cli.Env{Out: os.Stdout, Err: os.Stderr, In: os.Stdin}, args)
 	}
 
 	s, cfg, _, err := openStore(ctx)

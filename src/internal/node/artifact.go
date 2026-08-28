@@ -30,7 +30,18 @@ import (
 // come from Luna's flags: a repository must not be able to name what gets mounted.
 const SocketDirName = "luna"
 
-// SocketDir is where a stage's socket is opened, under $XDG_RUNTIME_DIR.
+// HandoverDirName is the subdirectory the stage sockets live in, and it is
+// separate from everything else under SocketDir for one reason: this is the
+// directory the sandbox is asked to expose.
+//
+// A contained agent can reach whatever is in here. That is right for a handover
+// socket, whose whole protocol is "give this artifact to Luna", and wrong for
+// anything that writes the log — an agent that appends to the log does not
+// corrupt a file, it fabricates history. So the daemon's own socket lives beside
+// this directory rather than in it, and is never mapped.
+const HandoverDirName = "handover"
+
+// SocketDir is where Luna's sockets are opened, under $XDG_RUNTIME_DIR.
 //
 // The runtime directory rather than the data home: these are sockets, they last
 // exactly as long as the stage, and the runtime directory is the one the system
@@ -48,13 +59,18 @@ func SocketDir() string {
 	return filepath.Join(os.TempDir(), SocketDirName)
 }
 
+// HandoverDir is the one directory a contained agent is given.
+func HandoverDir() string {
+	return filepath.Join(SocketDir(), HandoverDirName)
+}
+
 // SocketFor names the socket one stage of one task listens on.
 //
 // Both halves are in the name: two stages of one task run in sequence and a
 // resumed stage binds the same path, so a name carrying only the task would put
 // two different stages on one socket.
 func SocketFor(taskID, stage string) string {
-	return filepath.Join(SocketDir(), taskID+"-"+stage+".sock")
+	return filepath.Join(HandoverDir(), taskID+"-"+stage+".sock")
 }
 
 // ArtifactStore is what the server needs from the store. It is an interface so

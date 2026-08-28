@@ -94,6 +94,38 @@ Two consequences worth stating, because both were surprises:
 `luna flow check` audits every flow, not one: a build that reports "the contract
 holds" about a third of what it runs is saying something true and useless.
 
+## The daemon
+
+One process writes the log. Everything else opens it read-only and forwards its appends
+there, over a socket the daemon owns.
+
+```
+$XDG_RUNTIME_DIR/luna/
+  daemon.sock        the writer — never exposed to a sandbox
+  handover/          the stage sockets — exposed read-only, one per stage
+```
+
+**Why a process and not a constant.** The rule was `LunaOwnsTheLog`, checked at the store's
+single append — enforcement against code that respects it. The log then moved out of the
+checkout, so it lives under `$HOME`, and ai-jail gives a contained process a tmpfs `$HOME`.
+A `luna` run inside a jail would create a fresh log there, answer every read from it, and
+keep none of it: the measured failure where a command reported success and the task never
+existed. With a daemon, that `luna` cannot reach the writer at all, and failing to connect
+is loud where writing to a tmpfs is silent.
+
+**The two directories are separate on purpose.** `handover/` is the one thing a sandbox is
+given, because a stage has to hand artifacts over. The daemon's socket sits beside it and
+is never mapped: an agent that could reach it could append to the log, and an agent that
+appends to the log does not corrupt a file — it fabricates history.
+
+**It starts itself.** A command that finds nobody listening spawns `luna daemon` and tries
+once more. A second failure is reported rather than retried. Nothing about this is visible
+to the person running a command, which is the point — the writer became a second process
+and `luna` stayed one command.
+
+`store.Open` returns a store that refuses to append; setting `Via` on it makes the refusal
+into a forward. That is why every command still calls `Append` and none of them changed.
+
 ## Where the log lives
 
 One log per **project**, outside every checkout of it:
