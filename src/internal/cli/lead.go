@@ -27,22 +27,13 @@ func leadCommand(env Env, args []string) error {
 	}
 	id := args[0]
 
-	flags, err := parseFlags(args[1:])
+	opts, err := parseLeadOptions(args[1:])
 	if err != nil {
 		return err
 	}
 
-	if err := onlyLeadFlags(flags); err != nil {
-		return err
-	}
-
-	repo := flags["repo"]
-	if repo == "" {
-		repo = "."
-	}
-
-	if _, dry := flags["dry-run"]; dry {
-		return dryRun(env, id, repo, flags["agent"])
+	if opts.Dry {
+		return dryRun(env, id, opts)
 	}
 
 	// Solo: one agent carries the task end to end. Luna advances and starts that
@@ -52,7 +43,7 @@ func leadCommand(env Env, args []string) error {
 	//
 	// The pack is the other mode and it is `luna fleet run`: there the lead
 	// conducts from outside and the flow's declared roles do the work.
-	return soloRun(env, id, repo, flags["agent"])
+	return soloRun(env, id, opts)
 }
 
 // landingFor is how a finished task's branch gets pointed, with the injected one
@@ -235,16 +226,39 @@ func reportDryEnding(env Env, id string, state fsm.TaskState) {
 	}
 }
 
-// onlyLeadFlags refuses a flag this command does not have, rather than ignoring
-// it. A typo that runs is worse than one that stops: the run behaves as though
-// nobody had asked for anything.
-func onlyLeadFlags(flags map[string]string) error {
-	for name := range flags {
-		switch name {
-		case "autonomy", "dry-run", "agent", "repo":
-		default:
-			return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
+// parseLeadOptions reads flags for solo runs.
+func parseLeadOptions(args []string) (runOptions, error) {
+	opts := runOptions{Repo: "."}
+
+	flags, err := parseFlags(args)
+	if err != nil {
+		return opts, err
+	}
+	for name, value := range flags {
+		if err := leadFlag(&opts, name, value); err != nil {
+			return opts, err
 		}
+	}
+	return opts, nil
+}
+
+func leadFlag(opts *runOptions, name, value string) error {
+	switch name {
+	case "agent":
+		opts.Agent = value
+	case "repo":
+		opts.Repo = value
+	case "dry-run":
+		opts.Dry = true
+	case "autonomy":
+		knob, err := fsm.ParseKnob(value)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrUsage, err)
+		}
+		opts.Knob = knob
+		opts.KnobSet = true
+	default:
+		return fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
 	}
 	return nil
 }
@@ -254,10 +268,9 @@ func onlyLeadFlags(flags map[string]string) error {
 // It is the one shape a lead cannot conduct — there is nobody to conduct with —
 // so it takes the node-driven loop, exactly as the fleet's dry run does. That
 // keeps it a flag on a mode rather than a third mode: the same task, run free.
-func dryRun(env Env, id, repo, agent string) error {
-	state, err := driveTask(context.Background(), env, id, runOptions{
-		Agent: agent, Repo: repo, Dry: true,
-	})
+func dryRun(env Env, id string, opts runOptions) error {
+	opts.Dry = true
+	state, err := driveTask(context.Background(), env, id, opts)
 	if err != nil {
 		return err
 	}
@@ -297,7 +310,7 @@ func orderFor(env Env, id string) (fsm.TaskState, fsm.Order, error) {
 // It is deliberately not the pack's loop with a smaller number. A conductor
 // dispatching to one worker is two agents to buy what one can do, and the
 // conductor is billed every turn.
-func soloRun(env Env, id, repo, agent string) error {
+func soloRun(env Env, id string, opts runOptions) error {
 	state, err := env.replay(id)
 	if err != nil {
 		return err
@@ -311,8 +324,7 @@ func soloRun(env Env, id, repo, agent string) error {
 		return err
 	}
 
-	conductor, cleanup, err := conduct(env, runOptions{Agent: agent, Repo: repo},
-		state.Profile, fsm.Solo(flow))
+	conductor, cleanup, err := conduct(env, opts, state.Profile, fsm.Solo(flow))
 	if err != nil {
 		return err
 	}
@@ -361,7 +373,7 @@ func reportSoloEnding(env Env, id string, state fsm.TaskState) {
 // writes code is a role agent, contained, one per stage — and each role keeps a
 // worktree and a session across the stages it owns, which is what the pack buys
 // and a solo run cannot have.
-func packRun(env Env, id, repo string, knob fsm.Knob) (fsm.TaskState, error) {
+func packRun(env Env, id, repo string, knob fsm.Knob, knobSet bool) (fsm.TaskState, error) {
 	if env.Lead == nil {
 		return fsm.TaskState{}, errors.New("no lead is configured: Luna hosts no " +
 			"model of its own, so a pack needs one to conduct it. `luna lead` runs " +
@@ -380,7 +392,7 @@ func packRun(env Env, id, repo string, knob fsm.Knob) (fsm.TaskState, error) {
 
 	// The task's own knob unless the caller named one. A flag over a whole pack
 	// must not quietly overrule what `luna autonomy` recorded on the task.
-	if knob == fsm.KnobAsk {
+	if !knobSet {
 		knob = state.Knob
 	}
 
@@ -389,5 +401,10 @@ func packRun(env Env, id, repo string, knob fsm.Knob) (fsm.TaskState, error) {
 	// `turn_budget` describes. `Ask`'s ceiling is for a model answering a question.
 	conductor := &lead.Agent{Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn()}
 
-	return conductTask(env, id, conductor, leadFor(env, repo, flow))
+	entering := leadFor(env, repo, flow)
+	if knobSet {
+		entering.Knob = knob
+		entering.KnobSet = true
+	}
+	return conductTask(env, id, conductor, entering)
 }

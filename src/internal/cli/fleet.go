@@ -32,8 +32,9 @@ func runFleet(env Env, args []string) error {
 
 // fleetOptions is what a pack run was asked for.
 type fleetOptions struct {
-	run  runOptions
-	knob fsm.Knob
+	run     runOptions
+	knob    fsm.Knob
+	knobSet bool
 }
 
 // parseFleetOptions reads the flags a fleet run takes, refusing what it does not
@@ -67,6 +68,7 @@ func fleetFlag(opts *fleetOptions, name, value string) error {
 			return fmt.Errorf("%w: %w", ErrUsage, err)
 		}
 		opts.knob = knob
+		opts.knobSet = true
 	case "repo":
 		opts.run.Repo = value
 	case "agent":
@@ -243,10 +245,13 @@ func fleetRun(env Env, args []string) error {
 	// takes the node-driven loop like `luna lead --dry-run` does. It exercises the
 	// flow, which is what it is for.
 	if opts.run.Dry {
-		return dryRun(env, id, repo, opts.run.Agent)
+		opts.run.Repo = repo
+		opts.run.Knob = opts.knob
+		opts.run.KnobSet = opts.knobSet
+		return dryRun(env, id, opts.run)
 	}
 
-	state, err := packRun(env, id, repo, opts.knob)
+	state, err := packRun(env, id, repo, opts.knob, opts.knobSet)
 	if err != nil {
 		return err
 	}

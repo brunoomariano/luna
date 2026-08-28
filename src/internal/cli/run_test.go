@@ -107,8 +107,8 @@ func TestRunRejectsAnUnknownFlag(t *testing.T) {
 // tells a broken flow apart from a broken integration, which is why --dry-run exists.
 //
 // The knob is what makes it unattended now rather than a profile: gates wait
-// because the shipped stages declare criteria, and 10 is what lets
-// the lead answer them instead of a person.
+// because the shipped stages declare criteria, and 10 is what lets the dry
+// judge answer them instead of a person.
 func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
@@ -127,11 +127,45 @@ func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 		t.Errorf("want task show to report it done, got %q", shown)
 	}
 
-	// And it got there by the lead answering, not by nobody being asked: a run
-	// that finished without consulting anything would mean the gates stopped
-	// waiting, which is the regression this whole change could cause.
-	if h.judged == 0 {
-		t.Error("the task finished without the lead answering a single gate")
+	// And it got there without the harness: dry-run is a simulation of the flow,
+	// not a model call hidden behind a free-looking flag.
+	if h.judged != 0 {
+		t.Errorf("dry run asked the configured lead %d time(s)", h.judged)
+	}
+}
+
+func TestADryRunTakesTheAutonomyFlagForThisInvocation(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
+
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run", "--autonomy", "10")
+
+	if !strings.Contains(out, "LUNA-1 finished") {
+		t.Errorf("want the invocation knob to drive the task to done, got %q", out)
+	}
+	if h.judged != 0 {
+		t.Errorf("dry run asked the configured lead %d time(s)", h.judged)
+	}
+	if out := h.mustRun(t, "task", "show", "LUNA-1"); !strings.Contains(out, "autonomy 0") {
+		t.Errorf("the invocation knob should not be recorded on the task:\n%s", out)
+	}
+}
+
+func TestADryRunAutonomyFlagCanLowerTheRecordedKnob(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
+
+	out := h.mustRun(t, "lead", "LUNA-1", "--dry-run", "--autonomy", "0")
+
+	if !strings.Contains(out, "waiting at setup") {
+		t.Errorf("want the invocation knob to stop at the first gate, got %q", out)
+	}
+	if h.judged != 0 {
+		t.Errorf("the lead judged %d gate(s) under --autonomy 0", h.judged)
+	}
+	if out := h.mustRun(t, "task", "show", "LUNA-1"); !strings.Contains(out, "autonomy 10") {
+		t.Errorf("the invocation knob should not lower the recorded task knob:\n%s", out)
 	}
 }
 

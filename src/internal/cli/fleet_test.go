@@ -103,6 +103,19 @@ func TestTheFleetTakesTheAgentOverride(t *testing.T) {
 	if opts.knob != 7 {
 		t.Errorf("the knob did not land: %+v", opts)
 	}
+	if !opts.knobSet {
+		t.Errorf("the invocation knob was not marked as present: %+v", opts)
+	}
+}
+
+func TestTheFleetCanLowerAutonomyForOneInvocation(t *testing.T) {
+	opts, err := parseFleetOptions([]string{"--autonomy", "0"})
+	if err != nil {
+		t.Fatalf("parsing: %v", err)
+	}
+	if opts.knob != fsm.KnobAsk || !opts.knobSet {
+		t.Errorf("want an explicit knob 0, got %+v", opts)
+	}
 }
 
 // TestAPackRunRefusesTheFlagsTheCrossTaskFleetHad keeps a removed capability from

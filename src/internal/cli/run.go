@@ -169,6 +169,11 @@ type runOptions struct {
 	// exercised end to end. It is what tells a broken flow apart from a broken
 	// integration.
 	Dry bool
+
+	// Knob is an invocation-only autonomy override. KnobSet distinguishes an
+	// explicit 0 from an absent flag.
+	Knob    fsm.Knob
+	KnobSet bool
 }
 
 // parseRunOptions reads the flags the commands that start an agent accept.
@@ -205,19 +210,22 @@ func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*
 	// make the log disagree with what ran.
 	flow = forceAgent(flow, opts.Agent)
 
+	ask := env.Lead
+	if opts.Dry {
+		ask = dryGateAsk
+	}
+
 	// The judge is what makes the retry budget real: without one the lead blocks on
 	// the first failure and the retry budget is never spent. This one
 	// carries no model — it reads the budget the task already has.
 	conductor := &lead.Lead{
 		Store: env.Store, Judge: lead.BudgetJudge{}, Flow: flow,
+		Knob: opts.Knob, KnobSet: opts.KnobSet,
 		// The mechanical half of a gate: what the task declared, run over what it
 		// delivered.
 		CheckGate: checkGateWith(env.Store, opts.Repo),
-		// The judgement half, when the knob reaches a gate and a model is wired
-		// in. Nil is the ordinary case for a dry run — and then a gate the knob
-		// reached still goes to a person, because authority to judge is not a
-		// judgement.
-		Ask: env.Lead,
+		// The judgement half, when the knob reaches a gate.
+		Ask: ask,
 		// The artifact itself rather than the evidence line naming it: a gate that
 		// asks the lead to judge a contract has to hand it the contract.
 		Artifact: func(taskID, artifact string) (string, bool) {
@@ -249,6 +257,10 @@ func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*
 	}
 	conductor.Node = stage
 	return conductor, cleanup, nil
+}
+
+func dryGateAsk(context.Context, string) (string, error) {
+	return "APPROVE\n\ndry run: simulated approval to exercise the flow without a model", nil
 }
 
 // StageRunner is the real thing that runs a stage: a contained agent in its own

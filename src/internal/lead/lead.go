@@ -120,6 +120,14 @@ type Lead struct {
 	// Flow defaults to the shipped one when empty.
 	Flow []fsm.Stage
 
+	// Knob overrides the task's recorded knob for this invocation only.
+	//
+	// KnobSet distinguishes an explicit `--autonomy 0` from an absent override:
+	// both read as KnobAsk, but only one should lower a task that already records
+	// a more autonomous setting.
+	Knob    fsm.Knob
+	KnobSet bool
+
 	// CheckGate runs the commands a person declared as the answer to one gate,
 	// over what the task delivered, and reports what they concluded.
 	//
@@ -173,6 +181,13 @@ func (l *Lead) warn(format string, args ...any) {
 	if l.Warn != nil {
 		l.Warn(format, args...)
 	}
+}
+
+func (l *Lead) gateKnob(state fsm.TaskState) fsm.Knob {
+	if l.KnobSet {
+		return l.Knob
+	}
+	return state.Knob
 }
 
 // Run drives a task until it needs a person or reaches the end.
@@ -715,7 +730,7 @@ func (l *Lead) answerDeclaredGate(
 	ctx context.Context, state fsm.TaskState,
 	spec *fsm.GateSpec, gate *fsm.PendingGate, checks fsm.GateChecksOutcome,
 ) fsm.GateAccount {
-	switch fsm.ResolveGate(spec, checks, state.Knob) {
+	switch fsm.ResolveGate(spec, checks, l.gateKnob(state)) {
 	case fsm.AnswerChecks:
 		return fsm.GateAccount{Decision: fsm.GateDecisionChecked}
 	case fsm.AnswerLead:
