@@ -97,6 +97,19 @@ type Call struct {
 	// and no import of the node layer from underneath it.
 	Reachable string
 
+	// Uncontained starts the harness without the sandbox.
+	//
+	// It exists for exactly one stage, and INV-4 names it: `setup` reads `.ai-jail`
+	// to report what the containment will be, so containing it means running it
+	// under the configuration it exists to inspect — and when that file is wrong or
+	// absent it runs under the wrong jail to say the jail is wrong.
+	//
+	// The exception is bounded by what the stage may do rather than by trust: it
+	// reports and never repairs, so it writes nothing, and an agent that writes
+	// nothing has nothing to contain. A static check refuses any other stage
+	// declaring it.
+	Uncontained bool
+
 	// Prompt is the brief. Luna writes it; the agent never writes one for the
 	// next stage.
 	Prompt string
@@ -237,11 +250,13 @@ func (h Harness) resolve(call Call) (harness, string, error) {
 	if call.Context == Live && call.Session == "" {
 		return harness{}, "", fmt.Errorf("a live call to %s names no session to continue", call.Kind)
 	}
-	if h.Sandbox == "" {
-		return harness{}, "", errors.New("no sandbox configured: Luna does not start an agent outside one")
-	}
-	if _, err := exec.LookPath(h.Sandbox); err != nil {
-		return harness{}, "", fmt.Errorf("%w: the sandbox %q: %w", ErrNoHarness, h.Sandbox, err)
+	if !call.Uncontained {
+		if h.Sandbox == "" {
+			return harness{}, "", errors.New("no sandbox configured: Luna does not start an agent outside one")
+		}
+		if _, err := exec.LookPath(h.Sandbox); err != nil {
+			return harness{}, "", fmt.Errorf("%w: the sandbox %q: %w", ErrNoHarness, h.Sandbox, err)
+		}
 	}
 
 	binary := h.Binary
@@ -316,7 +331,7 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 		// environment on the way in.
 		args = append(memoryArgs(call, createWorkstream), args[1:]...)
 	}
-	args = append(sandboxArgs(call.Reachable), args...)
+	runner, args := h.wrap(call, args)
 	started := time.Now()
 
 	// #nosec G204 — running a named binary with built arguments is what this
@@ -324,7 +339,7 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 	// closed table and the sandbox from configuration, both refused above when
 	// unknown. What the agent then does is bounded by the sandbox, not by this
 	// argument list.
-	cmd := exec.CommandContext(ctx, h.Sandbox, args...)
+	cmd := exec.CommandContext(ctx, runner, args...)
 	cmd.Dir = call.Dir
 	cmd.Env = append(environ(), call.Env...)
 	cmd.Stdin = strings.NewReader(call.Prompt)
@@ -374,6 +389,20 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 		return result, fmt.Errorf("%s failed: %w: %s", call.Kind, runErr, tail(stderr.String()))
 	}
 	return result, nil
+}
+
+// wrap puts the sandbox in front of the command, or does not.
+//
+// The exception is INV-4's, and it is one stage: `setup` reads `.ai-jail` to
+// report what the containment will be, so containing it means running it under
+// the configuration it exists to inspect. Everything else about the call is the
+// same either way — the workstream wrapper, the harness, the arguments — and what
+// changes is only whether the jail is in front of them.
+func (h Harness) wrap(call Call, args []string) (string, []string) {
+	if call.Uncontained {
+		return args[0], args[1:]
+	}
+	return h.Sandbox, append(sandboxArgs(call.Reachable), args...)
 }
 
 // sandboxArgs is how the sandbox is asked to contain an agent that still has to

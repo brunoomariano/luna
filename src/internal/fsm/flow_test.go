@@ -39,15 +39,16 @@ func TestDefaultFlowMatchesDocumentedStages(t *testing.T) {
 	// this table is about what the flow *declares* and not about what every mode
 	// resolves.
 	//
-	// There are two mechanical stages: `setup`, because a worktree is git, and
-	// `pipeline`, because `ci_green` is a command's verdict and nothing about it is
-	// a judgement. A third would be a change to the contract. `commit` was one
-	// until integration left Luna's scope.
+	// One mechanical stage is left. `setup` was the other and stopped being one
+	// when it took on discovering what the project runs under: creating a worktree
+	// is not judgement, but concluding which command bootstraps a repository is.
+	// `pipeline` merged into `forge`. `commit` went when integration left Luna's
+	// scope.
 	want := []struct {
 		ID         StageID
 		Mechanical bool
 	}{
-		{"setup", true},
+		{"setup", false},
 		{"intake", false},
 		{"diagnose", false},
 		{"plan", false},

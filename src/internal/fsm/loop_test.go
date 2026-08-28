@@ -236,3 +236,86 @@ func TestAnUnknownOutcomeIsRefused(t *testing.T) {
 		t.Errorf("the refusal must name what was written, got %v", err)
 	}
 }
+
+// TestALoopIsReadFromItsOwnBlock covers the four keys a converging stage
+// declares, and the shapes each refuses.
+func TestALoopIsReadFromItsOwnBlock(t *testing.T) {
+	stage, err := ParseStage(`
+id       = "forge"
+agent    = "claude"
+brief    = "You build and judge."
+produces = ["code", "ci_green"]
+
+[loop]
+converges_on = ["ci_green"]
+invalidates  = ["ci_green", "tests_green"]
+max_rounds   = 6
+no_progress  = 3
+oscillation  = 2
+
+[verify.code]
+kind = "existence"
+
+[verify.ci_green]
+run   = "make ci"
+scope = "full"
+`, "forge.toml")
+	if err != nil {
+		t.Fatalf("ParseStage: %v", err)
+	}
+
+	if stage.Loop == nil {
+		t.Fatal("a stage declaring a loop did not get one")
+	}
+	if len(stage.Loop.ConvergesOn) != 1 || stage.Loop.ConvergesOn[0] != "ci_green" {
+		t.Errorf("converges_on = %v", stage.Loop.ConvergesOn)
+	}
+	if len(stage.Loop.Invalidates) != 2 {
+		t.Errorf("invalidates = %v", stage.Loop.Invalidates)
+	}
+	want := LoopLimits{MaxRounds: 6, NoProgress: 3, Oscillation: 2}
+	if stage.Loop.Limits != want {
+		t.Errorf("limits = %+v, want %+v", stage.Loop.Limits, want)
+	}
+}
+
+// TestALoopThatConvergesOnNothingIsNotALoop. A block declaring only ceilings is
+// one whose exit nothing proves, and reading it as a loop would let the model's
+// verdict close it unchecked.
+func TestALoopThatConvergesOnNothingIsNotALoop(t *testing.T) {
+	stage, err := ParseStage("id = \"forge\"\n\n[loop]\nmax_rounds = 4\n", "forge.toml")
+	if err != nil {
+		t.Fatalf("ParseStage: %v", err)
+	}
+	if stage.Loop != nil {
+		t.Error("a block with no convergence was read as a loop")
+	}
+}
+
+// TestALoopCeilingRefusesWhatCannotBoundAnything.
+//
+// Zero is either a loop that stops before its first round or one that never
+// stops, depending on which comparison reads it, and neither is what somebody
+// typing it meant.
+func TestALoopCeilingRefusesWhatCannotBoundAnything(t *testing.T) {
+	for _, written := range []string{"0", "-1", "many"} {
+		_, err := ParseStage("id = \"forge\"\n\n[loop]\nconverges_on = [\"ci_green\"]\n"+
+			"max_rounds = "+written+"\n", "forge.toml")
+		if err == nil {
+			t.Errorf("`max_rounds = %s` was accepted", written)
+		}
+	}
+}
+
+// TestAnUnknownLoopKeyIsRefused, for the reason every other unknown key is: a
+// misspelled ceiling would leave the loop on its default and nothing would say so.
+func TestAnUnknownLoopKeyIsRefused(t *testing.T) {
+	_, err := ParseStage("id = \"forge\"\n\n[loop]\nmax_round = 4\n", "forge.toml")
+
+	if err == nil {
+		t.Fatal("a misspelled loop key was accepted")
+	}
+	if !strings.Contains(err.Error(), "max_round") {
+		t.Errorf("the refusal does not name what was written: %v", err)
+	}
+}

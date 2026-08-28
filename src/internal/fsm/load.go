@@ -281,7 +281,7 @@ func assignStageField(stage *Stage, key, value, at string) error {
 	switch key {
 	case "id":
 		stage.ID = StageID(unquote(value))
-	case "agent", "brief", "skills", "tools_deny":
+	case "agent", "brief", "skills", "tools_deny", "uncontained":
 		return assignStageAgent(stage, key, value, at)
 	case "when":
 		condition, err := ParseCondition(unquote(value))
@@ -341,8 +341,31 @@ func assignStageAgent(stage *Stage, key, value, at string) error {
 			return err
 		}
 		stage.ToolsDeny = denied
+	case "uncontained":
+		on, err := parseBool(value, at, key)
+		if err != nil {
+			return err
+		}
+		stage.Uncontained = on
 	}
 	return nil
+}
+
+// parseBool reads a flag, refusing anything but the two words.
+//
+// No truthiness: `1`, `yes` and `on` are all things somebody might write, and
+// accepting some of them means the ones that are not accepted fail silently as
+// false — which, for an exemption from containment, is the wrong direction to be
+// quiet in.
+func parseBool(value, at, key string) (bool, error) {
+	switch strings.TrimSpace(unquote(value)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s: %s has to be true or false, got %q", at, key, value)
+	}
 }
 
 // assignLoop places one setting inside a `[loop]` block.

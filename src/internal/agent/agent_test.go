@@ -719,3 +719,61 @@ func (f sessionAwareHarness) argvAll(t *testing.T) string {
 	}
 	return string(body)
 }
+
+// TestAnUncontainedCallNeedsNoSandbox is the runtime half of INV-4's exception.
+//
+// Every other call is refused without a sandbox, deliberately — "Luna does not
+// start an agent outside one". The one stage that reads the sandbox's own
+// configuration cannot be run under it, so that refusal has to know the
+// difference rather than being turned off globally.
+func TestAnUncontainedCallNeedsNoSandbox(t *testing.T) {
+	h := Harness{} // no sandbox configured at all
+
+	_, err := h.Run(context.Background(), Call{Kind: "claude", Dir: t.TempDir()})
+	if err == nil {
+		t.Fatal("a contained call ran with no sandbox configured")
+	}
+	if !strings.Contains(err.Error(), "sandbox") {
+		t.Errorf("the refusal must say what is missing, got %v", err)
+	}
+
+	// The exempt call gets past the refusal and fails on the harness instead,
+	// which is the next thing missing rather than the same thing again.
+	_, err = h.Run(context.Background(), Call{
+		Kind: "claude", Dir: t.TempDir(), Uncontained: true,
+	})
+	if err != nil && strings.Contains(err.Error(), "no sandbox configured") {
+		t.Errorf("an uncontained call was refused for want of a sandbox: %v", err)
+	}
+}
+
+// TestTheSandboxIsAskedToExposeTheSocketDirectory pins what Luna asks for, since
+// the handover depends on it and the flag is the only thing that makes it work.
+//
+// Read-only, and that is the measurement rather than a preference: Landlock
+// permits connect() on an inode it can merely see, so the agent reaches the
+// socket without being able to write into the directory holding it.
+func TestTheSandboxIsAskedToExposeTheSocketDirectory(t *testing.T) {
+	with := sandboxArgs("/run/user/1000/luna")
+
+	var mapped bool
+	for i, arg := range with {
+		if arg == "--map" && i+1 < len(with) && with[i+1] == "/run/user/1000/luna" {
+			mapped = true
+		}
+		if arg == "--rw-map" {
+			t.Error("the socket directory is exposed read-write, and read-only is enough")
+		}
+	}
+	if !mapped {
+		t.Errorf("the socket directory is not exposed: %v", with)
+	}
+
+	// And a call with nothing to reach asks for nothing, rather than mapping an
+	// empty path.
+	for _, arg := range sandboxArgs("") {
+		if arg == "--map" {
+			t.Error("a call with no socket asked for a mapping anyway")
+		}
+	}
+}

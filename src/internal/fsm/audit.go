@@ -129,6 +129,36 @@ func AuditFlowNames(flow []Stage) []NameGap {
 // repository and role names that vary per project.
 const nameComponentLimit = 128
 
+// ContainmentGap is a stage exempt from the sandbox that is not the one exception.
+type ContainmentGap struct {
+	Stage StageID
+}
+
+// TheUncontainedStage is the only stage INV-4 exempts.
+//
+// A constant rather than a list, because a list is the shape an exception grows
+// through: the second entry is added by whoever wants it, and the invariant
+// becomes a preference. Adding one here is a change to INV-4 rather than a use of
+// it, and this is where a reader trips over that.
+const TheUncontainedStage StageID = "setup"
+
+// AuditContainment reports every stage that runs outside the sandbox and is not
+// the one INV-4 names.
+//
+// `setup` reads `.ai-jail` to report what the containment will be, so containing
+// it means running it under the configuration it exists to inspect. Every other
+// stage runs after that question is settled and has no claim on the exemption —
+// and an exemption that spreads quietly is how an invariant stops being one.
+func AuditContainment(flow []Stage) []ContainmentGap {
+	var gaps []ContainmentGap
+	for _, stage := range flow {
+		if stage.Uncontained && stage.ID != TheUncontainedStage {
+			gaps = append(gaps, ContainmentGap{Stage: stage.ID})
+		}
+	}
+	return gaps
+}
+
 // ContextGap is a stage asking to continue a session it must not continue.
 type ContextGap struct {
 	Stage StageID

@@ -683,20 +683,25 @@ func TestAMissingSandboxBlocksTheTaskRatherThanFailingTheRun(t *testing.T) {
 	// therefore the one that meets the missing sandbox. It is also what the lead
 	// runs, so this is the same code path a conducted task takes.
 	//
-	// Twice, because `setup` is mechanical and needs no sandbox to close: the
-	// first stage that wants an agent is the one after it, and a test that stopped
-	// at the first would prove the sandbox was never reached. The gate `setup`
-	// opens on the way out is answered in between — it is not what this is about.
+	// Twice, because `setup` is the one stage INV-4 exempts: it runs uncontained,
+	// so a missing sandbox is not its problem and stopping there would prove the
+	// sandbox was never reached. It is driven dry, so no agent starts for it — the
+	// exemption is covered by its own test, and what this one is about is the
+	// stage after it, which is contained. The gate `setup` opens on the way out is
+	// answered in between.
 	repo := repoWithCommit(t)
 	openStage(t, h, "LUNA-1")
+
+	real := h.env.Node
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return closingNode{}, func() {}, nil
+	}
 	h.mustRun(t, "work", "LUNA-1", "--repo", repo)
-	// `setup` opens a gate on the way out, and this test is about the stage after
-	// it — the first one that wants an agent, and so the first that wants a
-	// sandbox. The gate is answered when it is there; `--dry-run` is not in play
-	// here, so whether it opened depends on how far `work` got.
 	if state := mustState(t, h, "LUNA-1"); state.Gate != nil {
 		h.mustRun(t, "gate", "approve", "LUNA-1")
 	}
+	h.env.Node = real
+
 	openStage(t, h, "LUNA-1")
 	out := h.mustRun(t, "work", "LUNA-1", "--repo", repo)
 
@@ -1091,6 +1096,12 @@ func TestWorkRunsTheStageAgentAndNothingElse(t *testing.T) {
 	if err := entering.Enter(context.Background(), "LUNA-1"); err != nil {
 		t.Fatalf("opening a stage: %v", err)
 	}
+	// A fake runner, because what is under test is that `work` runs the stage —
+	// not what the stage's agent does. `setup` runs uncontained, so the real
+	// runner would start an agent on the machine running the tests.
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return closingNode{}, func() {}, nil
+	}
 	if err := Run(h.env, []string{"work", "LUNA-1"}); err != nil {
 		t.Fatalf("working the open stage: %v", err)
 	}
@@ -1282,6 +1293,28 @@ func TestASimulatedTaskSaysSoWhereItIsRead(t *testing.T) {
 	if !report.Simulated {
 		t.Error("the JSON view does not carry the simulation flag")
 	}
+}
+
+// closingNode delivers whatever the stage owes, without an agent.
+//
+// It exists because `setup` runs uncontained (INV-4's one exception), so a test
+// that walks past it with the real runner starts an agent on the machine running
+// the tests. What those tests are about is the stage *after* setup.
+type closingNode struct{}
+
+func (closingNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, artifact := range owed {
+		evidence[artifact] = fsm.Evidence{
+			Scope: fsm.VerifierFor(stage, artifact).Proves(), Verdict: fsm.VerdictPassed,
+		}
+	}
+	// No commit: a name the repository does not hold becomes the next stage's
+	// base, and the worktree it opens then fails on `invalid reference`. An empty
+	// one leaves the base where it was, which is what a stage that committed
+	// nothing actually did.
+	return lead.Result{Delivered: owed, Evidence: evidence}, nil
 }
 
 // stalledNode is a stage runner whose agent is alive and achieving nothing.

@@ -203,6 +203,7 @@ func (r *Runner) call(
 		// every one after — without Luna having to remember which was which.
 		Workstream:          state.Memory.Workstream,
 		MayCreateWorkstream: state.Memory.MayCreate,
+		Uncontained:         stage.Uncontained,
 	}
 	if handsOver {
 		// An absolute path now, where it used to be relative to the worktree the

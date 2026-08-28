@@ -9,9 +9,19 @@
 #
 # It reports rather than decides. The gate below is where a person confirms.
 
-id       = "setup"
-requires = ["task_id"]
-produces = ["worktree", "setup_report"]
+id          = "setup"
+agent       = "claude"
+# The one stage INV-4 exempts, and the reason is an ordering rather than a
+# preference: it reads `.ai-jail` to report what the containment will be, so
+# containing it means running it under the configuration it exists to inspect —
+# and when that file is wrong or absent it runs under the wrong jail to say the
+# jail is wrong. Bounded by what it may do rather than by trust: it reports and
+# never repairs, so it writes nothing, and an agent that writes nothing has
+# nothing to contain. `AuditContainment` refuses any other stage claiming this.
+uncontained = true
+requires    = ["task_id"]
+produces    = ["worktree", "setup_report"]
+brief       = "You are reporting on what this task will run under, and you change nothing. Read four things and say what you found. First, `.ai-jail`: which directories are mounted read-write, which read-only, whether the network is on. The read-write set is what the whole task can modify — if it does not cover the repository being changed, nothing later can deliver; if it covers more, say so, because a task that can write outside its own repository is a task nobody bounded. Second, `.ai-memory.toml`: which workstream every agent of this task writes to. A wrong one scatters this task's memory into another project's, and that is not recoverable by reading it back. Third, how this project bootstraps itself — look in the Makefile for a target that prepares a checkout, then the README, then AGENTS.md or its equivalent. Name the command exactly, and say where you found it; if there are two candidates say both rather than picking. If there is none, say that plainly: a project that needs no bootstrap is ordinary, and inventing a command for it is worse than saying none exists. Fourth, anything in those files that contradicts the others. Then write the report: what is configured, what you concluded, and what you could not settle. You do not edit any of these files. Proposing a change is fine and is part of the report; making one is not — the person answering the gate after you is the one who decides, and a stage that had already changed the file would be presenting them with a fact rather than a question."
 
 [verify.worktree]
 kind = "existence"

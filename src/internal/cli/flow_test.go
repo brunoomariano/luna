@@ -628,3 +628,25 @@ func TestTheMedianSurvivesOneRunawayStage(t *testing.T) {
 		t.Error("taking the median sorted the caller's slice")
 	}
 }
+
+// TestFlowCheckNamesAStageThatEscapesTheSandbox. The static check exists so an
+// exemption cannot spread quietly, and `luna flow check` is where a person meets
+// it — a check nothing reports is one nobody acts on.
+func TestFlowCheckNamesAStageThatEscapesTheSandbox(t *testing.T) {
+	h := newHarness(t)
+
+	reportFlowGaps(h.env, []fsm.Stage{
+		{
+			ID: "build", Agent: "claude", Brief: "You build.", Uncontained: true,
+			Requires: []fsm.Artifact{fsm.TaskID}, Produces: []fsm.Artifact{"code"},
+			Verifiers: map[fsm.Artifact]fsm.Verifier{"code": fsm.Existence{}},
+		},
+	})
+
+	out := h.out.String()
+	for _, want := range []string{"build", "outside the sandbox", "INV-4"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report does not carry %q:\n%s", want, out)
+		}
+	}
+}

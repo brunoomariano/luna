@@ -45,11 +45,12 @@ func runFlow(env Env, args []string) error {
 func reportFlowGaps(env Env, flow []fsm.Stage) {
 	contract := fsm.AuditContract(flow)
 	agents := fsm.AuditAgents(flow)
+	loose := fsm.AuditContainment(flow)
 	names := fsm.AuditFlowNames(flow)
 	contexts := fsm.AuditContextChain(flow)
 	criteria := fsm.AuditGateCriteria(flow)
 
-	if len(contract)+len(agents)+len(names)+len(contexts)+len(criteria) == 0 {
+	if len(contract)+len(agents)+len(names)+len(contexts)+len(criteria)+len(loose) == 0 {
 		fmt.Fprintf(env.Out, "the contract holds: every stage's inputs are produced before it\n")
 		return
 	}
@@ -61,6 +62,10 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 	for _, gap := range agents {
 		fmt.Fprintf(env.Out, "  %s produces %v and names no agent — nothing but judgement makes those\n",
 			gap.Stage, gap.Produces)
+	}
+	for _, gap := range loose {
+		fmt.Fprintf(env.Out, "  %s runs outside the sandbox and is not %q — "+
+			"that exemption belongs to one stage (INV-4)\n", gap.Stage, fsm.TheUncontainedStage)
 	}
 	for _, gap := range names {
 		fmt.Fprintf(env.Out, "  %s is long enough that it leaves only %d characters for a task id\n",

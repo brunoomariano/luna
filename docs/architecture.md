@@ -324,7 +324,7 @@ brief = "You are building the delivery. …"
 |---|---|---|
 | `chore` | build | setup, verify |
 | `fix` | diagnose, build | setup, verify |
-| `full` | intake, diagnose, plan, forge, shipping, review | setup |
+| `full` | setup, intake, diagnose, plan, forge, shipping, review | — |
 
 A stage is **mechanical** when it names no agent — that is the whole test, and it reads the
 field that decides whether anything starts rather than a label beside it. A worktree is

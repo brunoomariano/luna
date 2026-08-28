@@ -151,6 +151,14 @@ type Stage struct {
 	// Skills are the capability bundles this stage loads.
 	Skills []string
 
+	// Uncontained starts this stage's agent outside the sandbox.
+	//
+	// INV-4 names the one stage this is for and asks that no second one inherit it
+	// by accident, which `AuditContainment` is. Declared rather than inferred: an
+	// exemption from containment is the last thing that should be derived from
+	// something else happening to be true.
+	Uncontained bool
+
 	// ToolsDeny names capabilities this stage must not have — `Edit`, `Write`.
 	//
 	// It names what the stage cannot do, never how a harness spells it: claude

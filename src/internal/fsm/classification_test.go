@@ -40,6 +40,7 @@ func TestEveryStageFieldIsClassified(t *testing.T) {
 		"Agent":            "policy",  // which harness answered; `--agent` overrides it per run
 		"Brief":            "policy",  // what the agent was told, never what delivering meant
 		"Skills":           "policy",  // read when the agent starts
+		"Uncontained":      "policy",  // the node reads it before starting; the reducer never does
 		"ToolsDeny":        "policy",  // the node applies it before the process exists
 		"Context":          "policy",  // read when the agent starts; it changes cost, not what delivering meant
 	}
