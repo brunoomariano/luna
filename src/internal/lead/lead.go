@@ -401,7 +401,85 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 	if err != nil {
 		return err
 	}
+	// What a stage concluded is recorded before anything acts on it: a fact turns
+	// a later stage on, and the round's verdict decides whether the flow moves at
+	// all. Recording first means a round that goes back still leaves the finding
+	// behind it.
+	if err := l.readFacts(taskID, stage, result); err != nil {
+		return err
+	}
+	if stage.Loop != nil {
+		return l.readRound(ctx, taskID, stage, after, result)
+	}
 	return l.readReview(ctx, taskID, stage, after, result)
+}
+
+// readFacts records what a stage concluded about the task.
+//
+// The same division as everywhere else: the agent writes a word, and Luna decides
+// what it means. A stage may only conclude what its contract says it may — a
+// stage that could record any fact could switch on a conditional stage from
+// anywhere in the flow.
+//
+// A report with no recognisable fact records nothing, which is the honest answer
+// for a stage that had nothing to conclude and for one that wrote something this
+// cannot read. The second is visible, because the report is in the context.
+func (l *Lead) readFacts(taskID string, stage fsm.Stage, result Result) error {
+	if len(stage.Discovers) == 0 {
+		return nil
+	}
+
+	for _, fact := range fsm.ReadFacts(l.said(taskID, stage, result), stage.Discovers) {
+		if err := l.record(taskID, fsm.FactDiscovered{Fact: fact}); err != nil {
+			return err
+		}
+		l.warn("%s %s concluded %s", taskID, stage.ID, fact)
+	}
+	return nil
+}
+
+// readRound turns a converging stage's report into the loop's next move.
+//
+// The verdict is the model's because no exit code distinguishes a round that
+// attacked the cause from one that traded a problem for another. What the model
+// does not do is act on it: it writes a word, the reducer turns the word into a
+// transition, and refuses `converged` while the evidence says otherwise.
+//
+// A report with no verdict leaves the stage closed, which is the safe reading: a
+// loop that went round again on an unreadable report would spend the ceiling on
+// something nobody decided.
+func (l *Lead) readRound(
+	ctx context.Context, taskID string, stage fsm.Stage, state fsm.TaskState, result Result,
+) error {
+	outcome := fsm.ReadVerdict(l.said(taskID, stage, result))
+	if outcome == "" {
+		return nil
+	}
+
+	l.warn("%s %s judged its round: %s", taskID, stage.ID, outcome)
+	return l.record(taskID, fsm.RoundJudged{
+		Outcome:  outcome,
+		Summary:  excerpt(l.said(taskID, stage, result)),
+		Progress: progressOf(state, result),
+		Flow:     l.flow(),
+		// Consulted only when a ceiling is actually reached; an ordinary round
+		// leaves this absent and nothing is asked.
+		Gate: l.decideCeiling(ctx, state),
+	})
+}
+
+// said is the stage's report, wherever it ended up.
+//
+// The store first, for the reason reportBody explains: an artifact handed over
+// the socket is not in the evidence — what the detail carries there is a hash,
+// and reading a verdict out of a hash finds none.
+func (l *Lead) said(taskID string, stage fsm.Stage, result Result) string {
+	for _, artifact := range append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...) {
+		if body := l.reportBody(taskID, artifact, result); body != "" {
+			return body
+		}
+	}
+	return ""
 }
 
 // readReview turns a review stage's report into a transition, when it carries

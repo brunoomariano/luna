@@ -281,7 +281,7 @@ func assignStageField(stage *Stage, key, value, at string) error {
 	switch key {
 	case "id":
 		stage.ID = StageID(unquote(value))
-	case "agent", "brief", "skills", "tools_deny", "uncontained":
+	case "agent", "brief", "skills", "tools_deny", "uncontained", "discovers":
 		return assignStageAgent(stage, key, value, at)
 	case "when":
 		condition, err := ParseCondition(unquote(value))
@@ -341,14 +341,54 @@ func assignStageAgent(stage *Stage, key, value, at string) error {
 			return err
 		}
 		stage.ToolsDeny = denied
+	case "uncontained", "discovers":
+		return assignStageBounds(stage, key, value, at)
+	}
+	return nil
+}
+
+// assignStageBounds places the two keys that say what a stage may do rather than
+// what it is: whether it runs outside the sandbox, and what it may conclude.
+//
+// Split from the four above because the switch had grown past the complexity the
+// linter gates on, and the line is real — those describe the agent, these bound
+// it.
+func assignStageBounds(stage *Stage, key, value, at string) error {
+	switch key {
 	case "uncontained":
 		on, err := parseBool(value, at, key)
 		if err != nil {
 			return err
 		}
 		stage.Uncontained = on
+	case "discovers":
+		facts, err := parseFacts(value, at)
+		if err != nil {
+			return err
+		}
+		stage.Discovers = facts
 	}
 	return nil
+}
+
+// parseFacts reads what a stage may conclude, refusing a name Luna does not know.
+//
+// A typo fails permissively otherwise: the condition reading the misspelled fact
+// is simply never true, so the stage it gates never runs and nothing says why.
+func parseFacts(value, at string) ([]Fact, error) {
+	names, err := parseStrings(value, at)
+	if err != nil {
+		return nil, err
+	}
+	facts := make([]Fact, 0, len(names))
+	for _, name := range names {
+		fact, err := ParseFact(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", at, err)
+		}
+		facts = append(facts, fact)
+	}
+	return facts, nil
 }
 
 // parseBool reads a flag, refusing anything but the two words.

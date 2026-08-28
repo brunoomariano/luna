@@ -29,18 +29,25 @@ func reviewFlow() []fsm.Stage {
 	}
 }
 
-// reportingNode delivers each stage's contract, and hands the review stage's
-// report back as the evidence's detail — which is where delivered content
-// travels (the gate payload reads it from the same place).
-type reportingNode struct{ report string }
+// reportingNode delivers each stage's contract and hands its report back as the
+// evidence's detail — which is where delivered content travels, and where the
+// lead reads a finding, a verdict or a conclusion from.
+//
+// `on` narrows the report to one artifact, for a test about a stage that produces
+// several and reports through one of them. Empty puts it on all of them, which is
+// what a test about a single-artifact stage wants.
+type reportingNode struct {
+	report string
+	on     fsm.Artifact
+}
 
 func (n reportingNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (Result, error) {
 	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
 
 	evidence := map[fsm.Artifact]fsm.Evidence{}
 	for _, artifact := range owed {
-		e := fsm.Exists(0)
-		if artifact == "review_report" {
+		e := fsm.Evidence{Scope: fsm.VerifierFor(stage, artifact).Proves(), Verdict: fsm.VerdictPassed}
+		if n.on == "" || artifact == n.on {
 			e.Detail = n.report
 		}
 		evidence[artifact] = e
@@ -62,7 +69,7 @@ func runReview(t *testing.T, report string) fsm.TaskState {
 		t.Fatalf("opening the task: %v", err)
 	}
 
-	conductor := &Lead{Store: s, Node: reportingNode{report: report}, Flow: reviewFlow()}
+	conductor := &Lead{Store: s, Node: reportingNode{report: report, on: "review_report"}, Flow: reviewFlow()}
 
 	state, err := conductor.Run(context.Background(), "LUNA-1")
 	if err != nil {
@@ -106,7 +113,7 @@ func TestTheLogSaysWhatSentItBack(t *testing.T) {
 
 	conductor := &Lead{
 		Store: s,
-		Node:  reportingNode{report: "- [BLOCKING] B1: the failure path has no test"},
+		Node:  reportingNode{report: "- [BLOCKING] B1: the failure path has no test", on: "review_report"},
 		Flow:  reviewFlow(),
 	}
 	if _, err := conductor.Run(context.Background(), "LUNA-1"); err != nil {
@@ -180,7 +187,7 @@ func TestOnlyAReviewStageCanSendWorkBack(t *testing.T) {
 
 	conductor := &Lead{
 		Store: s,
-		Node:  reportingNode{report: "- [BLOCKING] B1: I do not like my own work"},
+		Node:  reportingNode{report: "- [BLOCKING] B1: I do not like my own work", on: "review_report"},
 		Flow:  flow,
 	}
 
@@ -231,7 +238,7 @@ func TestARoundThatDeliveredNothingNewIsCountedAsSuch(t *testing.T) {
 
 	conductor := &Lead{
 		Store: s,
-		Node:  reportingNode{report: "- [BLOCKING] B1: still not right"},
+		Node:  reportingNode{report: "- [BLOCKING] B1: still not right", on: "review_report"},
 		Flow:  reviewFlow(),
 	}
 	if _, err := conductor.Run(context.Background(), "LUNA-1"); err != nil {
@@ -293,7 +300,7 @@ func runReviewWatching(t *testing.T, report string, warn func(string, ...any)) f
 		t.Fatalf("opening the task: %v", err)
 	}
 
-	conductor := &Lead{Store: s, Node: reportingNode{report: report}, Flow: reviewFlow(), Warn: warn}
+	conductor := &Lead{Store: s, Node: reportingNode{report: report, on: "review_report"}, Flow: reviewFlow(), Warn: warn}
 
 	state, err := conductor.Run(context.Background(), "LUNA-1")
 	if err != nil {

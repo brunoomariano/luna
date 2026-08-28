@@ -151,6 +151,14 @@ type Stage struct {
 	// Skills are the capability bundles this stage loads.
 	Skills []string
 
+	// Discovers names the facts this stage may conclude about the task.
+	//
+	// Declared rather than open, and the difference is the whole guard: a stage
+	// that could record any fact could switch on a conditional stage from anywhere
+	// in the flow. What a stage is allowed to find out is part of its contract,
+	// like what it is allowed to produce.
+	Discovers []Fact
+
 	// Uncontained starts this stage's agent outside the sandbox.
 	//
 	// INV-4 names the one stage this is for and asks that no second one inherit it
