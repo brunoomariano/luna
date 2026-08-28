@@ -388,6 +388,17 @@ from "nobody configured it": a run with no name lands in whatever workstream the
 was last pointing at, and that is the contamination arriving by a different door. A machine
 with no config writes to `luna`.
 
+The wrapper runs *inside* the jail, so Luna names the two variables it needs — the server
+and its token — as `--env` flags on the sandbox. The jail carries no host environment
+across, and without them `ai-memory run` starts against its own default with no token and
+the server answers `401 Unauthorized` before the agent starts: a stage that costs nothing
+and delivers nothing. Nothing caught it until a real task ran, because `setup` is
+uncontained and inherits the environment normally — the first stage of every task worked
+and the second was the one that died. *Rejected:* the jail's own `env_pass`. ai-jail reads
+it and never writes it back, deliberately, since a `NAME=VALUE` entry can carry a secret;
+any run that normalises the config drops the key, so the first session works and the second
+fails with the same 401.
+
 **The trail converges in one stage, and is judged in another.** `build`, `refactor`,
 `pipeline`, `verify` and `audit` became `forge` — which builds, cleans, checks and judges
 its own round — followed by `shipping` and then an independent `review`.
