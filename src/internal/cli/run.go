@@ -542,7 +542,6 @@ func workCommand(env Env, args []string) error {
 		Evidence:  result.Evidence,
 		Commit:    result.Commit,
 		Spent:     result.Spent,
-		Guarded:   result.Guarded,
 		Flow:      flow,
 	}); err != nil {
 		return err

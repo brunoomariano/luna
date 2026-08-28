@@ -254,7 +254,6 @@ func (s *verifierSpec) handedOver(artifact Artifact, where string) (bool, error)
 type stageBlocks struct {
 	gate    GateSpec
 	review  ReviewSpec
-	guard   GuardSpec
 	loop    LoopSpec
 	partial map[Artifact]*verifierSpec
 }
@@ -271,8 +270,6 @@ func assignStage(stage *Stage, blocks *stageBlocks, section, key, value, at stri
 		return assignGate(&blocks.gate, key, value, at)
 	case "review":
 		return assignReview(&blocks.review, key, value, at)
-	case "guard":
-		return assignGuard(&blocks.guard, key, value, at)
 	case "loop":
 		return assignLoop(&blocks.loop, key, value, at)
 	default:
@@ -552,22 +549,6 @@ func splitQuoted(inner string) []string {
 	return items
 }
 
-func assignGuard(guard *GuardSpec, key, value, at string) error {
-	switch key {
-	case "paths":
-		list, err := parseStrings(value, at)
-		if err != nil {
-			return err
-		}
-		guard.Paths = list
-	case "reason":
-		guard.Reason = unquote(value)
-	default:
-		return fmt.Errorf("%s: unknown key %q in [guard]", at, key)
-	}
-	return nil
-}
-
 func assignReview(review *ReviewSpec, key, value, at string) error {
 	switch key {
 	case "sends_back_to":
@@ -618,12 +599,6 @@ func finish(stage Stage, blocks stageBlocks, verify map[Artifact]Verifier, where
 	if blocks.review.SendsBackTo != "" || len(blocks.review.Invalidates) > 0 {
 		review := blocks.review
 		stage.Review = &review
-	}
-	// Paths rather than a reason: a guard with a reason and nothing to match on
-	// would stop nothing while reading like protection.
-	if len(blocks.guard.Paths) > 0 {
-		guard := blocks.guard
-		stage.Guard = &guard
 	}
 	// What it converges on rather than the limits: a loop declaring only ceilings
 	// is one whose exit nothing proves, and that is the shape this refuses to

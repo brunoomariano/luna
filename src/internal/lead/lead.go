@@ -65,11 +65,6 @@ type Result struct {
 	Delivered []fsm.Artifact
 	Evidence  map[fsm.Artifact]fsm.Evidence
 
-	// Guarded is the guarded paths this delivery touched, or nothing. It travels
-	// with the evidence for the same reason: the node observes it, and the reducer
-	// decides what it means without going and looking.
-	Guarded []string
-
 	// Spent is what the stage's agent cost, as its harness reported it. Zero for
 	// a mechanical stage, which runs no agent.
 	Spent fsm.Spend
@@ -390,7 +385,6 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		Evidence:  result.Evidence,
 		Commit:    result.Commit,
 		Spent:     result.Spent,
-		Guarded:   result.Guarded,
 		Flow:      flow,
 		// A review gate opens when the stage that produced its artifact closes,
 		// so this is the action that reaches it and the decision is

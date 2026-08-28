@@ -49,7 +49,7 @@ and not for a feature, `audit` runs for a feature and not for a chore. It
 defaults to `feature`.
 
 ```sh
-luna flow check          # what each flow carries, its gate, its guard
+luna flow check          # what each flow carries, and where it stops
 ```
 
 `--flow` cannot change after the task opens: the flow's identity goes into the
@@ -123,14 +123,13 @@ Two traps worth naming, both measured:
 
 ### Where it stops, and why
 
-`full` opens three gates and one guard:
+`full` opens three gates:
 
 | stop | shows you | needs autonomy |
 |---|---|---|
 | `setup` | the sandbox and the workstream, read from `.ai-jail` and `.ai-memory.toml` | 6 |
 | `plan` | the contract every later stage is held to | 9 |
 | `forge` | the commit plan and the delivery summary, **before** anything is committed | 9 |
-| `forge` guard | a delivery touching migrations, credentials or deploy | nothing gets past |
 
 ### The loop
 
@@ -155,7 +154,7 @@ no agent is mechanical, and a solo run collapses every stage onto one brief. So
 already says.
 
 ```sh
-luna flow check          # what each flow carries, its gate, its guard
+luna flow check          # what each flow carries, and where it stops
 ```
 
 ## Opening a task
@@ -226,9 +225,11 @@ floor`. `0` judges nothing and is the default; a gate that declares no floor
 resolves to 10, so only the most autonomous setting absorbs it. It moves mid-run, and moving it
 writes an event with the reason — a gate already open still goes to a person.
 
-A guard gate is the exception and no setting reaches it. It opens on what the
-delivery *touched* — migrations, credentials, deploy pipelines — and whether
-dropping a table was intended is not a thing a model can weigh.
+There used to be a guard that no setting reached, opening on what the delivery
+*touched*. It was removed: the idea is right and the substring matching was too
+blunt to earn its place. Until something replaces it, **a delivery touching
+migrations, credentials or a deploy pipeline stops for nobody** — set the knob
+with that in mind.
 
 ## The budget
 

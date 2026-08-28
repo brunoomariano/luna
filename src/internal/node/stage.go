@@ -263,9 +263,6 @@ func (r *Runner) verify(
 		Commit:   commit,
 		Spent:    spend,
 	}
-	if stage.Guard != nil {
-		result.Guarded = Touched(ctx, wt.Path, state.Base, commit, stage.Guard.Paths)
-	}
 	for i, artifact := range owed {
 		evidence, err := r.prove(ctx, state, stage, shell, artifact, i)
 		if err != nil {

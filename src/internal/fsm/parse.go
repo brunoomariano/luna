@@ -22,7 +22,7 @@ func ParseScope(name string) (Scope, error) {
 // kind that does not exist has asked for a pause nobody will ever be shown, and
 // falling back to "no gate" would make an unattended run out of a supervised one.
 func KnownGateKinds() []GateKind {
-	return []GateKind{GateConfirm, GateReviewArtifact, GateLoopCeiling, GateGuard}
+	return []GateKind{GateConfirm, GateReviewArtifact, GateLoopCeiling}
 }
 
 // ParseGateKind turns a configured name into a gate kind.

@@ -3,7 +3,6 @@ package fsm
 import (
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // ErrIllegalTransition is returned when an action makes no sense for the current
@@ -175,16 +174,6 @@ type Complete struct {
 	// that reaches it, and the decision is history while the policy behind it is
 	// not.
 	Gate GateAccount `json:"gate,omitzero"`
-
-	// Guarded is the guarded paths this delivery touched, computed outside and
-	// carried in like every other verdict.
-	//
-	// The reducer opens a gate when this is non-empty and never looks at the
-	// stage's patterns, which is what keeps them out of the fingerprint: editing
-	// the list changes what stops tomorrow and cannot rewrite what stopped last
-	// week, because a replay reads whether a guard fired rather than recomputing
-	// it against today's rules.
-	Guarded []string `json:"guarded,omitempty"`
 
 	// Commit is what the stage delivered, as a git object. It becomes the next
 	// stage's base, which is what makes the handoff the artifact itself rather
@@ -976,34 +965,7 @@ func complete(state TaskState, a Complete) (TaskState, error) {
 		state.Gate = withPayload(gate, state.Evidence, a.Gate)
 		return state, nil
 	}
-
-	// The guard is last, and it is the one gate that opens on what the work
-	// *contains* rather than on where the task stands. It carries no judgement
-	// criteria on purpose, so it reaches a person at every knob setting — whether
-	// dropping a table was intended is not a thing Luna can weigh, and a guard a
-	// high knob could wave through would be protection in name only.
-	if len(a.Guarded) > 0 {
-		state.Status = StatusAwaitingGate
-		state.Gate = &PendingGate{
-			Kind:   GateGuard,
-			Stage:  state.Stage,
-			Reason: guardReason(stage, a.Guarded),
-		}
-	}
 	return state, nil
-}
-
-// guardReason says what was touched, and why that stops here.
-//
-// The paths as well as the stage's own wording, because "the delivery touches
-// something consequential" is a sentence somebody approves without looking, and
-// "it touches migrations/002_drop_sessions.sql" is one they read.
-func guardReason(stage Stage, touched []string) string {
-	reason := "the delivery touched something that does not land unattended"
-	if stage.Guard != nil && stage.Guard.Reason != "" {
-		reason = stage.Guard.Reason
-	}
-	return fmt.Sprintf("%s: %s", reason, strings.Join(touched, ", "))
 }
 
 func fail(state TaskState, a Fail) (TaskState, error) {

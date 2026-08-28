@@ -88,13 +88,3 @@ judge_by_reading = [
   "The order is one a reader could follow, and no commit depends on a later one",
   "Nothing in the plan is outside what the task asked for",
 ]
-
-[guard]
-# A delivery touching any of these stops for a person, at every knob setting.
-#
-# Not because these changes are likelier to be wrong than any other — because they
-# are the ones a person cannot undo by reading the next morning's report. A wrong
-# function is a commit to revert; a dropped table, a leaked key and a rewritten
-# deploy pipeline are not.
-paths  = ["migrations/", "migrate", "secret", "credential", ".env", "deploy", ".github/workflows/", "Dockerfile"]
-reason = "the delivery touches migrations, credentials or deployment"
