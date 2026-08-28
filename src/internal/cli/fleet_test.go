@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/store"
 )
 
 // TestTheMorningReportGroupsByWhatHasToHappen. The question somebody opens it with
@@ -87,6 +90,72 @@ func TestTheReportWindowExcludesWhatIsOlderThanIt(t *testing.T) {
 	}
 	if len(report.Tasks) != 1 {
 		t.Errorf("want the task inside a 24h window, got %+v", report.Tasks)
+	}
+}
+
+func TestAGlobalReportWindowReadsEachProjectsClock(t *testing.T) {
+	h := newHarness(t)
+	central := h.env.Store
+	for _, project := range []string{"one-project", "two-project"} {
+		if err := central.ForProject(project).AppendAction("TASK-"+project, fsm.TaskCreated{
+			Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow()),
+		}); err != nil {
+			t.Fatalf("seeding %s: %v", project, err)
+		}
+	}
+	h.env.Store = central.ForProject("one-project")
+	h.env.GlobalStore = central
+
+	var report FleetReport
+	out := h.mustRun(t, "fleet", "report", "--since", "24h", "--json")
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("decoding the global report: %v", err)
+	}
+	if len(report.Tasks) != 2 {
+		t.Fatalf("global report tasks = %+v", report.Tasks)
+	}
+}
+
+func TestFleetReportSurfacesEmptyInvalidAndStorageStates(t *testing.T) {
+	h := newHarness(t)
+	if out := h.mustRun(t, "fleet", "report"); !strings.Contains(out, "nothing to report") {
+		t.Fatalf("empty fleet report = %q", out)
+	}
+	for _, args := range [][]string{
+		{"fleet", "report", "--since"},
+		{"fleet", "report", "--unknown", "value"},
+		{"fleet", "run"},
+	} {
+		if err := h.run(t, args...); err == nil {
+			t.Errorf("luna %s was accepted", strings.Join(args, " "))
+		}
+	}
+
+	db, err := store.OpenAs(filepath.Join(t.TempDir(), "closed.db"), store.LunaOwnsTheLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = changedSince(Env{Store: db}, globalTask{ID: "TASK-1"}, time.Hour)
+	if err == nil {
+		t.Fatal("a closed central store was reported as a valid time window")
+	}
+}
+
+func TestFleetReportPrintsAConcreteBlocker(t *testing.T) {
+	h := newHarness(t)
+	printFleetGroup(h.env, "stopped", []FleetTaskReport{{
+		Project: "one-project", ID: "TASK-1", BlockedBy: "network unavailable",
+	}})
+	if !strings.Contains(h.out.String(), "network unavailable") {
+		t.Fatalf("fleet group omitted the blocker:\n%s", h.out.String())
+	}
+
+	opts, err := parseFleetOptions([]string{"--repo", "/tmp/project"})
+	if err != nil || opts.run.Repo != "/tmp/project" {
+		t.Fatalf("fleet repository override = %+v, %v", opts, err)
 	}
 }
 

@@ -92,41 +92,40 @@ func fleetReport(env Env, args []string) error {
 		return err
 	}
 
-	ids, err := env.Store.Tasks()
+	tasks, err := globalTasks(env)
 	if err != nil {
 		return err
 	}
 
 	report := FleetReport{Tasks: []FleetTaskReport{}}
-	for _, id := range ids {
-		state, err := env.Store.ReplayOwnFlow(id)
-		if err != nil {
+	for _, task := range tasks {
+		if task.Err != nil {
 			// Unreadable rather than skipped: a task nobody can replay is exactly
 			// the one that would otherwise sit unnoticed forever (INV-5).
-			report.Unreadable = append(report.Unreadable, id)
+			report.Unreadable = append(report.Unreadable,
+				projectName(task.Project)+"/"+task.ID)
 			continue
 		}
-		if since > 0 {
-			at, err := env.Store.LastEventAt(id)
-			if err != nil {
-				return err
-			}
-			if at.IsZero() || time.Since(at) > since {
-				continue
-			}
+		recent, err := changedSince(env, task, since)
+		if err != nil {
+			return err
+		}
+		if !recent {
+			continue
 		}
 
 		report.Tasks = append(report.Tasks, FleetTaskReport{
-			ID:        id,
-			Flow:      state.FlowName,
-			Product:   string(state.Product()),
-			Operation: string(state.Operation()),
-			BlockedBy: string(state.BlockedBy),
-			Blocked:   state.Blocked,
-			CostUSD:   state.TotalSpend().CostUSD,
-			Tokens:    state.TotalSpend().Tokens(),
+			Project:   projectName(task.Project),
+			ID:        task.ID,
+			Flow:      task.State.FlowName,
+			Product:   string(task.State.Product()),
+			Operation: string(task.State.Operation()),
+			BlockedBy: string(task.State.BlockedBy),
+			Blocked:   task.State.Blocked,
+			CostUSD:   task.State.TotalSpend().CostUSD,
+			Tokens:    task.State.TotalSpend().Tokens(),
 		})
-		report.CostUSD += state.TotalSpend().CostUSD
+		report.CostUSD += task.State.TotalSpend().CostUSD
 	}
 
 	if asJSON {
@@ -134,6 +133,21 @@ func fleetReport(env Env, args []string) error {
 	}
 	printFleetReport(env, report)
 	return nil
+}
+
+func changedSince(env Env, task globalTask, since time.Duration) (bool, error) {
+	if since <= 0 {
+		return true, nil
+	}
+	project := env.Store
+	if env.GlobalStore != nil {
+		project = env.GlobalStore.ForProject(task.Project)
+	}
+	at, err := project.LastEventAt(task.ID)
+	if err != nil {
+		return false, err
+	}
+	return !at.IsZero() && time.Since(at) <= since, nil
 }
 
 // printFleetReport writes the morning report for a person.
@@ -184,7 +198,8 @@ func printFleetGroup(env Env, heading string, tasks []FleetTaskReport) {
 
 	fmt.Fprintf(env.Out, "\n%s (%d)\n", heading, len(tasks))
 	for _, task := range tasks {
-		fmt.Fprintf(env.Out, "  %-14s %-9s %-8s $%.4f", task.ID, task.Product, task.Flow, task.CostUSD)
+		fmt.Fprintf(env.Out, "  %-52s %-14s %-9s %-8s $%.4f",
+			task.Project, task.ID, task.Product, task.Flow, task.CostUSD)
 		if task.BlockedBy != "" {
 			fmt.Fprintf(env.Out, "  %s", task.BlockedBy)
 		}
@@ -217,14 +232,12 @@ func parseReportOptions(args []string) (since time.Duration, asJSON bool, err er
 
 // fleetRun conducts one task with the pack its flow declares.
 //
-// A pack is internal to the task: the lead conducts, and the flow's roles do the
-// work — one worktree and one session each, kept across the stages that role
-// owns. That is what the pack buys and what `luna lead` cannot have, because a
-// single agent is a single session.
+// A pack is internal to the task: the lead conducts, and each distinct stage
+// brief gets its own agent session and worktree. That is what the pack buys and
+// what `luna lead` cannot have, because a single agent is a single session.
 //
-// The size of the pack is the flow's, not a flag's. `chore` declares one working
-// role, `fix` two, `full` five — so choosing the flow chooses the depth, which is
-// the same shape SwarmForge gives its two-, four- and six-packs.
+// The size of the pack is the flow's, not a flag's. Choosing the flow therefore
+// chooses both the contract and how many distinct agent briefings it runs.
 func fleetRun(env Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: fleet run needs a task id", ErrUsage)

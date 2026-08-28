@@ -680,7 +680,7 @@ func (l *Lead) flow() []fsm.Stage {
 //
 // Whether it waits at all is no longer a profile's to say. A gate
 // waits because the stage declared something to answer it with — judgement
-// criteria in the flow, or checks in the task's registry entry. One with neither
+// criteria in the flow, or checks recorded in the task's log. One with neither
 // was never going to put a question in front of anybody, so stopping at it would
 // be stopping to ask nothing.
 func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.PendingGate) fsm.GateAccount {
@@ -690,7 +690,7 @@ func (l *Lead) decideGate(ctx context.Context, state fsm.TaskState, gate *fsm.Pe
 
 	// The two halves are declared in different places, so both are consulted
 	// before concluding that nothing was: criteria live in the stage file and
-	// checks live per task in the registry.
+	// checks are recorded per task in the log.
 	spec := fsm.GateSpecIn(l.flow(), gate.Stage)
 
 	checks := fsm.GateChecksOutcome{}

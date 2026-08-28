@@ -238,10 +238,9 @@ func parseConfig(content, path string) (Config, error) {
 
 // openSection declares what a `[...]` header opens.
 //
-// An empty section still declares the thing: `[profile.yolo]` with no `waits` is
-// a profile that stops at nothing, and `[role.scout]` with no agent is a role
-// someone is about to fill in. Both are legitimate to write, and refusing them
-// would make the file order-dependent.
+// An empty section still declares the thing: `[profile.yolo]` is a profile name
+// even though profiles hold no settings. Refusing it would make the file
+// order-dependent.
 func openSection(cfg *Config, header, where string) (sectionRef, error) {
 	parsed, err := parseSection(header, where)
 	if err != nil {

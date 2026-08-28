@@ -19,6 +19,8 @@ import (
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
+var spawnDaemon = daemon.Spawn
+
 func main() {
 	os.Exit(exitCode(run(os.Args[1:]), os.Stderr))
 }
@@ -40,15 +42,6 @@ func exitCode(err error, stderr io.Writer) int {
 	return 1
 }
 
-// insideAStage reports whether the command is one an agent runs from within a
-// stage's sandbox, where the log is deliberately unreachable.
-//
-// The agent hands its work to Luna through a socket and Luna is the only writer,
-// so these need nothing the sandbox denies them.
-func insideAStage(args []string) bool {
-	return len(args) > 0 && args[0] == "artifact"
-}
-
 // runInsideAStage answers without resolving the store at all, because resolving
 // it is exactly what fails inside the sandbox.
 //
@@ -67,110 +60,150 @@ func runInsideAStage(args []string) error {
 // opened, since opening is what hides the problem. A log on a filesystem the
 // caller cannot really reach answers every read and write and keeps none of
 // them, so the failure has to be caught while there is still nothing to lose.
-func openStore(ctx context.Context) (s *store.Store, cfg cli.Config, path string, err error) {
-	cwd, err := os.Getwd()
+type storeOpening struct {
+	repo    string
+	path    string
+	chosen  bool
+	config  cli.Config
+	project node.Project
+}
+
+func openStore(ctx context.Context) (*store.Store, cli.Config, string, error) {
+	opening, err := resolveStoreOpening(ctx)
 	if err != nil {
 		return nil, cli.Config{}, "", err
 	}
-	repo, err := node.Root(ctx, cwd)
+	client, err := connectDaemon(opening)
 	if err != nil {
 		return nil, cli.Config{}, "", err
 	}
 
-	var chosen bool
-	path, chosen, err = storePath(ctx)
+	s, err := store.OpenReadOnly(opening.path)
 	if err != nil {
 		return nil, cli.Config{}, "", err
 	}
-	// A log left in the checkout by an older build is moved rather than ignored,
-	// because ignoring it would silently start an empty one beside a task somebody
-	// has open.
-	//
-	// Never when the path was chosen with `LUNA_STORE`. Somebody naming a location
-	// is not asking for a log somewhere else to be moved into it, and doing it
-	// anyway would take a repository's real log away during a test that only meant
-	// to point at a scratch file — which is exactly what happened the first time
-	// this was written without the check.
-	if !chosen {
-		if err := node.AdoptLogInRepo(repo, path); err != nil {
-			return nil, cli.Config{}, "", err
-		}
+	s.Project = opening.project.Key
+	s.Via = client
+	return s, opening.config, opening.path, nil
+}
+
+func resolveStoreOpening(ctx context.Context) (storeOpening, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return storeOpening{}, err
+	}
+	repo, err := node.Root(ctx, cwd)
+	if err != nil {
+		return storeOpening{}, err
+	}
+
+	path, chosen, err := storePath(ctx)
+	if err != nil {
+		return storeOpening{}, err
 	}
 	if err := node.EnsureDurable(repo, filepath.Dir(path)); err != nil {
-		return nil, cli.Config{}, "", err
+		return storeOpening{}, err
 	}
 
 	// The config is read before the store is opened: a malformed config should
 	// report itself rather than being discovered halfway through a command.
-	cfg, err = cli.LoadConfig(cli.ConfigPath(repo))
+	cfg, err := cli.LoadConfig(cli.ConfigPath(repo))
 	if err != nil {
-		return nil, cli.Config{}, "", err
+		return storeOpening{}, err
 	}
 
-	// Read-only, with appends forwarded to the daemon that owns the file. The
-	// ownership rule was a constant checked inside one process; it is a process
-	// boundary now, which is what makes it hold against a `luna` running somewhere
-	// it should not be — inside a sandbox, where the log it would open for itself
-	// is a tmpfs that evaporates.
-	s, err = store.Open(path)
+	project, err := node.IdentifyProject(ctx, cwd)
 	if err != nil {
-		return nil, cli.Config{}, "", err
+		return storeOpening{}, err
 	}
-	s.Via = daemon.Client{
-		Path:  cli.DaemonSocket(),
-		Store: path,
-		Start: func() error { return daemon.Spawn(cli.DaemonSocket()) },
+	return storeOpening{repo: repo, path: path, chosen: chosen, config: cfg, project: project}, nil
+}
+
+func connectDaemon(opening storeOpening) (daemon.Client, error) {
+	legacyRoot := ""
+	if !opening.chosen {
+		legacyRoot = filepath.Join(filepath.Dir(opening.path), "projects")
 	}
-	return s, cfg, path, nil
+	client := daemon.Client{
+		Path: cli.DaemonSocketFor(opening.path),
+		Start: func() error {
+			return spawnDaemon(cli.DaemonSocketFor(opening.path), opening.path, legacyRoot)
+		},
+	}
+	if _, err := client.Do(daemon.Request{Op: "ping"}); err != nil {
+		return daemon.Client{}, err
+	}
+	if err := importCheckoutStore(client, opening); err != nil {
+		return daemon.Client{}, err
+	}
+	return client, nil
+}
+
+func importCheckoutStore(client daemon.Client, opening storeOpening) error {
+	if opening.chosen {
+		return nil
+	}
+	legacy := filepath.Join(opening.repo, ".luna", "luna.db")
+	if _, err := os.Stat(legacy); err == nil {
+		return client.ImportLegacy(opening.project.Key, legacy)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking legacy store %s: %w", legacy, err)
+	}
+	return nil
 }
 
 func run(args []string) error {
 	ctx := context.Background()
-
-	if insideAStage(args) {
-		return runInsideAStage(args)
-	}
-	// The daemon opens the store itself, as its owner. Going through openStore
-	// would hand it a read-only store forwarding to a daemon — itself.
-	if len(args) > 0 && args[0] == "daemon" {
-		return cli.Run(cli.Env{Out: os.Stdout, Err: os.Stderr, In: os.Stdin}, args)
+	if handled, err := runWithoutStore(args); handled {
+		return err
 	}
 
-	s, cfg, _, err := openStore(ctx)
+	s, cfg, path, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = s.Close() }()
 
-	// The registry answers the one question the log cannot: what is happening in
-	// another checkout. It is resolved from the working directory
-	// rather than from the log's path, because LUNA_STORE may point anywhere and
-	// `bd` discovers its own database from the repository it is run in.
-	//
-	// Always constructed, never probed: a missing `bd` is reported by the command
-	// that needed it rather than by every command that did not.
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("finding the working directory: %w", err)
-	}
-	root, err := node.Root(ctx, cwd)
+	root, err := currentRoot(ctx, s, path)
 	if err != nil {
 		return err
-	}
-
-	// Running from inside a worktree works — the log resolves to the main
-	// repository either way, which is the point of resolving it there. Saying so
-	// matters anyway: a stage's worktree is deleted when the stage ends, and
-	// someone who believes they are working in an isolated checkout should know
-	// the state they are changing is shared.
-	if node.InsideAWorktree(ctx, cwd) {
-		fmt.Fprintf(os.Stderr, "note: this is a worktree; the log and registry are %s\n", root)
 	}
 
 	// Nothing is read from the project here any more. The flows are the ones
 	// embedded in this binary, and a repository cannot override them — which is
 	// what keeps every project on the same contract.
 	return cli.Run(environment(s, cfg, root), args)
+}
+
+func runWithoutStore(args []string) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	env := cli.Env{Out: os.Stdout, Err: os.Stderr, In: os.Stdin}
+	switch args[0] {
+	case "help", "-h", "--help", "version", "daemon":
+		return true, cli.Run(env, args)
+	case "artifact":
+		return true, runInsideAStage(args)
+	default:
+		return false, nil
+	}
+}
+
+func currentRoot(ctx context.Context, s *store.Store, path string) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("finding the working directory: %w", err)
+	}
+	root, err := node.Root(ctx, cwd)
+	if err != nil {
+		return "", err
+	}
+	if node.InsideAWorktree(ctx, cwd) {
+		fmt.Fprintf(os.Stderr, "note: this is a worktree; project %s shares task state in %s\n",
+			s.Project, path)
+	}
+	return root, nil
 }
 
 // environment assembles what every command is given.
@@ -188,12 +221,13 @@ func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 	harness := agent.Harness{Kind: cfg.LeadHarness}
 
 	return cli.Env{
-		Store:  s,
-		Config: cfg,
-		Out:    os.Stdout,
-		Err:    os.Stderr,
-		In:     os.Stdin,
-		Edit:   cli.Editor(cfg),
+		Store:       s,
+		GlobalStore: s,
+		Config:      cfg,
+		Out:         os.Stdout,
+		Err:         os.Stderr,
+		In:          os.Stdin,
+		Edit:        cli.Editor(cfg),
 		// Resolved on demand rather than at startup: it runs git, and most commands
 		// are given an id and never ask.
 		Where: func() (node.Identity, error) {
@@ -221,27 +255,24 @@ func environment(s *store.Store, cfg cli.Config, root string) cli.Env {
 		Notify: node.NewNotifier().Blocked,
 
 		// What runs a stage: a contained agent in its own worktree, built per run
-		// because it needs the repository, the flow and the role table first.
+		// because it needs the repository and the flow first.
 		// Injected like the rest so a solo run — which has no model to fake — can
 		// be driven by a test at all.
 		Node: cli.StageRunner,
 	}
 }
 
-// storePath is where the log lives: LUNA_STORE if set, else `.luna/luna.db` in
-// the **main** repository containing the working directory.
-//
-// The main repository and not the working directory, which is the correction a
-// real run forced. A stage runs in an ephemeral worktree that is deleted when the
-// stage ends, so resolving from the cwd put a second log inside
-// something built to be thrown away — and the task it recorded went with it.
-// That was measured, not theorised: running from a worktree produced two
-// `.luna/luna.db` files with the task visible in only one.
+// storePath is the central log: LUNA_STORE if set, otherwise the one database
+// under Luna's data home. Project identity scopes rows, not files.
 //
 // LUNA_STORE still wins, because a person who names a path means it.
 func storePath(ctx context.Context) (path string, chosen bool, err error) {
 	if fromEnv := os.Getenv("LUNA_STORE"); fromEnv != "" {
-		return fromEnv, true, nil
+		path, err := filepath.Abs(fromEnv)
+		if err != nil {
+			return "", true, fmt.Errorf("resolving LUNA_STORE %q: %w", fromEnv, err)
+		}
+		return path, true, nil
 	}
 
 	cwd, err := os.Getwd()

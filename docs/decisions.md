@@ -32,11 +32,12 @@ Luna compares the log position before and after.
 > is strictly stronger, and a ceiling nothing can reach gets trusted without ever having
 > held.
 
-**Parallelism is between tasks, never inside one.** One worktree, one lead per task. The
-fleet is what finally uses it: `luna fleet run` drives every eligible task at a bounded
-concurrency, and needed no new isolation because the isolation was already the design.
-A blocked task is not eligible — it stopped for a reason a person has to deal with, and
-retrying it nightly would turn a notified block into a nightly bill.
+**Parallelism is between tasks, never inside one.** One stage is active at a time and owns
+its own worktree; one lead conducts the task. `luna fleet run` is a pack inside one task,
+not a cross-task scheduler. Separate task processes may run concurrently because their
+worktrees and project-scoped histories remain independent. *Rejected:* a cross-task fleet
+command that both selected tasks and ran them — selection policy and execution topology
+became one command, while `luna fleet report` already answered the useful global question.
 
 **A stage that came up short is asked again, on the same budget as a failed node.** The
 two failures were treated oppositely and backwards: infrastructure got two retries,
@@ -86,11 +87,11 @@ adapter outside the core. **CLI first. Go, for a static single binary. Defaults 
 customization everywhere.**
 
 **Two modes, and the mode is how many agents carry the task.** `luna lead` is solo: Luna
-advances and starts one agent per stage, under the single role `fsm.Solo` collapses the flow
-onto, so one worktree and one session survive from stage to stage and there is never a
-conductor and a worker alive at once. `luna fleet run` is the pack: the lead conducts from
-outside the sandbox — the `Ask`/`Run` split holding — and the flow's declared roles do the
-work, one worktree and one session each.
+starts the same agent policy for each stage while each stage still uses its own worktree,
+context setting and commit boundary. There is never a conductor and a
+worker alive at once. `luna fleet run` is the pack: the lead conducts from outside the
+sandbox — the `Ask`/`Run` split holding — and every distinct stage briefing gets its own
+agent session and worktree.
 
 The two are different engines and that is now correct rather than duplicated. They were the
 same engine reached by four surfaces, which is two places for every fix to land: the block
@@ -103,10 +104,10 @@ it, and keeping both would put the word on two different things. `luna fleet rep
 cross-task, because the morning's question is about every task and answering it starts
 nothing.
 
-The mode can change between runs, and that falls out of a rule already written down: `Role`
-is policy rather than history — the reducer never reads it, only the node does — so it is
-out of the flow fingerprint and a task begun solo replays against a pack. If it did not,
-choosing the mode would be a decision nobody could revisit.
+The mode can change between runs because agent, briefing, context policy and denied tools
+are policy rather than history — the reducer never reads them, only the node does — so
+they are outside the flow fingerprint and a task begun solo replays against a pack. If it
+did not, choosing the mode would be a decision nobody could revisit.
 
 The hand-driven mode went with `luna run`. `luna next`, `luna work` and `luna done` stayed,
 because they are the interface a stage is carried out through and not a mode: the pack's
@@ -130,9 +131,35 @@ type system stops a caller fabricating a verdict.
 
 **Append-only SQLite, no CGO. State is replayed, never stored.**
 
-**The log lives in the main repository and Luna is its only writer.** Resolved with
-`git rev-parse --git-common-dir`; `--show-toplevel` is the call everyone reaches for, and
-it returns the worktree — the one answer that must not decide where shared state lives.
+**One daemon-owned SQLite database holds every project's log.** It lives at
+`$XDG_DATA_HOME/luna/luna.db`, outside every checkout. Every row carries a project key
+derived from the normalised remote or, without one, the main checkout path; task identity
+is `(project, task_id)`. That gives global workload queries without making equal ids from
+different repositories collide. `git rev-parse --git-common-dir` still matters for the
+project fallback, config and worktrees, but it no longer chooses a database file.
+*Rejected:* one database per project. It isolated queries by construction, but it made a
+global inventory depend on which stores one daemon happened to have opened during its
+current lifetime — precisely the view a central task command cannot trust.
+
+**The daemon is the only process with a writable SQLite connection.** An ordinary CLI
+starts or pings the daemon, then opens the central file with `mode=ro`; appending events,
+putting blobs and forgetting blob bodies all cross the private daemon socket. A lock beside
+the database refuses a second daemon, and the socket name is derived from the database path
+so a daemon serving another file cannot answer its ping. *Rejected:* a CLI store that was
+only logically read-only but still opened SQLite read-write. The ownership flag caught
+cooperative Go calls, not a migration or direct SQL added later.
+
+**Legacy stores are merged only by exact, daemon-side import.** The daemon imports both the
+former data-home project layout and an older checkout-local `.luna/luna.db`, preserving
+sequence, payload, timestamp and blob bytes. An existing row must match exactly, and the
+source is renamed `.migrated` only after commit. *Rejected:* choosing one of two logs or
+silently ignoring the old one — either answer can hide open work, and Luna has no basis for
+inventing which history wins.
+
+Opening a populated, unscoped per-project store as the central database is refused. The
+daemon import path knows the source project's key; a schema migration looking only at the
+file does not. *Rejected:* placing those rows under an empty or guessed project key — the
+copy would succeed while every project-scoped command lost the tasks.
 
 **The ghost-store guard is one marker, in the git directory.** There were two: a file
 beside the log saying "Luna wrote this store", and one in `.git` saying "the log is over
@@ -290,7 +317,7 @@ three of four harnesses. The worst case is not the reviewer editing — it is an
 rewriting the `Makefile` the check invokes, producing an `exit 0` that enters the log with
 the credential of truth.
 
-## Agents, roles and the sandbox
+## Agents, briefs and the sandbox
 
 **The brief belongs to the stage, not to a role.** A stage's TOML holds its contract, its
 verifiers, its gate *and* what its agent is told. A stage with no agent runs mechanically —
@@ -304,7 +331,7 @@ Luna was paying a model to run `git commit`.
 > *Rejected: keeping the table for the stages that share a brief.* `verify` and `audit` are
 > both judging stages, so absorbing duplicates ~300 words between two files. Weighed and
 > accepted: the duplication is visible and a person can diff it, where the indirection hid
-> which stage was told what. `role` survives as the branch grouping it always also was.
+> which stage was told what.
 >
 > *Rejected: a project overriding a role in `config.toml`.* Same reason `.luna/stock/` went
 > — the thing it enabled is drift. One build, one set of flows, every repository the same.
@@ -343,11 +370,11 @@ and handed the agent `bypassPermissions` while the agent ran uncontained. Which 
 used is deliberately not configurable; making it so would move the security boundary into
 the file where `editor` lives.
 
-**One worktree per task and role, branched from the last delivery.** Reusing a worktree
-per role across tasks was rejected on evidence: role branches that never reset compound
-drift at every hop, and a shared directory lets a reviewer read uncommitted files and
-review something other than what was delivered. A cleanup failure warns; it does not fail
-the stage.
+**One worktree per task and stage, branched from the last delivery.** Reusing a worktree
+across stages or tasks was rejected on evidence: branches that never reset compound drift
+at every hop, and a shared directory lets a reviewer read uncommitted files and review
+something other than what was delivered. A cleanup failure warns; it does not fail the
+stage.
 
 **Luna does not integrate — a task ends on its own branch.** The merge was built and then
 removed. What went unexamined the first time was whether integrating is Luna's job at all:
@@ -357,11 +384,12 @@ a merge sets off.
 **A scratch artifact is handed over through a socket, keyed per stage.** It lived inside the
 worktree first, for a measured reason: under Landlock a socket in `$HOME`, in `/tmp`, or
 behind a symlink answers `ENOENT`, and one under the cwd connects. It moved to the runtime
-directory when Luna stopped writing into the worktree at all, and still connects from inside
-the jail because Luna maps the directory holding it read-only — Landlock permits `connect()`
-on an inode it can merely see. The name reaches the agent as `--env LUNA_ARTIFACT_SOCKET`,
-which is not a detail: setting it on the process Luna starts sets it on the *jail*, and a
-stage told to hand its work over through a socket it was never named delivers nothing.
+directory once Luna began passing an explicit read-only map; Landlock permits `connect()`
+on an inode the agent can merely see. The name reaches the agent as `--env
+LUNA_ARTIFACT_SOCKET`, which is not a detail: setting it on the process Luna starts sets it
+on the *jail*, and a stage told to hand its work over through a socket it was never named
+delivers nothing. The receiving node stamps task and stage, then forwards the blob to the
+central daemon; the daemon socket sits outside the mapped handover directory.
 
 The earlier alternative failed in the worst way
 available — inside the sandbox the store path resolved onto a tmpfs root, so `luna task
@@ -605,39 +633,18 @@ none. It is re-recorded rather than bridged: no task older than this change exis
 **`produces_for_human` is a contract field of its own** — checked on the way out, exempt
 from the static check, because no stage downstream will ever ask for it.
 
-**The flow declares a pack of roles, and a solo run collapses them onto one.** The same test
-has now been run three times and returned three numbers, which is the point of writing it
-down: *a role is worth splitting from another only when it denies a different tool, cannot
-inherit the previous session, or runs on a different harness.* Twelve roles became three
-when the first two conditions were applied honestly. Three became one when a single agent
-did every stage, because a lone agent cannot deny itself a tool and has only one session.
-Five came back when the pack arrived, because with a role per specialism the second
-condition holds by construction and the first works again — the `auditor` denies `Edit` and
-`Write`, which is what makes an audit independent rather than a stage that says it is.
+**A pack is the flow's distinct stage briefings; solo replaces them with one brief.** There
+is no second catalogue to count. `chore` has one agent-bearing briefing, `fix` two and
+`full` seven. In pack mode each gets its own session and stage worktree; `review` denies
+`Edit` and `Write`, which is what makes that review independent rather than a stage that
+says it is. Solo uses one agent and one broad briefing and removes denials a single worker
+cannot honour against itself. The stage's declared `context` still decides whether a
+session is fresh or resumed; changing execution mode does not rewrite that policy.
 
-The pack is `planner`, `investigator`, `coder`, `cleaner`, `auditor`, and its size is the
-flow's: `chore` names one working role, `fix` two, `full` five. Choosing the flow chooses the
-depth, which is the shape SwarmForge gives its two-, four- and six-packs.
-
-What a solo run gives up is named rather than hidden: one agent means one session and no
-denials, so `audit` re-reads its own work with `context = "fresh"` and does not claim to be
-an independent review. What a pack gives up is session continuity across a role change —
-`build` and `refactor` are `fresh` in the pack because their predecessors hold a different
-role, and `AuditContextChain` refuses a live stage that would inherit a stranger's session.
-*Rejected:* letting a live stage fall back to a fresh session at runtime when the roles
-differ — the static check is a proof, and trading it for a runtime argument about map keys
-is how a guarantee turns into a habit.
-
-**What that costs is named rather than hidden: whoever writes now reviews.** The judging
-stage is called `audit`, not `review`, because a review is independent or it is not a
-review, and calling it one afterwards would claim a property the design no longer has. What
-survives is `context = "fresh"` — the same model re-reading its own work with no memory of
-writing it, which is the one half of independence a single agent can have. What is
-untouched is the half that never depended on who was asking: a command that runs over the
-delivered commit does not care who wrote it. *Rejected:* deleting the stage — on the one
-full cycle that reached it, it found a genuine violation of the contract's own clause and
-sent the work back, the first time that mechanism ever fired. Whether it still finds that
-when auditing itself is unmeasured, and the honest move is to keep the stage and measure.
+*Rejected:* counting labels or restoring role files. Labels produced *"pack of 5"* for a
+flow that actually ran seven differently briefed agents. *Rejected:* deleting `review` in
+solo mode. It still runs against the delivered commit and can find a contract violation;
+what solo gives up, and says it gives up, is independence from the author.
 
 **Eight stages, not twelve — and later seven.** `scenarios`+`spec` merged into `plan`; `qa`+`code-review`+
 `harden`+`architecture` merged into `review`. The argument is measured: the two planning
@@ -661,16 +668,14 @@ and paid to ingest one diff four times.
 > by:** `forge` produces it, still at `full`, and still by running `make ci`. What changed
 > is which stage owes it, not what proves it.
 
-**`plan` starts fresh, even though the runtime would probably allow otherwise.** Sessions
-are keyed by role, so a live `plan` would resume the session `intake` left under `maker`,
-never the investigator's — the runtime is safe. But `AuditContextChain` reads the
-*declared* flow, where `diagnose` sits between them, and refuses it. The check stays as it
-is: it is a static proof, and trading one for a runtime argument about map keys is how a
-guarantee turns into a habit. The cost is one cold start on a bug task. *Rejected:*
-making the check role-aware so it follows the session key rather than the declared
-neighbour — worth doing if a flow ever needs it, not worth doing to recover one call.
+**`plan` starts fresh.** Sessions are keyed by briefing, and `AuditContextChain` refuses a
+live stage whose declared predecessor carries a different one. The check stays static:
+trading a proof for a runtime argument about which conditional stage happened to run is
+how a guarantee turns into a habit. The cost is one cold start. *Rejected:* falling back to
+fresh at runtime when the flow declared live — that makes a configuration error look like
+a setting that worked.
 
-**The review lenses live in the role's brief, not the stage file.** The parser has no
+**The review lenses live in the stage's brief.** The parser has no
 section for them and refuses unknown keys, which is the right refusal: an invented
 `[lenses]` table would have parsed as nothing. If lens-by-lens accounting is ever wanted,
 that is a stage-file feature to design, not a brief to grow.
@@ -778,13 +783,11 @@ change" as a stopping condition rather than a plain iteration count.
 per role with outbox/inbox (the FSM is the channel); notification by injecting keystrokes
 into a terminal with hand-tuned pauses.
 
-**Reversed:** worktree per agent was rejected here, on the reasoning that parallelism is
-between tasks and a worktree therefore belongs to one. That was true of a design with no
-pack in it. A pack is N roles inside one task, and each needs a checkout it can commit to
-without merging with a peer mid-stage — so the worktree is per role, keyed by task and
-role, and two tasks still cannot see each other's work because the task is half the key.
-The reading that was wrong was not "per task" but the premise under it, and the premise
-changed when the second mode arrived.
+**Revised:** a worktree is per task and stage. A pack may use several agents inside one
+task, but stages are serial and hand work forward by commit, so no two members need to
+merge peer work mid-stage. Naming the checkout by stage also prevents a killed stage from
+stranding the branch name a later stage needs. Two tasks still cannot see each other's
+uncommitted work because task id remains part of the key.
 
 The reading that closes the study: it has strong enforcement on **transport** and none on
 **flow**. Luna wants the inverse, and the stage contract is where it gets it. What was
@@ -801,7 +804,7 @@ that stops talking stops in silence.
 | 6 — launch/pause/resume with a simple API | the gate suspends and releases the slot |
 | 7 — contact humans with tool calls | the gate is mechanism, not convention |
 | 8 — own your control flow | the FSM decides the next stage |
-| 10 — small, focused agents | one role per responsibility |
+| 10 — small, focused agents | one stage briefing per responsibility in pack mode |
 | 12 — make your agent a stateless reducer | the node takes context and returns a result |
 
 The central observation, and the one this project is a bet on: the products that work are
@@ -856,17 +859,16 @@ sharpest point is that a tool with no measurement is an aesthetic preference.
 
 ## Open
 
-- **Conditional `requires`.** `build` should require `contract` only when `spec` ran. The
-  static check does not understand conditional requires, so `contract` stays out of
-  `requires`; the gap is recorded in `070-build.toml` itself.
+- **Conditional `requires`.** A stage may be conditional, but an individual requirement
+  may not. No shipped flow needs it now; a future conditional producer may.
 - **Notification channels.** The queryable state is the base and does not depend on
   anything external. Which channel to push through is left open until real use answers it.
-- **Token accounting.** Being added now that the transport reports usage.
+- **Per-model pricing.** The harness reports tokens and cost and Luna records both. Luna
+  does not yet carry its own model price table, so cost is the harness's number.
 
-- **Skills that teach an agent to use Luna.** `Role.Skills` parses and `Order` carries it;
+- **Skills that teach an agent to use Luna.** `Stage.Skills` parses and `Order` carries it;
   nothing reads it and `src/stock/skills/` is empty. What a skill would hold is what the
   brief re-teaches at every single call — the handover (`luna artifact put`), the severity
   tags, what a contract admits. Deferred on purpose until the flow has been run enough to
   know what an agent actually gets wrong, because a skill written from a guess becomes a
   second place for the brief to disagree with. Hooks for the same purpose are unevaluated.
-

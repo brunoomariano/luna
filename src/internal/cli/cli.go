@@ -30,7 +30,10 @@ var ErrUsage = errors.New("usage")
 // the real commands against a temporary store and captured output, rather than
 // asserting on a mock of themselves.
 type Env struct {
-	Store *store.Store
+	// Store is the current project's view. GlobalStore is the same central
+	// database without a project filter, used only by watching commands.
+	Store       *store.Store
+	GlobalStore *store.Store
 
 	// Config is the project's settings, including the profiles it defines. A zero
 	// value carries no profiles at all, so commands that need one fall back to the
@@ -84,7 +87,7 @@ type Env struct {
 	// solo run without starting a contained agent and waiting out the turn budget.
 	//
 	// A constructor rather than a value because the real one is per-run: it needs
-	// the repository, the flow and the role table before it can exist. That also
+	// the repository and the flow before it can exist. That also
 	// keeps it wired in the binary rather than nil-means-real, which is the shape
 	// TestEveryInjectedDependencyIsWired exists to hold — a field that is nil on
 	// every machine is a feature that is off on every machine.
@@ -145,8 +148,6 @@ func Run(env Env, args []string) error {
 
 // Usage is the help text. It is a function rather than a constant so the command
 // list has one home.
-// Usage is the help text. It is a function rather than a constant so the command
-// list has one home.
 //
 // Grouped by who acts rather than alphabetically, because the two modes are the
 // product and everything else exists to watch them or to correct them. A reader
@@ -159,28 +160,27 @@ luna — deterministic orchestration for AI agents
 Two modes. Luna picks the stage in both; the knob picks who answers a gate.
 
   luna lead <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
-        solo: one agent carries the task end to end. Luna starts it per
-        stage, contained and in a worktree, under the single role a solo
-        run collapses the flow onto — so the worktree and the session
-        survive from stage to stage, and there is never a conductor and a
-        worker alive at once. It never chooses a stage.
+        solo: one agent policy carries the task end to end. Luna starts it
+        per stage, contained and in that stage's worktree; the stage's
+        context setting decides whether its session is fresh or resumed.
+        There is never a conductor and a worker alive at once. The agent
+        never chooses a stage.
         --dry-run exercises the flow with no agent, no worktree and no
         model — it is what tells a broken flow from a broken integration.
 
   luna fleet run <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
-        pack: the lead conducts, and the roles the flow declares do the
-        work — a worktree and a session each, kept across the stages that
-        role owns. That is what buys an independent audit: a role that
-        judges can be denied the tools to edit, which one agent doing
-        everything cannot be.
+        pack: the lead conducts, and every distinct stage briefing gets its
+        own agent session and worktree. That is what buys an independent
+        audit: a judging stage can be denied the tools to edit, which one
+        agent doing everything cannot be.
         The size of the pack is the flow's, not a flag's — luna flow
         check says what each one names. A pack is inside one task.
 
 how a stage is carried out — the pack's lead runs these, and so can you
 
   luna next <id> [--json]
-        the order for this task: which stage, which role, which worktree,
-        which base commit, what is denied. It is an instruction, not
+        the order for this task: which stage, briefing, agent, worktree,
+        base commit and denied capabilities. It is an instruction, not
         advice, and reading it changes nothing.
 
   luna work <id> [--agent <kind>] [--dry-run]
@@ -200,6 +200,11 @@ how a stage is carried out — the pack's lead runs these, and so can you
         without leaving it in the tree for everyone downstream.
 
 opening and correcting a task
+
+  luna task list [--json]
+        every active task in the central store, across projects. Project is
+        always shown because task ids are only unique inside one project.
+        Finished and abandoned history stays available in fleet report.
 
   luna task new <id> --kind <kind> [--flow <flow>] [--profile <profile>]
         [--workstream <name> | --new-workstream <name>] [--simulated]
@@ -265,11 +270,11 @@ answering a gate
 watching
 
   luna status <id> [--json]
-        the whole flow and where the task stands in it — which flow and
+        the current project's task: its whole flow and where it stands — which flow and
         its fingerprint, the pack it keeps, the workstream it writes to,
         what the knob means for these gates, the ceiling and what is
         left, and per stage the model that answered, the turns and the
-        cost. Plus where each role's worktree is, and which one is open.
+        cost. Plus where each stage's worktree is, and which one is open.
         Separate from next on purpose: an order carries no view of what
         comes after it.
 
@@ -277,24 +282,24 @@ watching
         the task's current state and what it has produced
 
   luna gates [--json]
-        every task waiting on a person
+        every task waiting on a person, across every project in the central store
 
   luna stuck [--for <duration>] [--notify] [--json]
-        what has been stopped for too long — a blocked merge, a gate
-        nobody answered. Defaults to an hour. --notify tells a person
-        instead of only whoever ran the command.
+        what has been stopped for too long across every project — a blocked
+        merge, a gate nobody answered. Defaults to an hour. --notify tells
+        a person instead of only whoever ran the command.
 
   luna fleet report [--since <duration>] [--json]
-        what every task is, grouped by what has to happen to it next.
+        what every task in the central store is, grouped by what has to happen next.
         This is the morning's product rather than a side effect of it.
 
   luna unblock <id>
         clear a block once whatever caused it is dealt with
 
   luna flow check [--flow <flow>]
-        what flows this build carries, whether anything is open, and
-        what each has cost here before — median by stage, from this
-        project's own log. --flow cannot change once a task opens, so it
+        what flows this build carries, whether anything is open globally, and
+        what each has cost before — median by stage, from the central log.
+        --flow cannot change once a task opens, so it
         is the most expensive decision available and was the one made
         with the least information.
         They come from the binary and a project cannot override them —
@@ -318,6 +323,8 @@ setting the machine up
 
 config:   .luna/config.toml — editor, lead_harness, turn_budget,
           workstream (the project's default), profiles
+state:    $XDG_DATA_HOME/luna/luna.db — one central database, written only
+          by the daemon; project identity scopes task ids inside it
 
 kinds:    feature, bug, chore, docs
 profiles: interactive (default), turbo, nightly, plus any the project
@@ -327,12 +334,14 @@ profiles: interactive (default), turbo, nightly, plus any the project
 
 func runTask(env Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%w: task needs a subcommand (new, show, statement, abandon, forget)", ErrUsage)
+		return fmt.Errorf("%w: task needs a subcommand (new, list, show, statement, abandon, forget)", ErrUsage)
 	}
 
 	switch args[0] {
 	case "new":
 		return taskNew(env, args[1:])
+	case "list":
+		return taskList(env, args[1:])
 	case "show":
 		return taskShow(env, args[1:])
 	case "statement":
@@ -641,7 +650,7 @@ func parseTaskOptions(cfg Config, args []string) (taskOptions, error) {
 }
 
 // profiles is the configuration a command should resolve names against, filling
-// in the shipped profiles and roles when nothing was loaded.
+// in the shipped profiles when nothing was loaded.
 //
 // The fallback is for tests and for a zero Env, not for a real run: main always
 // loads a config, and a missing file already yields the shipped set.
@@ -932,24 +941,48 @@ func runGates(env Env, args []string) error {
 		return err
 	}
 
-	waiting, err := env.Store.AwaitingGate()
+	tasks, err := globalTasks(env)
 	if err != nil {
 		return err
 	}
+	waiting := waitingGates(tasks)
 
 	if asJSON {
-		return writeJSON(env.Out, gatesReport(env.profiles(), waiting))
+		return writeJSON(env.Out, gatesReport(env.profiles(), env.Store.Project, waiting))
 	}
+	return printWaitingGates(env, waiting)
+}
 
+func waitingGates(tasks []globalTask) []store.Waiting {
+	waiting := make([]store.Waiting, 0)
+	for _, task := range tasks {
+		if task.Err != nil || task.State.Status != fsm.StatusAwaitingGate || task.State.Gate == nil {
+			continue
+		}
+		waiting = append(waiting, store.Waiting{
+			Project: task.Project,
+			TaskID:  task.ID,
+			Stage:   task.State.Gate.Stage,
+			Reason:  task.State.Gate.Reason,
+			Profile: task.State.Profile,
+		})
+	}
+	return waiting
+}
+
+func printWaitingGates(env Env, waiting []store.Waiting) error {
 	if len(waiting) == 0 {
 		fmt.Fprintln(env.Out, "nothing waiting")
 		return nil
 	}
 
 	for _, w := range waiting {
-		fmt.Fprintf(env.Out, "%-16s %-14s %s\n", w.TaskID, w.Stage, w.Reason)
-		if note := undefinedProfileNote(env.profiles(), w.Profile); note != "" {
-			fmt.Fprintf(env.Out, "%-16s %s\n", "", strings.TrimSpace(note))
+		fmt.Fprintf(env.Out, "%-52s %-16s %-14s %s\n",
+			projectName(w.Project), w.TaskID, w.Stage, w.Reason)
+		if w.Project == env.Store.Project {
+			if note := undefinedProfileNote(env.profiles(), w.Profile); note != "" {
+				fmt.Fprintf(env.Out, "%-16s %s\n", "", strings.TrimSpace(note))
+			}
 		}
 	}
 	return nil

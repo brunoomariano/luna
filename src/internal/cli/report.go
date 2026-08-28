@@ -175,11 +175,12 @@ type GatesReport struct {
 
 // WaitingReport is one task stopped at a gate.
 type WaitingReport struct {
+	Project        string `json:"project"`
 	TaskID         string `json:"task_id"`
 	Stage          string `json:"stage"`
 	Reason         string `json:"reason"`
 	Profile        string `json:"profile"`
-	ProfileDefined bool   `json:"profile_defined"`
+	ProfileDefined *bool  `json:"profile_defined,omitempty"`
 }
 
 // taskReport builds the machine-readable view of a task.
@@ -261,20 +262,24 @@ func writeJSON(out io.Writer, v any) error {
 }
 
 // gatesReport builds the machine-readable view of what is waiting.
-func gatesReport(cfg Config, waiting []store.Waiting) GatesReport {
+func gatesReport(cfg Config, currentProject string, waiting []store.Waiting) GatesReport {
 	// Never null: a reader looping over it should not have to distinguish "no
 	// tasks" from "the field was absent".
 	report := GatesReport{Waiting: []WaitingReport{}}
 
 	for _, w := range waiting {
-		defined := cfg.Defines(w.Profile)
-		report.Waiting = append(report.Waiting, WaitingReport{
-			TaskID:         w.TaskID,
-			Stage:          string(w.Stage),
-			Reason:         w.Reason,
-			Profile:        string(w.Profile),
-			ProfileDefined: defined,
-		})
+		line := WaitingReport{
+			Project: projectName(w.Project),
+			TaskID:  w.TaskID,
+			Stage:   string(w.Stage),
+			Reason:  w.Reason,
+			Profile: string(w.Profile),
+		}
+		if w.Project == "" || w.Project == currentProject {
+			defined := cfg.Defines(w.Profile)
+			line.ProfileDefined = &defined
+		}
+		report.Waiting = append(report.Waiting, line)
 	}
 	return report
 }
@@ -353,6 +358,7 @@ type FleetReport struct {
 // FleetTaskReport is one task as a fleet reads it: the two verdicts, the bill,
 // and what has to happen next.
 type FleetTaskReport struct {
+	Project   string  `json:"project"`
 	ID        string  `json:"id"`
 	Flow      string  `json:"flow,omitempty"`
 	Product   string  `json:"product"`

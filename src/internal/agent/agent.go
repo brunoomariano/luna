@@ -244,8 +244,8 @@ type Harness struct {
 	// Kind is which harness Ask puts its question to. Empty means DefaultAsk.
 	//
 	// Only Ask reads it: Run takes the kind from the Call, because which harness
-	// runs a stage is the role's decision and travels with the call. A question
-	// has no role, so it is configured here.
+	// runs a stage is the stage's decision and travels with the call. A lead's
+	// question has no stage, so its harness is configured here.
 	Kind string
 
 	// Deadline bounds one Ask. Zero means AskTimeout. Run has no equivalent —

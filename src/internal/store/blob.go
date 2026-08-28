@@ -53,11 +53,16 @@ func (s *Store) PutBlob(b Blob) error {
 		return fmt.Errorf("%w: %s from stage %q is %d bytes, and the ceiling is %d",
 			ErrBlobTooLarge, b.Artifact, b.Stage, len(b.Body), MaxBlobSize)
 	}
+	if s.Via != nil {
+		return s.Via.PutBlob(s.Project, b)
+	}
 
 	sum := sha256.Sum256(b.Body)
 	_, err := s.db.Exec(
-		`INSERT INTO blobs (task_id, stage, artifact, seq, hash, body, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		b.TaskID, b.Stage, b.Artifact, b.Seq, hex.EncodeToString(sum[:]), b.Body, s.now().Unix(),
+		`INSERT INTO blobs (project, task_id, stage, artifact, seq, hash, body, at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.Project, b.TaskID, b.Stage, b.Artifact, b.Seq,
+		hex.EncodeToString(sum[:]), b.Body, s.now().Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("recording %s for %s at %d: %w", b.Artifact, b.TaskID, b.Seq, err)
@@ -72,8 +77,8 @@ func (s *Store) PutBlob(b Blob) error {
 // *that* stage handed over, which is the question an audit has.
 func (s *Store) LatestBlob(taskID, stage, artifact string) (Blob, error) {
 	query := `SELECT stage, seq, hash, body FROM blobs
-	          WHERE task_id = ? AND artifact = ?`
-	args := []any{taskID, artifact}
+	          WHERE project = ? AND task_id = ? AND artifact = ?`
+	args := []any{s.Project, taskID, artifact}
 	if stage != "" {
 		query += ` AND stage = ?`
 		args = append(args, stage)
@@ -99,7 +104,7 @@ func (s *Store) LatestBlob(taskID, stage, artifact string) (Blob, error) {
 func (s *Store) Blobs(taskID string) ([]Blob, error) {
 	rows, err := s.db.Query(
 		`SELECT stage, artifact, seq, hash, length(body) FROM blobs
-		 WHERE task_id = ? ORDER BY seq, stage, artifact`, taskID,
+		 WHERE project = ? AND task_id = ? ORDER BY seq, stage, artifact`, s.Project, taskID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing what %s produced: %w", taskID, err)
@@ -130,7 +135,12 @@ func (s *Store) ForgetBlobs(taskID string) error {
 	if err := s.mayWrite(); err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM blobs WHERE task_id = ?`, taskID); err != nil {
+	if s.Via != nil {
+		return s.Via.ForgetBlobs(s.Project, taskID)
+	}
+	if _, err := s.db.Exec(
+		`DELETE FROM blobs WHERE project = ? AND task_id = ?`, s.Project, taskID,
+	); err != nil {
 		return fmt.Errorf("forgetting what %s produced: %w", taskID, err)
 	}
 	return nil

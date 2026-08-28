@@ -51,13 +51,13 @@ func writeFileAt(t *testing.T, dir, name, body string) {
 	}
 }
 
-// TestTheLogBelongsToTheMainRepositoryNotTheWorktree is the defect this fixes.
+// TestTheCentralLogDoesNotFollowAWorktree is the defect this fixes.
 //
 // A stage runs in an ephemeral worktree that is deleted when it ends.
 // Resolving the log from the working directory put a second database inside that
 // worktree — measured, not theorised: two `.luna/luna.db` files, and the task in
 // the main repository invisible from the other.
-func TestTheLogBelongsToTheMainRepositoryNotTheWorktree(t *testing.T) {
+func TestTheCentralLogDoesNotFollowAWorktree(t *testing.T) {
 	main, worktree := repoWithWorktree(t)
 
 	fromMain, err := DefaultPath(context.Background(), main)
@@ -132,10 +132,8 @@ func TestADirectoryWithNoRepositoryStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultPath outside a repository: %v", err)
 	}
-	// Keyed by the directory rather than by a remote, since there is none — a
-	// different guarantee, and one the project identity states rather than hides.
-	if !strings.Contains(got, filepath.Join("luna", "projects")) {
-		t.Errorf("path = %s, want it under the projects directory", got)
+	if filepath.Base(got) != "luna.db" || filepath.Base(filepath.Dir(got)) != "luna" {
+		t.Errorf("path = %s, want the central Luna database", got)
 	}
 }
 
@@ -156,8 +154,8 @@ func TestTheLogSitsUnderTheDataHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DataHome: %v", err)
 	}
-	if !strings.HasPrefix(got, filepath.Join(home, "projects")) {
-		t.Errorf("path = %s, want it under %s", got, home)
+	if got != filepath.Join(home, "luna.db") {
+		t.Errorf("path = %s, want %s", got, filepath.Join(home, "luna.db"))
 	}
 	if filepath.Base(got) != "luna.db" {
 		t.Errorf("path = %s, want the store file", got)

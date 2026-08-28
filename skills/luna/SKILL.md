@@ -62,8 +62,8 @@ read. Getting this wrong means opening a new task, not fixing this one.
 luna flow check
 ```
 
-It says what each flow carries, how many agents its pack keeps, and — once this
-project has run one — what each has cost here before, median by stage. `--flow`
+It says what each flow carries, how many agents its pack keeps, and — once any
+project has run one — what each has cost in the central log, median by stage. `--flow`
 cannot change after a task opens, so this is the one moment the decision is
 cheap.
 
@@ -78,6 +78,37 @@ workstream = "the-project"
 Luna opens a clean worktree **per stage**, so without this every stage
 rediscovers that step and the ones that cannot fail on a check that was never
 about the work. It cost a real task $10.36 of $19.13 to learn that.
+
+## Where state lives
+
+There is one database for the installed Luna:
+`$XDG_DATA_HOME/luna/luna.db`, or `~/.local/share/luna/luna.db`. The daemon starts
+on demand and is the only process that opens it for writing. Every ordinary CLI
+process opens it with SQLite read-only mode and forwards events and artifacts to
+the daemon. Do not put `luna.db` in a target repository.
+
+Task ids are project-local. Luna derives the project from the normalised `origin`
+remote, falling back to the main checkout path when there is no remote. Commands
+that act on one id use the current checkout. Workload commands cross projects and
+always print the project key:
+
+```sh
+luna task list            # every active task, globally
+luna gates                # every task waiting on a person, globally
+luna stuck --for 2h       # every task stopped too long, globally
+luna fleet report         # all history grouped by what it needs next
+luna flow check           # global open-task survey and spend history
+```
+
+On first use, the daemon imports the former per-project data-home stores and an
+older checkout-local `.luna/luna.db`, then renames each source `.migrated` only
+after an exact copy. `LUNA_STORE` selects a different central database for an
+isolated test; it is not a way to restore one database per repository.
+
+Do not point `LUNA_STORE` at a populated database from the former per-project
+layout. Its rows have no project key, so Luna refuses to open it as central;
+leave it in one of the legacy locations above so the daemon can import it with
+the project identity.
 
 ## The three flows
 
@@ -199,8 +230,9 @@ luna lead      AVG-1     # solo — one agent carries the task end to end
 luna fleet run AVG-1     # pack — the lead conducts, each stage runs on its own brief
 ```
 
-**Solo** is one agent, one worktree, one session across every stage. Cheapest,
-and its `audit` re-reads its own work with no memory of writing it — the one
+**Solo** is one broad agent policy across the task, with one stage worktree at a
+time; each stage's context setting decides whether the session is fresh or
+resumed. It has no conductor, and its `review` re-reads its own work — the one
 half of independence a single agent can have.
 
 **Pack** is the lead plus one agent per brief the flow declares, each with its own
@@ -267,9 +299,10 @@ Three endings, and all three are discoverable by command:
 ```sh
 luna status AVG-1        # the flow, the pack, the ledger, the ceiling, the
                          # cost per stage with the model that answered, and
-                         # where each role's worktree is
-luna gates               # every task waiting on a person
-luna stuck --for 2h      # what has been stopped too long
+                         # where each stage's worktree is
+luna task list           # every active task across every project
+luna gates               # every task waiting on a person, globally
+luna stuck --for 2h      # what has been stopped too long, globally
 ```
 
 `luna status` is the first place to look and usually the last: it answers what
@@ -381,12 +414,14 @@ second ledger instead of stopping the stage.
 
 ```sh
 luna version              # which build, and the flows it carries
-luna next   <id>          # the order: stage, role, worktree, base, what is owed
+luna next   <id>          # the order: stage, briefing, agent, worktree, base, what is owed
 luna work   <id>          # run the agent for that stage and close it on its checks
 luna done   <id> --delivered <a,b> [--commit <sha>]
 luna artifact put <name>  # hand a document to Luna — runs inside a stage only
+luna task list            # every active task across projects
 luna task abandon <id> <reason>
 luna task forget  <id>    # drop a finished task's documents; the log stays
+luna fleet report         # every project and task, grouped by next action
 luna trust                # tell the harness it trusts where Luna makes worktrees
 ```
 
@@ -395,7 +430,7 @@ luna trust                # tell the harness it trusts where Luna makes worktree
 ## Installing this in a target project
 
 This skill ships with Luna, in `skills/`. It is not `src/stock/skills/`, which
-belongs to a different idea — the capability bundles a *role* loads, which
+belongs to a different idea — the capability bundles a stage loads, which
 travel in the order as `skills=`. This one is for whoever drives Luna from
 outside, so it is not the binary's to embed.
 
@@ -408,9 +443,9 @@ cp -r <luna>/skills/luna <target>/.claude/skills/
 
 The target project wants a `.luna/config.toml` if its tests need a build step
 first — that is `bootstrap`, and it is the setting that saves the most. The rest
-(`workstream`, `turn_budget`, `interpreter`, `editor`) are optional; Luna runs
+(`workstream`, `turn_budget`, `lead_harness`, `editor`) are optional; Luna runs
 without any of them, on the shipped defaults.
 
-`.luna/` writes its own `.gitignore`, so the log, its blobs and the costs stay
-out of commits without anybody adding a rule. `config.toml` is left committable
-on purpose: it is the project's settings, and a team shares them through git.
+Task state, blobs and costs never enter the target checkout; they live in the
+central database. `.luna/config.toml` is committable on purpose: it is the
+project's settings, and a team shares it through git.

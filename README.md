@@ -55,10 +55,18 @@ session would have done it for a fraction of that. The per-stage column is in
 `luna task show`, and it says the expense is in the stages *before* the code: scenarios
 and spec are $4.14 of the $6.78, build is $0.64.
 
-That reading has since been acted on: the flow is eight stages instead of twelve and three
-roles instead of twelve, which is two cold starts in a run rather than twelve. Whether it
-is cheaper is the next thing to measure, not something to claim here. See
+That reading has since been acted on: the full flow is seven stages instead of twelve.
+Solo execution uses one broad agent policy; pack execution gives each distinct stage
+briefing an independent agent. Whether the shorter flow is cheaper is the next thing to
+measure, not something to claim here. See
 [`docs/lessons.md`](docs/lessons.md).
+
+Task state is global to the installed Luna, not stored in a checkout. One daemon owns
+`$XDG_DATA_HOME/luna/luna.db`; every CLI process opens that file in SQLite read-only mode
+and sends events and artifact writes to the daemon over its private socket. Rows carry a
+project identity, so equal task ids in different repositories remain separate while
+`luna task list`, `luna gates`, `luna stuck`, `luna fleet report` and `luna flow check`
+can report the whole workload.
 
 ## Installation
 

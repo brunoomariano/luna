@@ -110,9 +110,10 @@ func TestAnOldStoreThatNeverStoredAnythingIsMigrated(t *testing.T) {
 	}
 }
 
-// TestTheLogSurvivesTheMigration. The events table was compatible all along, and
-// nothing about correcting the blob table may touch it.
-func TestTheLogSurvivesTheMigration(t *testing.T) {
+// TestAnUnscopedLogIsRefusedAsCentral keeps a former project's identity from
+// becoming an empty project key in the global database. The daemon import path
+// has the project key and is the only place that can assign it honestly.
+func TestAnUnscopedLogIsRefusedAsCentral(t *testing.T) {
 	path := oldStore(t)
 
 	db, err := sql.Open("sqlite", path)
@@ -128,18 +129,9 @@ func TestTheLogSurvivesTheMigration(t *testing.T) {
 		t.Fatalf("closing: %v", err)
 	}
 
-	s, err := OpenAs(path, LunaOwnsTheLog)
-	if err != nil {
-		t.Fatalf("opening: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	events, err := s.Events("OLD-2")
-	if err != nil {
-		t.Fatalf("reading the log: %v", err)
-	}
-	if len(events) != 1 || events[0].Action != "TaskCreated" {
-		t.Errorf("the log did not survive the migration: %+v", events)
+	_, err = OpenAs(path, LunaOwnsTheLog)
+	if !errors.Is(err, ErrSchemaTooOld) || !strings.Contains(err.Error(), "without a project key") {
+		t.Fatalf("opening an unscoped log as central = %v", err)
 	}
 }
 
@@ -172,5 +164,140 @@ func TestAStoreRecordsTheShapeItWasWrittenIn(t *testing.T) {
 	}
 	if version != schemaVersion {
 		t.Errorf("a fresh store records version %d, want %d", version, schemaVersion)
+	}
+}
+
+func TestSchemaHelpersReportAClosedDatabase(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "migrate", run: func() error { return migrate(db) }},
+		{name: "require current", run: func() error { return requireCurrentSchema(db) }},
+		{name: "table exists", run: func() error { _, err := tableExists(db, "events"); return err }},
+		{name: "column exists", run: func() error { _, err := tableHasColumn(db, "events", "project"); return err }},
+		{name: "version zero", run: func() error { return migrateToOne(db) }},
+		{name: "pre-version blobs", run: func() error { _, err := isPreVersionBlobs(db); return err }},
+		{name: "rebuild", run: func() error { return rebuildWithProject(db, "events") }},
+		{name: "unscoped rows", run: func() error { return refuseUnscopedRows(db, "events") }},
+	}
+	for _, check := range checks {
+		if err := check.run(); err == nil {
+			t.Errorf("%s ignored a closed database", check.name)
+		}
+	}
+}
+
+func TestMigrationRejectsAnUnknownTable(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := rebuildWithProject(db, "unknown"); err == nil {
+		t.Fatal("an unknown table was given an invented migration")
+	}
+}
+
+func TestMigrationAcceptsAlreadyScopedAndMissingTables(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "partially-migrated.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		PRAGMA user_version = 1;
+		CREATE TABLE events (
+			project TEXT NOT NULL, task_id TEXT NOT NULL, seq INTEGER NOT NULL,
+			action TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (project, task_id, seq));
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := OpenAs(path, LunaOwnsTheLog)
+	if err != nil {
+		t.Fatalf("opening a partially migrated store: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+}
+
+func TestMigrationReportsMalformedVersionOneTables(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "malformed.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		PRAGMA user_version = 1;
+		CREATE TABLE events (task_id TEXT PRIMARY KEY);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenAs(path, LunaOwnsTheLog); err == nil {
+		t.Fatal("a malformed version-one event table was migrated")
+	}
+	db, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	hasProject, err := tableHasColumn(db, "events", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasProject {
+		t.Fatal("a failed migration left a replacement events table behind")
+	}
+	leftover, err := tableExists(db, "events_v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leftover {
+		t.Fatal("a failed migration left its renamed source table behind")
+	}
+}
+
+func TestMigrationReportsAnOldBlobView(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "view.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE VIEW blobs AS SELECT '' AS sha256, '' AS content WHERE 0`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenAs(path, LunaOwnsTheLog); err == nil {
+		t.Fatal("an old blob view was silently replaced")
+	}
+}
+
+func TestMigrateToTwoReportsAClosedDatabase(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToTwo(db); err == nil {
+		t.Fatal("the version-two migration ignored a closed database")
 	}
 }

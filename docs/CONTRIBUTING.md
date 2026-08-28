@@ -7,17 +7,23 @@ This is the normative home of the **branch, merge, commit and tag** flow. The `R
 
 Read [`docs/decisions.md`](decisions.md). Every decision is recorded with the alternative that was
 rejected and the reason. Proposals that reopen a decision without a new argument will be
-closed with a pointer to the corresponding ADR.
+closed with a pointer to the corresponding decision.
 
 If the change touches a permanent rule of the domain, also check
 [`docs/invariants.md`](invariants.md).
 
 ## Project state
 
-Engine under construction. The architecture is settled and recorded in
-[`docs/decisions.md`](decisions.md); the core has the contract's static and entry checks and stage
-selection. Design critique is still the most useful contribution — especially if you
-have operated a fleet of agents and seen a failure mode the design does not cover.
+Luna has an executable reducer, three embedded flows, a headless agent transport, a
+central daemon-owned store and both solo and conducted pack execution. It remains
+pre-release: design critique and full-cycle evidence are still especially useful,
+particularly from people who have operated multiple agents and seen a failure mode the
+current flow does not cover.
+
+Tests that invoke the CLI must isolate `XDG_DATA_HOME` or set `LUNA_STORE`; otherwise they
+can reach the developer's central database. Production CLI code opens that database with
+`store.OpenReadOnly` and forwards every mutation to the daemon. Tests may use
+`store.OpenAs` directly when the store itself is the unit under test.
 
 ## Git-flow
 
@@ -43,13 +49,13 @@ have operated a fleet of agents and seen a failure mode the design does not cove
 
 - The **title** says what changes, in the imperative: `feat(fsm): validate produces on stage exit`.
 - The **body explains the why**, not the what — the diff already shows the what. If the change
-  exists because of a recorded decision, cite the ADR.
+  exists because of a recorded decision, cite that decision.
 - Types in use: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
 
 ## Pull Request
 
 - Describe the **problem** the PR solves before the solution.
-- Point to the related ADR, invariant or PRD, if any.
+- Point to the related decision or invariant, if any.
 - Explicitly highlight any compatibility break.
 - `make ci` green. Remote CI runs exactly the same `make ci-check`.
 
@@ -130,11 +136,10 @@ guard exists — not before, because a gate that always passes empty teaches peo
 to ignore the pipeline:
 
 - **gitleaks** — when the first secret or `.env` appears;
-- **depguard rules beyond the current two** — when the first external dependency
-  arrives (`go.mod` has none today);
+- **depguard rules beyond the current set** — when another architecture boundary needs
+  compiler-like enforcement;
 - **Trivy** — when there is a Dockerfile;
-- **Spectral/vacuum** — when there is an API spec. ADR-0016 puts a visual interface
-  in phase two, so this is furthest out.
+- **Spectral/vacuum** — when there is an API specification to validate.
 
 ## Documentation
 

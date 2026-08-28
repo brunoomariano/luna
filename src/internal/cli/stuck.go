@@ -40,18 +40,10 @@ func stuckCommand(env Env, args []string) error {
 		}
 	}
 
-	stuck, err := env.Store.Stalled(patience)
+	stuck, err := globalStalled(env, patience)
 	if err != nil {
 		return err
 	}
-
-	// Only this checkout's log is asked. The registry used to be consulted here for
-	// tasks blocked in *another* checkout — the one question a single repository's
-	// log cannot answer — and that went with it.
-	//
-	// What replaces it is a central store rather than a central tracker: one
-	// LUNA_STORE shared between checkouts makes every task local to the same log,
-	// and this listing covers them all with no second source to reconcile.
 
 	if _, ok := flags["json"]; ok {
 		return writeJSON(env.Out, stuckReport(stuck))
@@ -75,6 +67,33 @@ func stuckCommand(env Env, args []string) error {
 	return nil
 }
 
+func globalStalled(env Env, patience time.Duration) ([]store.Stuck, error) {
+	if env.GlobalStore == nil {
+		return env.Store.Stalled(patience)
+	}
+	refs, err := env.GlobalStore.TaskRefs()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var all []store.Stuck
+	for _, ref := range refs {
+		if seen[ref.Project] {
+			continue
+		}
+		seen[ref.Project] = true
+		stalled, err := env.GlobalStore.ForProject(ref.Project).Stalled(patience)
+		if err != nil {
+			return nil, err
+		}
+		for i := range stalled {
+			stalled[i].Project = ref.Project
+		}
+		all = append(all, stalled...)
+	}
+	return all, nil
+}
+
 // announce tells a person, once per stuck task.
 //
 // A notifier that fails does not fail the command. The listing already printed,
@@ -96,10 +115,11 @@ func announce(env Env, stuck []store.Stuck) error {
 
 // StuckReport is the structured shape of `luna stuck`.
 type StuckReport struct {
-	TaskID string      `json:"task_id"`
-	Stage  fsm.StageID `json:"stage,omitempty"`
-	Status fsm.Status  `json:"status"`
-	Reason string      `json:"reason"`
+	Project string      `json:"project"`
+	TaskID  string      `json:"task_id"`
+	Stage   fsm.StageID `json:"stage,omitempty"`
+	Status  fsm.Status  `json:"status"`
+	Reason  string      `json:"reason"`
 
 	// SinceSeconds is a number rather than a formatted duration: whoever parses
 	// this wants to compare it, and a caller that wants "3h12m" can format it.
@@ -112,6 +132,7 @@ func stuckReport(stuck []store.Stuck) []StuckReport {
 	report := make([]StuckReport, 0, len(stuck))
 	for _, s := range stuck {
 		report = append(report, StuckReport{
+			Project:      projectName(s.Project),
 			TaskID:       s.TaskID,
 			Stage:        s.Stage,
 			Status:       s.Status,

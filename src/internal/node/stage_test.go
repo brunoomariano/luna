@@ -133,7 +133,7 @@ func TestAMechanicalStageRunsNoAgent(t *testing.T) {
 
 	r := &Runner{Repo: repo, Agent: fake}
 
-	stage := fsm.Stage{ID: "setup"} // no role
+	stage := fsm.Stage{ID: "setup"} // no agent
 	if _, err := r.Run(context.Background(), runningState("T-3"), stage); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

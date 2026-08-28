@@ -15,8 +15,8 @@ var ErrGhostStore = errors.New("the log is on a filesystem that will not keep it
 //
 // It exists because of a failure measured against a real `ai-jail` 1.17.0. An
 // agent runs contained, with only its worktree reachable and `/` mounted tmpfs.
-// Luna resolves the log to the main repository — a path the jail cannot see — so
-// every level below created it fresh on the tmpfs and worked perfectly:
+// Luna resolves the log to the central data home — a path the jail cannot see —
+// so every level below created it fresh on the tmpfs and worked perfectly:
 //
 //	inside the jail:   luna task new probe   → created probe   exit=0
 //	inside the jail:   luna task show probe  → events 1
@@ -122,7 +122,7 @@ func hollowRoot(repo, dir string) (bool, string) {
 		return false, ""
 	}
 
-	return true, fmt.Sprintf("%s was recorded as this repository's log directory and is not visible from here, "+
+	return true, fmt.Sprintf("%s was recorded as the central log directory and is not visible from here, "+
 		"so this process is not seeing the real one — a contained process reaches only its working "+
 		"directory, and a log written here would be reported as saved and then lost",
 		dir)
@@ -155,11 +155,9 @@ func recordLogLocation(repo, dir string) error {
 
 // keepOutOfGit keeps what Luna leaves in a checkout out of a commit.
 //
-// What is left there is now one thing: the handover socket, at
-// `.luna/artifact.sock` inside a stage's worktree, which is the only position a
-// contained agent can reach. The log used to be here too, and this file was
-// mostly about that — a `git add -A` from an agent working in the repository took
-// the whole thing, measured twice on real runs.
+// The log and handover socket have both left the checkout. This remains for
+// project settings and for old scratch files a prior build may have left behind;
+// a `git add -A` took the whole directory twice on real runs.
 //
 // Written into `.luna/.gitignore` rather than the project's, because the
 // project's belongs to the project: Luna appending to a file somebody else
@@ -176,8 +174,7 @@ func recordLogLocation(repo, dir string) error {
 // gets a working log. What it loses is the protection, not the run.
 func keepOutOfGit(repo string) {
 	dir := filepath.Join(repo, ".luna")
-	const ignore = `# Written by Luna. What it leaves in a checkout is scratch — the
-# handover socket a stage opens — and none of it belongs in a commit.
+	const ignore = `# Written by Luna. Scratch under this directory does not belong in a commit.
 # config.toml is the exception: it is the project's settings, not Luna's state.
 *
 !.gitignore

@@ -268,8 +268,8 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 
 // printStatusStages is the walk, with what each stage cost and who ran it.
 //
-// The role and the harness are here rather than in the facts above because they
-// differ per stage in a pack — and "which model answered" is a question about one
+// The stage and harness are here rather than in the facts above because they
+// differ across a pack — and "which model answered" is a question about one
 // stage, not about the task.
 func printStatusStages(env Env, state fsm.TaskState, flow []fsm.Stage, report StatusReport) {
 	for _, mark := range report.Stages {
@@ -305,7 +305,7 @@ func stageCostLine(state fsm.TaskState, stage fsm.Stage) string {
 	return fmt.Sprintf("%-24s %-6s %3dt  $%.4f", answered, spend.Context, spend.Turns, spend.CostUSD)
 }
 
-// printWorktrees says where each role's checkout is.
+// printWorktrees says where each stage's checkout is.
 //
 // Whether or not it exists: a worktree lasts exactly as long as its stage, so the
 // answer to "where is this work" is a path that is there while the stage runs and
@@ -502,13 +502,11 @@ func handReportedEvidence(delivered []fsm.Artifact, seq int) map[fsm.Artifact]fs
 	return evidence
 }
 
-// fullyBriefed replaces the role's brief with the one the agent would actually be
-// given.
+// fullyBriefed replaces the stage's short brief with what the agent actually gets.
 //
 // `NextOrder` lives in the engine and cannot reach `node.Brief`, so it carried the
-// role's own sentence — which is what a role says about itself and not what a
-// stage says about this task. A person driving by hand therefore got strictly less
-// than the agent Luna starts for the same stage: no contract duty, no gate
+// stage's own sentence, without what the task adds. A person driving by hand
+// therefore got strictly less than the agent Luna starts for the same stage: no contract duty, no gate
 // criteria, no list of what is handed over rather than committed.
 //
 // Composed here because this is the layer that can see both packages. An order for

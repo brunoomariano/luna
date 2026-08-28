@@ -22,7 +22,7 @@ and then to **verify what came back by running a tool** rather than by reading a
 luna task new "add --avg to the tally"
    │
    ▼
-one task, one worktree, one lead — parallelism is BETWEEN tasks, never inside one
+one task, one active stage worktree, one lead — parallelism is BETWEEN tasks, never inside one
    │
    ▼
 for each stage in the flow:
@@ -96,13 +96,16 @@ holds" about a third of what it runs is saying something true and useless.
 
 ## The daemon
 
-One process writes the log. Everything else opens it read-only and forwards its appends
-there, over a socket the daemon owns.
+One process owns the central database. Every ordinary CLI process first makes sure that
+daemon is running, then opens the same file with SQLite `mode=ro`. Events, artifact bodies
+and the one allowed content deletion are forwarded to the daemon over its private socket.
+The read-only connection is physical, not only a Go-level ownership flag.
 
 ```
 $XDG_RUNTIME_DIR/luna/
-  daemon.sock        the writer — never exposed to a sandbox
-  handover/          the stage sockets — exposed read-only, one per stage
+  daemon-<db-hash>.sock    the writer — never exposed to a sandbox
+  handover/
+    <task>-<stage>.sock     one stage handover socket, mapped read-only
 ```
 
 **Why a process and not a constant.** The rule was `LunaOwnsTheLog`, checked at the store's
@@ -113,42 +116,59 @@ keep none of it: the measured failure where a command reported success and the t
 existed. With a daemon, that `luna` cannot reach the writer at all, and failing to connect
 is loud where writing to a tmpfs is silent.
 
-**The two directories are separate on purpose.** `handover/` is the one thing a sandbox is
-given, because a stage has to hand artifacts over. The daemon's socket sits beside it and
-is never mapped: an agent that could reach it could append to the log, and an agent that
-appends to the log does not corrupt a file — it fabricates history.
+**The two socket locations are separate on purpose.** A sandbox sees only the `handover/`
+directory and its stage socket,
+because an agent has to deliver artifacts. The node stamps the task and stage, and its
+read-only store forwards the blob to the daemon. The daemon socket is never mapped: an
+agent that could reach it could fabricate history directly.
 
 **It starts itself.** A command that finds nobody listening spawns `luna daemon` and tries
 once more. A second failure is reported rather than retried. Nothing about this is visible
 to the person running a command, which is the point — the writer became a second process
 and `luna` stayed one command.
 
-`store.Open` returns a store that refuses to append; setting `Via` on it makes the refusal
-into a forward. That is why every command still calls `Append` and none of them changed.
+The socket name includes a hash of the database path, so a daemon serving a test database
+cannot answer a command aimed at the real one. A non-blocking lock beside the database
+also refuses a second daemon even if it tries a different socket.
+
+`store.OpenReadOnly` refuses to create or migrate a file. Setting `Via` on that store turns
+an attempted mutation into a daemon request, which is why commands still call the store's
+append and blob methods without gaining a write connection.
 
 ## Where the log lives
 
-One log per **project**, outside every checkout of it:
+One log for **all projects**, outside every checkout:
 
 ```
 $XDG_DATA_HOME/luna/            (or ~/.local/share/luna)
-  projects/
-    github.com-me-app-1f2e3d4c/
-      luna.db
+  luna.db
+  luna.db.lock
 ```
 
 Outside the checkout because Luna writing into a repository is a change nobody asked
 for — and because a log inside a checkout is a log an agent working in that checkout can
-reach. Per project rather than per repository because a task belongs to a project: a
-worktree opened to review one has to see it, and a second clone is the same work.
+reach. Every event and artifact row carries a project key. The key comes from the
+normalised `origin` remote, or from the main checkout path when no remote exists, and it
+joins the task id in the primary key. Two projects may therefore both own `TASK-1`, while
+two clones of the same remote see the same history.
 
-Projects get a directory each rather than one file with a column, so two of them cannot
-list each other's gates through a query somebody got wrong.
+That project boundary is also the CLI boundary. Commands that mutate or inspect one id —
+`luna status`, `luna work`, `luna gate approve`, `luna task abandon` — use the current
+checkout's project. Workload commands deliberately cross it: `luna task list`, `luna
+gates`, `luna stuck`, `luna fleet report` and the task survey and spend history in `luna
+flow check` read every project and print the project key with each task.
 
-**A log left in a checkout by an older build is moved on the next run**, not ignored:
-ignoring it would start an empty log beside a task somebody has open, and every command
-would then answer "no such task" about work that is right there. Two logs are refused
-rather than merged — which one holds the work is not a thing Luna can tell.
+**Older stores are imported by the daemon, not by the CLI.** On startup it scans the old
+`$XDG_DATA_HOME/luna/projects/<project>/luna.db` layout. A command also points it at a
+legacy `<repo>/.luna/luna.db` for that repository. Sequence numbers, timestamps, payloads
+and blobs are copied exactly; a row already present must match exactly. Only after the
+copy verifies does the source become `luna.db.migrated`. An unplaceable pre-version blob
+or a conflicting history stops startup rather than losing or guessing data.
+
+An older per-project database cannot be opened directly as the central database: its rows
+have no project key, and assigning an empty or guessed one would make the tasks unreachable
+from their checkout. That opening is refused with an import instruction. Empty old tables
+may be upgraded in place because there is no identity to invent.
 
 What stays in the checkout is `.luna/config.toml`, which is the project's own settings
 rather than Luna's state, and the `.gitignore` that keeps it company.
@@ -324,10 +344,9 @@ Three things follow from the transport:
   brief closes that: two stages told the same thing are one worker, and two told
   differently are two.
 
-  A solo run gives every stage one brief, so each stage after the first continues the
-  session before it, except `review`, which is deliberately `fresh`. A pack gives
-  each stage its own, so every stage starts cold — six cold starts in the shipped
-  trail.
+  A solo run gives every stage one brief, but leaves the stage's `context` declaration in
+  force; the shipped full trail starts each stage fresh. A pack gives each stage its own
+  brief and therefore its own session as well.
 
   Those cold starts are not economies to be recovered. `AuditContextChain` refuses a live
   stage whose predecessor is briefed differently, and it is right to: a coder continuing
@@ -377,11 +396,10 @@ judge shared a label. A name that makes the tool undercount is worse than no nam
 now done by what it was standing in for — the brief keys a continued session, the stage id
 names the worktree, and the agent decides whether a stage is mechanical.
 
-**What that costs.** Whoever writes now reviews. The judging stage is `audit` rather than
-`review`, because a review is independent or it is not one, and the name would claim a
-property the design no longer has. `context = "fresh"` is what survives — the same model
-re-reading its own work with no memory of writing it — and the mechanical half is untouched,
-because a command that runs over the delivered commit does not care who wrote it.
+**What solo costs.** Its `review` is not independent: the same agent re-reads its own work
+in a fresh session. Pack mode gives that stage a separate session and withholds editing,
+which is the stronger review. The mechanical checks are identical in both modes because a
+command that runs over the delivered commit does not care who wrote it.
 
 **Where the floor is.** Tool gating removes the *named* tools; it does not remove the
 shell. On harnesses whose denial is per-tool, a reviewer denied `Edit` can still write
@@ -462,55 +480,53 @@ its place. Nothing replaces it yet.
 ## The pack
 
 `luna lead` is one agent carrying the task end to end. `luna fleet run` is a pack: the lead
-conducts, and the flow's declared roles do the work — one worktree and one session each,
-kept across the stages that role owns.
+conducts, and every distinct stage briefing gets its own agent session and worktree. The
+stage itself declares the harness, briefing and denied capabilities; there is no role
+catalogue beside the flow.
 
 ```sh
-luna lead      AVG-1              # solo: one agent, one worktree, one session
-luna fleet run AVG-1              # pack: the roles the flow declares
-luna fleet report --since 12h     # every task, grouped by what it needs
+luna lead      AVG-1              # solo: one broad agent policy
+luna fleet run AVG-1              # pack: one member per distinct stage briefing
+luna fleet report --since 12h     # every project, grouped by what each task needs
 ```
 
 The size of the pack is the flow's rather than a flag's, and `luna flow check` reports it:
 
 ```
-flow full/99fa3a6a6b436a79 (9 stages)
-pack of 5: planner, investigator, coder, cleaner, auditor — `luna lead` runs the same flow with one
+flow full/662a73f3cbedc7b1 (7 stages)
+pack of 7: setup, intake, diagnose, plan, forge, shipping, review — `luna lead` runs the same flow with one
 ```
 
-**What the pack buys.** A role per specialism means `tools_deny` works again: the `auditor`
-holds `Edit` and `Write`, so an audit is independent rather than a stage that says it is.
-And each role keeps its own session, so the coder's context is not rebuilt to be read by
-somebody judging it.
+**What the pack buys.** A stage can deny capabilities to its own agent: `review` withholds
+`Edit` and `Write`, so an audit is independent rather than a stage that merely says it is.
+Each distinct briefing gets a separate session, so the builder's reasoning is not handed
+to the agent judging the delivery.
 
-**What it costs.** A conductor billed every turn, a worktree per role, and a cold start
-wherever the flow changes role. A solo run pays none of that and claims none of it — its
-`audit` re-reads its own work with no memory of writing it, which is the one half of
+**What it costs.** A conductor billed every turn, a worktree per stage and a cold start for
+each distinct briefing. A solo run pays none of the conductor cost and claims none of the
+pack's independence — its `review` re-reads its own work, which is the one half of
 independence a single agent can have.
 
-**The mode is not recorded.** `Role` is policy rather than history, so it is out of the flow
-fingerprint: a task begun solo can be continued as a pack and the other way round. If it
-could not, choosing the mode would be a decision nobody could revisit.
-
-The fleet's ceiling stops it **starting** rather than stops it running, and the slot is
-taken before the ceiling is weighed. That ordering is the correctness of the loop: checking
-first would decide while the previous task was still going, against a total that did not yet
-include it, so a fleet of one would always start one task too many.
+**The mode is not recorded.** Agent, briefing, session policy and tool denial are policy
+rather than history, so they are outside the flow fingerprint. A task begun solo can be
+continued as a pack and the other way round; the contract it must satisfy does not change.
 
 Parallelism between tasks is not a fleet decision — it is the property everything else
-rests on. One worktree and one lead per task is what makes two tasks unable to see each
+rests on. One active stage worktree and one lead per task is what makes two tasks unable to see each
 other's work, and the store has been proven safe for concurrent appends across tasks since
 before there was a fleet to need it.
 
-`luna fleet report` is the morning's product rather than a side effect of it: every task
-grouped by what has to happen to it next, with both verdicts and the bill. A task that no
-longer replays is *reported* rather than skipped, because it is exactly the one that would
-otherwise sit unnoticed forever.
+`luna fleet report` is the morning's product rather than a side effect of it: every project
+and task in the central store grouped by what has to happen next, with both verdicts and the
+bill. A task that no longer replays is *reported* rather than skipped, because it is exactly
+the one that would otherwise sit unnoticed forever.
 
 ## State
 
-Append-only SQLite. No `UPDATE`, no `DELETE`. The log is the state; anything else is a
-projection that can be rebuilt.
+Append-only SQLite, keyed by project and task. No event `UPDATE`, no event `DELETE`. The
+log is the state; anything else is a projection that can be rebuilt. Artifact bodies are
+also versioned appends, with deletion allowed only after a task ends; their recorded
+hashes and event history remain.
 
 The opening event carries the **name of the flow** the task was born under and a
 **fingerprint of its identity** — stage ids in order, with what each requires and produces.
@@ -534,12 +550,12 @@ adapter, which is a command outside the core.
 src/
   cmd/luna/          CLI entry point
   internal/fsm/      the engine: stages, transitions, contract, fingerprint
-  internal/store/    append-only log, replay, blob store
+  internal/store/    central project-scoped log, replay, blob store
   internal/agent/    calling an agent: one subprocess, prompt in, usage out
   internal/node/     running a stage: worktree, sandbox, socket, verification
   internal/cli/      commands
   internal/lead/     conducting a task, and the model that judges a gate
-  stock/             defaults: flows, roles, profiles (embedded TOML)
+  stock/             defaults: flows and profiles (embedded TOML)
 docs/                this suite
 scripts/             lint helpers
 ```
@@ -557,19 +573,16 @@ remembered:
   `contract` only when `spec` ran, and merging `spec` into the unconditional `plan` closed
   it. A flow that adds a conditional producer will want the mechanism back.
 - **Import adapters** — no tracker adapter ships.
-- **Token accounting** — being added now that the transport reports usage. The model
-  that answered is recorded per stage and reported by `luna status`; a per-model price
-  table is not, so cost is the harness's number rather than one Luna derives.
-- **A role's skills** — `src/stock/skills/` is empty. A role declares an agent and a
+- **Per-model pricing** — the transport reports tokens and cost, both recorded per stage
+  and reported by `luna status`. A model price table is not embedded, so cost is the
+  harness's number rather than one Luna derives.
+- **A stage's skills** — `src/stock/skills/` is empty. A stage declares an agent and a
   brief; the skill set is parsed, travels in the order as `skills=`, and is read by
   nothing. Not to be confused with `skills/` at the root, which is the opposite
   direction: how to *use* Luna, for whoever drives it from outside.
-- **A second harness.** Every role names `claude`. The transport supports four and
-  `CanGate` knows which of them can deny a tool, but no shipped role names another,
+- **A second harness.** Every agent-bearing stage names `claude`. The transport supports
+  four and `CanGate` knows which can deny a tool, but no shipped stage names another,
   so "harness-agnostic" is built and unmeasured.
-- **Tool denial.** `tools_deny` parses, reaches the harness and is removed from the
-  request — and no shipped role sets it, because the one role must be able to edit. A
-  config can still deny a tool; the stock does not.
 
 Three things read as gaps and are not:
 

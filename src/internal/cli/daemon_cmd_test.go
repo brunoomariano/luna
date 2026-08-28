@@ -22,13 +22,16 @@ import (
 func TestTheDaemonSocketIsNotWhereAContainedAgentCanReach(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	socket := DaemonSocket()
+	socket := DaemonSocketFor(filepath.Join(t.TempDir(), "luna.db"))
 
 	if strings.HasPrefix(socket, node.HandoverDir()) {
 		t.Errorf("the daemon socket is inside the directory a jail is given: %s", socket)
 	}
 	if filepath.Dir(socket) != node.SocketDir() {
 		t.Errorf("the daemon socket is not beside the handover directory: %s", socket)
+	}
+	if other := DaemonSocketFor(filepath.Join(t.TempDir(), "luna.db")); other == socket {
+		t.Errorf("two databases share one daemon socket: %s", socket)
 	}
 }
 
@@ -43,10 +46,12 @@ func TestTheDaemonRunsUntilItIsToldToStop(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	h := newHarness(t)
-	socket := filepath.Join(dir, daemon.SocketName)
+	t.Chdir(dir)
+	database := filepath.Join(dir, "central.db")
+	socket := DaemonSocketFor(database)
 
 	done := make(chan error, 1)
-	go func() { done <- daemonCommand(h.env, []string{"--socket", socket}) }()
+	go func() { done <- daemonCommand(h.env, []string{"--store", "central.db"}) }()
 
 	client := daemon.Client{Path: socket}
 	deadline := time.Now().Add(2 * time.Second)
@@ -89,5 +94,26 @@ func TestAnUnknownDaemonFlagIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--sockett") {
 		t.Errorf("the refusal does not name what was written: %v", err)
+	}
+}
+
+func TestDaemonOptionsAreParsedBeforeItStarts(t *testing.T) {
+	h := newHarness(t)
+	if err := daemonCommand(h.env, []string{"--socket"}); err == nil {
+		t.Fatal("a daemon option without a value was accepted")
+	}
+
+	t.Setenv("LUNA_STORE", filepath.Join(t.TempDir(), "chosen.db"))
+	if err := daemonCommand(h.env, []string{"--store", "another.db", "--legacy-root", "old", "--bad", "x"}); err == nil {
+		t.Fatal("daemon options followed by an unknown option were accepted")
+	}
+}
+
+func TestDaemonRejectsARelativeDataHome(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("LUNA_STORE", "")
+	t.Setenv("XDG_DATA_HOME", "relative")
+	if err := daemonCommand(h.env, nil); err == nil {
+		t.Fatal("a relative data home was accepted for the central database")
 	}
 }

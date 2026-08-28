@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/brunoomariano/luna/src/internal/sock"
+	"github.com/brunoomariano/luna/src/internal/store"
 )
 
 // ErrNoDaemon is a daemon that is not there and could not be started.
@@ -21,13 +22,6 @@ var ErrNoDaemon = errors.New("no daemon is listening and one could not be starte
 type Client struct {
 	// Path is the socket to reach.
 	Path string
-
-	// Store is the log this client's appends are about.
-	//
-	// Carried on the client rather than passed per call, because it is a property
-	// of where the command is running: one process serves one project, and the
-	// daemon serves whichever ones ask.
-	Store string
 
 	// Start launches a daemon. Injected so a test can drive the client without a
 	// second process, and so the one place that spawns anything is visible.
@@ -126,13 +120,17 @@ func (c Client) waitFor() error {
 // Detached, so the CLI that started it can exit. Its output goes nowhere on
 // purpose — a daemon writing to the terminal of whichever command happened to
 // start it is noise attached to the wrong process.
-func Spawn(socket string) error {
+func Spawn(socket, database, legacyRoot string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("finding this binary to start a daemon: %w", err)
 	}
 
-	cmd := exec.Command(self, "daemon", "--socket", socket) //nolint:gosec // this binary, by path
+	args := []string{"daemon", "--socket", socket, "--store", database}
+	if legacyRoot != "" {
+		args = append(args, "--legacy-root", legacyRoot)
+	}
+	cmd := exec.Command(self, args...) //nolint:gosec // this binary, by path
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	// The root, and not the socket's directory: that one is the daemon's to create
 	// and does not exist yet on a first run — `exec` needs `Dir` to be there and
@@ -149,10 +147,29 @@ func Spawn(socket string) error {
 
 // AppendEvent satisfies store.Appender, which is how every command in the CLI
 // keeps calling `Append` while the daemon is the only process writing.
-func (c Client) AppendEvent(taskID string, after int, action, payload string) error {
+func (c Client) AppendEvent(project, taskID string, after int, action, payload string) error {
 	_, err := c.Do(Request{
-		Op: "append", Store: c.Store, TaskID: taskID,
+		Op: "append", Project: project, TaskID: taskID,
 		Action: action, Payload: payload, After: after,
 	})
+	return err
+}
+
+// PutBlob forwards artifact content to the only process allowed to write it.
+func (c Client) PutBlob(project string, blob store.Blob) error {
+	_, err := c.Do(Request{Op: "put_blob", Project: project, Blob: &blob})
+	return err
+}
+
+// ForgetBlobs forwards the one content deletion the append-only store permits.
+func (c Client) ForgetBlobs(project, taskID string) error {
+	_, err := c.Do(Request{Op: "forget_blobs", Project: project, TaskID: taskID})
+	return err
+}
+
+// ImportLegacy asks the daemon to bring one former project store into the
+// central database and archive the source only after the copy is verified.
+func (c Client) ImportLegacy(project, path string) error {
+	_, err := c.Do(Request{Op: "import", Project: project, Legacy: path})
 	return err
 }

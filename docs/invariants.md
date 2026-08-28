@@ -59,8 +59,10 @@ as `targeted` and `passed`. A delivery equal to the base is not a delivery.
 
 ## INV-2 — State is append-only, and the log is the state
 
-No `UPDATE`, no `DELETE`. Every change is a new record. Killing the process and restarting
-rebuilds the exact state, because it was never only in memory.
+No event `UPDATE`, no event `DELETE`. Every state change is a new record. Killing the
+process and restarting rebuilds the exact state, because it was never only in memory.
+Artifact bodies are versioned appends; a finished task may delete those bodies, but its
+events and recorded hashes remain.
 
 **Why.** The history *is* the audit, and for unattended operation the evidence is the
 product. A projection can be rebuilt; a discarded fact cannot.
@@ -70,10 +72,16 @@ order, with what each requires and produces. Replaying a log against a different
 refused rather than attempted, because a renamed stage used to replay as the new name and
 a stage inserted mid-flow made a task re-run finished work, both in silence.
 
+There is one central log. Every event and artifact is keyed by project as well as task id,
+so replaying `TASK-1` in one repository cannot consume `TASK-1` from another. A global
+listing carries both values rather than pretending ids are globally unique.
+
 **What violates it.** Any `UPDATE` on the state table; state kept only in memory between
 transitions; compaction that discards history; a replay that guesses.
 
-**Covered by.** Replay tests in `internal/store`; the fingerprint refusal test.
+**Covered by.** Replay tests in `internal/store`; the fingerprint refusal test;
+`TestOneLogKeepsEqualTaskIDsSeparateByProject`; and
+`TestAnUnscopedLogIsRefusedAsCentral`, which prevents migration from inventing a project.
 
 ---
 
@@ -99,10 +107,10 @@ verification; a transition that ignores a missing `requires`.
 ## INV-4 — Every agent runs inside the sandbox, and hands artifacts over rather than scattering them
 
 Luna starts agents inside `ai-jail`. Scratch artifacts — the ones that exist to cross
-stages or to be read by a human — are handed to Luna's store through a socket under the
-runtime directory, which Luna asks the sandbox to expose read-only. Luna is the sole
-writer, and the producing stage is recorded by the server, never taken from the agent's
-request.
+stages or to be read by a human — are handed to the node through a stage socket that Luna
+asks the sandbox to expose read-only. The node records the producing stage and forwards
+the body through its CLI store; only the central daemon has a writable SQLite connection.
+The stage never supplies its own project or stage identity.
 
 The socket was inside the worktree, because that was the only position measured to work
 under Landlock. What changed is that Luna asks: it builds the sandbox's command line, so
@@ -146,8 +154,9 @@ environment, because the jail has no `~/.gitconfig` to read one from.
 
 **Covered by.** The socket boundary tests in `internal/node`; the ghost-store guard; the
 sandbox-invocation tests in `internal/agent` that assert what the jail is asked to allow;
-and a test that no stage but `setup` is exempt from containment — an exception that is not
-pinned is one the next stage inherits by accident.
+the central daemon tests that exercise event and blob writes through a read-only client
+and refuse a second daemon for one database; and a test that no stage but `setup` is exempt
+from containment — an exception that is not pinned is one the next stage inherits by accident.
 
 ---
 

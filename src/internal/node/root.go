@@ -7,13 +7,11 @@ import (
 	"path/filepath"
 )
 
-// Root finds the repository the log belongs to, starting from dir.
+// Root finds the main repository for the checkout at dir.
 //
 // The answer is the **main** repository, never the worktree the caller happens
-// to be standing in. That distinction is the whole reason this function exists:
-// a stage runs in an ephemeral worktree that is deleted when it ends,
-// so a log resolved from the working directory would be created inside something
-// designed to be thrown away — and the task it recorded would vanish with it.
+// to be standing in. Project identity, config and landing all belong to that
+// stable checkout even though task state now lives in the central database.
 //
 // The mechanism is `git rev-parse --git-common-dir`, and the choice was measured
 // rather than assumed. From inside a worktree:
@@ -42,33 +40,23 @@ func Root(ctx context.Context, dir string) (string, error) {
 	return filepath.Dir(common), nil
 }
 
-// DefaultPath is where the log lives for the project containing dir.
+// DefaultPath is the one central log, independent of dir.
 //
-// One log per **project**, outside every checkout of it. It was one per
-// repository, in the main checkout, and both halves of that changed for the same
-// reason: a task belongs to a project rather than to a directory, so a worktree
-// opened to review one has to see it, and a second clone is the same work.
-// `IdentifyProject` is what decides which project a directory is in.
-//
-// Outside the checkout because Luna writing into a repository is a change nobody
-// asked for — and because a log inside a checkout is a log an agent working in
-// that checkout can reach. Projects stay separate from one another: a directory
-// each, not one file with a column, so two projects cannot list each other's
-// gates through a query somebody got wrong.
+// Project identity scopes rows inside the database rather than choosing another
+// file. The argument stays in the signature because callers resolve paths and
+// project identity from the same directory, but moving between checkouts cannot
+// move the log any more.
 //
 // It names the store's file from the node package rather than the other way
 // round, because finding it means running git — and running a process belongs
 // here (.golangci.yaml enforces that boundary).
 func DefaultPath(ctx context.Context, dir string) (string, error) {
-	project, err := IdentifyProject(ctx, dir)
-	if err != nil {
-		return "", err
-	}
+	_, _ = ctx, dir
 	home, err := DataHome()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "projects", project.Key, "luna.db"), nil
+	return filepath.Join(home, "luna.db"), nil
 }
 
 // DataHome is where Luna keeps what belongs to the person rather than to a

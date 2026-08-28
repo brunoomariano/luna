@@ -1,4 +1,4 @@
-# No role, for the reason spelled out in the `fix` flow's copy of this stage:
+# No agent, for the reason spelled out in the `fix` flow's copy of this stage:
 # `ci_green` is a command's verdict, not a judgement, so the stage runs no agent
 # and costs nothing.
 

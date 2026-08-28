@@ -93,8 +93,8 @@ func reportFlowGaps(env Env, flow []fsm.Stage) {
 // which gates that reaches — and reading fourteen stage files to find out is how a
 // setting gets chosen by guess.
 //
-// The mechanical half is deliberately absent here: checks are declared per task in
-// the registry, not in the flow, so this command cannot know them. Saying so is
+// The mechanical half is deliberately absent here: checks are recorded per task,
+// not in the flow, so this command cannot know them. Saying so is
 // better than implying a gate has no checks because this view cannot see them.
 func reportGates(env Env, flow []fsm.Stage) {
 	var gated []fsm.Stage
@@ -175,7 +175,7 @@ func flowCheck(env Env, args []string) error {
 // Whether a flow holds together on paper is a different question from whether
 // anything is in flight, and this command was only asking the second: a flow can
 // have every task finished and still be broken — a stage requiring an artifact
-// nothing produces, a stage that needs judgement and names no role, a stage id
+// nothing produces, a stage that needs judgement and names no agent, a stage id
 // long enough to truncate a task's agent name.
 //
 // It reports rather than refuses, like the rest of this command. Whoever typed it
@@ -220,22 +220,20 @@ func auditFlows(env Env, names []string) error {
 // on any other flow as unreadable, and "unreadable" is the word this command uses
 // for a task somebody has to go and end.
 func surveyTasks(env Env) (open, unreadable []string, err error) {
-	ids, err := env.Store.Tasks()
+	tasks, err := globalTasks(env)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for _, id := range ids {
-		state, err := env.Store.ReplayOwnFlow(id)
-		if errors.Is(err, store.ErrFlowChanged) {
-			unreadable = append(unreadable, id)
+	for _, task := range tasks {
+		name := fmt.Sprintf("%s/%s", projectName(task.Project), task.ID)
+		if errors.Is(task.Err, store.ErrFlowChanged) {
+			unreadable = append(unreadable, name)
 			continue
 		}
-		if err != nil {
-			return nil, nil, err
-		}
-		if !state.IsTerminal() {
-			open = append(open, fmt.Sprintf("%s (%s on %s)", id, state.Status, state.FlowName))
+		if !task.State.IsTerminal() {
+			open = append(open, fmt.Sprintf("%s (%s on %s)",
+				name, task.State.Status, task.State.FlowName))
 		}
 	}
 	return open, unreadable, nil
@@ -265,8 +263,7 @@ func reportTaskSurvey(env Env, open, unreadable []string) {
 		"a task whose flow changes under it stops replaying\n")
 }
 
-// reportWhatItCost says what this flow has cost before, per stage, from this
-// project's own log.
+// reportWhatItCost says what this flow has cost before, per stage, globally.
 //
 // The most expensive decision here is irreversible: `--flow` cannot change after
 // a task opens, and the three differ by a factor nobody can guess. What existed
@@ -306,27 +303,19 @@ func reportWhatItCost(env Env, name string, flow []fsm.Stage) {
 	}
 }
 
-// pastSpend collects what each stage of a flow cost, across every task that ran
-// it in this project.
+// pastSpend collects what each stage of a flow cost across the central log.
 func pastSpend(env Env, name string) map[fsm.StageID][]float64 {
-	ids, err := env.Store.Tasks()
+	tasks, err := globalTasks(env)
 	if err != nil {
 		return nil
 	}
 
 	spent := map[fsm.StageID][]float64{}
-	for _, id := range ids {
-		ran, err := env.Store.FlowNameOf(id)
-		if err != nil || ran != name {
+	for _, task := range tasks {
+		if task.Err != nil || task.State.FlowName != name {
 			continue
 		}
-		state, err := env.Store.ReplayOwnFlow(id)
-		if err != nil {
-			// A task this build cannot read is not one to average. It surfaces by
-			// name elsewhere in this command, which is where a person deals with it.
-			continue
-		}
-		for stage, spend := range state.Spent {
+		for stage, spend := range task.State.Spent {
 			if spend.CostUSD > 0 {
 				spent[stage] = append(spent[stage], spend.CostUSD)
 			}

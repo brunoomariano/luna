@@ -1,9 +1,9 @@
 # The fix, held to the cause rather than to a contract.
 #
-# `fresh`, and it has to be: the stage before it ran as `investigator`, and
-# AuditContextChain refuses a live stage whose predecessor holds a different role.
-# The cause crosses as an artifact instead, which is the handoff this project
-# prefers to a continued session anyway.
+# `fresh`, and it has to be: the stage before it carries a different briefing,
+# and AuditContextChain refuses to continue a live session across different
+# briefs. The cause crosses as an artifact instead, which is the handoff this
+# project prefers to a continued session anyway.
 
 id       = "build"
 agent    = "claude"

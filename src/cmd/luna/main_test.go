@@ -14,10 +14,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
 
 	"github.com/brunoomariano/luna/src/internal/cli"
+	"github.com/brunoomariano/luna/src/internal/daemon"
 )
+
+func TestMain(m *testing.M) {
+	original := spawnDaemon
+	var servers []*daemon.Server
+	spawnDaemon = func(socket, database, legacyRoot string) error {
+		server, err := daemon.Listen(daemon.Options{
+			Socket: socket, Store: database, LegacyRoot: legacyRoot,
+		})
+		if err == nil {
+			servers = append(servers, server)
+		}
+		return err
+	}
+	code := m.Run()
+	for _, server := range servers {
+		_ = server.Close()
+	}
+	spawnDaemon = original
+	os.Exit(code)
+}
 
 // TestExitCodeSeparatesUsageFromFailure covers what main does with an error.
 //
@@ -75,12 +97,27 @@ func TestStorePathPrefersTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestStorePathDefaultsToTheProjectsDirectory covers the fallback.
+func TestStorePathMakesARelativeOverrideStableForTheDaemon(t *testing.T) {
+	t.Setenv("LUNA_STORE", "state/luna.db")
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, chosen, err := storePath(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !chosen || path != filepath.Join(cwd, "state", "luna.db") {
+		t.Fatalf("relative LUNA_STORE resolved to %q, chosen=%v", path, chosen)
+	}
+}
+
+// TestStorePathDefaultsToTheCentralDatabase covers the fallback.
 //
-// Per-project rather than per-directory or per-repository: a stage runs in an
-// ephemeral worktree, and a task belongs to a project rather than to one checkout
-// of it — so the log lives outside every checkout, under the data home.
-func TestStorePathDefaultsToTheProjectsDirectory(t *testing.T) {
+// The daemon owns one database for every project. Project identity scopes rows
+// inside it rather than choosing another file, so a command from any checkout
+// resolves the same path.
+func TestStorePathDefaultsToTheCentralDatabase(t *testing.T) {
 	t.Setenv("LUNA_STORE", "")
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
@@ -95,8 +132,12 @@ func TestStorePathDefaultsToTheProjectsDirectory(t *testing.T) {
 	if filepath.Base(path) != "luna.db" {
 		t.Errorf("want the store file, got %q", path)
 	}
-	if !strings.Contains(path, filepath.Join("luna", "projects")) {
-		t.Errorf("want it under the projects directory, got %q", path)
+	home, err := node.DataHome()
+	if err != nil {
+		t.Fatalf("resolving the data home: %v", err)
+	}
+	if path != filepath.Join(home, "luna.db") {
+		t.Errorf("want the central store, got %q", path)
 	}
 	// And outside the checkout it was resolved from, which is the whole move.
 	if strings.Contains(path, string(filepath.Separator)+".luna"+string(filepath.Separator)) {
@@ -157,12 +198,12 @@ func TestRunReportsAnUnopenableStore(t *testing.T) {
 	}
 }
 
-// TestRunFromAWorktreeUsesTheMainRepositorysLog is the defect the shared log location fixes,
+// TestRunFromAWorktreeUsesTheCentralLog is the defect the shared log location fixes,
 // exercised end to end through `run` rather than through the resolver alone.
 //
 // Before it, running from a worktree created a second `.luna/luna.db` inside a
 // checkout that is deleted when the stage ends — so the task went with it.
-func TestRunFromAWorktreeUsesTheMainRepositorysLog(t *testing.T) {
+func TestRunFromAWorktreeUsesTheCentralLog(t *testing.T) {
 	base := t.TempDir()
 	main := filepath.Join(base, "app")
 	worktree := filepath.Join(base, "wt-app-LUNA-1-reviewer")
@@ -272,7 +313,7 @@ func TestEveryInjectedDependencyIsWired(t *testing.T) {
 		default:
 			continue
 		}
-		if field.Name == "Store" {
+		if field.Name == "Store" || field.Name == "GlobalStore" {
 			continue
 		}
 		if value.Field(i).IsNil() {
@@ -382,12 +423,9 @@ func TestALogLeftInACheckoutIsAdoptedOnTheNextRun(t *testing.T) {
 	}
 }
 
-// TestACheckoutWithTwoLogsRefusesRatherThanPicking is the other half of adoption.
-//
-// One of them holds the work and only the person can say which. Picking would be
-// the silent kind of wrong: the command would succeed against a log that is not
-// the one they meant, and nothing would say so.
-func TestACheckoutWithTwoLogsRefusesRatherThanPicking(t *testing.T) {
+// TestAnUnreadableLegacyLogStopsTheMigration. The daemon cannot archive a file
+// until it has proved that its history reached the central store.
+func TestAnUnreadableLegacyLogStopsTheMigration(t *testing.T) {
 	t.Setenv("LUNA_STORE", "")
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
@@ -416,9 +454,7 @@ func TestACheckoutWithTwoLogsRefusesRatherThanPicking(t *testing.T) {
 		if err == nil {
 			t.Fatal("a checkout with two logs was resolved anyway")
 		}
-		// The refusal names both, because which one holds the work is the question
-		// only the person can answer.
-		for _, want := range []string{old, "only one can be the log"} {
+		for _, want := range []string{old, "not a database"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the refusal does not carry %q: %v", want, err)
 			}
@@ -523,5 +559,96 @@ func TestTheEnvironmentWiresWhatTheCommandsNeed(t *testing.T) {
 	// directory it cannot read.
 	if _, err := env.Where(); err != nil {
 		t.Errorf("the resolver does not work where it was built: %v", err)
+	}
+}
+
+func TestStoreResolutionReportsStartupAndCheckoutFailures(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	original := spawnDaemon
+	spawnDaemon = func(_, _, _ string) error { return errors.New("cannot start") }
+	t.Cleanup(func() { spawnDaemon = original })
+
+	_, err := connectDaemon(storeOpening{
+		path: filepath.Join(t.TempDir(), "central.db"), chosen: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot start") {
+		t.Fatalf("daemon startup error = %v", err)
+	}
+
+	repoFile := filepath.Join(t.TempDir(), "repo-is-a-file")
+	if err := os.WriteFile(repoFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = importCheckoutStore(daemon.Client{}, storeOpening{repo: repoFile})
+	if err == nil || !strings.Contains(err.Error(), "checking legacy store") {
+		t.Fatalf("checkout store lookup error = %v", err)
+	}
+}
+
+func TestStoreResolutionReportsConfigurationErrors(t *testing.T) {
+	t.Setenv("LUNA_STORE", "")
+	t.Setenv("XDG_DATA_HOME", "relative")
+	if _, err := resolveStoreOpening(context.Background()); err == nil {
+		t.Fatal("a relative data home was accepted")
+	}
+
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init", "-q", "-b", "main")
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	configPath := cli.ConfigPath(repo)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("not = valid = toml"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inDir(t, repo, func() {
+		if _, err := resolveStoreOpening(context.Background()); err == nil {
+			t.Fatal("a malformed project configuration was accepted")
+		}
+	})
+}
+
+func TestCommandsReportARemovedWorkingDirectory(t *testing.T) {
+	was, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := t.TempDir()
+	gone := filepath.Join(parent, "gone")
+	if err := os.Mkdir(gone, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(gone); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(was) })
+	t.Setenv("LUNA_STORE", "")
+
+	if _, _, err := storePath(context.Background()); err == nil {
+		t.Error("storePath accepted a removed working directory")
+	}
+	if _, err := resolveStoreOpening(context.Background()); err == nil {
+		t.Error("resolveStoreOpening accepted a removed working directory")
+	}
+	if _, err := currentRoot(context.Background(), &store.Store{}, "central.db"); err == nil {
+		t.Error("currentRoot accepted a removed working directory")
+	}
+	if _, err := environment(nil, cli.Config{}, "").Where(); err == nil {
+		t.Error("the environment resolver accepted a removed working directory")
+	}
+}
+
+func TestRunWithoutStoreLeavesAnEmptyCommandForUsageHandling(t *testing.T) {
+	handled, err := runWithoutStore(nil)
+	if handled || err != nil {
+		t.Fatalf("empty command bypass = %v, %v", handled, err)
 	}
 }

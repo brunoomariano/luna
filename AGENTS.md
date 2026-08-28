@@ -49,7 +49,7 @@ Three rules about them:
 src/
   cmd/luna/          CLI entry point
   internal/fsm/      the engine: stages, transitions, contract, fingerprint
-  internal/store/    append-only log, replay, blob store
+  internal/store/    central project-scoped log, replay, blob store
   internal/agent/    calling an agent: one subprocess, prompt in, usage out
   internal/node/     running a stage: worktree, sandbox, socket, verification
   internal/cli/      commands
@@ -70,7 +70,7 @@ without recording why in `decisions.md`.
   `awaiting_gate`). No bilingualism, no "translate later". Mixed languages also break
   search: `rg "etapa"` and `rg "stage"` find different halves of one concept.
 - **Specific, searchable names.** Prefer the ones with few hits in `rg`. Avoid `data`,
-  `handler`, `Manager` when a precise option exists. Domain terms (`stage`, `role`,
+  `handler`, `Manager` when a precise option exists. Domain terms (`stage`, `brief`,
   `handoff`, `gate`) are the natural name of the concept.
 - **Explicit typing.** No `interface{}`/`any` where a concrete type will do.
 - **Errors carry the invalid value and the expected one.** A message saying neither costs
@@ -120,6 +120,8 @@ exactly what it should be failing on.
 
 - **Do not move flow control into the model.** It is the premise of the project.
 - **Do not write state with `UPDATE`.** The store is append-only; the history is the audit.
+- **Do not let the CLI open the central database for writing.** The daemon is its only
+  writer; CLI mutations cross the daemon socket and CLI reads use SQLite read-only mode.
 - **Do not create a stage without a contract.** `requires`/`produces` is what prevents an
   incomplete handoff.
 - **Do not claim more than the check proved.** Evidence carries scope, and scope never

@@ -58,9 +58,10 @@ type Event struct {
 
 // Waiting is a task suspended at a gate, as `luna gates` would list it.
 type Waiting struct {
-	TaskID string
-	Stage  fsm.StageID
-	Reason string
+	Project string
+	TaskID  string
+	Stage   fsm.StageID
+	Reason  string
 
 	// Profile is carried so the listing can flag one this build does not know,
 	// which happens when a log was written by a newer version.
@@ -80,18 +81,21 @@ type Appender interface {
 	// AppendEvent records one already-encoded action. A negative `after` is
 	// unconditional; anything else makes the append conditional on the log still
 	// ending there.
-	AppendEvent(taskID string, after int, action, payload string) error
+	AppendEvent(project, taskID string, after int, action, payload string) error
+	PutBlob(project string, blob Blob) error
+	ForgetBlobs(project, taskID string) error
 }
 
-// Store is the append-only log, in one SQLite file in the main repository.
-//
-// The log is all of it. A content-addressed store once sat beside it so a
-// handoff could carry a snapshot of what the previous stage produced; the commit
-// replaced that, and git stores content better than a table of
-// blobs ever did. Nothing here holds an artifact — it holds the facts
-// about what happened to them.
+// Store is the append-only log and artifact store in one central SQLite file.
+// Project scopes a view because task ids are unique inside a project, not across
+// every repository the daemon serves.
 type Store struct {
 	db *sql.DB
+
+	// Project scopes every task query. The central database holds all projects,
+	// and a Store without a project is the global reader or the daemon owner.
+	Project string
+	root    bool
 
 	// Now is the clock the log is stamped with. It is a field so a test can
 	// place events in time without sleeping, and it is on the store rather than
@@ -136,6 +140,7 @@ func (s *Store) now() time.Time {
 
 const schema = `
 CREATE TABLE IF NOT EXISTS events (
+	project  TEXT    NOT NULL DEFAULT '',
     task_id  TEXT    NOT NULL,
     seq      INTEGER NOT NULL,
     action   TEXT    NOT NULL,
@@ -150,7 +155,7 @@ CREATE TABLE IF NOT EXISTS events (
     -- over no rows returns, which the watchdog reads as "no age" rather than as a
     -- time in 1970.
     at       INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (task_id, seq)
+	PRIMARY KEY (project, task_id, seq)
 );
 
 -- What a stage handed over that does not belong in the repository: the contract,
@@ -166,6 +171,7 @@ CREATE TABLE IF NOT EXISTS events (
 -- stage those are one line of history separated only by seq, and INV-3 asks
 -- for the location of each artifact *produced* — which a stage declares.
 CREATE TABLE IF NOT EXISTS blobs (
+	project  TEXT    NOT NULL DEFAULT '',
     task_id  TEXT    NOT NULL,
     stage    TEXT    NOT NULL,
     artifact TEXT    NOT NULL,
@@ -175,23 +181,26 @@ CREATE TABLE IF NOT EXISTS blobs (
     hash     TEXT    NOT NULL,
     body     BLOB    NOT NULL,
     at       INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (task_id, stage, artifact, seq)
+	PRIMARY KEY (project, task_id, stage, artifact, seq)
 );
 `
 
-// Open returns a store that may read but not write.
+// TaskRef identifies a task in the central database. IDs are project-local, so
+// every global listing carries both halves.
+type TaskRef struct {
+	Project string
+	ID      string
+}
+
+// Open returns a logically read-only store, creating and migrating it if needed.
 //
 // Reading is the safe half and needs no ceremony: replaying a task, listing what
 // is blocked, checking a flow. Appending is what has an owner, and OpenAs is how
 // it is claimed.
 //
-// Nothing in Luna's own binary calls this today, and that is honest rather than
-// an oversight: `luna` is the owner, so it opens for writing and the read
-// commands simply do not write. It exists because the read-only store is the
-// shape anything *else* should get — a dashboard, an agent that wants to look at
-// its own task, a script — and because the ownership rule is only demonstrable
-// if there is a store that lacks it. Its callers are the tests that prove the
-// rule holds.
+// The CLI uses OpenReadOnly instead because logical ownership is weaker than a
+// physical SQLite read-only connection. Open remains for callers that need to
+// prepare a database but must not append to it.
 func Open(path string) (*Store, error) {
 	return openOwned(path, "")
 }
@@ -204,6 +213,25 @@ func Open(path string) (*Store, error) {
 // as `Merger.As` for the shared git.
 func OpenAs(path string, owner Owner) (*Store, error) {
 	return openOwned(path, owner)
+}
+
+// OpenReadOnly opens an existing store without creating or migrating anything.
+// It is the only constructor the CLI uses; schema work belongs to the daemon.
+func OpenReadOnly(path string) (*Store, error) {
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return nil, fmt.Errorf("opening %s read-only: %w", path, err)
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("opening %s read-only: %w", path, err)
+	}
+	if err := requireCurrentSchema(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("opening %s read-only: %w", path, err)
+	}
+	return &Store{db: db, root: true}, nil
 }
 
 // openOwned is what both constructors call. Separate from them so the owner is
@@ -251,11 +279,23 @@ func openOwned(path string, owner Owner) (*Store, error) {
 		return nil, fmt.Errorf("creating the schema in %s: %w", path, err)
 	}
 
-	return &Store{db: db, As: owner}, nil
+	return &Store{db: db, As: owner, root: true}, nil
 }
 
 // Close releases the database handle.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	if !s.root {
+		return nil
+	}
+	return s.db.Close()
+}
+
+// ForProject returns a view over the same database scoped to one project.
+func (s *Store) ForProject(project string) *Store {
+	return &Store{
+		db: s.db, Project: project, Now: s.Now, Via: s.Via, As: s.As,
+	}
+}
 
 // beginImmediate starts a write transaction that waits for the lock instead of
 // failing on contact with another writer.
@@ -340,7 +380,7 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 	// caller's `after` travels with it: the window between reading a state and
 	// appending from it belongs to the caller, and the owner cannot see it.
 	if s.Via != nil {
-		return s.Via.AppendEvent(taskID, after, e.Action, e.Payload)
+		return s.Via.AppendEvent(s.Project, taskID, after, e.Action, e.Payload)
 	}
 
 	// BEGIN IMMEDIATE rather than a plain Begin, which is the difference between
@@ -365,7 +405,10 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 
 	var last int
 	// COALESCE because MAX over no rows is NULL: a task's first event is seq 1.
-	row := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id = ?`, taskID)
+	row := tx.QueryRow(
+		`SELECT COALESCE(MAX(seq), 0) FROM events WHERE project = ? AND task_id = ?`,
+		s.Project, taskID,
+	)
 	if err := row.Scan(&last); err != nil {
 		return fmt.Errorf("finding the next sequence for %s: %w", taskID, err)
 	}
@@ -384,8 +427,8 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 	// is an observation about the log; reading it back into a transition would
 	// make a replay depend on when it ran.
 	if _, err := tx.Exec(
-		`INSERT INTO events (task_id, seq, action, payload, at) VALUES (?, ?, ?, ?, ?)`,
-		taskID, next, e.Action, e.Payload, s.now().Unix(),
+		`INSERT INTO events (project, task_id, seq, action, payload, at) VALUES (?, ?, ?, ?, ?, ?)`,
+		s.Project, taskID, next, e.Action, e.Payload, s.now().Unix(),
 	); err != nil {
 		return fmt.Errorf("appending to %s: %w", taskID, err)
 	}
@@ -400,7 +443,8 @@ func (s *Store) appendTx(taskID string, e Event, after int) error {
 // events, which is a normal answer rather than an error.
 func (s *Store) Events(taskID string) ([]Event, error) {
 	rows, err := s.db.Query(
-		`SELECT seq, action, payload FROM events WHERE task_id = ? ORDER BY seq`, taskID,
+		`SELECT seq, action, payload FROM events
+		 WHERE project = ? AND task_id = ? ORDER BY seq`, s.Project, taskID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reading the log of %s: %w", taskID, err)
@@ -453,7 +497,8 @@ func (s *Store) ReplayOwnFlow(taskID string) (fsm.TaskState, error) {
 // one. A wrong name cannot produce a wrong replay — only a refused one.
 func (s *Store) FlowNameOf(taskID string) (string, error) {
 	row := s.db.QueryRow(
-		`SELECT seq, action, payload FROM events WHERE task_id = ? ORDER BY seq LIMIT 1`, taskID,
+		`SELECT seq, action, payload FROM events
+		 WHERE project = ? AND task_id = ? ORDER BY seq LIMIT 1`, s.Project, taskID,
 	)
 
 	var e Event
@@ -479,7 +524,9 @@ func (s *Store) FlowNameOf(taskID string) (string, error) {
 
 // Tasks returns every task the store has heard of, sorted.
 func (s *Store) Tasks() ([]string, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT task_id FROM events ORDER BY task_id`)
+	rows, err := s.db.Query(
+		`SELECT DISTINCT task_id FROM events WHERE project = ? ORDER BY task_id`, s.Project,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing tasks: %w", err)
 	}
@@ -494,6 +541,27 @@ func (s *Store) Tasks() ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// TaskRefs returns every task in every project, in a stable order.
+func (s *Store) TaskRefs() ([]TaskRef, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT project, task_id FROM events ORDER BY project, task_id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing all tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var refs []TaskRef
+	for rows.Next() {
+		var ref TaskRef
+		if err := rows.Scan(&ref.Project, &ref.ID); err != nil {
+			return nil, fmt.Errorf("reading a global task id: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	return refs, rows.Err()
 }
 
 // Replay rebuilds a task's state by feeding its log through the reducer.
@@ -583,14 +651,3 @@ func (s *Store) AwaitingGate() ([]Waiting, error) {
 	}
 	return waiting, nil
 }
-
-// What is not here: a content store.
-//
-// One sat beside the log so a handoff could carry a snapshot of what the
-// previous stage produced, and the commit replaced it — git already stores
-// content far better than a table of blobs does. The API went first, then the
-// empty table and the column it wrote to.
-//
-// The note survives the code because the alternative is a decision, not an
-// omission: a reader who finds the decision recorded and no blobs should learn
-// that the snapshot moved to git rather than that somebody forgot to build it.

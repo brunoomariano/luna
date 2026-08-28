@@ -1,8 +1,8 @@
-# No role, and that is the point of this file.
+# No agent, and that is the point of this file.
 #
 # `ci_green` is proven by running `make ci`; nothing about it is a judgement, and
-# `judgement` in role.go does not list it — so the static check allows a stage
-# that produces only this to name no role, and a stage with no role runs no agent.
+# the static check allows a stage that produces only mechanically verified
+# artifacts to name no agent. A stage with no agent runs only its declared tool.
 # Measured against `full`, where the same stage id costs $1.62 because it also
 # owes `dod_checked`, which is a person's checklist and needs somebody to write
 # it.

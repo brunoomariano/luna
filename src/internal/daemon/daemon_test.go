@@ -27,13 +27,14 @@ func running(t *testing.T) (Client, string) {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	socket := filepath.Join(dir, SocketName)
-	server, err := Listen(socket)
+	database := filepath.Join(dir, "luna.db")
+	server, err := Listen(Options{Socket: socket, Store: database})
 	if err != nil {
 		t.Fatalf("starting the daemon: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
 
-	return Client{Path: socket, Store: filepath.Join(dir, "luna.db")}, dir
+	return Client{Path: socket}, dir
 }
 
 // TestTheDaemonIsTheOneThatWrites is the whole point of the process boundary.
@@ -42,14 +43,15 @@ func running(t *testing.T) (Client, string) {
 // read-only refuses to append; forwarding to the daemon is what lets every
 // command keep calling `Append` while exactly one process holds the file.
 func TestTheDaemonIsTheOneThatWrites(t *testing.T) {
-	client, _ := running(t)
+	client, dir := running(t)
 
 	// A read-only store refuses on its own.
-	reader, err := store.Open(client.Store)
+	central, err := store.OpenReadOnly(filepath.Join(dir, "luna.db"))
 	if err != nil {
 		t.Fatalf("opening read-only: %v", err)
 	}
-	t.Cleanup(func() { _ = reader.Close() })
+	t.Cleanup(func() { _ = central.Close() })
+	reader := central.ForProject("test-project")
 
 	err = reader.AppendAction("D-1", fsm.TaskCreated{
 		Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow()),
@@ -84,12 +86,13 @@ func TestTheDaemonIsTheOneThatWrites(t *testing.T) {
 // Without this, two decisions taken from one state both land, and the log replays
 // into an illegal transition forever with no repair available.
 func TestTheConditionalAppendSurvivesTheSocket(t *testing.T) {
-	client, _ := running(t)
-	reader, err := store.Open(client.Store)
+	client, dir := running(t)
+	central, err := store.OpenReadOnly(filepath.Join(dir, "luna.db"))
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
-	t.Cleanup(func() { _ = reader.Close() })
+	t.Cleanup(func() { _ = central.Close() })
+	reader := central.ForProject("test-project")
 	reader.Via = client
 
 	created := fsm.TaskCreated{Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow())}
@@ -108,29 +111,25 @@ func TestTheConditionalAppendSurvivesTheSocket(t *testing.T) {
 	}
 }
 
-// TestTheDaemonListsEveryProjectItHasBeenAskedAbout is the central view.
-//
-// What it has opened rather than everything on the disk, and the difference is
-// honest: a listing that swept for repositories would report on ones nobody in
-// this session has touched.
-func TestTheDaemonListsEveryProjectItHasBeenAskedAbout(t *testing.T) {
+// TestTheDaemonListsEveryProjectInTheCentralStore is the central view.
+func TestTheDaemonListsEveryProjectInTheCentralStore(t *testing.T) {
 	client, dir := running(t)
 
-	second := client
-	second.Store = filepath.Join(dir, "other.db")
+	database := filepath.Join(dir, "luna.db")
 
-	for _, c := range []Client{client, second} {
-		reader, err := store.Open(c.Store)
+	for _, project := range []string{"test-project", "other-project"} {
+		central, err := store.OpenReadOnly(database)
 		if err != nil {
 			t.Fatalf("opening: %v", err)
 		}
-		reader.Via = c
-		if err := reader.AppendAction("T-"+filepath.Base(c.Store), fsm.TaskCreated{
+		reader := central.ForProject(project)
+		reader.Via = client
+		if err := reader.AppendAction("T-"+project, fsm.TaskCreated{
 			Kind: fsm.KindChore, Flow: fsm.Fingerprint(fsm.DefaultFlow()),
 		}); err != nil {
-			t.Fatalf("seeding %s: %v", c.Store, err)
+			t.Fatalf("seeding %s: %v", project, err)
 		}
-		_ = reader.Close()
+		_ = central.Close()
 	}
 
 	resp, err := client.Do(Request{Op: "tasks"})
@@ -142,7 +141,7 @@ func TestTheDaemonListsEveryProjectItHasBeenAskedAbout(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, line := range resp.Tasks {
-		seen[line.Store] = true
+		seen[line.Project] = true
 		if line.Status == "" {
 			t.Errorf("%s is listed with no status", line.TaskID)
 		}
@@ -213,7 +212,7 @@ func TestASocketLeftByAKilledDaemonIsCleared(t *testing.T) {
 		t.Fatalf("simulating: %v", err)
 	}
 
-	server, err := Listen(socket)
+	server, err := Listen(Options{Socket: socket, Store: filepath.Join(dir, "luna.db")})
 	if err != nil {
 		t.Fatalf("a daemon must start over a stale socket, got %v", err)
 	}
@@ -222,16 +221,15 @@ func TestASocketLeftByAKilledDaemonIsCleared(t *testing.T) {
 	}
 }
 
-// TestARequestNamingNoLogIsRefused. The client resolves the path because it knows
-// where it is standing; a request without one is a client that did not, and
-// guessing would put a task in whatever project the daemon last saw.
-func TestARequestNamingNoLogIsRefused(t *testing.T) {
+// TestARequestNamingNoProjectIsRefused. Task ids are project-local, so guessing
+// a project would make the daemon append to somebody else's history.
+func TestARequestNamingNoProjectIsRefused(t *testing.T) {
 	client, _ := running(t)
 
 	_, err := client.Do(Request{Op: "append", TaskID: "X-1", Action: "TaskCreated", After: -1})
 
 	if err == nil {
-		t.Fatal("an append naming no log was accepted")
+		t.Fatal("an append naming no project was accepted")
 	}
 }
 
@@ -251,11 +249,10 @@ func TestAClientStartsTheDaemonItNeeds(t *testing.T) {
 	socket := filepath.Join(dir, SocketName)
 	started := 0
 	client := Client{
-		Path:  socket,
-		Store: filepath.Join(dir, "luna.db"),
+		Path: socket,
 		Start: func() error {
 			started++
-			server, err := Listen(socket)
+			server, err := Listen(Options{Socket: socket, Store: filepath.Join(dir, "luna.db")})
 			if err != nil {
 				return err
 			}
@@ -313,7 +310,7 @@ func TestSpawnStartsThisBinaryAndReleasesIt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
-	if err := Spawn(filepath.Join(dir, SocketName)); err != nil {
+	if err := Spawn(filepath.Join(dir, SocketName), filepath.Join(dir, "luna.db"), ""); err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
 }
@@ -361,7 +358,9 @@ func TestADaemonCannotBindWhereThereIsNoRoom(t *testing.T) {
 	if err := os.WriteFile(blocked, []byte("a file"), 0o600); err != nil {
 		t.Fatalf("setting up: %v", err)
 	}
-	if _, err := Listen(filepath.Join(blocked, SocketName)); err == nil {
+	if _, err := Listen(Options{
+		Socket: filepath.Join(blocked, SocketName), Store: filepath.Join(dir, "luna.db"),
+	}); err == nil {
 		t.Error("a daemon bound where its directory could not be made")
 	}
 
@@ -370,7 +369,7 @@ func TestADaemonCannotBindWhereThereIsNoRoom(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(occupied, "in the way"), 0o750); err != nil {
 		t.Fatalf("setting up: %v", err)
 	}
-	if _, err := Listen(occupied); err == nil {
+	if _, err := Listen(Options{Socket: occupied, Store: filepath.Join(dir, "other.db")}); err == nil {
 		t.Error("a daemon bound over a path it could not clear")
 	}
 }
@@ -381,13 +380,14 @@ func TestADaemonCannotBindWhereThereIsNoRoom(t *testing.T) {
 // that task is exactly the one somebody needs to hear about. Dropping it from the
 // central view would hide the only symptom.
 func TestATaskWhoseFlowChangedIsListedRatherThanDropped(t *testing.T) {
-	client, _ := running(t)
+	client, dir := running(t)
 
-	reader, err := store.Open(client.Store)
+	central, err := store.OpenReadOnly(filepath.Join(dir, "luna.db"))
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
-	t.Cleanup(func() { _ = reader.Close() })
+	t.Cleanup(func() { _ = central.Close() })
+	reader := central.ForProject("test-project")
 	reader.Via = client
 
 	// A fingerprint no flow in this build has.
@@ -417,36 +417,6 @@ func TestATaskWhoseFlowChangedIsListedRatherThanDropped(t *testing.T) {
 	}
 }
 
-// TestAProjectIsOpenedOnceAndKept. Opening a SQLite database is not free and the
-// daemon is asked about the same few projects repeatedly — and holding it open is
-// what makes the daemon the single writer rather than merely the usual one.
-func TestAProjectIsOpenedOnceAndKept(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "luna-d-")
-	if err != nil {
-		t.Fatalf("making a directory: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-	server, err := Listen(filepath.Join(dir, SocketName))
-	if err != nil {
-		t.Fatalf("starting: %v", err)
-	}
-	t.Cleanup(func() { _ = server.Close() })
-
-	path := filepath.Join(dir, "luna.db")
-	first, err := server.storeFor(path)
-	if err != nil {
-		t.Fatalf("opening: %v", err)
-	}
-	second, err := server.storeFor(path)
-	if err != nil {
-		t.Fatalf("reopening: %v", err)
-	}
-	if first != second {
-		t.Error("the same project was opened twice")
-	}
-}
-
 // TestAnUnreadableAnswerIsReportedAsItself. A daemon from a different build could
 // answer something this one cannot parse, and reporting that as "the request
 // failed" would send whoever reads it looking in the wrong place.
@@ -470,6 +440,7 @@ func TestAnUnreadableAnswerIsReportedAsItself(t *testing.T) {
 			return
 		}
 		defer func() { _ = conn.Close() }()
+		_, _ = bufio.NewReader(conn).ReadBytes('\n')
 		_, _ = conn.Write([]byte("this is not a response\n"))
 	}()
 
@@ -526,8 +497,10 @@ func TestSpawnReportsWhatItCannotStart(t *testing.T) {
 	}
 
 	client := Client{
-		Path:  filepath.Join(blocked, SocketName),
-		Start: func() error { return Spawn(filepath.Join(blocked, SocketName)) },
+		Path: filepath.Join(blocked, SocketName),
+		Start: func() error {
+			return Spawn(filepath.Join(blocked, SocketName), filepath.Join(t.TempDir(), "luna.db"), "")
+		},
 	}
 
 	if _, err := client.Do(Request{Op: "ping"}); err == nil {

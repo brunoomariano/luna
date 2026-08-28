@@ -226,22 +226,20 @@ stage *closed*, and the exit checks return before that — so a blocked stage ca
 and the flow that fails most read as the cheapest. Caught by running a task, not by
 reading the code.
 
-**And then the measurement was acted on, which is the only reason to take one.** The flow
-went from twelve stages to eight and from twelve roles to three. `scenarios` and `spec`
-merged, because they were 61% of the bill and the artifact the second one existed to
-produce — `contract` — was required by no stage in the flow. The four review stages merged,
-because they were structurally the same stage with four different conditions, reading the
-same code and the same green, paying to ingest one diff four times.
+**And then the measurement was acted on, which is the only reason to take one.** The full
+flow went from twelve stages to eight, then seven. `scenarios` and `spec` merged because
+they were 61% of the bill; the four review stages merged because they read the same code
+and green result while paying to ingest one diff four times; build, hygiene and acceptance
+then became the bounded `forge` loop.
 
-The roles collapsed for a related reason: twelve of them differed only in the sentence
-describing the work, and Luna already generates that sentence per stage with the contract
-in it. What a role is actually for is what a stage cannot express — which tools it denies,
-and whether it may continue the previous session. That test leaves two boundaries, not
-twelve.
+The role catalogue disappeared for a related reason: its rows differed mostly in the
+sentence describing the work, and that sentence belonged to the stage. A stage now owns
+its agent, briefing, context and denied capabilities. Pack size is the number of distinct
+briefings; solo substitutes one broad policy without changing the stage contract.
 
-Whether this is cheaper is not yet known. Twelve cold starts became two, and `--resume`
-measured about eleven times cheaper than starting cold — but that is arithmetic about the
-transport, not a second measurement of the flow. The number to compare against is $6.78.
+Whether this is cheaper is not yet known. `--resume` measured about eleven times cheaper
+than starting cold, but the shipped flow still chooses fresh context at its boundaries.
+The number to compare against remains $6.78, not an estimate from stage count.
 
 **A guard aimed at the wrong command is indistinguishable from a broken feature.**
 `luna artifact put` runs *inside* a stage's sandbox, where the log is deliberately out of
@@ -257,6 +255,19 @@ because the recorded log dir is outside this sandbox mount"), explicitly decline
 around the refusal, and left the artifact behind for a human. The adversarial framing has
 a limit: an agent given a clear contract and a hard boundary reported the boundary rather
 than defeating it.
+
+**A central inventory has to be central in storage, not reconstructed from process
+memory.** The first daemon shape still owned one SQLite file per project and could list
+only the stores it had happened to open since it started. That looked global from a busy
+checkout and became incomplete after a restart. One database with project in the primary
+key makes the inventory a query over durable facts. The project column keeps the isolation
+that separate files provided without making discovery depend on daemon history.
+
+**"The CLI does not call write" is weaker than a read-only connection.** A logically
+unowned store still opened SQLite read-write, ran migrations and could grow another direct
+write path; blobs did exactly that after event appends had moved behind the daemon. Opening
+the CLI with SQLite `mode=ro` made the boundary testable. Once that was done, event append,
+artifact append and artifact deletion all had to cross the same process boundary.
 
 ## About this project's own process
 

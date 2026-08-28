@@ -7,124 +7,77 @@
 # review. It may carry arguments.
 #
 # This wins over $EDITOR, because $EDITOR serves your git and this project may
-# want something else — a repository whose contracts are long markdown is not
-# obliged to open them in the editor that writes commit messages.
-#
-# Resolution order, most specific first:
+# want something else. Resolution order, most specific first:
 #   1. this setting
-#   2. $LUNA_EDITOR   — overrides the project for one invocation
+#   2. $LUNA_EDITOR
 #   3. $EDITOR
 #   4. $VISUAL
 editor = "vim"
 
-# Which official harness `luna chat` asks to understand what you said. Luna hosts
-# no model: it runs one of claude, pi, codex or opencode non-interactively and
-# reads the command back. Defaults to claude.
+# Which official harness the lead asks when it judges a gate. Luna hosts no
+# model: it runs one of claude, pi, codex or opencode non-interactively and reads
+# the answer back. This is not the agent that runs a stage; each embedded stage
+# declares its own agent policy. Defaults to claude.
 #
-# interpreter = "pi"
+# lead_harness = "pi"
 
-# ── how supervised a run is ──────────────────────────────────────────────────
+# -- how supervised a run is --------------------------------------------------
 #
-# Two things decide it, and neither of them lives here.
+# Two things decide it, and neither lives in this file.
 #
-# **Whether a gate waits** is the stage's own declaration: a gate stops when the
-# stage file gives it judgement criteria, or when the task's registry entry gives
-# it checks to run. A gate with neither was never going to put a question in
-# front of anybody, so it does not wait (ADR-0063). You edit that in
-# `.luna/stock/stages/`, beside the gate it governs.
+# Whether a gate waits is the stage's declaration in the flow embedded in the
+# Luna binary, or the checks recorded on this task with `luna gate checks`. A
+# project cannot override a stage, its agent, brief, tools or gate here. Those
+# are flow control and change with the binary under review.
 #
-#   [gate]
-#   kind        = "review-artifact"
-#   artifact    = "contract"
-#   autonomy_floor = 9
-#   judge = [
-#     "The contract states what is required and what is forbidden",
-#   ]
-#
-# **Who answers one that waited** is the autonomy knob, set per task:
+# Who answers a gate that waited is the autonomy knob, set per task:
 #
 #   luna autonomy LUNA-1        # show it
 #   luna autonomy LUNA-1 7      # the lead judges gates up to autonomy floor 7
 #
-# 0 is the default and judges nothing. 10 lets the lead judge every gate — and a
-# lead judging honestly still asks when it cannot decide. Moving it writes an
-# event, so the log says when it changed; a gate already open keeps the answer it
-# opened with (RFC-0006).
+# Zero is the default and judges nothing. Ten lets the lead judge every gate,
+# while a lead that cannot decide still asks. Moving the knob writes an event;
+# a gate already open keeps the answer it opened with.
 #
-# Declared checks are answered by their exit code before any of that, so a gate
-# whose commands pass is answered with no model involved. They are declared per
-# task, because they vary per task — one task must pass the whole suite at a
-# gate and another something narrower (ADR-0067):
+# Declared checks are answered by their exit code before judgement. They vary by
+# task, so one task may need the whole suite and another something narrower:
 #
 #   luna gate checks LUNA-1 --on review-artifact --run "make ci"
 #
 # `--run` repeats and keeps its order; the first failure is the answer. With no
-# --run at all, the gate is declared to have no mechanical answer and goes
-# straight to judgement — which is a different statement from saying nothing.
+# --run, the gate is declared to have no mechanical answer and goes straight to
+# judgement, which differs from declaring nothing.
 
-# ── the watchdog ─────────────────────────────────────────────────────────────
+# -- the watchdog -------------------------------------------------------------
 #
 # How long to wait on an agent that has stopped reacting before calling the task
-# stuck. One budget bounds a whole turn, tool time included (ADR-0051), and it
-# defaults to 2h.
+# stuck. One budget bounds a whole turn, tool time included, and defaults to 2h.
+# It is project-wide because suite duration is a fact about the repository, not
+# about who answers a gate. There is no wall-clock cap on the whole task.
 #
-# Project-wide rather than per profile: how long a suite takes is a fact about
-# this repository, not about who answers a gate (ADR-0063). There is deliberately
-# no wall-clock cap on the task — progress, not elapsed time, is the signal worth
-# acting on.
-
 # turn_budget = "45m"
 
-# ── profiles ─────────────────────────────────────────────────────────────────
+# -- preparing worktrees ------------------------------------------------------
 #
-# A profile holds nothing but its name. It used to decide which gates wait and
-# how long the watchdog waited; the first went to the stage's own declaration
-# and the knob (ADR-0063), the second is `turn_budget` above.
+# The command that turns a fresh checkout into one whose tests can run. Luna
+# executes it in each new stage worktree before starting the agent. Empty means
+# the repository needs no preparation.
 #
-# What it still is: history. A task records the profile it was created under, so
-# a replay reproduces the run as it happened, and `--profile` validates against
-# the names defined here.
+# bootstrap = "make bootstrap"
+
+# -- durable agent memory -----------------------------------------------------
 #
-# Every key inside one is refused rather than ignored — a file that reads like
-# supervision and decides nothing is worse than one that will not load.
+# The ai-memory workstream this project's tasks use unless `task new` names a
+# different one. Every checkout of one project should use the same durable
+# context. Defaults to "luna".
+#
+# workstream = "the-project"
+
+# -- profiles -----------------------------------------------------------------
+#
+# A profile holds only its name. A task records the profile it was created under
+# so replay reproduces the run, and `--profile` validates against the names here.
+# The shipped names are interactive, turbo and nightly. Defining no profiles
+# keeps all three. Every key inside a profile is refused rather than ignored.
 
 # [profile.patient]
-
-# ── roles ────────────────────────────────────────────────────────────────────
-#
-# A role is what a stage asks for: `build` wants an implementer, `code-review`
-# wants a reviewer. Each one resolves to the agent that runs it, what it is told
-# about being that role, and the skills it loads.
-#
-# Twelve roles ship with the default flow — scout, analyst, investigator,
-# gherkin, specifier, implementer, cleaner, verifier, qa, reviewer, hardener,
-# architect. Naming one here replaces just that one; the rest keep their
-# defaults, because the flow names roles this file never mentions.
-#
-# `agent` is one of the kinds herdr supports. Putting a different model behind
-# `reviewer` than behind `implementer` is the cheapest independence available —
-# and it is not the separation INV-core-7 asks for, which needs the reviewer to
-# not HAVE Edit and Write rather than to be told not to use them.
-
-# A role may also declare what it must NOT be able to do. The four review roles
-# — qa, reviewer, hardener, architect — ship denying Edit and Write, because a
-# role that judges someone else's work must not be able to change it. The brief
-# says so too, and the brief is not what enforces it: a restriction that lives
-# only in the prompt is exactly what INV-core-7 names as the violation.
-#
-# `tools_deny` names the capability, never a harness's spelling of it. claude
-# says `Edit`, pi says `edit`, codex takes no names at all and denies writing
-# with a sandbox mode — Luna translates. That is what lets you move a role
-# between agents without rewriting it.
-#
-# Luna can gate claude, pi, codex and opencode. A gated role on any other agent
-# stops the stage rather than running ungated.
-
-# [role.reviewer]
-# agent      = "codex"
-# brief      = "You review. You report findings; you do not edit."
-# skills     = ["code-review"]
-# tools_deny = ["Edit", "Write"]
-
-# [role.implementer]
-# agent = "claude"

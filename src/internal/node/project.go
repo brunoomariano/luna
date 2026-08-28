@@ -17,12 +17,11 @@ import (
 // same work. The remote is what says so — it is the only thing both clones agree
 // on and neither can change by moving.
 type Project struct {
-	// Key is the stable name for the project, safe as a directory name.
+	// Key is the stable project scope stored with every event and artifact.
 	Key string
 
-	// From is what the key was derived from, kept so a person reading the
-	// directory can tell why two checkouts landed in it — or why two they expected
-	// to did not.
+	// From is what the key was derived from, kept so a global task listing can
+	// explain why two checkouts share a scope — or why two expected ones do not.
 	From string
 
 	// Remote reports whether the key came from a remote. A repository with none
@@ -99,11 +98,11 @@ func NormalizeRemote(url string) string {
 	return strings.ToLower(url)
 }
 
-// keyOf turns something identifying into a directory name.
+// keyOf turns something identifying into a compact, readable database key.
 //
-// Readable first, unique always, and the two arguments are why: `readable` is what
-// lets somebody `ls` the projects directory and recognise their own work, and
-// `identity` is what the hash is taken over. They are separate because the
+// Readable first, unique always, and the two arguments are why: `readable` is
+// what lets somebody recognise their own work in a report, and `identity` is
+// what the hash is taken over. They are separate because the
 // readable half is lossy — truncated, lowercased, stripped of punctuation — and
 // hashing the lossy form would let two different projects land on one key.
 func keyOf(readable, identity string) string {

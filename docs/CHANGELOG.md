@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **State is one central, project-scoped SQLite database owned by the daemon.** The CLI
+  opens `$XDG_DATA_HOME/luna/luna.db` in physical read-only mode and forwards events,
+  artifacts and artifact cleanup over the daemon socket. A per-database process lock
+  prevents two daemons from owning the same file. Former per-project stores and legacy
+  checkout-local stores are imported by the daemon and archived only after an exact copy.
+- **Workload commands now read across projects.** `luna task list [--json]` lists every
+  active task in the central store, and `luna gates`, `luna stuck`, `luna fleet report`
+  and `luna flow check` use the same global view. Commands that act on one task remain
+  scoped to the project of the current checkout, where equal ids are unambiguous.
+- **A stage owns its agent policy.** The old role catalogue is gone: each stage declares
+  its agent, briefing and denied capabilities, while solo mode collapses the briefings
+  onto one broad agent policy. Pack size is derived from distinct stage briefings.
 - **The documentation suite was reset.** Ten layers, 73 ADRs, 9 RFCs, 3 PRDs and ~95,000
   words became four living files: `architecture.md` (how it works today), `invariants.md`
   (the five rules that always hold), `decisions.md` (what was chosen and what was

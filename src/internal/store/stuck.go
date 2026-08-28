@@ -18,9 +18,10 @@ import (
 // This asks a question the log can answer: the last event has a timestamp, and
 // the difference between then and now is a fact rather than a judgement.
 type Stuck struct {
-	TaskID string
-	Stage  fsm.StageID
-	Status fsm.Status
+	Project string
+	TaskID  string
+	Stage   fsm.StageID
+	Status  fsm.Status
 
 	// Reason is why it stopped — the recorded block, or what the gate is asking.
 	Reason string
@@ -34,8 +35,12 @@ type Stuck struct {
 // the part that makes it worth reading: everything here was already visible in
 // `luna gates`, and what is new is that nobody has looked.
 func (s Stuck) String() string {
+	name := s.TaskID
+	if s.Project != "" {
+		name = s.Project + "/" + s.TaskID
+	}
 	return fmt.Sprintf("%s has been %s for %s at %s: %s",
-		s.TaskID, s.Status, round(s.Since), s.Stage, s.Reason)
+		name, s.Status, round(s.Since), s.Stage, s.Reason)
 }
 
 // Stalled lists tasks that have been stopped for longer than the given patience.
@@ -109,7 +114,10 @@ func (s *Store) Stalled(patience time.Duration) ([]Stuck, error) {
 // read it from — an id nobody has written to.
 func (s *Store) LastEventAt(taskID string) (time.Time, error) {
 	var at int64
-	row := s.db.QueryRow(`SELECT COALESCE(MAX(at), 0) FROM events WHERE task_id = ?`, taskID)
+	row := s.db.QueryRow(
+		`SELECT COALESCE(MAX(at), 0) FROM events WHERE project = ? AND task_id = ?`,
+		s.Project, taskID,
+	)
 	if err := row.Scan(&at); err != nil {
 		return time.Time{}, fmt.Errorf("reading when %s last moved: %w", taskID, err)
 	}
