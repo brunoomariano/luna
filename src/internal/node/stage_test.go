@@ -340,7 +340,7 @@ func TestAHandedOverArtifactIsProvenByTheStore(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
 		Stored: func(_, stage, artifact string) (string, error) {
 			asked = stage + "/" + artifact
 			return "abc123", nil
@@ -381,7 +381,7 @@ func TestAMissingHandoverFailsRatherThanPasses(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
 		Stored: func(_, _, _ string) (string, error) {
 			return "", errors.New("no such artifact")
 		},
@@ -436,6 +436,57 @@ func TestTheBriefNamesWhatIsHandedOverRatherThanCommitted(t *testing.T) {
 }
 
 // memoryArtifacts is a named fake for the handover store: the socket needs a
+// TestTheHandoverIsOpenedAtTheTaskSSequence is a regression test for a commit
+// plan that described the wrong commit.
+//
+// The store keys an artifact's versions by the sequence it was written at, and
+// the wiring passed a literal 0 for every stage of every task. A stage that hands
+// the same artifact over twice therefore wrote twice to the same key, and the
+// second write lost to the primary key.
+//
+// A flow that passes through each stage once never does that. A loop's second
+// round always does: on AVG-1 the forge agent was refused, worked around it by
+// handing the plan over under a name nothing checks, and the contract passed on
+// the round-one document that was still there. `luna gate show` then asked a
+// person to approve a commit plan for `f69a8b8` while the delivery was `5970e47`
+// — the gate showing the wrong thing with everything reporting green.
+func TestTheHandoverIsOpenedAtTheTaskSSequence(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	opened := []int{}
+	r := &Runner{
+		Repo:  repo,
+		Agent: fake,
+		Artifacts: func(_ string, seq int) ArtifactStore {
+			opened = append(opened, seq)
+			return &memoryArtifacts{}
+		},
+		Stored: func(string, string, string) (string, error) { return "abc123", nil },
+	}
+
+	stage := fsm.Stage{
+		ID: "forge", Agent: "claude",
+		Produces:  []fsm.Artifact{"commit_plan"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{"commit_plan": fsm.Existence{Handover: true}},
+	}
+
+	// The same stage twice, as a loop runs it, at the two sequences the log had
+	// reached each time.
+	for _, seq := range []int{7, 12} {
+		state := runningState("LUNA-1")
+		state.Stage, state.Seq = stage.ID, seq
+		if _, err := r.Run(context.Background(), state, stage); err != nil {
+			t.Fatalf("running the stage at seq %d: %v", seq, err)
+		}
+	}
+
+	if len(opened) != 2 || opened[0] != 7 || opened[1] != 12 {
+		t.Errorf("the handover was opened at %v, want [7 12] — a constant makes the second "+
+			"round collide with the first and keep the stale document", opened)
+	}
+}
+
 // writer to open at all, and these tests are about what the *verification* asks
 // it afterwards rather than about what crossed the socket.
 type memoryArtifacts struct {
@@ -597,7 +648,7 @@ func TestAStageProvesEveryArtifactItOwes(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
 		Stored:    func(_, _, _ string) (string, error) { return "hash", nil },
 	}
 
@@ -802,7 +853,7 @@ func TestTheSocketIsOpenedOnlyForAStageThatHandsSomethingOver(t *testing.T) {
 	r := &Runner{
 		Repo:      repo,
 		Agent:     fake,
-		Artifacts: func(string) ArtifactStore { return &memoryArtifacts{} },
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
 	}
 
 	// A stage that commits everything it owes gets no socket in its environment.

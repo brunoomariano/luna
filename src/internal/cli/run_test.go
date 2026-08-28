@@ -1009,7 +1009,7 @@ func TestTheHandoverSocketIsOpenedPerTask(t *testing.T) {
 		t.Fatalf("want the stage runner, got %T", conductor.Node)
 	}
 
-	if err := runner.Artifacts("LUNA-1").PutArtifact("spec", "contract", []byte("for one")); err != nil {
+	if err := runner.Artifacts("LUNA-1", 0).PutArtifact("spec", "contract", []byte("for one")); err != nil {
 		t.Fatalf("handing over: %v", err)
 	}
 

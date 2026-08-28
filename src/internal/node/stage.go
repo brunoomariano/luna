@@ -45,10 +45,16 @@ type Runner struct {
 
 	// Artifacts opens the store a stage's handover is written to.
 	//
-	// A factory rather than an instance because the store is scoped to one task,
-	// and the runner learns which task only when a stage runs. Nil means no stage
-	// may declare a handover, which is refused rather than silently ignored.
-	Artifacts func(taskID string) ArtifactStore
+	// A factory rather than an instance because the store is scoped to one task
+	// and one point in its history, and the runner learns both only when a stage
+	// runs. Nil means no stage may declare a handover, which is refused rather
+	// than silently ignored.
+	//
+	// The sequence is what lets a stage hand the same artifact over twice. A
+	// loop's second round rewrites the commit plan it wrote in the first, and the
+	// store keys a version by it — passing a constant makes the second write
+	// collide with the first and the round keeps the stale document.
+	Artifacts func(taskID string, seq int) ArtifactStore
 
 	// Stored answers whether an artifact reached the store, with the hash of what
 	// did. Separate from Artifacts because that interface is the socket's
@@ -114,7 +120,7 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 		return r.runMechanically(ctx, state, stage, wt)
 	}
 
-	socket, handsOver, err := r.serveArtifacts(state.ID, stage, wt)
+	socket, handsOver, err := r.serveArtifacts(state, stage, wt)
 	if err != nil {
 		return lead.Result{}, err
 	}
@@ -385,7 +391,7 @@ const Sandbox = "ai-jail"
 //
 // A stage that declares no handover opens nothing: there is no reason to expose
 // a writer to an agent that owes nothing through it.
-func (r *Runner) serveArtifacts(taskID string, stage fsm.Stage, wt Worktree) (server *ArtifactServer, opened bool, err error) {
+func (r *Runner) serveArtifacts(state fsm.TaskState, stage fsm.Stage, wt Worktree) (server *ArtifactServer, opened bool, err error) {
 	if !handsOver(stage) {
 		return nil, false, nil
 	}
@@ -393,7 +399,7 @@ func (r *Runner) serveArtifacts(taskID string, stage fsm.Stage, wt Worktree) (se
 		return nil, false, fmt.Errorf("stage %q hands an artifact to Luna and no store is configured", stage.ID)
 	}
 
-	server, err = ServeArtifacts(taskID, string(stage.ID), r.Artifacts(taskID))
+	server, err = ServeArtifacts(state.ID, string(stage.ID), r.Artifacts(state.ID, state.Seq))
 	if err != nil {
 		return nil, false, err
 	}
@@ -446,7 +452,7 @@ func (r *Runner) writeOwnReports(state fsm.TaskState, stage fsm.Stage) error {
 			continue
 		}
 		body := []byte(SandboxReport(r.Repo))
-		if err := r.Artifacts(state.ID).PutArtifact(string(stage.ID), string(artifact), body); err != nil {
+		if err := r.Artifacts(state.ID, state.Seq).PutArtifact(string(stage.ID), string(artifact), body); err != nil {
 			return fmt.Errorf("writing %s for stage %q: %w", artifact, stage.ID, err)
 		}
 	}

@@ -282,11 +282,15 @@ func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(),
 		// the roles are still being tuned.
 		Budget: cfg.Turn(),
 
-		// The socket a contained agent hands artifacts over through, opened inside
-		// the stage's worktree — the only place the agent can reach, measured
-		// against ai-jail 1.17.0, where every other position answers ENOENT.
-		Artifacts: func(taskID string) node.ArtifactStore {
-			return NewTaskArtifacts(env.Store, taskID, 0)
+		// The socket a contained agent hands artifacts over through. It is opened
+		// under the runtime directory and reaches the agent because Luna maps that
+		// directory into the sandbox read-only.
+		//
+		// The sequence is the task's own, not a constant: the store keys an
+		// artifact's versions by it, so a loop's second round writes a new version
+		// rather than colliding with the first.
+		Artifacts: func(taskID string, seq int) node.ArtifactStore {
+			return NewTaskArtifacts(env.Store, taskID, seq)
 		},
 
 		// What answers "was it handed over?" for an artifact that is not in the
