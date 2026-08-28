@@ -484,6 +484,30 @@ released version and no log written by one"* — and the same file is about to l
 repository entirely, so every config that could break is being rewritten anyway. A setting
 named after a command nobody can run is a name that costs a reader a search.
 
+**A task belongs to a project, and a project is its remote.** Two clones of one
+repository are one project, so a worktree opened to review a task sees that task and a
+second clone made to work on a branch is the same work. The remote is what says so: it is
+the only thing both checkouts agree on and neither can change by moving.
+
+The forms of one remote are reduced to a single string — scheme, credentials, the `.git`
+suffix, a trailing slash and case are punctuation rather than identity, and the scp-like
+`git@host:owner/repo` is the default a clone produces. The host is *not* removed:
+`github.com/me/app` and `gitlab.com/me/app` are two projects sharing a name, and merging
+them would put one project's tasks in another's log.
+
+A repository with no remote is keyed by its path, and that is a different guarantee rather
+than the same one: two clones of it are two projects, because nothing ties them together.
+Adding a remote later changes the key and so changes which log the checkout reads — correct,
+and worth knowing, since before the remote there was no shared project to read.
+
+> *Rejected: keying by path.* It is what the per-repository log did, and it is the thing
+> that makes a review worktree blind to the task it was opened for.
+>
+> *Rejected: a readable key with no hash.* Two remotes that flatten to the same characters
+> would share a log. The key is readable *and* hashed, and the hash is taken over what
+> identifies rather than over the truncated form — hashing the readable half was the first
+> attempt and reintroduced the collision it was there to prevent.
+
 ## Gates
 
 **A gate suspends and frees the slot.** With N tasks in parallel, gates that held processes
