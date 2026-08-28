@@ -8,9 +8,10 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/brunoomariano/luna/src/internal/sock"
 )
 
 // ErrNoDaemon is a daemon that is not there and could not be started.
@@ -70,7 +71,13 @@ func (c Client) Do(req Request) (Response, error) {
 
 // once is one connection, one request, one answer.
 func (c Client) once(req Request) (Response, error) {
-	conn, err := net.DialTimeout("unix", c.Path, 2*time.Second)
+	dialable, done, err := sock.Short(c.Path)
+	if err != nil {
+		return Response{}, err
+	}
+	defer done()
+
+	conn, err := net.DialTimeout("unix", dialable, 2*time.Second)
 	if err != nil {
 		return Response{}, fmt.Errorf("reaching the daemon at %s: %w", c.Path, err)
 	}
@@ -127,7 +134,11 @@ func Spawn(socket string) error {
 
 	cmd := exec.Command(self, "daemon", "--socket", socket) //nolint:gosec // this binary, by path
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
-	cmd.Dir = filepath.Dir(socket)
+	// The root, and not the socket's directory: that one is the daemon's to create
+	// and does not exist yet on a first run — `exec` needs `Dir` to be there and
+	// fails before the process starts. Not the caller's directory either, which is
+	// often a stage's worktree and is deleted when the stage ends.
+	cmd.Dir = string(os.PathSeparator)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting a daemon: %w", err)
 	}

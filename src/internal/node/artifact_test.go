@@ -476,3 +476,18 @@ func TestALongSocketPathStillBinds(t *testing.T) {
 		t.Errorf("the content did not arrive: %q", fake.saved["forge/contract"])
 	}
 }
+
+// TestCallingASocketThatIsNotThereIsReported. An agent handing an artifact over
+// to a Luna that is no longer listening has to hear about it: the alternative is
+// a stage that believes it delivered and a store that never received.
+func TestCallingASocketThatIsNotThereIsReported(t *testing.T) {
+	_, err := node.CallArtifact(filepath.Join(t.TempDir(), "nobody.sock"),
+		node.Request{Op: "get", Artifact: "contract"})
+
+	if err == nil {
+		t.Fatal("a call to a socket nobody is on was taken as success")
+	}
+	if !strings.Contains(err.Error(), "nobody.sock") {
+		t.Errorf("the failure does not name what was unreachable: %v", err)
+	}
+}

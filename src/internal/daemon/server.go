@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/brunoomariano/luna/src/internal/sock"
 	"github.com/brunoomariano/luna/src/internal/store"
 )
 
@@ -45,7 +46,16 @@ func Listen(path string) (*Server, error) {
 		return nil, fmt.Errorf("clearing the daemon socket at %s: %w", path, err)
 	}
 
-	listener, err := net.Listen("unix", path)
+	// Through the same limit the handover socket goes through. It was missing
+	// here, and a runtime directory long enough to trip it answered
+	// `connect: invalid argument` — naming neither the path nor the limit.
+	bindable, done, err := sock.Short(path)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	listener, err := net.Listen("unix", bindable)
 	if err != nil {
 		return nil, fmt.Errorf("opening the daemon socket at %s: %w", path, err)
 	}

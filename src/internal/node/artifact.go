@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/brunoomariano/luna/src/internal/sock"
 )
 
 // SocketDirName is the directory the handover sockets live in, under the runtime
@@ -132,7 +134,7 @@ func ServeArtifacts(taskID, stage string, s ArtifactStore) (*ArtifactServer, err
 		return nil, fmt.Errorf("clearing the artifact socket at %s: %w", path, err)
 	}
 
-	bindable, done, err := shortEnough(path)
+	bindable, done, err := sock.Short(path)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +229,7 @@ func (s *ArtifactServer) reply(conn net.Conn, r Response) {
 // where it is standing and a client that searches would be a client that can find
 // the wrong stage's socket.
 func CallArtifact(socket string, req Request) (Response, error) {
-	dialable, done, err := shortEnough(socket)
+	dialable, done, err := sock.Short(socket)
 	if err != nil {
 		return Response{}, err
 	}
@@ -248,33 +250,4 @@ func CallArtifact(socket string, req Request) (Response, error) {
 		return Response{}, fmt.Errorf("reading the answer: %w", err)
 	}
 	return resp, nil
-}
-
-// sunPathLimit is what AF_UNIX gives a socket path: 108 bytes on Linux,
-// including the terminating NUL. A path at or past it fails bind and connect
-// with `invalid argument`, which names neither the path nor the limit.
-const sunPathLimit = 107
-
-// shortEnough returns a name the socket syscalls accept for path, and a cleanup
-// to call once the bind or connect has happened.
-//
-// A worktree can live arbitrarily deep — measured: the first real run put one
-// 140 bytes down and the server died on `bind: invalid argument` before the
-// agent ever started. The socket cannot move (inside the worktree is the one
-// place a contained agent reaches), so the *name* is shortened
-// instead: the directory is opened, and the path goes through /proc/self/fd,
-// which resolves to the same inode in a handful of bytes. The descriptor only
-// has to outlive the syscall — the socket, once bound, is reached by its real
-// path from then on.
-func shortEnough(path string) (string, func(), error) {
-	if len(path) <= sunPathLimit {
-		return path, func() {}, nil
-	}
-
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return "", nil, fmt.Errorf("opening the socket's directory for %s: %w", path, err)
-	}
-	short := fmt.Sprintf("/proc/self/fd/%d/%s", dir.Fd(), filepath.Base(path))
-	return short, func() { _ = dir.Close() }, nil
 }

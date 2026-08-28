@@ -512,3 +512,65 @@ func TestAnAnswerThatNeverArrivesIsReported(t *testing.T) {
 		t.Fatal("a connection that said nothing was taken as success")
 	}
 }
+
+// TestSpawnReportsWhatItCannotStart. A daemon that could not be launched has to
+// say so: the command that needed it is about to report "no daemon", and the
+// reason it could not be started is the only useful half of that.
+func TestSpawnReportsWhatItCannotStart(t *testing.T) {
+	// A socket under a path that is a file, so the daemon's own directory cannot
+	// be made — the failure surfaces when it tries to bind rather than here, so
+	// what this covers is that Spawn itself returns.
+	blocked := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("setting up: %v", err)
+	}
+
+	client := Client{
+		Path:  filepath.Join(blocked, SocketName),
+		Start: func() error { return Spawn(filepath.Join(blocked, SocketName)) },
+	}
+
+	if _, err := client.Do(Request{Op: "ping"}); err == nil {
+		t.Fatal("a daemon that cannot bind was taken as running")
+	}
+}
+
+// TestAClientHangingUpWithoutAskingIsNotAnError. A connection opened and dropped
+// is what a killed command leaves behind, and a daemon that treated it as a
+// failure would report one for every interrupted `luna`.
+func TestAClientHangingUpWithoutAskingIsNotAnError(t *testing.T) {
+	client, _ := running(t)
+
+	conn, err := net.Dial("unix", client.Path)
+	if err != nil {
+		t.Fatalf("dialling: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+
+	// And the daemon is still there afterwards, which is the point: one dropped
+	// connection does not take it down.
+	if _, err := client.Do(Request{Op: "ping"}); err != nil {
+		t.Errorf("the daemon did not survive a dropped connection: %v", err)
+	}
+}
+
+// TestDiallingAPathThatCannotBeNamedIsReported.
+//
+// A long path is reached through a descriptor for the directory holding it, so a
+// directory that is not there has nothing to open — and the client has to say
+// that rather than passing an empty name down to the syscall.
+//
+// Only the client: the daemon makes the directory before it needs to name it, so
+// the same branch there is one nothing ordinary reaches.
+func TestDiallingAPathThatCannotBeNamedIsReported(t *testing.T) {
+	gone := filepath.Join("/tmp", "nowhere-at-all", strings.Repeat("a-long-directory-name/", 6), SocketName)
+	if len(gone) <= 107 {
+		t.Fatalf("the fixture is short enough to be dialled directly: %d bytes", len(gone))
+	}
+
+	if _, err := (Client{Path: gone}).Do(Request{Op: "ping"}); err == nil {
+		t.Error("a client dialled a path it could not name")
+	}
+}

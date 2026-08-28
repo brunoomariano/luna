@@ -319,3 +319,62 @@ func TestAnUnknownLoopKeyIsRefused(t *testing.T) {
 		t.Errorf("the refusal does not name what was written: %v", err)
 	}
 }
+
+// TestARedRoundIsARoundAndNotAShortfall is what lets the loop work at all.
+//
+// A converging stage ends its round without what it converges on — that is the
+// ordinary case, and it is why there is a loop. Treating it as a delivery that
+// fell short would spend the retry budget on it and then block the task at the
+// first red pipeline, which is the failure the loop exists to work through.
+func TestARedRoundIsARoundAndNotAShortfall(t *testing.T) {
+	state := running(t)
+
+	// Everything but the artifact it converges on.
+	state, err := Reduce(state, Complete{
+		Delivered: []Artifact{"code"},
+		Evidence:  map[Artifact]Evidence{"code": Exists(0)},
+		Flow:      loopFlow(),
+	})
+	if err != nil {
+		t.Fatalf("closing a red round: %v", err)
+	}
+
+	if state.Status != StatusStageDone {
+		t.Errorf("a red round did not close its stage, got %q", state.Status)
+	}
+	if len(state.StillOwed) != 1 || state.StillOwed[0] != "ci_green" {
+		t.Errorf("the round does not say what it is still working towards: %v", state.StillOwed)
+	}
+	if state.Retry.Attempts != 0 {
+		t.Errorf("a round spent the retry budget (%d attempts)", state.Retry.Attempts)
+	}
+}
+
+// TestMissingAnythingElseIsStillAShortfall is the other side, and the reason the
+// exemption names artifacts rather than applying to the whole stage: the loop is
+// not a way out of the contract.
+func TestMissingAnythingElseIsStillAShortfall(t *testing.T) {
+	flow := loopFlow()
+	flow[0].Produces = append(flow[0].Produces, "commit_plan")
+	flow[0].Verifiers["commit_plan"] = Existence{}
+
+	state := NewTaskState("L-3", KindFeature)
+	state, err := Reduce(state, Advance{Flow: flow})
+	if err != nil {
+		t.Fatalf("entering: %v", err)
+	}
+
+	// The convergence artifact *and* something the loop has no claim on.
+	state, err = Reduce(state, Complete{
+		Delivered: []Artifact{"code"},
+		Evidence:  map[Artifact]Evidence{"code": Exists(0)},
+		Flow:      flow,
+	})
+	if err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+
+	if state.Status == StatusStageDone {
+		t.Error("a stage that did not deliver what it owed closed as a round")
+	}
+}
