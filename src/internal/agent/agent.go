@@ -421,7 +421,7 @@ func (h Harness) wrap(call Call, args []string) (string, []string) {
 	if call.Uncontained {
 		return args[0], args[1:]
 	}
-	return h.Sandbox, append(sandboxArgs(call.Reachable), args...)
+	return h.Sandbox, append(sandboxArgs(call), args...)
 }
 
 // sandboxArgs is how the sandbox is asked to contain an agent that still has to
@@ -446,12 +446,23 @@ func (h Harness) wrap(call Call, args []string) (string, []string) {
 // billed $3.33 and left HEAD on the base commit for exactly this. The flag is
 // off by default in ai-jail 1.19.0; `ai-jail --network /bin/sh -c 'git log'` in
 // a worktree reproduces it in one command.
-func sandboxArgs(socketDir string) []string {
+func sandboxArgs(call Call) []string {
 	args := []string{"--network", "--worktree"}
 	for _, name := range memoryEnv {
 		args = append(args, "--env", name)
 	}
-	if socketDir == "" {
+
+	// And whatever the call itself set. Luna puts these on the process it starts,
+	// which is the jail — not the agent inside it — so without naming them here
+	// they stop at the boundary. Names only, never `NAME=VALUE`: the value is
+	// already in the jail's environment, and argv is world-readable.
+	for _, set := range call.Env {
+		if name, _, ok := strings.Cut(set, "="); ok {
+			args = append(args, "--env", name)
+		}
+	}
+
+	if call.Reachable == "" {
 		return args
 	}
 
@@ -463,7 +474,7 @@ func sandboxArgs(socketDir string) []string {
 	// From Luna's flags rather than from the project's `.ai-jail`, which refuses a
 	// map outside the project by design — correctly, since a repository must not
 	// be able to name what gets mounted into the sandbox it runs in.
-	return append(args, "--map", socketDir)
+	return append(args, "--map", call.Reachable)
 }
 
 // environ is the parent environment an agent inherits. Wrapped in a function so

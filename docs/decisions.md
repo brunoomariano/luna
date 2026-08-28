@@ -354,9 +354,16 @@ removed. What went unexamined the first time was whether integrating is Luna's j
 nothing consumed the merge commit, no invariant mentions merging, and Luna cannot see what
 a merge sets off.
 
-**A scratch artifact is handed over through a socket inside the worktree, keyed per
-stage.** Measured: under Landlock a socket in `$HOME`, in `/tmp`, or behind a symlink
-answers `ENOENT`; one under the cwd connects. The alternative failed in the worst way
+**A scratch artifact is handed over through a socket, keyed per stage.** It lived inside the
+worktree first, for a measured reason: under Landlock a socket in `$HOME`, in `/tmp`, or
+behind a symlink answers `ENOENT`, and one under the cwd connects. It moved to the runtime
+directory when Luna stopped writing into the worktree at all, and still connects from inside
+the jail because Luna maps the directory holding it read-only — Landlock permits `connect()`
+on an inode it can merely see. The name reaches the agent as `--env LUNA_ARTIFACT_SOCKET`,
+which is not a detail: setting it on the process Luna starts sets it on the *jail*, and a
+stage told to hand its work over through a socket it was never named delivers nothing.
+
+The earlier alternative failed in the worst way
 available — inside the sandbox the store path resolved onto a tmpfs root, so `luna task
 new` printed `created`, exited 0, and the task never existed. Nothing was denied; the write
 and the read agreed with each other and with nobody else.
@@ -444,14 +451,17 @@ condition was registered against it, and nothing in the engine ever wrote to it 
 one stage gated on a fact could never enter. A floor nobody can reach teaches a reader not
 to believe the floor.
 
-**`setup` reports on the sandbox, and Luna writes the report itself.** It reads `.ai-jail`
+**`setup` reports on the sandbox, and the report is handed over like any other artifact.** It reads `.ai-jail`
 and `.ai-memory.toml` and hands over a summary the gate attaches, so the mounts and the
 workstream are confirmed before anything is paid for.
 
-Luna writes it because `setup` is mechanical: no agent runs, so the handover socket is
-never opened, and a contract asking a mechanical stage for a handed-over artifact would be
-one nothing can satisfy. It reports rather than repairs — writing a default into a
-repository before a person has seen what is there is the opposite of what the gate is for.
+An agent writes it, and this is a revision. The report was Luna's own, written
+mechanically, because a contract asking a mechanical stage for a handed-over artifact would
+be one nothing can satisfy — no agent runs, so the socket is never opened. What changed is
+that the stage stopped being mechanical: it discovers the project's own commands, which no
+fixed reader can do. Once an agent runs, the socket is open and the contract is satisfiable.
+It still reports rather than repairs — writing a default into a repository before a person
+has seen what is there is the opposite of what the gate is for.
 
 > *Rejected: a `confirm` gate on `setup`.* A `confirm` opens on the way *into* a stage, so
 > it would ask about a configuration nothing had read yet. `review-artifact` opens on the

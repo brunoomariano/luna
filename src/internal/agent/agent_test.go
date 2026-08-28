@@ -759,7 +759,7 @@ func TestAnUncontainedCallNeedsNoSandbox(t *testing.T) {
 // permits connect() on an inode it can merely see, so the agent reaches the
 // socket without being able to write into the directory holding it.
 func TestTheSandboxIsAskedToExposeTheSocketDirectory(t *testing.T) {
-	with := sandboxArgs("/run/user/1000/luna")
+	with := sandboxArgs(Call{Reachable: "/run/user/1000/luna"})
 
 	var mapped bool
 	for i, arg := range with {
@@ -776,7 +776,7 @@ func TestTheSandboxIsAskedToExposeTheSocketDirectory(t *testing.T) {
 
 	// And a call with nothing to reach asks for nothing, rather than mapping an
 	// empty path.
-	for _, arg := range sandboxArgs("") {
+	for _, arg := range sandboxArgs(Call{}) {
 		if arg == "--map" {
 			t.Error("a call with no socket asked for a mapping anyway")
 		}
@@ -820,5 +820,46 @@ func TestTheSandboxIsAskedToCarryTheWorkstreamEnvironment(t *testing.T) {
 		if strings.Index(argv, pair) > strings.Index(argv, memoryWrapper) {
 			t.Errorf("--env %s must be the sandbox's argument, not the wrapper's:\n%s", name, argv)
 		}
+	}
+}
+
+// TestTheSandboxCarriesTheHandoverSocketVariable is a regression test for what a
+// real task did instead of failing.
+//
+// Luna sets LUNA_ARTIFACT_SOCKET on the process it starts — which is the jail,
+// not the agent inside it — and the jail carries no environment across. So every
+// contained stage was told to hand its work over through a socket whose name it
+// was never given, and `luna artifact put` refused with "LUNA_ARTIFACT_SOCKET is
+// not set".
+//
+// It did not surface as a failure because a capable model routes around it: on
+// AVG-1 the intake agent guessed the path from the task and the stage id and got
+// through, but not before committing the briefing into `.luna/` as a fallback —
+// reintroducing the exact leak the store handover exists to prevent. The plan
+// agent spent nine turns on the same search and ran out before delivering any of
+// the three artifacts it owed.
+//
+// The name is forwarded, never the value: argv is world-readable, and the value
+// is already in the jail's own environment for it to copy.
+func TestTheSandboxCarriesTheHandoverSocketVariable(t *testing.T) {
+	const socket = "/run/user/1000/luna/handover/T-1-plan.sock"
+
+	args := sandboxArgs(Call{
+		Env:       []string{"LUNA_ARTIFACT_SOCKET=" + socket},
+		Reachable: filepath.Dir(socket),
+	})
+
+	var carried bool
+	for i, arg := range args {
+		if arg == "--env" && i+1 < len(args) && args[i+1] == "LUNA_ARTIFACT_SOCKET" {
+			carried = true
+		}
+		if strings.Contains(arg, socket) && arg != filepath.Dir(socket) {
+			t.Errorf("the socket path is in argv, where anyone on the machine can read it: %q", arg)
+		}
+	}
+	if !carried {
+		t.Errorf("the agent was not told where to hand its work over, so `luna artifact put` "+
+			"cannot reach Luna and the stage delivers nothing: %v", args)
 	}
 }
