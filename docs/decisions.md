@@ -446,6 +446,44 @@ repository before a person has seen what is there is the opposite of what the ga
 > it would ask about a configuration nothing had read yet. `review-artifact` opens on the
 > way out, with the report attached.
 
+**`setup` discovers the project's own commands instead of reading them from a file, and
+runs uncontained to do it.** The bootstrap command was a key in `.luna/config.toml`. It is
+found instead — from `.ai-jail`, `.ai-memory.toml`, the README, `AGENTS.md`, the Makefile —
+and reported at the gate `setup` already opens, where a person confirms or corrects it.
+
+That removes one of the three project facts the config held, which matters because the
+config is leaving the repository. What replaces it is the same shape the trail already
+uses: discovery, then a gate.
+
+It costs the stage its mechanical status. `setup` was git only, and the argument for that
+still holds for the worktree — paying a model to run `git worktree add` buys nothing. It
+does not hold for the discovery: reading four files and concluding which command bootstraps
+a project *is* judgement, and the alternative is a person typing it into a config file once
+per repository and it going stale.
+
+> *Rejected: containing it like every other stage.* It reads `.ai-jail` to report what the
+> containment will be, so containing it means running it under the configuration it exists
+> to inspect — and when that file is wrong or absent it runs under the wrong jail to say
+> the jail is wrong. The exception is written into INV-4 rather than left to be discovered,
+> and it is bounded by the stage reporting and never repairing: an agent that writes nothing
+> has nothing to contain. Weighed against the alternative of an uncontained agent being
+> normal, which it is not — this is the only stage that runs before containment exists.
+>
+> *Rejected: letting `setup` write the `.ai-jail` it proposes.* An agent configuring its own
+> containment is the shape this project refuses everywhere else. It proposes; a person
+> answers the gate.
+
+**`interpreter` is renamed to what it does.** It selects the harness the lead asks when it
+judges a gate, and it was named after `luna chat` — a command that turned a person's words
+into a Luna command and was removed. The key kept the old spelling on the argument that it
+was already in projects' config files.
+
+That argument does not survive its own neighbours. The store dropped an incompatible schema
+outright a month later on the opposite reasoning — *"the project is greenfield: there is no
+released version and no log written by one"* — and the same file is about to leave the
+repository entirely, so every config that could break is being rewritten anyway. A setting
+named after a command nobody can run is a name that costs a reader a search.
+
 ## Gates
 
 **A gate suspends and frees the slot.** With N tasks in parallel, gates that held processes

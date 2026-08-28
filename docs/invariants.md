@@ -111,6 +111,19 @@ handed over is an artifact nobody can find — which is the same as one that doe
 **What violates it.** An agent started outside the sandbox; an artifact written to an
 unrecorded path; the store trusting a stage name that came from the agent.
 
+**The one exception, and it is named rather than implied.** `setup` runs its agent
+uncontained. It is the stage that reads `.ai-jail` to report what the containment will be,
+so containing it means running it under the configuration it exists to inspect — and when
+that configuration is wrong or absent, it runs under the wrong jail to say the jail is
+wrong. The exception is bounded by what the stage is allowed to do rather than by trust:
+it **reports and never repairs**, so it writes nothing, and an agent that writes nothing
+has nothing to contain. It is the only stage that runs before containment is established,
+and any second exception is a change to this invariant rather than an application of it.
+
+The risk this accepts is stated: an uncontained agent reading a repository can read
+anything the user can. What it cannot do is change anything, and what it produces is a
+report a person answers at a gate before the trail continues.
+
 **What containment must still let through.** Delegating containment means the sandbox
 decides what an agent can reach, and two of its defaults make a stage unable to deliver
 at all. The network is one: without it the harness blocks forever on a connection it
@@ -123,7 +136,9 @@ has no boundary to get this wrong. The identity a commit needs travels the same 
 environment, because the jail has no `~/.gitconfig` to read one from.
 
 **Covered by.** The socket boundary tests in `internal/node`; the ghost-store guard; the
-sandbox-invocation tests in `internal/agent` that assert what the jail is asked to allow.
+sandbox-invocation tests in `internal/agent` that assert what the jail is asked to allow;
+and a test that no stage but `setup` is exempt from containment — an exception that is not
+pinned is one the next stage inherits by accident.
 
 ---
 
