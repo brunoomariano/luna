@@ -59,8 +59,13 @@ func itoa(n int) string {
 func fakeSandbox(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fake-sandbox")
+	// `--env` and `--map` take a value, and the fake has to consume it the way
+	// ai-jail does: stopping at the first argument that is not a flag would leave
+	// the value in front of the command and exec the variable's *name*.
 	script := "#!/bin/sh\n" +
-		"while [ \"${1#--}\" != \"$1\" ]; do shift; done\n" +
+		"while [ \"${1#--}\" != \"$1\" ]; do\n" +
+		"  case \"$1\" in --env|--map) shift 2 ;; *) shift ;; esac\n" +
+		"done\n" +
 		"exec \"$@\"\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("writing the fake sandbox: %v", err)
@@ -774,6 +779,46 @@ func TestTheSandboxIsAskedToExposeTheSocketDirectory(t *testing.T) {
 	for _, arg := range sandboxArgs("") {
 		if arg == "--map" {
 			t.Error("a call with no socket asked for a mapping anyway")
+		}
+	}
+}
+
+// TestTheSandboxIsAskedToCarryTheWorkstreamEnvironment is a regression test for
+// AVG-1's `intake`, the first contained stage of a real task.
+//
+// The workstream wrapper runs inside the jail, and the jail does not carry the
+// host environment across. Without these two names `ai-memory run` starts against
+// its own default of 127.0.0.1:49374 with no token and the server answers
+// `401 Unauthorized: auth required` — before the agent starts, so the stage burns
+// its retries and blocks the task without ever calling a model.
+//
+// Nothing in this suite could see it: `setup` runs uncontained and inherits the
+// environment normally, so the first stage of every task worked and the second
+// was the one that died.
+func TestTheSandboxIsAskedToCarryTheWorkstreamEnvironment(t *testing.T) {
+	fake := newFakeHarness(t, `{"result":"done","session_id":"s1"}`, 0)
+	h := Harness{Sandbox: fake.path(), Binary: "claude"}
+
+	call := Call{Kind: "claude", Prompt: "x", Workstream: "w"}
+	if _, err := h.Run(context.Background(), call); err != nil {
+		t.Fatalf("running: %v", err)
+	}
+
+	argv := fake.argv(t)
+	for _, name := range memoryEnv {
+		// argv comes back one argument per line, so the flag and its value are
+		// matched together rather than separately: `--env` somewhere and the name
+		// somewhere else would pass while naming a different variable.
+		pair := "--env\n" + name
+		if !strings.Contains(argv, pair) {
+			t.Errorf("the sandbox was not asked to carry %s, so the workstream wrapper "+
+				"inside it cannot authenticate. argv was:\n%s", name, argv)
+			continue
+		}
+		// The sandbox's argument, not the wrapper's: after the binary it would be
+		// read by ai-memory, which has no such flag.
+		if strings.Index(argv, pair) > strings.Index(argv, memoryWrapper) {
+			t.Errorf("--env %s must be the sandbox's argument, not the wrapper's:\n%s", name, argv)
 		}
 	}
 }

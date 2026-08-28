@@ -197,6 +197,25 @@ func missingWorkstream(name, output string) bool {
 // one.
 var memoryWrapper = "ai-memory"
 
+// memoryEnv are the variables the workstream wrapper needs and cannot inherit.
+//
+// The jail does not carry the host environment across: `--inherit-env` is off by
+// default and only an allowlist survives. Luna puts `ai-memory run` *inside* the
+// jail, so without these the wrapper starts pointing at its own default of
+// 127.0.0.1:49374 with no token, and dies with `401 Unauthorized: auth required`
+// before the agent starts — a stage that costs nothing and delivers nothing.
+//
+// Measured against ai-jail 1.20.1: `--env NAME` copies the value from the host,
+// and a name that is not set is dropped silently, so naming both unconditionally
+// is safe on a machine that configures neither. A flag rather than the jail's
+// `env_pass`, because ai-jail rewrites `.ai-jail` on a run that normalises it and
+// never writes a NAME=VALUE entry back — the key survives the first session and
+// is gone by the second.
+//
+// Found by AVG-1: `setup` runs uncontained and reached the workstream, `intake`
+// was the first contained stage and did not.
+var memoryEnv = []string{"AI_MEMORY_SERVER_URL", "AI_MEMORY_AUTH_TOKEN"}
+
 // ErrNoHarness is returned when the named harness is not installed. It is
 // separate from a failed call because it is a setup problem, and retrying a
 // missing binary only wastes the retry budget.
@@ -428,8 +447,12 @@ func (h Harness) wrap(call Call, args []string) (string, []string) {
 // off by default in ai-jail 1.19.0; `ai-jail --network /bin/sh -c 'git log'` in
 // a worktree reproduces it in one command.
 func sandboxArgs(socketDir string) []string {
+	args := []string{"--network", "--worktree"}
+	for _, name := range memoryEnv {
+		args = append(args, "--env", name)
+	}
 	if socketDir == "" {
-		return []string{"--network", "--worktree"}
+		return args
 	}
 
 	// Read-only, and that is not a saving — it is the point. A stage hands
@@ -440,7 +463,7 @@ func sandboxArgs(socketDir string) []string {
 	// From Luna's flags rather than from the project's `.ai-jail`, which refuses a
 	// map outside the project by design — correctly, since a repository must not
 	// be able to name what gets mounted into the sandbox it runs in.
-	return []string{"--network", "--worktree", "--map", socketDir}
+	return append(args, "--map", socketDir)
 }
 
 // environ is the parent environment an agent inherits. Wrapped in a function so

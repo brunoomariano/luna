@@ -71,7 +71,11 @@ func TestALongPathBindsThroughTheDescriptor(t *testing.T) {
 // and saying "invalid argument" there would repeat the message this exists to
 // replace.
 func TestADirectoryThatCannotBeOpenedIsReportedAsItself(t *testing.T) {
-	gone := filepath.Join("/tmp", "nowhere", strings.Repeat("a-long-directory-name/", 6), "x.sock")
+	// Rooted in the test's own directory rather than a fixed path under /tmp: this
+	// fixture's whole premise is that the directory is absent, and a name in a
+	// world-writable directory is not the test's to assume. `/tmp/nowhere` existed
+	// on the machine that found this, and the test failed for being right.
+	gone := filepath.Join(t.TempDir(), "nowhere", strings.Repeat("a-long-directory-name/", 6), "x.sock")
 	if len(gone) <= PathLimit {
 		t.Fatalf("the fixture is short enough to be used as it is: %d bytes", len(gone))
 	}
