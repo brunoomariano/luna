@@ -99,10 +99,19 @@ verification; a transition that ignores a missing `requires`.
 ## INV-4 — Every agent runs inside the sandbox, and hands artifacts over rather than scattering them
 
 Luna starts agents inside `ai-jail`. Scratch artifacts — the ones that exist to cross
-stages or to be read by a human — are handed to Luna's store through a socket opened
-inside the stage's worktree, the only position reachable under Landlock. Luna is the sole
+stages or to be read by a human — are handed to Luna's store through a socket under the
+runtime directory, which Luna asks the sandbox to expose read-only. Luna is the sole
 writer, and the producing stage is recorded by the server, never taken from the agent's
 request.
+
+The socket was inside the worktree, because that was the only position measured to work
+under Landlock. What changed is that Luna asks: it builds the sandbox's command line, so
+it passes `--map` for the socket's directory, and against ai-jail 1.20.1 that connects.
+Read-only is enough — Landlock permits `connect()` on an inode it can merely see — so the
+agent now reaches the socket and cannot write into the directory holding it, which it
+could when the socket lived in a worktree it owned. The same mapping through a project's
+own `.ai-jail` is refused by design, so it has to come from Luna's flags: a repository
+must not be able to name what gets mounted into the sandbox it runs in.
 
 **Why.** Containment is delegated, not built: reimplementing a sandbox would be a worse
 copy of what the layer below already does. And an artifact that is neither committed nor

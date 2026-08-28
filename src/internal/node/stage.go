@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -204,7 +205,15 @@ func (r *Runner) call(
 		MayCreateWorkstream: state.Memory.MayCreate,
 	}
 	if handsOver {
-		call.Env = append(call.Env, socketEnv+"="+SocketName)
+		// An absolute path now, where it used to be relative to the worktree the
+		// agent was standing in. The socket left the worktree, so "relative to
+		// where you are" no longer names it.
+		socket := SocketFor(state.ID, string(stage.ID))
+		call.Env = append(call.Env, socketEnv+"="+socket)
+		// And the sandbox is asked to expose the directory holding it, without
+		// which the agent's connect() answers ENOENT — measured, and the reason the
+		// socket lived in the worktree until now.
+		call.Reachable = filepath.Dir(socket)
 	}
 
 	// A stage asking to continue gets the session an identically briefed stage was
@@ -383,7 +392,7 @@ func (r *Runner) serveArtifacts(taskID string, stage fsm.Stage, wt Worktree) (se
 		return nil, false, fmt.Errorf("stage %q hands an artifact to Luna and no store is configured", stage.ID)
 	}
 
-	server, err = ServeArtifacts(wt.Path, string(stage.ID), r.Artifacts(taskID))
+	server, err = ServeArtifacts(taskID, string(stage.ID), r.Artifacts(taskID))
 	if err != nil {
 		return nil, false, err
 	}

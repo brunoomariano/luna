@@ -57,15 +57,11 @@ func (m *memoryArtifacts) GetArtifact(stage, artifact string) ([]byte, error) {
 
 func serve(t *testing.T, stage string, s node.ArtifactStore) *node.ArtifactServer {
 	t.Helper()
-	// A short path: AF_UNIX caps the address at 108 bytes, and a test temp
-	// directory can be most of that on its own.
-	dir, err := os.MkdirTemp("/tmp", "luna-wt-")
-	if err != nil {
-		t.Fatalf("making a worktree: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	// A short runtime directory: AF_UNIX caps the address at 108 bytes, and a test
+	// temp directory can be most of that on its own.
+	runtimeDir(t)
 
-	server, err := node.ServeArtifacts(dir, stage, s)
+	server, err := node.ServeArtifacts("T-1", stage, s)
 	if err != nil {
 		t.Fatalf("serving artifacts: %v", err)
 	}
@@ -149,14 +145,27 @@ func TestAnUnknownOperationIsAnswered(t *testing.T) {
 
 // TestAResumedStageReusesTheSocketPath covers a stage that was killed and left the
 // socket file behind: binding must succeed rather than fail on an existing path.
-func TestAResumedStageReusesTheSocketPath(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "luna-wt-")
+// runtimeDir points the sockets at a directory of this test's own, short enough
+// for AF_UNIX's 108-byte address and cleared with the test.
+//
+// Isolated rather than shared: without it a test run opens sockets in whoever ran
+// it, and two tests naming the same stage would collide.
+func runtimeDir(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("/tmp", "luna-rt-")
 	if err != nil {
-		t.Fatalf("making a worktree: %v", err)
+		t.Fatalf("making a runtime directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+	return dir
+}
 
-	first, err := node.ServeArtifacts(dir, "spec", newMemoryArtifacts())
+func TestAResumedStageReusesTheSocketPath(t *testing.T) {
+	runtimeDir(t)
+
+	first, err := node.ServeArtifacts("T-2", "spec", newMemoryArtifacts())
 	if err != nil {
 		t.Fatalf("first server: %v", err)
 	}
@@ -165,11 +174,12 @@ func TestAResumedStageReusesTheSocketPath(t *testing.T) {
 	// Go's net package unlinks the socket on Close, so a clean shutdown leaves
 	// nothing. What a killed stage leaves is the file, which is put back here —
 	// that is the case this covers.
-	if err := os.WriteFile(filepath.Join(dir, node.SocketName), []byte("stale"), 0o600); err != nil {
+	stale := node.SocketFor("T-2", "spec")
+	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
 		t.Fatalf("simulating the socket a killed stage left: %v", err)
 	}
 
-	second, err := node.ServeArtifacts(dir, "spec", newMemoryArtifacts())
+	second, err := node.ServeArtifacts("T-2", "spec", newMemoryArtifacts())
 	if err != nil {
 		t.Fatalf("a resumed stage must be able to bind again, got %v", err)
 	}
@@ -187,6 +197,7 @@ func TestTheSocketCrossesTheSandbox(t *testing.T) {
 		t.Skip("ai-jail is not installed; the sandbox crossing cannot be measured here")
 	}
 
+	runtimeDir(t)
 	dir, err := os.MkdirTemp("/tmp", "luna-wt-")
 	if err != nil {
 		t.Fatalf("making a worktree: %v", err)
@@ -194,23 +205,32 @@ func TestTheSocketCrossesTheSandbox(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	fake := newMemoryArtifacts()
-	server, err := node.ServeArtifacts(dir, "spec", fake)
+	server, err := node.ServeArtifacts("T-9", "spec", fake)
 	if err != nil {
 		t.Fatalf("serving: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
 
-	// A client inside the jail, with the worktree as its only reachable directory.
+	socket := node.SocketFor("T-9", "spec")
+	// The socket is outside the worktree now, which is the whole point of this
+	// test: the agent's only writable directory does not contain it.
+	if strings.HasPrefix(socket, dir) {
+		t.Fatalf("the socket is inside the worktree: %s", socket)
+	}
+
 	client := filepath.Join(dir, "put.py")
 	script := `import socket,json
-s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.connect("` + node.SocketName + `")
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.connect("` + socket + `")
 s.sendall(json.dumps({"op":"put","artifact":"contract","body":"dGhlIGNvbnRyYWN0"}).encode())
 print(s.recv(4096).decode())`
 	if err := os.WriteFile(client, []byte(script), 0o600); err != nil {
 		t.Fatalf("writing the client: %v", err)
 	}
 
-	cmd := exec.Command(jail, "python3", "./put.py") //nolint:gosec // a path from LookPath
+	// `--map`, read-only, exactly as Luna passes it. Without the flag this answers
+	// ENOENT, which is what kept the socket in the worktree until it was measured.
+	cmd := exec.Command(jail, "--map", filepath.Dir(socket), //nolint:gosec // a path from LookPath
+		"python3", "./put.py")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the contained client failed: %v: %s", err, out)
@@ -281,55 +301,60 @@ func TestDialingNobodyIsReportedWithThePath(t *testing.T) {
 	}
 }
 
-// TestAWorktreeThatCannotHoldTheSocketIsRefused covers ServeArtifacts's own
-// failures: the socket's directory cannot be made, or the stale path cannot be
-// cleared.
-func TestAWorktreeThatCannotHoldTheSocketIsRefused(t *testing.T) {
-	worktree, err := os.MkdirTemp("/tmp", "luna-wt-")
-	if err != nil {
-		t.Fatalf("making a worktree: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(worktree) })
+// TestASocketDirectoryThatCannotBeMadeIsRefused covers ServeArtifacts's own
+// failures: the directory cannot be made, or the stale path cannot be cleared.
+func TestASocketDirectoryThatCannotBeMadeIsRefused(t *testing.T) {
+	dir := runtimeDir(t)
 
-	// `.luna` as a file: MkdirAll cannot make a directory over it.
-	if err := os.WriteFile(filepath.Join(worktree, ".luna"), []byte("a file"), 0o600); err != nil {
+	// The socket directory's name taken by a file: MkdirAll cannot make a
+	// directory over it.
+	if err := os.WriteFile(filepath.Join(dir, node.SocketDirName), []byte("a file"), 0o600); err != nil {
 		t.Fatalf("setting up: %v", err)
 	}
-	if _, err := node.ServeArtifacts(worktree, "spec", newMemoryArtifacts()); err == nil {
+	if _, err := node.ServeArtifacts("T-3", "spec", newMemoryArtifacts()); err == nil {
 		t.Error("a directory that cannot be made must be reported")
 	}
 
-	// The socket's path as a non-empty directory: os.Remove cannot clear it.
-	if err := os.Remove(filepath.Join(worktree, ".luna")); err != nil {
+	// The socket's own path as a non-empty directory: os.Remove cannot clear it.
+	if err := os.Remove(filepath.Join(dir, node.SocketDirName)); err != nil {
 		t.Fatalf("resetting: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(worktree, node.SocketName, "occupied"), 0o750); err != nil {
+	stale := node.SocketFor("T-3", "spec")
+	if err := os.MkdirAll(filepath.Join(stale, "occupied"), 0o750); err != nil {
 		t.Fatalf("setting up: %v", err)
 	}
-	if _, err := node.ServeArtifacts(worktree, "spec", newMemoryArtifacts()); err == nil {
+	if _, err := node.ServeArtifacts("T-3", "spec", newMemoryArtifacts()); err == nil {
 		t.Error("a stale path that cannot be cleared must be reported")
 	}
 }
 
-// TestADeeplyNestedWorktreeStillGetsItsSocket is the regression for the first
-// real run: a worktree 140 bytes down died on `bind: invalid argument`, because
-// AF_UNIX caps a socket path at 108 bytes and a worktree can live anywhere.
+// TestADeepWorktreeNoLongerReachesTheSocketPath is what moving the socket out of
+// the worktree bought, stated as a test rather than left as a side effect.
 //
-// Both directions matter — the server binds and the client connects through the
-// same limit.
-func TestADeeplyNestedWorktreeStillGetsItsSocket(t *testing.T) {
+// AF_UNIX caps a socket address at 108 bytes, and the first real run died on
+// `bind: invalid argument` because a worktree 140 bytes down carried the socket
+// with it. The socket lives under the runtime directory now, so how deep a
+// worktree sits has stopped being able to break the handover at all.
+func TestADeepWorktreeNoLongerReachesTheSocketPath(t *testing.T) {
+	runtimeDir(t)
+
 	deep := filepath.Join(t.TempDir(), strings.Repeat("deep-directory-name/", 6))
 	if err := os.MkdirAll(deep, 0o750); err != nil {
 		t.Fatalf("digging the deep worktree: %v", err)
 	}
-	if len(filepath.Join(deep, node.SocketName)) <= 107 {
+	if len(deep) <= 107 {
 		t.Fatalf("the fixture is not deep enough to exercise the limit")
 	}
 
+	socket := node.SocketFor("T-4", "spec")
+	if len(socket) > 107 {
+		t.Errorf("the socket path is %d bytes, past what AF_UNIX accepts: %s", len(socket), socket)
+	}
+
 	fake := newMemoryArtifacts()
-	server, err := node.ServeArtifacts(deep, "spec", fake)
+	server, err := node.ServeArtifacts("T-4", "spec", fake)
 	if err != nil {
-		t.Fatalf("a deep worktree must still get its socket, got %v", err)
+		t.Fatalf("serving: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
 
@@ -337,7 +362,7 @@ func TestADeeplyNestedWorktreeStillGetsItsSocket(t *testing.T) {
 		Op: "put", Artifact: "contract", Body: []byte("deep content"),
 	})
 	if err != nil || resp.Err != "" {
-		t.Fatalf("putting through a deep socket: %v / %s", err, resp.Err)
+		t.Fatalf("putting from a deep worktree: %v / %s", err, resp.Err)
 	}
 	if string(fake.saved["spec/contract"]) != "deep content" {
 		t.Errorf("the content must arrive whole, got %q", fake.saved["spec/contract"])
@@ -375,5 +400,79 @@ func TestAnUnnamedArtifactIsRefusedAtTheSocket(t *testing.T) {
 	}
 	if len(fake.saved) != 0 {
 		t.Errorf("nothing may be stored under no name, got %v", keys(fake.saved))
+	}
+}
+
+// TestTheSocketDirectoryFollowsTheRuntimeThenFallsBack covers both branches.
+//
+// The runtime directory is where sockets belong — the system clears it, and it is
+// short, which AF_UNIX's 108-byte address cares about. A machine without one is
+// the ordinary container or CI runner, and the temporary directory has the same
+// two properties.
+func TestTheSocketDirectoryFollowsTheRuntimeThenFallsBack(t *testing.T) {
+	run := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", run)
+
+	dir := node.SocketDir()
+	if dir != filepath.Join(run, node.SocketDirName) {
+		t.Errorf("dir = %s, want it under %s", dir, run)
+	}
+
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	dir = node.SocketDir()
+	if !strings.HasPrefix(dir, os.TempDir()) {
+		t.Errorf("dir = %s, want it under the temporary directory", dir)
+	}
+}
+
+// TestASocketIsNamedForItsTaskAndStage. Two stages of one task run in sequence
+// and a resumed one binds the same name — so the name has to carry both, or a
+// second task's stage would collide with the first's.
+func TestASocketIsNamedForItsTaskAndStage(t *testing.T) {
+	runtimeDir(t)
+
+	one := node.SocketFor("LUNA-1", "forge")
+	for _, other := range [][2]string{{"LUNA-1", "review"}, {"LUNA-2", "forge"}} {
+		got := node.SocketFor(other[0], other[1])
+		if got == one {
+			t.Errorf("%s/%s shares a socket with LUNA-1/forge: %s", other[0], other[1], got)
+		}
+	}
+}
+
+// TestALongSocketPathStillBinds. Moving the socket to the runtime directory made
+// the address shorter, and did not make the limit go away: a task id may be 64
+// characters and a runtime directory is whatever the system chose, so the sum can
+// still pass AF_UNIX's 108 bytes.
+//
+// The fallback binds through `/proc/self/fd`, which is short whatever the real
+// path is. This drives it from the outside — a long runtime directory — rather
+// than calling the helper, because what has to keep working is the handover.
+func TestALongSocketPathStillBinds(t *testing.T) {
+	long := filepath.Join(t.TempDir(), strings.Repeat("padding-directory/", 5))
+	if err := os.MkdirAll(long, 0o750); err != nil {
+		t.Fatalf("digging: %v", err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", long)
+
+	if len(node.SocketFor("LUNA-1", "forge")) <= 107 {
+		t.Fatalf("the fixture is not long enough to exercise the limit")
+	}
+
+	fake := newMemoryArtifacts()
+	server, err := node.ServeArtifacts("LUNA-1", "forge", fake)
+	if err != nil {
+		t.Fatalf("a long socket path must still bind, got %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	resp, err := node.CallArtifact(server.Path(), node.Request{
+		Op: "put", Artifact: "contract", Body: []byte("through a long path"),
+	})
+	if err != nil || resp.Err != "" {
+		t.Fatalf("putting through a long socket: %v / %s", err, resp.Err)
+	}
+	if string(fake.saved["forge/contract"]) != "through a long path" {
+		t.Errorf("the content did not arrive: %q", fake.saved["forge/contract"])
 	}
 }

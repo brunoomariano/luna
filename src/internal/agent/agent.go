@@ -88,6 +88,15 @@ type Call struct {
 	// to it by the sandbox, so it is also the only place it can write.
 	Dir string
 
+	// Reachable is a directory outside the worktree the sandbox is asked to expose
+	// read-only. It carries the handover socket, which used to live in the
+	// worktree because that was the only place a contained agent could reach.
+	//
+	// Passed in rather than derived here, so the package that opens the socket is
+	// the one that says where it is — there is no second place to keep in step,
+	// and no import of the node layer from underneath it.
+	Reachable string
+
 	// Prompt is the brief. Luna writes it; the agent never writes one for the
 	// next stage.
 	Prompt string
@@ -307,7 +316,7 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 		// environment on the way in.
 		args = append(memoryArgs(call, createWorkstream), args[1:]...)
 	}
-	args = append(sandboxArgs(), args...)
+	args = append(sandboxArgs(call.Reachable), args...)
 	started := time.Now()
 
 	// #nosec G204 — running a named binary with built arguments is what this
@@ -389,8 +398,20 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 // billed $3.33 and left HEAD on the base commit for exactly this. The flag is
 // off by default in ai-jail 1.19.0; `ai-jail --network /bin/sh -c 'git log'` in
 // a worktree reproduces it in one command.
-func sandboxArgs() []string {
-	return []string{"--network", "--worktree"}
+func sandboxArgs(socketDir string) []string {
+	if socketDir == "" {
+		return []string{"--network", "--worktree"}
+	}
+
+	// Read-only, and that is not a saving — it is the point. A stage hands
+	// artifacts over by connecting, and Landlock permits connect() on an inode it
+	// can merely see, so the agent reaches the socket and cannot write into the
+	// directory holding it. Measured against ai-jail 1.20.1, both halves.
+	//
+	// From Luna's flags rather than from the project's `.ai-jail`, which refuses a
+	// map outside the project by design — correctly, since a repository must not
+	// be able to name what gets mounted into the sandbox it runs in.
+	return []string{"--network", "--worktree", "--map", socketDir}
 }
 
 // environ is the parent environment an agent inherits. Wrapped in a function so

@@ -119,8 +119,13 @@ would then answer "no such task" about work that is right there. Two logs are re
 rather than merged — which one holds the work is not a thing Luna can tell.
 
 What stays in the checkout is `.luna/config.toml`, which is the project's own settings
-rather than Luna's state, and the `.gitignore` that keeps a stage's handover socket out of
-a commit.
+rather than Luna's state, and the `.gitignore` that keeps it company.
+
+The handover socket left too. It is at `$XDG_RUNTIME_DIR/luna/<task>-<stage>.sock`, which
+the sandbox is asked to expose read-only, and one consequence is worth stating: how deep a
+worktree sits stopped being able to break the handover. AF_UNIX caps an address at 108
+bytes, and the first real run died on `bind: invalid argument` because a worktree 140 bytes
+down carried the socket with it.
 
 ## Knowing where you are
 

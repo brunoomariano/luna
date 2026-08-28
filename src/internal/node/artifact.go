@@ -12,14 +12,50 @@ import (
 	"sync"
 )
 
-// SocketName is where the server listens, relative to the agent's worktree.
+// SocketDirName is the directory the handover sockets live in, under the runtime
+// directory. One per stage, named after the task and the stage.
 //
-// Inside the worktree because that is the only place a contained agent can reach:
-// measured against ai-jail 1.17.0, a socket in $HOME, in /tmp, or reached through
-// a symlink out of the working directory all answer ENOENT, and a real socket
-// under the cwd connects. Landlock permits connect() on an inode it can
-// see; the process on the other end is not contained and writes wherever it likes.
-const SocketName = ".luna/artifact.sock"
+// Outside the worktree, which took a measurement to make possible. It was inside
+// it — `.luna/artifact.sock` — because that was the only position a contained
+// agent could reach: against ai-jail 1.17.0 a socket in $HOME, in /tmp, or behind
+// a symlink out of the working directory all answered ENOENT.
+//
+// What changed is that Luna asks for the directory rather than hoping. It builds
+// the sandbox's command line, so it passes `--map` for this path, and against
+// ai-jail 1.20.1 that connects. Two things were measured with it and both matter:
+// a **read-only** map is enough, because Landlock permits connect() on an inode
+// it can merely see — and the agent then cannot write into the directory at all,
+// which it could when the socket lived in a worktree it owned. And the same
+// mapping through a project's own `.ai-jail` is refused by design, so this has to
+// come from Luna's flags: a repository must not be able to name what gets mounted.
+const SocketDirName = "luna"
+
+// SocketDir is where a stage's socket is opened, under $XDG_RUNTIME_DIR.
+//
+// The runtime directory rather than the data home: these are sockets, they last
+// exactly as long as the stage, and the runtime directory is the one the system
+// already clears. It is also short, which `sun_path` cares about — 108 bytes for
+// the whole path, and `/run/user/1000/luna/` leaves room for a task and a stage.
+func SocketDir() string {
+	if run := os.Getenv("XDG_RUNTIME_DIR"); run != "" {
+		return filepath.Join(run, SocketDirName)
+	}
+
+	// No runtime directory is the ordinary case on a machine without a session
+	// bus — a container, a CI runner. The temporary directory is short, per-user
+	// on any sane system, and cleared on reboot, which is the whole of what this
+	// needs.
+	return filepath.Join(os.TempDir(), SocketDirName)
+}
+
+// SocketFor names the socket one stage of one task listens on.
+//
+// Both halves are in the name: two stages of one task run in sequence and a
+// resumed stage binds the same path, so a name carrying only the task would put
+// two different stages on one socket.
+func SocketFor(taskID, stage string) string {
+	return filepath.Join(SocketDir(), taskID+"-"+stage+".sock")
+}
 
 // ArtifactStore is what the server needs from the store. It is an interface so
 // the socket can be exercised without a database, and so this package does not
@@ -64,14 +100,16 @@ type ArtifactServer struct {
 	once sync.Once
 }
 
-// ServeArtifacts starts the server inside a worktree.
+// ServeArtifacts starts the server for one stage of one task.
 //
 // The socket is removed first if one is there: a stage that was killed leaves the
 // file behind, and bind fails on an existing path. That is a resumed stage rather
-// than a conflict — there is one server per worktree by construction.
-func ServeArtifacts(worktree, stage string, s ArtifactStore) (*ArtifactServer, error) {
-	path := filepath.Join(worktree, SocketName)
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+// than a conflict — there is one server per task and stage by construction.
+func ServeArtifacts(taskID, stage string, s ArtifactStore) (*ArtifactServer, error) {
+	path := SocketFor(taskID, stage)
+	// 0o700: the directory holds one person's sockets, and a mode anyone could
+	// write to would let anyone bind a name a contained agent then connects to.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("making room for the artifact socket: %w", err)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
