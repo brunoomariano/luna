@@ -539,6 +539,34 @@ released version and no log written by one"* — and the same file is about to l
 repository entirely, so every config that could break is being rewritten anyway. A setting
 named after a command nobody can run is a name that costs a reader a search.
 
+**A project's settings live in the daemon's database, and its preparation command is
+discovered rather than configured.** `.luna/config.toml` was the last thing Luna read out
+of a checkout, and the log, the artifacts and the sockets had all already left it. The
+settings are keyed by project in the one central database, append-only like everything else
+there — which the file gave for free, through git, and a row that is overwritten would not:
+"who changed the workstream, and when" is a question a decision has to be able to answer.
+
+Two scopes, because the file's contents were never one thing. `editor` is whose hands are
+on the keyboard and `lead_harness` is what is installed; they lived in the project's file
+only because that was the one file there was, and they are the machine's now. `workstream`,
+`turn_budget` and the profile names stay the project's, and a project setting wins over the
+machine's. *Rejected:* one scope per project for everything, which is simpler to build and
+makes a person set the same editor in every repository they work in.
+
+`bootstrap` went further and stopped being a setting anybody types. `setup` already read the
+project to find it and put it in a report for a person — so Luna named the command it had
+found and then ran whatever the file said, which is two sources for one fact. It is handed
+over as an artifact now, and Luna records it as the project's once the stage delivers.
+Recorded per project rather than per task because the lean flows run a mechanical `setup`
+that discovers nothing: without a project-level record, `chore` and `fix` would have lost
+their preparation step entirely when the key went. *Rejected:* giving `chore` and `fix` an
+agent-run setup so they could discover it too — that is a model call on the two flows whose
+whole point is that there is nothing to decide.
+
+Recording before the gate answers is safe, and the ordering is the reason: bootstrap runs on
+the way *into* a stage and `setup`'s gate opens on the way *out* of it, so the first stage
+that could run the command is the one after a person said yes.
+
 **A task belongs to a project, and a project is its remote.** Two clones of one
 repository are one project, so a worktree opened to review a task sees that task and a
 second clone made to work on a branch is the same work. The remote is what says so: it is

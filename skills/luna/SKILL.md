@@ -68,17 +68,31 @@ project has run one — what each has cost in the central log, median by stage. 
 cannot change after a task opens, so this is the one moment the decision is
 cheap.
 
-If the project's tests need a step between `git clone` and "the tests run", say
-so once in `.luna/config.toml`:
+If the project's tests need a step between `git clone` and "the tests run", you
+do not have to say so: `setup` reads the project and finds it, and Luna records
+what it found once a person has confirmed the gate. Luna opens a clean worktree
+**per stage**, so without that step every stage rediscovers it and the ones that
+cannot fail on a check that was never about the work — a real task paid $10.36 of
+$19.13 to learn it.
 
-```toml
-bootstrap  = "make bootstrap && make build"
-workstream = "the-project"
+Everything else is `luna config`, and it is per project:
+
+```sh
+luna config                                  # what this project and this machine set
+luna config set workstream the-project
+luna config unset turn_budget
 ```
 
-Luna opens a clean worktree **per stage**, so without this every stage
-rediscovers that step and the ones that cannot fail on a check that was never
-about the work. It cost a real task $10.36 of $19.13 to learn that.
+`editor` and `lead_harness` are the machine's — set them once and every project
+here has them. `workstream`, `turn_budget` and `profiles` are the project's, and
+a project setting wins over the machine's. `bootstrap` is shown and cannot be
+set: it is what `setup` discovered, and typing it as well would be two sources
+for one fact.
+
+The settings live in the central database, so nothing about them is in the
+checkout. A project that still has a `.luna/config.toml` has it read once, into
+the settings, and then ignored — the file is left alone, because it is committed
+and renaming it would show up in every colleague's checkout.
 
 ## Where state lives
 
@@ -388,7 +402,7 @@ find out which you have.
 
 Every agent a task starts writes to one workstream, so what one stage learned is
 there for the next — and for the next task over the same ground. It is the
-project's by default, from `.luna/config.toml`.
+project's by default — `luna config set workstream <name>`.
 
 ```sh
 luna task new AVG-1 --kind feature --workstream migration       # select another
@@ -448,11 +462,10 @@ mkdir -p <target>/.claude/skills
 cp -r <luna>/skills/luna <target>/.claude/skills/
 ```
 
-The target project wants a `.luna/config.toml` if its tests need a build step
-first — that is `bootstrap`, and it is the setting that saves the most. The rest
-(`workstream`, `turn_budget`, `lead_harness`, `editor`) are optional; Luna runs
-without any of them, on the shipped defaults.
+The target project needs no file of any kind. Its build step is discovered by
+`setup`, and the rest is `luna config`, which writes into the central database.
 
-Task state, blobs and costs never enter the target checkout; they live in the
-central database. `.luna/config.toml` is committable on purpose: it is the
-project's settings, and a team shares it through git.
+Nothing Luna holds enters the target checkout — not task state, not blobs, not
+costs, not settings, and not a directory of its own. What it writes there is one
+line inside `.git`, saying where the central database is, because that is the one
+path a contained stage can also read.

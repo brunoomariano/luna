@@ -51,6 +51,15 @@ func showConfig(env Env) error {
 		fmt.Fprintf(env.Out, "  %-13s %-28s %s\n", key, value, from)
 	}
 
+	for _, key := range DiscoveredKeys() {
+		value := project[key]
+		if value == "" {
+			fmt.Fprintf(env.Out, "  %-13s %s\n", key, "(nothing found yet)")
+			continue
+		}
+		fmt.Fprintf(env.Out, "  %-13s %-28s discovered by setup\n", key, value)
+	}
+
 	if overridden := shadowed(global, project); len(overridden) > 0 {
 		fmt.Fprintf(env.Out, "\nthe machine also sets %s, which this project overrides\n",
 			strings.Join(overridden, ", "))

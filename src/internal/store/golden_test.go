@@ -220,10 +220,11 @@ func writeReplayCorpus(t *testing.T, path string) {
 			// removing `commit`, and `discovery` went with it. It reports on the
 			// sandbox as well as opening the worktree, and opens a gate on the way
 			// out — which the corpus answers, so the replay covers a gate too.
-			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Delivered: []fsm.Artifact{"worktree", "setup_report", "bootstrap_command"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{
-				"worktree":     fsm.Exists(2),
-				"setup_report": fsm.Exists(2),
+				"worktree":          fsm.Exists(2),
+				"setup_report":      fsm.Exists(2),
+				"bootstrap_command": fsm.Exists(2),
 			},
 			Flow: fsm.DefaultFlow(),
 		},

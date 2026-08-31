@@ -1387,3 +1387,152 @@ func TestABootstrapThatNeverFinishesIsStuckRatherThanSlow(t *testing.T) {
 		t.Errorf("an agent was billed for a worktree that never became ready: %d", len(fake.calls))
 	}
 }
+
+// TestWhatSetupDiscoversBecomesTheProjectsSetting closes the gap between the
+// stage that reads the project and the code that acts on it.
+//
+// The preparation command was a key somebody typed into a file, and `setup` only
+// ever put what it found into a report for a person — so Luna named the command
+// it had discovered and then ran whatever the file said. Two sources for one
+// fact, and nothing reconciling them.
+func TestWhatSetupDiscoversBecomesTheProjectsSetting(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+	store := &memoryArtifacts{}
+
+	recorded := map[string]string{}
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Artifacts: func(string, int) ArtifactStore { return store },
+		Stored:    func(string, string, string) (string, error) { return "abc123", nil },
+		Configure: func(key, value string) error {
+			recorded[key] = value
+			return nil
+		},
+	}
+
+	stage := fsm.Stage{
+		ID: "setup", Agent: "claude",
+		Produces: []fsm.Artifact{BootstrapArtifact},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			BootstrapArtifact: fsm.Existence{Handover: true},
+		},
+	}
+
+	// What the agent handed over, with the whitespace a heredoc leaves behind.
+	if err := store.PutArtifact("setup", string(BootstrapArtifact), []byte("make bootstrap\n")); err != nil {
+		t.Fatalf("seeding the handover: %v", err)
+	}
+
+	state := runningState("LUNA-1")
+	state.Stage = stage.ID
+	if _, err := r.Run(context.Background(), state, stage); err != nil {
+		t.Fatalf("running the stage: %v", err)
+	}
+
+	if recorded["bootstrap"] != "make bootstrap" {
+		t.Errorf("the project's bootstrap is %q, want the discovered command with no "+
+			"trailing newline — it is passed to `sh -c`", recorded["bootstrap"])
+	}
+}
+
+// TestAStageThatFailedRecordsNothing. The artifact may be missing or half
+// written, and a command Luna runs in every worktree from here on is not
+// something to take from a stage that did not close.
+func TestAStageThatFailedRecordsNothing(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	recorded := map[string]string{}
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
+		// Nothing was handed over, so the contract cannot close.
+		Stored:    func(string, string, string) (string, error) { return "", errors.New("no such artifact") },
+		Configure: func(key, value string) error { recorded[key] = value; return nil },
+	}
+
+	stage := fsm.Stage{
+		ID: "setup", Agent: "claude",
+		Produces: []fsm.Artifact{BootstrapArtifact},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			BootstrapArtifact: fsm.Existence{Handover: true},
+		},
+	}
+
+	state := runningState("LUNA-1")
+	state.Stage = stage.ID
+	_, _ = r.Run(context.Background(), state, stage)
+
+	if len(recorded) != 0 {
+		t.Errorf("a stage that delivered nothing set the project's configuration: %v", recorded)
+	}
+}
+
+// TestAStageThatOwesNoCommandIsNotAskedForOne. Every stage runs through the same
+// path, and one that never declared the artifact must not be read for it.
+func TestAStageThatOwesNoCommandIsNotAskedForOne(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	asked := false
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
+		Stored:    func(string, string, string) (string, error) { return "abc123", nil },
+		Configure: func(string, string) error { asked = true; return nil },
+	}
+
+	stage := fsm.Stage{
+		ID: "intake", Agent: "claude",
+		Produces:  []fsm.Artifact{"briefing"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{"briefing": fsm.Existence{Handover: true}},
+	}
+
+	state := runningState("LUNA-1")
+	state.Stage = stage.ID
+	if _, err := r.Run(context.Background(), state, stage); err != nil {
+		t.Fatalf("running the stage: %v", err)
+	}
+
+	if asked {
+		t.Error("a stage that owes no bootstrap command set one anyway")
+	}
+}
+
+// TestAConfigurationThatCannotBeWrittenDoesNotFailTheStage. The stage delivered;
+// what is lost is the preparation on the next one, which announces itself as a
+// failed check rather than as silence.
+func TestAConfigurationThatCannotBeWrittenDoesNotFailTheStage(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+	handed := &memoryArtifacts{}
+
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Artifacts: func(string, int) ArtifactStore { return handed },
+		Stored:    func(string, string, string) (string, error) { return "abc123", nil },
+		Configure: func(string, string) error { return errors.New("the database is read-only") },
+	}
+
+	stage := fsm.Stage{
+		ID: "setup", Agent: "claude",
+		Produces: []fsm.Artifact{BootstrapArtifact},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			BootstrapArtifact: fsm.Existence{Handover: true},
+		},
+	}
+	if err := handed.PutArtifact("setup", string(BootstrapArtifact), []byte("make bootstrap")); err != nil {
+		t.Fatalf("seeding the handover: %v", err)
+	}
+
+	state := runningState("LUNA-1")
+	state.Stage = stage.ID
+	if _, err := r.Run(context.Background(), state, stage); err != nil {
+		t.Errorf("a setting that could not be written failed the stage: %v", err)
+	}
+}

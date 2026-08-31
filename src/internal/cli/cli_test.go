@@ -538,14 +538,15 @@ func TestTaskShowListsWhatWasProducedWithItsEvidence(t *testing.T) {
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Delivered: []fsm.Artifact{"worktree", "setup_report", "bootstrap_command"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{
 				"worktree": {
 					Scope:   fsm.ScopeFull,
 					Verdict: fsm.VerdictPassed,
 					Command: "git worktree add",
 				},
-				"setup_report": fsm.Exists(0),
+				"setup_report":      fsm.Exists(0),
+				"bootstrap_command": fsm.Exists(0),
 			},
 		},
 	} {
@@ -978,7 +979,7 @@ func planGateStore(t *testing.T, h *harness, id string) {
 	actions := []fsm.Action{
 		fsm.TaskCreated{Kind: fsm.KindFeature, Flow: fsm.Fingerprint(fsm.DefaultFlow())},
 		fsm.Advance{Flow: fsm.DefaultFlow()}, // setup
-		delivered("worktree", "setup_report"),
+		delivered("worktree", "setup_report", "bootstrap_command"),
 		// `setup` opens a gate of its own now, and it is answered rather than
 		// skipped: these tests are about the plan's gate, and walking past this one
 		// is what gets them there.
@@ -1183,10 +1184,11 @@ func TestTaskShowOnABlockedTask(t *testing.T) {
 		// The first stage closes cleanly; the block has to come from the second
 		// stage's missing input, not from an unverified delivery.
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Delivered: []fsm.Artifact{"worktree", "setup_report", "bootstrap_command"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{
-				"worktree":     fsm.Exists(0),
-				"setup_report": fsm.Exists(0),
+				"worktree":          fsm.Exists(0),
+				"setup_report":      fsm.Exists(0),
+				"bootstrap_command": fsm.Exists(0),
 			},
 			Flow: flow,
 		},

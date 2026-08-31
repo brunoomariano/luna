@@ -33,11 +33,21 @@ func ScopeOf(key, project string) string {
 	return project
 }
 
-// ConfigKeys is every key that can be set, in the order `luna config` prints
+// ConfigKeys is every key a person may set, in the order `luna config` prints
 // them: the machine's first, then the project's.
 func ConfigKeys() []string {
 	return []string{"editor", "lead_harness", "turn_budget", "workstream", ProfilesKey}
 }
+
+// DiscoveredKeys are settings Luna writes and a person does not.
+//
+// `bootstrap` is the project's own preparation command, and `setup` finds it by
+// reading the project — the Makefile, the README, whatever names it. It was a key
+// somebody typed, and typing it is what made two sources for one fact: the stage
+// reported the command it had found and Luna ran whatever the file said. Shown in
+// the listing, because a person has to be able to see what will run in their
+// worktrees; refused by `set`, because the answer comes from the repository.
+func DiscoveredKeys() []string { return []string{"bootstrap"} }
 
 // ConfigFrom builds the settings a command runs under from what the daemon holds.
 //
@@ -113,6 +123,10 @@ func SettingsOf(cfg Config, project string) (global, projectSettings map[string]
 	put("editor", cfg.Editor)
 	put("lead_harness", cfg.LeadHarness)
 	put("workstream", cfg.Workstream)
+	// Carried even though nobody may set it any more: a project that has the key
+	// today would otherwise lose its preparation step between the import and the
+	// first `setup` that discovers one.
+	put("bootstrap", cfg.Bootstrap)
 	if cfg.TurnBudget > 0 {
 		put("turn_budget", cfg.TurnBudget.String())
 	}
@@ -158,6 +172,12 @@ func CheckConfigKey(key string) error {
 	for _, known := range ConfigKeys() {
 		if key == known {
 			return nil
+		}
+	}
+	for _, found := range DiscoveredKeys() {
+		if key == found {
+			return fmt.Errorf("%w: %q is discovered by `setup` from the project itself, not set here",
+				ErrUsage, key)
 		}
 	}
 	return fmt.Errorf("%w: unknown setting %q (expected %s)",

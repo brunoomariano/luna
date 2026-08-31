@@ -62,6 +62,10 @@ type Runner struct {
 	// question the agent has no part in.
 	Stored func(taskID, stage, artifact string) (hash string, err error)
 
+	// Configure records something a stage discovered as the project's own setting.
+	// Nil means nothing is recorded, which is what a dry run wants.
+	Configure func(key, value string) error
+
 	// Budget bounds one agent call. Zero leaves it to the caller's context.
 	Budget time.Duration
 
@@ -145,7 +149,61 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 	// worth keeping.
 	result, err := r.verify(ctx, state, stage, wt, spend)
 	r.reportEmptyDelivery(state, stage, result, said)
+	r.recordBootstrap(state, stage, err)
 	return result, err
+}
+
+// BootstrapArtifact is what `setup` hands over with the project's own preparation
+// command in it.
+const BootstrapArtifact fsm.Artifact = "bootstrap_command"
+
+// recordBootstrap keeps what `setup` found, as the project's setting.
+//
+// The command used to be a key somebody typed into `.luna/config.toml`, and the
+// stage that discovers it only ever put it in a report for a person to read — so
+// Luna told you the command and then ran whatever the file said, which is two
+// sources for one fact.
+//
+// Recorded per project rather than per task, because that is what it is: the
+// lean flows run a mechanical `setup` that discovers nothing, and without this
+// they would lose their preparation step entirely when the key went. Discovered
+// once, by the flow that reads the project, and used by all three.
+//
+// Safe to record before the gate answers, because nothing runs it yet: bootstrap
+// happens on the way into a stage, and `setup`'s gate opens on the way out of
+// this one. The first stage that could run it is the one after a person said yes.
+//
+// Nothing is recorded for a stage that failed its contract: the artifact may be
+// missing or half written, and a command Luna runs in every worktree from here on
+// is not something to take from a stage that did not close.
+//
+// Best effort otherwise. A project whose setting could not be written still gets the run it
+// asked for; what it loses is the preparation on the next stage, which announces
+// itself as a failed check rather than as silence.
+func (r *Runner) recordBootstrap(state fsm.TaskState, stage fsm.Stage, failed error) {
+	if failed != nil || r.Configure == nil || r.Artifacts == nil ||
+		!declares(stage, BootstrapArtifact) {
+		return
+	}
+	body, err := r.Artifacts(state.ID, state.Seq).
+		GetArtifact(string(stage.ID), string(BootstrapArtifact))
+	if err != nil {
+		r.warn("could not read the bootstrap command %s discovered: %v", stage.ID, err)
+		return
+	}
+	if err := r.Configure("bootstrap", strings.TrimSpace(string(body))); err != nil {
+		r.warn("could not record the bootstrap command %s discovered: %v", stage.ID, err)
+	}
+}
+
+// declares reports whether a stage owes this artifact.
+func declares(stage fsm.Stage, artifact fsm.Artifact) bool {
+	for _, owed := range stage.Produces {
+		if owed == artifact {
+			return true
+		}
+	}
+	return false
 }
 
 // reportEmptyDelivery surfaces what the agent said when the stage produced

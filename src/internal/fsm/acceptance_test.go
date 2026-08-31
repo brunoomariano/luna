@@ -264,9 +264,16 @@ func TestEveryMechanicallyProvableArtifactRunsSomething(t *testing.T) {
 		// documents a person reads to decide something, and a command can only ever
 		// prove that a file was written. They are handed over instead, so at least
 		// the writing is Luna's answer rather than the agent's.
-		"setup_report":     "a summary of the sandbox: whether the mounts are the right ones is the gate's question",
-		"commit_plan":      "prose proposing commits; whether the grouping is right is the gate's question",
-		"delivery_summary": "a summary for a person who will not read the diff",
+		"setup_report": "a summary of the sandbox: whether the mounts are the right ones is the gate's question",
+
+		// The one command Luna cannot run to check itself. Running the discovered
+		// bootstrap here would prove it executes, not that it is the command this
+		// project means by preparing a checkout — and an empty answer is correct for
+		// a project that needs none, so there would be nothing to run half the time.
+		// The report names where it was found, and a person answers the gate.
+		"bootstrap_command": "the project's own preparation command: running it proves it runs, not that it is the right one",
+		"commit_plan":       "prose proposing commits; whether the grouping is right is the gate's question",
+		"delivery_summary":  "a summary for a person who will not read the diff",
 
 		// The commits themselves. `existence` is the honest floor: that the work
 		// was committed is checkable, and whether the messages are good is what the

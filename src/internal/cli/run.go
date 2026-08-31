@@ -305,6 +305,12 @@ func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(),
 			return NewTaskArtifacts(env.Store, taskID, seq)
 		},
 
+		// What `setup` discovers about the project, kept as the project's own
+		// setting rather than as a fact one task holds.
+		Configure: func(key, value string) error {
+			return env.Store.PutSetting(ScopeOf(key, env.Store.Project), key, value)
+		},
+
 		// What answers "was it handed over?" for an artifact that is not in the
 		// commit. The store is the witness, and the hash it returns is what the
 		// evidence carries.

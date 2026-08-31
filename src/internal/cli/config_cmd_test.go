@@ -99,6 +99,17 @@ func TestAnUnknownKeyIsRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "wrokstream") {
 		t.Errorf("the error does not name the key that was wrong: %v", err)
 	}
+
+	// And a key Luna writes is refused with the reason, not as a typo: `bootstrap`
+	// is real, and being told it does not exist would send somebody looking for
+	// the spelling.
+	err = h.run(t, "config", "set", "bootstrap", "make bootstrap")
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("a discovered key answered %v, want a usage error", err)
+	}
+	if !strings.Contains(err.Error(), "discovered by") {
+		t.Errorf("the error does not say where the value comes from: %v", err)
+	}
 }
 
 // TestUnsettingFallsBackRatherThanEmptying. A project that unsets its editor
@@ -142,6 +153,16 @@ func TestTheListingSaysWhereAValueCameFrom(t *testing.T) {
 	}
 	if !strings.Contains(out, "lead_harness") || !strings.Contains(out, "(unset)") {
 		t.Errorf("the listing hides a key nobody has set, so nobody learns it exists:\n%s", out)
+	}
+
+	// And what `setup` found, once it has found it: a person has to be able to see
+	// the command Luna will run in every worktree it opens.
+	if err := h.env.Store.PutSetting("app-1", "bootstrap", "make bootstrap"); err != nil {
+		t.Fatalf("recording what setup found: %v", err)
+	}
+	out = h.mustRun(t, "config")
+	if !strings.Contains(out, "make bootstrap") || !strings.Contains(out, "discovered by setup") {
+		t.Errorf("the listing hides the command that will run in every worktree:\n%s", out)
 	}
 }
 

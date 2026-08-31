@@ -154,10 +154,11 @@ func TestStateIsRebuiltFromTheLog(t *testing.T) {
 	for _, action := range []fsm.Action{
 		fsm.Advance{Flow: fsm.DefaultFlow()},
 		fsm.Complete{
-			Delivered: []fsm.Artifact{"worktree", "setup_report"},
+			Delivered: []fsm.Artifact{"worktree", "setup_report", "bootstrap_command"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{
-				"worktree":     fsm.Exists(0),
-				"setup_report": fsm.Exists(0),
+				"worktree":          fsm.Exists(0),
+				"setup_report":      fsm.Exists(0),
+				"bootstrap_command": fsm.Exists(0),
 			},
 		},
 		fsm.GateApprove{},

@@ -20,8 +20,8 @@ agent       = "claude"
 # nothing to contain. `AuditContainment` refuses any other stage claiming this.
 uncontained = true
 requires    = ["task_id"]
-produces    = ["worktree", "setup_report"]
-brief       = "You are reporting on what this task will run under, and you change nothing. Read four things and say what you found. First, `.ai-jail`: which directories are mounted read-write, which read-only, whether the network is on. The read-write set is what the whole task can modify — if it does not cover the repository being changed, nothing later can deliver; if it covers more, say so, because a task that can write outside its own repository is a task nobody bounded. Second, `.ai-memory.toml`: which workstream every agent of this task writes to. A wrong one scatters this task's memory into another project's, and that is not recoverable by reading it back. Third, how this project bootstraps itself — look in the Makefile for a target that prepares a checkout, then the README, then AGENTS.md or its equivalent. Name the command exactly, and say where you found it; if there are two candidates say both rather than picking. If there is none, say that plainly: a project that needs no bootstrap is ordinary, and inventing a command for it is worse than saying none exists. Fourth, anything in those files that contradicts the others. Then write the report: what is configured, what you concluded, and what you could not settle. You do not edit any of these files. Proposing a change is fine and is part of the report; making one is not — the person answering the gate after you is the one who decides, and a stage that had already changed the file would be presenting them with a fact rather than a question."
+produces    = ["worktree", "setup_report", "bootstrap_command"]
+brief       = "You are reporting on what this task will run under, and you change nothing. Read four things and say what you found. First, `.ai-jail`: which directories are mounted read-write, which read-only, whether the network is on. The read-write set is what the whole task can modify — if it does not cover the repository being changed, nothing later can deliver; if it covers more, say so, because a task that can write outside its own repository is a task nobody bounded. Second, `.ai-memory.toml`: which workstream every agent of this task writes to. A wrong one scatters this task's memory into another project's, and that is not recoverable by reading it back. Third, how this project bootstraps itself — look in the Makefile for a target that prepares a checkout, then the README, then AGENTS.md or its equivalent. Name the command exactly, and say where you found it; if there are two candidates say both rather than picking. If there is none, say that plainly: a project that needs no bootstrap is ordinary, and inventing a command for it is worse than saying none exists. Fourth, anything in those files that contradicts the others. Then hand over two things. The report: what is configured, what you concluded, and what you could not settle. And `bootstrap_command`: the command itself and nothing else, on one line, exactly as it would be typed — Luna records it as this project's and runs it in every worktree it opens from here on, for this task and every later one. Hand over an empty document when the project needs no preparation, and when you found two candidates rather than one: a command Luna runs everywhere has to be the one somebody meant, and the report is where you say which two they were. You do not edit any of these files. Proposing a change is fine and is part of the report; making one is not — the person answering the gate after you is the one who decides, and a stage that had already changed the file would be presenting them with a fact rather than a question."
 
 [verify.worktree]
 kind = "existence"
@@ -30,6 +30,17 @@ kind = "existence"
 # Handed to Luna rather than written into the tree, for the reason every other
 # document is: a file only survives into the next stage's worktree if it is
 # committed, and a sandbox summary has no business in the delivery.
+kind     = "existence"
+handover = "store"
+
+[verify.bootstrap_command]
+# The same finding as the report, in the one form a machine can act on. The report
+# is prose a person reads at the gate; this is the command itself, and Luna records
+# it as the project's so every later stage and every later task runs it.
+#
+# Empty is a real answer and the ordinary one for a project that needs no
+# preparation. Inventing a command for such a project is worse than saying none
+# exists, so the brief asks for nothing rather than a guess.
 kind     = "existence"
 handover = "store"
 
