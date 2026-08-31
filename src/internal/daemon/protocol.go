@@ -50,6 +50,15 @@ type Request struct {
 
 	// Legacy is a former per-project store the daemon should import and archive.
 	Legacy string `json:"legacy,omitempty"`
+
+	// Key and Value are one setting. Scope is which one it belongs to and rides on
+	// Project: empty is the machine's own, and a project key is that project's.
+	//
+	// Value is separate from Payload rather than reusing it, because an empty
+	// value is meaningful here — it is how a project says "fall back to the
+	// machine" — and a field that is omitted when empty could not carry it.
+	Key   string `json:"key,omitempty"`
+	Value string `json:"value"`
 }
 
 // Response is what comes back. An empty Err is success.
@@ -58,6 +67,10 @@ type Response struct {
 
 	// Tasks is what "tasks" answers: every task in the central database.
 	Tasks []TaskLine `json:"tasks,omitempty"`
+
+	// Settings is what "settings" answers: the current value of every key at the
+	// scope that was asked about.
+	Settings map[string]string `json:"settings,omitempty"`
 }
 
 // TaskLine is one task in the global listing — the central view the daemon exists

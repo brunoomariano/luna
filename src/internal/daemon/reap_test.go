@@ -79,3 +79,53 @@ func TestClosingReleasesTheWatcher(t *testing.T) {
 		t.Errorf("closing twice: %v", err)
 	}
 }
+
+// TestASettingCrossesTheSocket. The daemon is the only writer, so a setting a
+// command records has to reach the database through it — and come back to the
+// next command that asks.
+func TestASettingCrossesTheSocket(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "daemon.sock")
+	server, err := Listen(Options{Socket: socket, Store: filepath.Join(dir, "luna.db")})
+	if err != nil {
+		t.Fatalf("starting the daemon: %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	client := Client{Path: socket}
+	if err := client.SetSetting("app-1", "workstream", "the-project"); err != nil {
+		t.Fatalf("recording a setting: %v", err)
+	}
+	if err := client.SetSetting("", "editor", "hx"); err != nil {
+		t.Fatalf("recording a machine setting: %v", err)
+	}
+
+	project, err := client.Settings("app-1")
+	if err != nil {
+		t.Fatalf("reading the project's settings: %v", err)
+	}
+	if project["workstream"] != "the-project" {
+		t.Errorf("the project's settings came back as %v", project)
+	}
+	if _, stray := project["editor"]; stray {
+		t.Errorf("a machine setting leaked into a project's scope: %v", project)
+	}
+
+	global, err := client.Settings("")
+	if err != nil {
+		t.Fatalf("reading the machine's settings: %v", err)
+	}
+	if global["editor"] != "hx" {
+		t.Errorf("the machine's settings came back as %v", global)
+	}
+
+	// A scope nobody has configured answers an empty map rather than an error:
+	// "nothing is set here" is an ordinary answer, and every project starts there.
+	empty, err := client.Settings("app-2")
+	if err != nil {
+		t.Fatalf("reading an unconfigured project: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("an unconfigured project answered %v", empty)
+	}
+}

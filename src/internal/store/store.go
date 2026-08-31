@@ -84,6 +84,13 @@ type Appender interface {
 	AppendEvent(project, taskID string, after int, action, payload string) error
 	PutBlob(project string, blob Blob) error
 	ForgetBlobs(project, taskID string) error
+
+	// Settings and SetSetting are the same boundary for what a project or the
+	// machine is configured with. They read through the owner rather than off this
+	// handle, so a command sees what the daemon was just told rather than what its
+	// own read-only snapshot happened to open.
+	Settings(scope string) (map[string]string, error)
+	SetSetting(scope, key, value string) error
 }
 
 // Store is the append-only log and artifact store in one central SQLite file.

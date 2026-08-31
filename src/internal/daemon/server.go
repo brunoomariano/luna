@@ -240,19 +240,39 @@ func (s *Server) answer(req Request) Response {
 		err = s.forgetBlobs(req)
 	case "import":
 		err = s.importLegacy(req)
-	case "tasks":
-		lines, listErr := s.tasks()
-		if listErr != nil {
-			return Response{Err: listErr.Error()}
-		}
-		return Response{Tasks: lines}
+	case "set_setting":
+		err = s.store.PutSetting(req.Project, req.Key, req.Value)
 	default:
-		return Response{Err: fmt.Sprintf("unknown operation %q", req.Op)}
+		// The reads answer with a body rather than an empty success, so they are
+		// split out: keeping them here made one switch carry two shapes of answer,
+		// which is what pushed this function past the complexity gate.
+		return s.read(req)
 	}
 	if err != nil {
 		return Response{Err: err.Error()}
 	}
 	return Response{}
+}
+
+// read answers the operations that come back with something rather than with
+// nothing.
+func (s *Server) read(req Request) Response {
+	switch req.Op {
+	case "tasks":
+		lines, err := s.tasks()
+		if err != nil {
+			return Response{Err: err.Error()}
+		}
+		return Response{Tasks: lines}
+	case "settings":
+		current, err := s.store.Settings(req.Project)
+		if err != nil {
+			return Response{Err: err.Error()}
+		}
+		return Response{Settings: current}
+	default:
+		return Response{Err: fmt.Sprintf("unknown operation %q", req.Op)}
+	}
 }
 
 func (s *Server) append(req Request) error {

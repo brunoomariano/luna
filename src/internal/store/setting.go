@@ -49,6 +49,11 @@ func (s *Store) PutSetting(scope, key, value string) error {
 	if key == "" {
 		return fmt.Errorf("a setting needs a key, and %q is not one", key)
 	}
+	// Forwarded when this store does not own the file, the way an append and a
+	// blob already are: the daemon is the only writer, and a setting is state.
+	if s.Via != nil {
+		return s.Via.SetSetting(scope, key, value)
+	}
 
 	next, err := s.nextSettingSeq(scope, key)
 	if err != nil {
@@ -86,6 +91,12 @@ func (s *Store) nextSettingSeq(scope, key string) (int, error) {
 // A key whose current value is empty is left out. That is what unsetting means
 // here — the row stays for the audit, and the reader sees the key as unset.
 func (s *Store) Settings(scope string) (map[string]string, error) {
+	// Through the owner when there is one, so a command reads what the daemon was
+	// just told rather than what its own read-only handle happened to open.
+	if s.Via != nil {
+		return s.Via.Settings(scope)
+	}
+
 	rows, err := s.db.Query(
 		`SELECT key, value FROM settings
 		 WHERE scope = ? AND seq = (

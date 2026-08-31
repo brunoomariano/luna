@@ -134,6 +134,7 @@ func Run(env Env, args []string) error {
 		"fleet":    runFleet,
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
+		"config":   configCommand,
 		"version":  versionCommand,
 		"where":    whereCommand,
 		"daemon":   daemonCommand,

@@ -167,6 +167,29 @@ func (c Client) ForgetBlobs(project, taskID string) error {
 	return err
 }
 
+// SetSetting records one setting at one scope. An empty project is the machine's
+// own; any other is that project's.
+func (c Client) SetSetting(scope, key, value string) error {
+	_, err := c.Do(Request{Op: "set_setting", Project: scope, Key: key, Value: value, After: -1})
+	return err
+}
+
+// Settings reads what is configured at one scope.
+//
+// Through the daemon rather than straight off the read-only store, so a CLI
+// process reads what the daemon has just been told rather than what its own
+// handle happened to open — the same reason an append crosses the socket.
+func (c Client) Settings(scope string) (map[string]string, error) {
+	res, err := c.Do(Request{Op: "settings", Project: scope, After: -1})
+	if err != nil {
+		return nil, err
+	}
+	if res.Settings == nil {
+		return map[string]string{}, nil
+	}
+	return res.Settings, nil
+}
+
 // ImportLegacy asks the daemon to bring one former project store into the
 // central database and archive the source only after the copy is verified.
 func (c Client) ImportLegacy(project, path string) error {
