@@ -18,9 +18,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +40,7 @@ type Usage struct {
 	CacheRead    int     `json:"cache_read_input_tokens"`
 	CacheWrite   int     `json:"cache_creation_input_tokens"`
 	CostUSD      float64 `json:"cost_usd"`
+	CostReported bool    `json:"cost_reported"`
 
 	// Model is what actually answered, which is not always what was asked for:
 	// a harness may downgrade under load or route by effort.
@@ -80,9 +84,13 @@ const (
 	Live Context = "live"
 )
 
+// StageEnv marks a harness process as a Luna stage. The CLI uses it to keep the
+// agent on the artifact socket and out of task-control commands.
+const StageEnv = "LUNA_STAGE"
+
 // Call is one request to an agent.
 type Call struct {
-	// Kind names the harness: "claude", "codex", "opencode", "pi".
+	// Kind names a harness in Luna's closed table: "claude" or "codex".
 	Kind string
 
 	// Dir is the working directory — the stage's worktree. The agent is confined
@@ -225,8 +233,7 @@ var ErrNoHarness = errors.New("harness not installed")
 // Runner executes an agent call.
 //
 // An interface rather than a function so a test can substitute a named fake for
-// a real process, and so a second harness is a second implementation rather
-// than a branch in the middle of this one.
+// the process boundary while the production adapter remains table-driven.
 type Runner interface {
 	Run(ctx context.Context, call Call) (Result, error)
 }
@@ -265,10 +272,13 @@ func (h Harness) resolve(call Call) (harness, string, error) {
 	spec, ok := harnesses[call.Kind]
 	if !ok {
 		return harness{}, "", fmt.Errorf("%w: %q is not a harness Luna knows (%s)",
-			ErrNoHarness, call.Kind, strings.Join(known(), ", "))
+			ErrNoHarness, call.Kind, strings.Join(harnessNames(), ", "))
 	}
 	if call.Context == Live && call.Session == "" {
 		return harness{}, "", fmt.Errorf("a live call to %s names no session to continue", call.Kind)
+	}
+	if err := CheckGating(call.Kind, call.Deny); err != nil {
+		return harness{}, "", err
 	}
 	if !call.Uncontained {
 		if h.Sandbox == "" {
@@ -327,7 +337,9 @@ func (h Harness) Run(ctx context.Context, call Call) (Result, error) {
 // which answers a session it has lost with plain text on stdout and no JSON at
 // all — so this arrives as a parse failure carrying the message.
 func staleSession(err error) bool {
-	return strings.Contains(strings.ToLower(err.Error()), "no conversation found")
+	diagnostic := strings.ToLower(err.Error())
+	return strings.Contains(diagnostic, "no conversation found") ||
+		strings.Contains(diagnostic, "no rollout found for thread id")
 }
 
 func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) (Result, error) {
@@ -335,7 +347,6 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 	if err != nil {
 		return Result{}, err
 	}
-
 	if call.Budget > 0 {
 		var stop context.CancelFunc
 		ctx, stop = context.WithTimeout(ctx, call.Budget)
@@ -362,7 +373,7 @@ func (h Harness) runOnce(ctx context.Context, call Call, createWorkstream bool) 
 	cmd := exec.CommandContext(ctx, runner, args...)
 	cmd.Dir = call.Dir
 	cmd.Env = append(environ(), call.Env...)
-	cmd.Stdin = strings.NewReader(call.Prompt)
+	cmd.Stdin = strings.NewReader(spec.input(call))
 
 	// The agent gets its own process group, and the budget kills the group
 	// rather than the process.
@@ -496,13 +507,25 @@ func tail(s string) string {
 
 // harness is one harness's command line and reply format.
 type harness struct {
-	binary string
-	args   func(Call) []string
-	parse  func([]byte) (Result, error)
+	binary  string
+	args    func(Call) []string
+	parse   func([]byte) (Result, error)
+	input   func(Call) string
+	askArgs []string
+
+	// gating validates whether this harness can express the exact capabilities
+	// denied by a stage. Nil means it cannot gate at all.
+	gating func([]string) error
 
 	// console is where this harness leaves a session's transcript. Nil means Luna
 	// does not know, which is a different answer from "there is none".
 	console func(worktree, session string) string
+	resume  func(session string) string
+	filter  string
+
+	// reportsCost says whether the execution stream includes USD spend. It is a
+	// capability, not whether one particular call happened to cost zero.
+	reportsCost bool
 }
 
 // harnesses is closed on purpose. An unlisted harness is refused rather than
@@ -510,12 +533,36 @@ type harness struct {
 // produces an ungated agent and a report that it was gated.
 var harnesses = map[string]harness{
 	"claude": {
-		binary:  "claude",
-		args:    claudeArgs,
-		parse:   parseClaude,
-		console: claudeConsole,
+		binary:      "claude",
+		args:        claudeArgs,
+		parse:       parseClaude,
+		input:       callPrompt,
+		askArgs:     []string{"-p", "--permission-mode", "bypassPermissions"},
+		gating:      preciseGating,
+		console:     claudeConsole,
+		resume:      func(session string) string { return "claude -r " + session },
+		filter:      claudeConsoleFilter,
+		reportsCost: true,
+	},
+	"codex": {
+		binary: "codex",
+		args:   codexArgs,
+		parse:  parseCodex,
+		input:  codexPrompt,
+		askArgs: []string{
+			"exec", "--dangerously-bypass-approvals-and-sandbox",
+			"-c", codexLeadInstructions, "-",
+		},
+		gating:  codexGating,
+		console: codexConsole,
+		resume:  func(session string) string { return "codex resume " + session },
+		filter:  codexConsoleFilter,
 	},
 }
+
+const codexStageInstructions = `developer_instructions="You are a stage worker already being orchestrated by Luna. Follow the stage brief directly. Do not invoke skills whose purpose is to start, resume, or orchestrate Luna, and do not run Luna task-control commands; only luna artifact put/get is available for handoff. Do not create a commit unless the stage brief asks you to deliver code or a commit."`
+
+const codexLeadInstructions = `developer_instructions="You are already the conductor inside Luna. Follow the supplied conductor order directly. Do not invoke an outer Luna orchestration skill or start another orchestration session."`
 
 // CanGate reports whether Luna can start this harness without the capabilities a
 // role withholds.
@@ -524,17 +571,62 @@ var harnesses = map[string]harness{
 // guessed at: a flag another harness silently ignores produces an ungated agent
 // and a report that it was gated.
 func CanGate(kind string) bool {
+	spec, ok := harnesses[kind]
+	return ok && spec.gating != nil
+}
+
+// ReportsCost says whether this harness reports USD spend on its execution
+// stream. A dollar budget cannot be enforced against a false answer.
+func ReportsCost(kind string) bool {
+	spec, ok := harnesses[kind]
+	return ok && spec.reportsCost
+}
+
+// Known reports whether kind names one of Luna's measured harness adapters.
+// Selection flags and settings use it to refuse a typo before a task starts.
+func Known(kind string) bool {
 	_, ok := harnesses[kind]
 	return ok
 }
 
-func known() []string {
+// CheckGating reports whether a harness can express exactly this denial.
+// Codex's read-only sandbox is intentionally coarse: it represents Edit and
+// Write together, and claiming either one alone would overstate what was gated.
+func CheckGating(kind string, denied []string) error {
+	if len(denied) == 0 {
+		return nil
+	}
+	spec, ok := harnesses[kind]
+	if !ok || spec.gating == nil {
+		return fmt.Errorf("%q cannot withhold %s", kind, strings.Join(denied, ", "))
+	}
+	return spec.gating(denied)
+}
+
+func preciseGating([]string) error { return nil }
+
+func codexGating(denied []string) error {
+	found := map[string]bool{}
+	for _, capability := range denied {
+		found[capability] = true
+	}
+	if len(found) == 2 && found["Edit"] && found["Write"] {
+		return nil
+	}
+	return fmt.Errorf("codex cannot withhold %s: expected Edit and Write together",
+		strings.Join(denied, ", "))
+}
+
+func harnessNames() []string {
 	names := make([]string, 0, len(harnesses))
 	for name := range harnesses {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
+
+func callPrompt(call Call) string { return call.Prompt }
 
 func claudeArgs(call Call) []string {
 	// The prompt arrives on stdin rather than as an argument: a brief carrying a
@@ -556,6 +648,37 @@ func claudeArgs(call Call) []string {
 	// ceremony has nothing left to protect and would only stop an unattended run.
 	args = append(args, "--permission-mode", "bypassPermissions")
 	return args
+}
+
+// codexArgs matches codex-cli 0.151.0. The outer ai-jail is the containment
+// boundary for a writing stage, so Codex can skip its nested sandbox and every
+// approval prompt. A reviewer gets the opposite: read-only and never asking to
+// widen it. Resume inherits the sandbox policy recorded on the original thread.
+func codexArgs(call Call) []string {
+	args := []string{"exec"}
+	if call.Context == Live {
+		args = append(args, "resume")
+	}
+	args = append(args, "--json", "-c", codexStageInstructions)
+	if len(call.Deny) > 0 {
+		args = append(args, "-c", `approval_policy="never"`)
+		if call.Context != Live {
+			args = append(args, "-s", "read-only")
+		}
+	} else {
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+	}
+	if call.Context == Live {
+		args = append(args, call.Session)
+	}
+	return append(args, "-")
+}
+
+func codexPrompt(call Call) string {
+	if strings.TrimSpace(call.System) == "" {
+		return call.Prompt
+	}
+	return call.System + "\n\n" + call.Prompt
 }
 
 // claudeReply is the subset of the harness's result object Luna reads. The
@@ -602,6 +725,7 @@ func parseClaude(body []byte) (Result, error) {
 			CacheRead:    reply.Usage.CacheRead,
 			CacheWrite:   reply.Usage.CacheWrite,
 			CostUSD:      reply.CostUSD,
+			CostReported: true,
 			Model:        oneModel(reply.ModelUsage),
 		},
 	}
@@ -609,6 +733,85 @@ func parseClaude(body []byte) (Result, error) {
 		return result, fmt.Errorf("the agent reported failure (%s): %s", reply.Subtype, tail(reply.Result))
 	}
 	return result, nil
+}
+
+type codexEvent struct {
+	Type     string `json:"type"`
+	ThreadID string `json:"thread_id"`
+	Message  string `json:"message"`
+	Error    struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Item struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"item"`
+	Usage struct {
+		Input      int `json:"input_tokens"`
+		Cached     int `json:"cached_input_tokens"`
+		CacheWrite int `json:"cache_write_input_tokens"`
+		Output     int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+// parseCodex reduces the JSONL event stream to the same result Claude reports
+// in one object. Cost and model remain empty because Codex reports neither on
+// this interface; deriving them would turn measurements into estimates.
+func parseCodex(body []byte) (Result, error) {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return Result{}, errors.New("the harness returned nothing")
+	}
+
+	var result Result
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	for {
+		var event codexEvent
+		if err := decoder.Decode(&event); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return result, fmt.Errorf("decoding Codex JSONL: %w: %s", err, tail(string(body)))
+		}
+		if err := applyCodexEvent(&result, event); err != nil {
+			return result, err
+		}
+	}
+	if result.Session == "" || result.Turns == 0 {
+		return result, errors.New("the Codex harness returned no completed thread")
+	}
+	return result, nil
+}
+
+func applyCodexEvent(result *Result, event codexEvent) error {
+	switch event.Type {
+	case "thread.started":
+		result.Session = event.ThreadID
+	case "item.completed":
+		if event.Item.Type == "agent_message" {
+			result.Text = event.Item.Text
+		}
+	case "turn.completed":
+		result.Turns++
+		result.Usage = codexUsage(event)
+	case "error", "turn.failed":
+		message := event.Message
+		if message == "" {
+			message = event.Error.Message
+		}
+		return fmt.Errorf("the Codex agent reported failure: %s", message)
+	}
+	return nil
+}
+
+func codexUsage(event codexEvent) Usage {
+	uncached := event.Usage.Input - event.Usage.Cached - event.Usage.CacheWrite
+	if uncached < 0 {
+		uncached = 0
+	}
+	return Usage{
+		InputTokens: uncached, OutputTokens: event.Usage.Output,
+		CacheRead: event.Usage.Cached, CacheWrite: event.Usage.CacheWrite,
+	}
 }
 
 // oneModel names the model that answered when exactly one did. A call that
@@ -651,8 +854,46 @@ func ConsolePath(kind, worktree, session string) (string, bool) {
 	if !known || spec.console == nil {
 		return "", false
 	}
-	return spec.console(worktree, session), true
+	path := spec.console(worktree, session)
+	return path, path != ""
 }
+
+// ResumeCommand is the harness's interactive command for reopening a session.
+func ResumeCommand(kind, session string) (string, bool) {
+	spec, ok := harnesses[kind]
+	if !ok || spec.resume == nil || session == "" {
+		return "", false
+	}
+	return spec.resume(session), true
+}
+
+// ConsoleFilter is the jq program that renders one harness's transcript as a
+// readable stream. Keeping it beside the transcript layout prevents a second
+// Claude-only table from masquerading as generic observability.
+func ConsoleFilter(kind string) (string, bool) {
+	spec, ok := harnesses[kind]
+	if !ok || spec.filter == "" {
+		return "", false
+	}
+	return spec.filter, true
+}
+
+const claudeConsoleFilter = `if (.message.content|type)=="string" then "» " + .message.content
+     else (.message.content[]?
+       | if .type=="text" then .text
+         elif .type=="tool_use" then "$ " + (.input.command // .name)
+         else empty end)
+     end`
+
+const codexConsoleFilter = `if .type=="response_item" and .payload.type=="message" then
+       (.payload.content[]?
+        | if .type=="input_text" then "» " + .text
+          elif .type=="output_text" then .text
+          else empty end)
+     elif .type=="event_msg" and .payload.type=="item_completed"
+          and .payload.item.type=="CommandExecution" then
+       "$ " + (.payload.item.command | join(" "))
+     else empty end`
 
 // claudeConsole is `~/.claude/projects/<cwd>/<session>.jsonl`, where the working
 // directory is flattened by replacing every separator with a dash.
@@ -667,4 +908,39 @@ func claudeConsole(worktree, session string) string {
 	}
 	flat := strings.ReplaceAll(worktree, string(filepath.Separator), "-")
 	return filepath.Join(home, ".claude", "projects", flat, session+".jsonl")
+}
+
+// codexConsole is `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<id>.jsonl`.
+// The first twelve hexadecimal digits of Codex's UUIDv7 thread id are the Unix
+// milliseconds used in both the id and filename, measured on codex-cli 0.151.0.
+func codexConsole(_ string, session string) string {
+	compact := strings.ReplaceAll(session, "-", "")
+	if len(compact) < 12 {
+		return ""
+	}
+	millis, err := strconv.ParseInt(compact[:12], 16, 64)
+	if err != nil {
+		return ""
+	}
+
+	home := os.Getenv("CODEX_HOME")
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		home = filepath.Join(userHome, ".codex")
+	}
+	started := time.UnixMilli(millis).In(localLocation())
+	return filepath.Join(home, "sessions", started.Format("2006/01/02"),
+		started.Format("rollout-2006-01-02T15-04-05-")+session+".jsonl")
+}
+
+func localLocation() *time.Location {
+	if name := os.Getenv("TZ"); name != "" {
+		if location, err := time.LoadLocation(name); err == nil {
+			return location
+		}
+	}
+	return time.Local
 }

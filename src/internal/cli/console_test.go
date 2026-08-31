@@ -182,6 +182,55 @@ func TestTheConsoleAsJSONCarriesThePathAndWhetherItIsThere(t *testing.T) {
 	}
 }
 
+// TestTheCodexConsoleCarriesItsOwnCommands keeps observability from being a
+// Claude-shaped path with a Codex label. The transcript formats and resume
+// commands differ, and both are part of the console contract.
+func TestTheCodexConsoleCarriesItsOwnCommands(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore", "--flow", "chore", "--simulated")
+	const session = "01a059dd-3645-7d01-ba07-f5587c11480e"
+	seedAgentStage(t, h, session)
+
+	flow := mustFlow(t, "chore")
+	for i := range flow {
+		if flow[i].ID == "build" {
+			flow[i].Agent = "codex"
+		}
+	}
+	reports := consolesOf(mustReplay(t, h, "LUNA-1"), flow)
+	if len(reports) != 1 {
+		t.Fatalf("want one Codex console, got %+v", reports)
+	}
+	if !strings.Contains(reports[0].Resume, "codex resume "+session) {
+		t.Errorf("the Codex resume command is missing: %+v", reports[0])
+	}
+	if !strings.Contains(reports[0].FollowFilter, "response_item") {
+		t.Errorf("the Claude filter was reused for Codex: %+v", reports[0])
+	}
+
+	printConsoles(h.env, "LUNA-1", mustReplay(t, h, "LUNA-1"), reports)
+	out := h.out.String()
+	if !strings.Contains(out, "codex resume "+session) || !strings.Contains(out, "response_item") {
+		t.Errorf("the rendered console is not usable for Codex:\n%s", out)
+	}
+}
+
+func TestTheConsoleUsesTheHarnessRecordedByAnOverride(t *testing.T) {
+	state := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{
+		"build": {
+			Agent: "codex", Session: "01a059dd-3645-7d01-ba07-f5587c11480e",
+			InputTokens: 1,
+		},
+	}}
+	flow := []fsm.Stage{{ID: "build", Agent: "claude"}}
+
+	reports := consolesOf(state, flow)
+	if len(reports) != 1 || reports[0].Agent != "codex" ||
+		!strings.Contains(reports[0].Resume, "codex resume") {
+		t.Errorf("the console relabelled an overridden run: %+v", reports)
+	}
+}
+
 // TestAnEndedStageOffersItsClaudeSessionToOpen.
 //
 // A Claude session is global rather than tied to the worktree it started in.

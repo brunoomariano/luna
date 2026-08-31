@@ -197,7 +197,17 @@ func parseRunOptions(args []string) (runOptions, error) {
 			return opts, fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
 		}
 	}
+	if err := validateAgentOverride(opts.Agent); err != nil {
+		return opts, err
+	}
 	return opts, nil
+}
+
+func validateAgentOverride(kind string) error {
+	if kind == "" || agent.Known(kind) {
+		return nil
+	}
+	return fmt.Errorf("%w: unknown agent %q (expected claude or codex)", ErrUsage, kind)
 }
 
 // conduct assembles the lead for this run.
@@ -205,11 +215,6 @@ func parseRunOptions(args []string) (runOptions, error) {
 // The node is chosen here and nowhere else: swapping how a stage is run is one
 // more branch in this function, not a change to the lead or the engine.
 func conduct(env Env, opts runOptions, profile fsm.Profile, flow []fsm.Stage) (*lead.Lead, func(), error) {
-	// Applied once, here, so the lead and the node see the same flow: the two are
-	// given it separately below, and an override landing on only one of them would
-	// make the log disagree with what ran.
-	flow = forceAgent(flow, opts.Agent)
-
 	ask := env.Lead
 	if opts.Dry {
 		ask = dryGateAsk
@@ -274,7 +279,8 @@ func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(),
 	cfg := env.profiles()
 
 	runner := &node.Runner{
-		Repo: opts.Repo,
+		Repo:          opts.Repo,
+		AgentOverride: opts.Agent,
 		// The project's step between `git clone` and "the tests run", run in every
 		// fresh worktree. Without it a stage's checks fail on the machine rather
 		// than on the work — two build stages and $10.36 of a $19.13 task, for code
@@ -289,9 +295,9 @@ func StageRunner(env Env, opts runOptions, flow []fsm.Stage) (lead.Node, func(),
 			// move the containment boundary into the file where `editor` lives.
 			Sandbox: node.Sandbox,
 		},
-		// The stage's role decides which agent runs it. --agent overrides every
-		// role, which is what makes a run reproducible against one harness while
-		// the roles are still being tuned.
+		// The stage decides which agent runs it. --agent is kept at this execution
+		// boundary: changing Flow would also change its immutable fingerprint and
+		// make the task refuse its own log before any harness starts.
 		Budget: cfg.Turn(),
 
 		// The socket a contained agent hands artifacts over through. It is opened
@@ -367,29 +373,6 @@ func checkGateWith(s *store.Store, repo string) func(context.Context, string, fs
 			Unrunnable: verdict.Unrunnable != nil,
 		}
 	}
-}
-
-// forceAgent pins every non-mechanical stage to one harness.
-//
-// The override exists for the same reason `--dry-run` does: pinning every stage
-// to one harness makes a run reproducible while the briefs are still being tuned.
-// It changes which agent runs, never what the stage names itself — so the flow
-// and the log stay honest about who was supposed to do what.
-//
-// An empty override returns the flow untouched, and a mechanical stage is left
-// alone: it starts no agent, so giving it one would invent a process.
-func forceAgent(flow []fsm.Stage, override string) []fsm.Stage {
-	if override == "" {
-		return flow
-	}
-	forced := make([]fsm.Stage, len(flow))
-	copy(forced, flow)
-	for i := range forced {
-		if !forced[i].Mechanical() {
-			forced[i].Agent = override
-		}
-	}
-	return forced
 }
 
 // dryNode delivers whatever the contract asks for, without running anything.
@@ -543,9 +526,9 @@ func workCommand(env Env, args []string) error {
 		// erroring took the third ending with it: nothing blocked, nothing was
 		// notified, and the task sat `running` for whoever looked next.
 		if errors.Is(err, lead.ErrInfrastructure) || errors.Is(err, lead.ErrStalled) {
-			return blockTask(env, id, err.Error())
+			return blockTask(env, id, err.Error(), result.Spent)
 		}
-		return fmt.Errorf("working %s: %w", state.Stage, err)
+		return failWork(env, id, state, err, result.Spent)
 	}
 
 	// The evidence is recorded here, by the command whose verifiers produced it.
@@ -594,8 +577,8 @@ func reportWork(env Env, id string, stage fsm.StageID, result lead.Result) {
 		fmt.Fprintf(env.Out, "  delivered %s\n", joinArtifactNames(result.Delivered))
 	}
 	if !result.Spent.Zero() {
-		fmt.Fprintf(env.Out, "  spent     %d tokens  $%.4f  %d turns\n",
-			result.Spent.Tokens(), result.Spent.CostUSD, result.Spent.Turns)
+		fmt.Fprintf(env.Out, "  spent     %d tokens  %s  %d turns\n",
+			result.Spent.Tokens(), spendCostLabel(result.Spent), result.Spent.Turns)
 	}
 }
 
@@ -614,14 +597,34 @@ func joinArtifactNames(list []fsm.Artifact) string {
 // The retry budget is untouched on purpose: an attempt against a binary that is
 // not installed will not find it installed on the second one, and spending the
 // budget on that leaves nothing for the failure it was meant for.
-func blockTask(env Env, id, reason string) error {
-	if err := env.Store.AppendAction(id, fsm.Block{Reason: reason}); err != nil {
+func blockTask(env Env, id, reason string, spent fsm.Spend) error {
+	if err := env.Store.AppendAction(id, fsm.Block{Reason: reason, Spent: spent}); err != nil {
 		return err
 	}
+	reportBlocked(env, id, reason)
+	return nil
+}
+
+func reportBlocked(env Env, id, reason string) {
 	fmt.Fprintf(env.Out, "%s is blocked: %s\n", id, reason)
 	fmt.Fprintf(env.Out, "  resume it with `luna unblock %s` once it is dealt with\n", id)
 	notifyBlocked(env, id, reason)
-	return nil
+}
+
+func failWork(env Env, id string, state fsm.TaskState, failed error, spent fsm.Spend) error {
+	if err := env.Store.AppendActionAt(id, state.Seq, fsm.Fail{
+		Reason: failed.Error(), Spent: spent,
+	}); err != nil {
+		return err
+	}
+	after, err := env.replay(id)
+	if err != nil {
+		return err
+	}
+	if after.Status == fsm.StatusBlocked {
+		reportBlocked(env, id, after.Blocked)
+	}
+	return fmt.Errorf("working %s: %w", state.Stage, failed)
 }
 
 // stageIn finds a stage by id, or returns the zero stage.

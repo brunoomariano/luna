@@ -243,7 +243,7 @@ func TestAFreshStageStartsCleanEvenWithASessionAvailable(t *testing.T) {
 	state := runningState("T-6")
 	if _, err := r.Run(context.Background(), state, fsm.Stage{
 		ID:    "build",
-		Agent: "some-unknown-harness",
+		Agent: "claude",
 	}); err != nil {
 		t.Fatalf("first stage: %v", err)
 	}
@@ -757,7 +757,7 @@ func TestTheBriefCanBeReplacedWithoutTouchingTheRunner(t *testing.T) {
 
 	if _, err := r.Run(context.Background(), runningState("T-40"), fsm.Stage{
 		ID:    "build",
-		Agent: "some-unknown-harness",
+		Agent: "claude",
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -947,10 +947,21 @@ func TestAGatedRoleOnAnUngateableHarnessStopsTheStage(t *testing.T) {
 	}
 }
 
-// TestAnUngatedRoleRunsOnAnyHarness is the other side: the refusal is about
-// withheld capabilities, not about the harness itself. A role that denies
-// nothing has nothing that could fail to be denied.
-func TestAnUngatedRoleRunsOnAnyHarness(t *testing.T) {
+func TestACodexStageCannotClaimAPartialWriteDenial(t *testing.T) {
+	err := checkStage(fsm.Stage{
+		ID: "review", Agent: "codex", ToolsDeny: []fsm.Capability{fsm.CapEdit},
+	})
+	if err == nil {
+		t.Fatal("Codex cannot deny Edit without denying all worktree writes")
+	}
+	if !strings.Contains(err.Error(), "Edit and Write") {
+		t.Errorf("the refusal does not state the supported denial: %v", err)
+	}
+}
+
+// TestAnUnknownHarnessStopsBeforeTheWorktree opens keeps a selection typo from
+// turning into stage work that can never reach an executable.
+func TestAnUnknownHarnessStopsBeforeTheWorktreeOpens(t *testing.T) {
 	repo := repoWithCommit(t)
 	fake := &recordingAgent{result: agent.Result{Text: "done"}}
 
@@ -959,11 +970,103 @@ func TestAnUngatedRoleRunsOnAnyHarness(t *testing.T) {
 		Agent: fake,
 	}
 
-	if _, err := r.Run(context.Background(), runningState("T-61"), fsm.Stage{
+	_, err := r.Run(context.Background(), runningState("T-61"), fsm.Stage{
 		ID:    "build",
 		Agent: "some-unknown-harness",
-	}); err != nil {
-		t.Fatalf("an ungated role was refused: %v", err)
+	})
+	if err == nil || !strings.Contains(err.Error(), "some-unknown-harness") {
+		t.Fatalf("an unknown harness must be refused by name, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Error("the unknown harness reached the agent boundary")
+	}
+}
+
+func TestTheAgentOverrideIsAppliedOnlyToTheCall(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+	r := &Runner{Repo: repo, Agent: fake, AgentOverride: "codex"}
+	stage := fsm.Stage{ID: "build", Agent: "claude"}
+
+	result, err := r.Run(context.Background(), runningState("T-62"), stage)
+	if err != nil {
+		t.Fatalf("running: %v", err)
+	}
+	if len(fake.calls) != 1 || fake.calls[0].Kind != "codex" {
+		t.Errorf("the harness call did not receive the override: %+v", fake.calls)
+	}
+	if stage.Agent != "claude" {
+		t.Errorf("the recorded stage was mutated to %q", stage.Agent)
+	}
+	if result.Spent.Agent != "codex" {
+		t.Errorf("the audit record lost the harness actually used: %+v", result.Spent)
+	}
+}
+
+func TestACodexRunRefusesAnUnenforceableUSDBudget(t *testing.T) {
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+	r := &Runner{Agent: fake, AgentOverride: "codex"}
+	state := runningState("T-63")
+	state.BudgetUSD = 1
+
+	_, err := r.Run(context.Background(), state, fsm.Stage{ID: "build", Agent: "claude"})
+	if err == nil {
+		t.Fatal("a dollar budget cannot silently become unlimited under Codex")
+	}
+	if !errors.Is(err, lead.ErrInfrastructure) || !strings.Contains(err.Error(), "does not report USD cost") {
+		t.Errorf("the refusal must name why the budget cannot be enforced: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Error("the agent started before the unenforceable budget was refused")
+	}
+}
+
+// TestAReportOnlyUncontainedStageCannotChangeTheWorktree holds the boundary
+// that makes setup's containment exception true in execution, not only in its
+// brief. The agent is outside the jail, so the node has to detect the write.
+func TestAReportOnlyUncontainedStageCannotChangeTheWorktree(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &committingAgent{
+		text: "reported the setup", turns: 1,
+		usage: agent.Usage{InputTokens: 100},
+	}
+	r := &Runner{Repo: repo, Agent: fake}
+
+	result, err := r.Run(context.Background(), runningState("T-64"), fsm.Stage{
+		ID: "setup", Agent: "codex", Uncontained: true,
+	})
+	if err == nil {
+		t.Fatal("an uncontained report-only stage changed the worktree")
+	}
+	for _, want := range []string{"setup", "report-only", "HEAD"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+	if result.Spent.Tokens() != 100 || result.Spent.Agent != "codex" {
+		t.Errorf("the rejected call lost its measured usage: %+v", result.Spent)
+	}
+}
+
+func TestAReportOnlyUncontainedStageMayLeaveTheWorktreeUnchanged(t *testing.T) {
+	repo := repoWithCommit(t)
+	stage := fsm.Stage{ID: "setup", Agent: "codex", Uncontained: true}
+
+	before, err := snapshotReportOnly(context.Background(), stage, repo)
+	if err != nil {
+		t.Fatalf("snapshotting the report-only stage: %v", err)
+	}
+	if err := verifyReportOnlyUnchanged(context.Background(), stage, repo, before); err != nil {
+		t.Errorf("an unchanged report-only stage was refused: %v", err)
+	}
+}
+
+func TestAReportOnlySnapshotNeedsARepository(t *testing.T) {
+	_, err := snapshotReportOnly(context.Background(), fsm.Stage{
+		ID: "setup", Agent: "codex", Uncontained: true,
+	}, t.TempDir())
+	if err == nil {
+		t.Fatal("a report-only snapshot outside a repository was accepted")
 	}
 }
 
@@ -998,7 +1101,7 @@ func TestWhatTheAgentSaidSurvivesAnEmptyDelivery(t *testing.T) {
 
 	if _, err := r.Run(context.Background(), state, fsm.Stage{
 		ID:    "build",
-		Agent: "some-unknown-harness",
+		Agent: "claude",
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1032,7 +1135,7 @@ func TestAStageThatDeliveredDoesNotRepeatTheAgent(t *testing.T) {
 
 	if _, err := r.Run(context.Background(), state, fsm.Stage{
 		ID:    "build",
-		Agent: "some-unknown-harness",
+		Agent: "claude",
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1059,13 +1162,16 @@ func TestTheAgentIsGivenSomeoneToCommitAs(t *testing.T) {
 
 	if _, err := r.Run(context.Background(), runningState("T-32"), fsm.Stage{
 		ID:    "build",
-		Agent: "some-unknown-harness",
+		Agent: "claude",
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
 	env := strings.Join(fake.last(t).Env, " ")
-	for _, want := range []string{"GIT_AUTHOR_NAME=", "GIT_AUTHOR_EMAIL=", "GIT_COMMITTER_NAME=", "GIT_COMMITTER_EMAIL="} {
+	for _, want := range []string{
+		"GIT_AUTHOR_NAME=", "GIT_AUTHOR_EMAIL=", "GIT_COMMITTER_NAME=", "GIT_COMMITTER_EMAIL=",
+		agent.StageEnv + "=1",
+	} {
 		if !strings.Contains(env, want) {
 			t.Errorf("the agent was given no %s, so its commit fails in the sandbox: %q", want, env)
 		}
@@ -1076,8 +1182,10 @@ func TestTheAgentIsGivenSomeoneToCommitAs(t *testing.T) {
 // commits. The empty-delivery fakes cannot show the other side of the reporting
 // rule, because a stage that never commits is exactly the case being reported.
 type committingAgent struct {
-	text string
-	call agent.Call
+	text  string
+	call  agent.Call
+	usage agent.Usage
+	turns int
 }
 
 func (c *committingAgent) Run(ctx context.Context, call agent.Call) (agent.Result, error) {
@@ -1093,7 +1201,7 @@ func (c *committingAgent) Run(ctx context.Context, call agent.Call) (agent.Resul
 			return agent.Result{}, fmt.Errorf("git %v: %w: %s", args, err, out)
 		}
 	}
-	return agent.Result{Text: c.text}, nil
+	return agent.Result{Text: c.text, Usage: c.usage, Turns: c.turns}, nil
 }
 
 func anyContains(list []string, want string) bool {

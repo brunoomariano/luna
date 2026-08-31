@@ -21,7 +21,7 @@ func TestValidateTaskIDRefusesWhatBreaksDownstream(t *testing.T) {
 		{"a\\b", "the same on the other separator"},
 		{"LUNA 1", "a space quotes the directory and the branch"},
 		{"task#1", "punctuation a branch name and a path do not want"},
-		{"café", "outside the ASCII range the names are built from"},
+		{"caf\u00e9", "outside the ASCII range the names are built from"},
 		{strings.Repeat("a", MaxTaskIDLen+1), "one character past the limit"},
 	}
 

@@ -56,18 +56,36 @@ func TestTokensCountTheCache(t *testing.T) {
 // rather than count. A stage that switched model or context between attempts is
 // better described by what it did most recently than by a blank.
 func TestTheLastAttemptDescribesHowTheStageRan(t *testing.T) {
-	spent := withSpend(nil, "build", Spend{InputTokens: 1, Model: "opus", Context: "fresh"})
-	spent = withSpend(spent, "build", Spend{InputTokens: 1, Model: "sonnet", Context: "live"})
+	spent := withSpend(nil, "build", Spend{
+		InputTokens: 1, Agent: "claude", Model: "opus", Context: "fresh",
+	})
+	spent = withSpend(spent, "build", Spend{
+		InputTokens: 1, Agent: "codex", Model: "sonnet", Context: "live",
+	})
 
 	got := spent["build"]
 	if got.Model != "sonnet" || got.Context != "live" {
 		t.Errorf("want the last attempt's description, got model %q context %q", got.Model, got.Context)
+	}
+	if got.Agent != "codex" {
+		t.Errorf("want the last harness, got %q", got.Agent)
 	}
 
 	// A later attempt that reports neither must not erase what the first said.
 	spent = withSpend(spent, "build", Spend{InputTokens: 1})
 	if got := spent["build"]; got.Model != "sonnet" {
 		t.Errorf("a silent attempt erased the model, got %q", got.Model)
+	}
+}
+
+func TestAStageCostIsReportedOnlyWhenEveryAttemptReportedIt(t *testing.T) {
+	spent := withSpend(nil, "build", Spend{InputTokens: 1, CostUSD: 0.1, CostReported: true})
+	if !spent["build"].CostReported {
+		t.Error("one priced attempt was marked unpriced")
+	}
+	spent = withSpend(spent, "build", Spend{InputTokens: 1, Agent: "codex"})
+	if spent["build"].CostReported {
+		t.Error("a mixed priced/unpriced total was presented as complete")
 	}
 }
 
@@ -260,17 +278,42 @@ func TestTheLastSessionOfABriefIsWhatALiveStageContinues(t *testing.T) {
 		},
 	}
 
-	if got := state.SessionOf(flow, building); got != "sess-build-2" {
+	if got := state.SessionOf(flow, Stage{Agent: "claude", Brief: building}); got != "sess-build-2" {
 		t.Errorf("a worker continues the last session it opened, got %q", got)
 	}
 	// Not the builder's, which is the whole point of keeping them apart: a judge
 	// continuing the builder's session reads its reasoning rather than the
 	// delivery.
-	if got := state.SessionOf(flow, judging); got != "sess-judge" {
+	if got := state.SessionOf(flow, Stage{Agent: "claude", Brief: judging}); got != "sess-judge" {
 		t.Errorf("a worker must not continue another's session, got %q", got)
 	}
-	if got := state.SessionOf(flow, "told nothing of the sort"); got != "" {
+	if got := state.SessionOf(flow, Stage{Agent: "claude", Brief: "told nothing of the sort"}); got != "" {
 		t.Errorf("a brief that has not run has no session to continue, got %q", got)
+	}
+}
+
+func TestALiveSessionKeepsItsHarnessAndCapabilities(t *testing.T) {
+	brief := "You inspect."
+	flow := []Stage{
+		{ID: "wrote", Agent: "claude", Brief: brief},
+		{ID: "reviewed", Agent: "claude", Brief: brief, ToolsDeny: []Capability{CapEdit, CapWrite}},
+	}
+	state := TaskState{Spent: map[StageID]Spend{
+		"wrote":    {Session: "codex-write", Agent: "codex", Turns: 1},
+		"reviewed": {Session: "claude-read", Agent: "claude", Turns: 1},
+	}}
+
+	readOnlyCodex := Stage{
+		Agent: "codex", Brief: brief, ToolsDeny: []Capability{CapEdit, CapWrite},
+	}
+	if got := state.SessionOf(flow, readOnlyCodex); got != "" {
+		t.Errorf("a Codex reviewer must not inherit a writable or Claude session, got %q", got)
+	}
+	readOnlyClaude := Stage{
+		Agent: "claude", Brief: brief, ToolsDeny: []Capability{CapEdit, CapWrite},
+	}
+	if got := state.SessionOf(flow, readOnlyClaude); got != "claude-read" {
+		t.Errorf("the matching harness and capabilities should resume, got %q", got)
 	}
 }
 

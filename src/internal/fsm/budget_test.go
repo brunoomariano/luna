@@ -159,6 +159,23 @@ func TestANegativeBudgetIsRefused(t *testing.T) {
 	}
 }
 
+func TestAUSDBudgetCannotBeSetAfterUnpricedUsage(t *testing.T) {
+	state := NewTaskState("B-codex", "")
+	state.Spent = map[StageID]Spend{
+		"build": {Agent: "codex", InputTokens: 100, OutputTokens: 20},
+	}
+
+	_, err := Reduce(state, SetBudget{BudgetUSD: 5})
+	if err == nil {
+		t.Fatal("a USD ceiling was accepted after usage whose price is unknown")
+	}
+	for _, want := range []string{"USD budget", "unpriced"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+}
+
 // TestABudgetIsNotMovedOnATaskThatEnded. The terms a run happens under mean
 // nothing once there is no run, and accepting it would put an event in the log
 // that describes a decision nobody could act on.

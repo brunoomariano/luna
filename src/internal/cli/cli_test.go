@@ -1865,6 +1865,19 @@ func TestTheHelpNamesEveryCommand(t *testing.T) {
 	}
 }
 
+func TestAStageAgentCanOnlyUseTheHandoffSurface(t *testing.T) {
+	for _, allowed := range []string{"artifact", "help", "-h", "--help", "version"} {
+		if !stageCommandAllowed(allowed) {
+			t.Errorf("stage command %q should remain available", allowed)
+		}
+	}
+	for _, denied := range []string{"done", "work", "lead", "task", "config", "status"} {
+		if stageCommandAllowed(denied) {
+			t.Errorf("stage command %q can escape the node-owned transition", denied)
+		}
+	}
+}
+
 // TestTheHelpIsGroupedByWhatYouAreDoing. A flat list of twenty commands is a
 // list; the sections are what make it answerable, and they are the thing most
 // likely to rot as commands are added.

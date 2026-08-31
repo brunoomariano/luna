@@ -39,6 +39,35 @@ func TestATaskWithNoBudgetSaysSoAndSaysHow(t *testing.T) {
 	}
 }
 
+func TestBudgetDoesNotCallUnpricedUsageZero(t *testing.T) {
+	var out strings.Builder
+	showBudget(Env{Out: &out}, fsm.TaskState{
+		ID: "B-codex",
+		Spent: map[fsm.StageID]fsm.Spend{
+			"build": {Agent: "codex", InputTokens: 100},
+		},
+	})
+
+	got := out.String()
+	if !strings.Contains(got, "cost n/a") || strings.Contains(got, "spent $0") {
+		t.Errorf("budget turned an absent Codex price into zero:\n%s", got)
+	}
+}
+
+func TestBudgetCallsAnExistingCeilingUnenforceableWhenUsageIsUnpriced(t *testing.T) {
+	var out strings.Builder
+	showBudget(Env{Out: &out}, fsm.TaskState{
+		ID: "B-codex", BudgetUSD: 5,
+		Spent: map[fsm.StageID]fsm.Spend{
+			"build": {Agent: "codex", InputTokens: 100},
+		},
+	})
+
+	if got := out.String(); !strings.Contains(got, "unenforceable") {
+		t.Errorf("an existing ceiling hid its missing price:\n%s", got)
+	}
+}
+
 // TestMovingTheBudgetIsAnEvent. The change is a decision, and a run that cost
 // four times its ceiling has to be reviewable afterwards — which needs the log to
 // say when the ceiling moved and why.

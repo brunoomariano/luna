@@ -415,7 +415,9 @@ func TestFailRetriesTwiceThenBlocks(t *testing.T) {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		var err error
-		state, err = Reduce(state, Fail{Reason: "compiler error"})
+		state, err = Reduce(state, Fail{
+			Reason: "compiler error", Spent: Spend{Agent: "codex", InputTokens: 10},
+		})
 		if err != nil {
 			t.Fatalf("attempt %d: %v", attempt, err)
 		}
@@ -427,7 +429,9 @@ func TestFailRetriesTwiceThenBlocks(t *testing.T) {
 		}
 	}
 
-	state, err := Reduce(state, Fail{Reason: "compiler error"})
+	state, err := Reduce(state, Fail{
+		Reason: "compiler error", Spent: Spend{Agent: "codex", InputTokens: 10},
+	})
 	if err != nil {
 		t.Fatalf("exhausting retries is a state, not an error: %v", err)
 	}
@@ -436,6 +440,9 @@ func TestFailRetriesTwiceThenBlocks(t *testing.T) {
 	}
 	if state.Blocked == "" {
 		t.Error("a blocked task must carry the reason it notifies with")
+	}
+	if got := state.TotalSpend().Tokens(); got != 30 {
+		t.Errorf("failed attempts recorded %d tokens, want 30", got)
 	}
 }
 
@@ -769,7 +776,9 @@ func TestAdvanceRefusesAStageStillRunning(t *testing.T) {
 func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
 	state := atStage(t, KindFeature, "shipping")
 
-	state, err := Reduce(state, Block{Reason: "the judge escalated"})
+	state, err := Reduce(state, Block{
+		Reason: "the judge escalated", Spent: Spend{Agent: "codex", InputTokens: 11},
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -783,6 +792,9 @@ func TestBlockStopsTheTaskInOneEvent(t *testing.T) {
 	// The retry budget is untouched: nothing was attempted.
 	if state.Retry.Attempts != 0 {
 		t.Errorf("a block is not an attempt, got %d", state.Retry.Attempts)
+	}
+	if got := state.TotalSpend().Tokens(); got != 11 {
+		t.Errorf("the blocked call recorded %d tokens, want 11", got)
 	}
 }
 

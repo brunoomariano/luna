@@ -380,15 +380,15 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		// weigh. It also must not spend the retry budget — that budget
 		// is for a stage that failed, and a stall says nothing about the stage.
 		if errors.Is(err, ErrStalled) {
-			return l.stall(taskID, err.Error())
+			return l.stall(taskID, err.Error(), result.Spent)
 		}
 		// Infrastructure blocks without consulting anyone and without spending the
-		// budget: there is no judgement to make about a binary that is missing, and
-		// the budget belongs to the stage.
+		// retry budget: there is no judgement to make about a binary that is missing.
+		// Any usage the harness reported before the boundary failed is still billed.
 		if errors.Is(err, ErrInfrastructure) {
-			return l.record(taskID, fsm.Block{Reason: err.Error()})
+			return l.record(taskID, fsm.Block{Reason: err.Error(), Spent: result.Spent})
 		}
-		return l.handleFailure(ctx, taskID, state, err.Error())
+		return l.handleFailure(ctx, taskID, state, err.Error(), result.Spent)
 	}
 
 	// The verdict came from outside; the reducer decides what it means.
@@ -844,8 +844,8 @@ func (l *Lead) artifactFor(taskID string, gate *fsm.PendingGate) string {
 // Collapsing them would spend the retry budget on an agent that is not going to
 // react, and would leave the audit unable to tell the two apart at exactly the
 // moment someone needs to know which happened.
-func (l *Lead) stall(taskID, reason string) error {
-	return l.record(taskID, fsm.Block{Reason: reason})
+func (l *Lead) stall(taskID, reason string, spent fsm.Spend) error {
+	return l.record(taskID, fsm.Block{Reason: reason, Spent: spent})
 }
 
 // handleFailure asks the judge what to do and records the answer.
@@ -853,7 +853,13 @@ func (l *Lead) stall(taskID, reason string) error {
 // The retry budget is the reducer's to spend: recording a Fail is what increments
 // it, and what turns the third one into a block. The judge choosing retry does not
 // override that — it only means the lead is not escalating early.
-func (l *Lead) handleFailure(ctx context.Context, taskID string, state fsm.TaskState, reason string) error {
+func (l *Lead) handleFailure(
+	ctx context.Context,
+	taskID string,
+	state fsm.TaskState,
+	reason string,
+	spent fsm.Spend,
+) error {
 	decision := DecideBlock
 	if l.Judge != nil {
 		decision = l.Judge.OnFailure(ctx, state, reason)
@@ -861,12 +867,12 @@ func (l *Lead) handleFailure(ctx context.Context, taskID string, state fsm.TaskS
 
 	switch decision {
 	case DecideRetry:
-		return l.record(taskID, fsm.Fail{Reason: reason})
+		return l.record(taskID, fsm.Fail{Reason: reason, Spent: spent})
 	case DecideBlock:
 		// One decision, one event. Spending the retry budget to reach a block would
 		// leave three failures in the log where there was one choice to escalate,
 		// and the history is the audit trail.
-		return l.record(taskID, fsm.Block{Reason: reason})
+		return l.record(taskID, fsm.Block{Reason: reason, Spent: spent})
 	default:
 		return fmt.Errorf("the judge returned an unknown decision %q", decision)
 	}

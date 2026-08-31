@@ -52,6 +52,9 @@ func parseFleetOptions(args []string) (fleetOptions, error) {
 			return fleetOptions{}, err
 		}
 	}
+	if err := validateAgentOverride(opts.run.Agent); err != nil {
+		return fleetOptions{}, err
+	}
 	return opts, nil
 }
 
@@ -97,7 +100,7 @@ func fleetReport(env Env, args []string) error {
 		return err
 	}
 
-	report := FleetReport{Tasks: []FleetTaskReport{}}
+	report := FleetReport{Tasks: []FleetTaskReport{}, CostReported: true}
 	for _, task := range tasks {
 		if task.Err != nil {
 			// Unless somebody already ended it. Abandoning is the one way out of a
@@ -120,18 +123,10 @@ func fleetReport(env Env, args []string) error {
 			continue
 		}
 
-		report.Tasks = append(report.Tasks, FleetTaskReport{
-			Project:   projectName(task.Project),
-			ID:        task.ID,
-			Flow:      task.State.FlowName,
-			Product:   string(task.State.Product()),
-			Operation: string(task.State.Operation()),
-			BlockedBy: string(task.State.BlockedBy),
-			Blocked:   task.State.Blocked,
-			CostUSD:   task.State.TotalSpend().CostUSD,
-			Tokens:    task.State.TotalSpend().Tokens(),
-		})
-		report.CostUSD += task.State.TotalSpend().CostUSD
+		summary := summarizeFleetTask(task)
+		report.Tasks = append(report.Tasks, summary)
+		report.CostUSD += summary.CostUSD
+		report.CostReported = report.CostReported && summary.CostReported
 	}
 
 	if asJSON {
@@ -139,6 +134,22 @@ func fleetReport(env Env, args []string) error {
 	}
 	printFleetReport(env, report)
 	return nil
+}
+
+func summarizeFleetTask(task globalTask) FleetTaskReport {
+	total := task.State.TotalSpend()
+	return FleetTaskReport{
+		Project:      projectName(task.Project),
+		ID:           task.ID,
+		Flow:         task.State.FlowName,
+		Product:      string(task.State.Product()),
+		Operation:    string(task.State.Operation()),
+		BlockedBy:    string(task.State.BlockedBy),
+		Blocked:      task.State.Blocked,
+		CostUSD:      total.CostUSD,
+		CostReported: total.Zero() || total.CostReported,
+		Tokens:       total.Tokens(),
+	}
 }
 
 func changedSince(env Env, task globalTask, since time.Duration) (bool, error) {
@@ -192,7 +203,8 @@ func printFleetReport(env Env, report FleetReport) {
 		}
 	}
 
-	fmt.Fprintf(env.Out, "\nspent $%.4f across %d task(s)\n", report.CostUSD, len(report.Tasks))
+	total := fsm.Spend{CostUSD: report.CostUSD, CostReported: report.CostReported}
+	fmt.Fprintf(env.Out, "\nspent %s across %d task(s)\n", spendCostLabel(total), len(report.Tasks))
 }
 
 // printFleetGroup writes one pile of the morning report, or nothing when the pile
@@ -205,8 +217,9 @@ func printFleetGroup(env Env, heading string, tasks []FleetTaskReport) {
 
 	fmt.Fprintf(env.Out, "\n%s (%d)\n", heading, len(tasks))
 	for _, task := range tasks {
-		fmt.Fprintf(env.Out, "  %-52s %-14s %-9s %-8s $%.4f",
-			task.Project, task.ID, task.Product, task.Flow, task.CostUSD)
+		cost := fsm.Spend{CostUSD: task.CostUSD, CostReported: task.CostReported}
+		fmt.Fprintf(env.Out, "  %-52s %-14s %-9s %-8s %s",
+			task.Project, task.ID, task.Product, task.Flow, spendCostLabel(cost))
 		if task.BlockedBy != "" {
 			fmt.Fprintf(env.Out, "  %s", task.BlockedBy)
 		}
@@ -271,7 +284,7 @@ func fleetRun(env Env, args []string) error {
 		return dryRun(env, id, opts.run)
 	}
 
-	state, err := packRun(env, id, repo, opts.knob, opts.knobSet)
+	state, err := packRun(env, id, repo, opts.run.Agent, opts.knob, opts.knobSet)
 	if err != nil {
 		return err
 	}

@@ -227,18 +227,20 @@ func TestANonPositiveBudgetIsNotABudget(t *testing.T) {
 	}
 }
 
-// TestTheProjectCanNameItsOwnLeadHarness covers the setting that decides which
-// model `luna chat` talks to.
-//
-// It sits beside `editor` in the same switch, and an unrecognised key there is
-// an error — so the failure this catches is the branch quietly going missing:
-// the project would keep a configured interpreter in its file and get "chat
-// needs an interpreter, and none is configured" with nothing pointing at why.
-func TestTheProjectCanNameItsOwnLeadHarness(t *testing.T) {
-	cfg := from(t, map[string]string{"lead_harness": "claude --model sonnet"})
+func TestTheMachineCanSelectCodexAsItsLeadHarness(t *testing.T) {
+	cfg := from(t, map[string]string{"lead_harness": "codex"})
+	if cfg.LeadHarness != "codex" {
+		t.Errorf("want Codex as the lead harness, got %q", cfg.LeadHarness)
+	}
+}
 
-	if cfg.LeadHarness != "claude --model sonnet" {
-		t.Errorf("want the configured interpreter, got %q", cfg.LeadHarness)
+func TestAnUnknownLeadHarnessIsRefusedBeforeItIsStored(t *testing.T) {
+	_, err := ConfigFrom(nil, map[string]string{"lead_harness": "claude --model sonnet"})
+	if err == nil {
+		t.Fatal("a value the closed harness table cannot execute must be refused")
+	}
+	if !strings.Contains(err.Error(), "claude --model sonnet") || !strings.Contains(err.Error(), "codex") {
+		t.Errorf("the error must name the invalid and expected harnesses, got %v", err)
 	}
 }
 

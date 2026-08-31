@@ -253,16 +253,7 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 		line("about", "%s", about)
 	}
 
-	spent := state.TotalSpend()
-	switch {
-	case state.BudgetUSD > 0:
-		line("budget", "$%.4f of $%.2f · $%.2f left · %d turns",
-			spent.CostUSD, state.BudgetUSD, state.BudgetUSD-spent.CostUSD, spent.Turns)
-	case spent.CostUSD > 0:
-		line("spent", "$%.4f · %d turns · no ceiling", spent.CostUSD, spent.Turns)
-	default:
-		line("budget", "%s", "no ceiling, nothing spent")
-	}
+	printStatusSpend(line, state)
 
 	if report.Base != "" {
 		line("base", "%s", report.Base)
@@ -272,6 +263,24 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 	// branch has to be named rather than left to be worked out.
 	if report.Branch != "" {
 		line("branch", "%s", report.Branch)
+	}
+}
+
+func printStatusSpend(line func(string, string, ...any), state fsm.TaskState) {
+	spent := state.TotalSpend()
+	switch {
+	case !spent.Zero() && !spent.CostReported && state.BudgetUSD > 0:
+		line("spent", "cost not reported · %d tokens · %d turns · $%.2f ceiling unenforceable",
+			spent.Tokens(), spent.Turns, state.BudgetUSD)
+	case !spent.Zero() && !spent.CostReported:
+		line("spent", "cost not reported · %d tokens · %d turns · no USD ceiling", spent.Tokens(), spent.Turns)
+	case state.BudgetUSD > 0:
+		line("budget", "$%.4f of $%.2f · $%.2f left · %d turns",
+			spent.CostUSD, state.BudgetUSD, state.BudgetUSD-spent.CostUSD, spent.Turns)
+	case spent.CostUSD > 0:
+		line("spent", "$%.4f · %d turns · no ceiling", spent.CostUSD, spent.Turns)
+	default:
+		line("budget", "%s", "no ceiling, nothing spent")
 	}
 }
 
@@ -309,9 +318,13 @@ func stageCostLine(state fsm.TaskState, stage fsm.Stage) string {
 	// only when exactly one model answered a stage.
 	answered := spend.Model
 	if answered == "" {
+		answered = spend.Agent
+	}
+	if answered == "" {
 		answered = stage.Agent
 	}
-	return fmt.Sprintf("%-24s %-6s %3dt  $%.4f", answered, spend.Context, spend.Turns, spend.CostUSD)
+	return fmt.Sprintf("%-24s %-6s %3dt  %s", answered, spend.Context, spend.Turns,
+		spendCostLabel(spend))
 }
 
 // printWorktrees says where each stage's checkout is.

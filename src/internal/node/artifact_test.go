@@ -1,6 +1,7 @@
 package node_test
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/node"
 )
@@ -229,7 +231,9 @@ print(s.recv(4096).decode())`
 
 	// `--map`, read-only, exactly as Luna passes it. Without the flag this answers
 	// ENOENT, which is what kept the socket in the worktree until it was measured.
-	cmd := exec.Command(jail, "--map", filepath.Dir(socket), //nolint:gosec // a path from LookPath
+	ctx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
+	cmd := exec.CommandContext(ctx, jail, "--map", filepath.Dir(socket), //nolint:gosec // a path from LookPath
 		"python3", "./put.py")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {

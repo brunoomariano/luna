@@ -786,6 +786,29 @@ func TestStatusReportsTheModelThatAnsweredRatherThanTheHarness(t *testing.T) {
 	}
 }
 
+func TestStatusDoesNotCallAnUnpricedCodexRunFree(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "S-CODEX", "--kind", "chore", "--flow", "chore")
+	h.mustRun(t, "budget", "S-CODEX", "12", "measuring")
+	state := mustState(t, h, "S-CODEX")
+	state.Spent = map[fsm.StageID]fsm.Spend{
+		"build": {Agent: "codex", InputTokens: 90, OutputTokens: 10, Turns: 1},
+	}
+	var out strings.Builder
+	env := h.env
+	env.Out = &out
+	printStatusFacts(env, state, nil, StatusReport{})
+
+	for _, want := range []string{"cost not reported", "100 tokens", "$12.00 ceiling unenforceable"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status lost %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "$0.0000") {
+		t.Errorf("status presented an absent Codex price as measured zero:\n%s", out.String())
+	}
+}
+
 // TestTheKnobIsExplainedInTheFlowsOwnTerms. A number alone is a setting somebody
 // has to look up; what it means is which of *these* gates the lead may answer.
 func TestTheKnobIsExplainedInTheFlowsOwnTerms(t *testing.T) {
@@ -895,5 +918,17 @@ func TestAStageThatHasNotRunSaysWhatItWillRunOn(t *testing.T) {
 	}}
 	if got := stageCostLine(ran, build); !strings.Contains(got, "codex") {
 		t.Errorf("a stage whose model went unreported names nothing: %q", got)
+	}
+
+	overridden := fsm.TaskState{Spent: map[fsm.StageID]fsm.Spend{
+		"build": {Agent: "codex", InputTokens: 1, Turns: 1, Context: "fresh"},
+	}}
+	declaredClaude := fsm.Stage{ID: "build", Agent: "claude"}
+	if got := stageCostLine(overridden, declaredClaude); !strings.Contains(got, "codex") ||
+		strings.Contains(got, "claude") {
+		t.Errorf("the status relabelled a Codex override as the flow default: %q", got)
+	}
+	if got := stageCostLine(overridden, declaredClaude); !strings.Contains(got, "cost n/a") {
+		t.Errorf("unreported Codex cost was presented as zero: %q", got)
 	}
 }

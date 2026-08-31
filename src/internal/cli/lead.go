@@ -239,6 +239,9 @@ func parseLeadOptions(args []string) (runOptions, error) {
 			return opts, err
 		}
 	}
+	if err := validateAgentOverride(opts.Agent); err != nil {
+		return opts, err
+	}
 	return opts, nil
 }
 
@@ -373,7 +376,12 @@ func reportSoloEnding(env Env, id string, state fsm.TaskState) {
 // writes code is a role agent, contained, one per stage — and each role keeps a
 // worktree and a session across the stages it owns, which is what the pack buys
 // and a solo run cannot have.
-func packRun(env Env, id, repo string, knob fsm.Knob, knobSet bool) (fsm.TaskState, error) {
+func packRun(
+	env Env,
+	id, repo, stageAgent string,
+	knob fsm.Knob,
+	knobSet bool,
+) (fsm.TaskState, error) {
 	if env.Lead == nil {
 		return fsm.TaskState{}, errors.New("no lead is configured: Luna hosts no " +
 			"model of its own, so a pack needs one to conduct it. `luna lead` runs " +
@@ -399,7 +407,9 @@ func packRun(env Env, id, repo string, knob fsm.Knob, knobSet bool) (fsm.TaskSta
 	// The stage budget, not the question timeout: conducting a stage means
 	// starting an agent and waiting for it to work, which is the shape
 	// `turn_budget` describes. `Ask`'s ceiling is for a model answering a question.
-	conductor := &lead.Agent{Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn()}
+	conductor := &lead.Agent{
+		Ask: env.Lead, Knob: knob, Budget: env.profiles().Turn(), StageAgent: stageAgent,
+	}
 
 	entering := leadFor(env, repo, flow)
 	if knobSet {

@@ -38,20 +38,25 @@ func budgetCommand(env Env, args []string) error {
 // question behind the command is always "can this finish?", and that needs the
 // remainder rather than the limit.
 func showBudget(env Env, state fsm.TaskState) {
-	spent := state.TotalSpend().CostUSD
+	spent := state.TotalSpend()
 
 	if state.BudgetUSD <= 0 {
-		fmt.Fprintf(env.Out, "%s has no budget — spent $%.4f so far\n", state.ID, spent)
+		fmt.Fprintf(env.Out, "%s has no budget — %s so far\n", state.ID, spendCostLabel(spent))
 		fmt.Fprintf(env.Out, "  set one with `luna budget %s <usd>`\n", state.ID)
+		return
+	}
+	if !spent.CostReported && !spent.Zero() {
+		fmt.Fprintf(env.Out, "%s budget $%.2f — cost not reported, so the ceiling is unenforceable\n",
+			state.ID, state.BudgetUSD)
 		return
 	}
 
 	fmt.Fprintf(env.Out, "%s budget $%.2f — spent $%.4f, $%.4f left\n",
-		state.ID, state.BudgetUSD, spent, state.BudgetUSD-spent)
+		state.ID, state.BudgetUSD, spent.CostUSD, state.BudgetUSD-spent.CostUSD)
 
 	// Said here because it is the part that surprises: the ceiling stops the *next*
 	// stage, so a task can be over it and still hold a delivery that was paid for.
-	if spent > state.BudgetUSD {
+	if spent.CostUSD > state.BudgetUSD {
 		fmt.Fprintf(env.Out,
 			"  it is over, so no further stage opens — raise it and `luna unblock %s`\n", state.ID)
 	}

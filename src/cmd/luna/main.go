@@ -191,6 +191,9 @@ func runWithoutStore(args []string) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
 	}
+	if os.Getenv(agent.StageEnv) != "" {
+		return true, runInsideAStage(args)
+	}
 	env := cli.Env{Out: os.Stdout, Err: os.Stderr, In: os.Stdin}
 	switch args[0] {
 	case "help", "-h", "--help", "version", "daemon":

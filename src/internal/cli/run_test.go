@@ -96,6 +96,34 @@ func TestRunRejectsAnUnknownFlag(t *testing.T) {
 	}
 }
 
+func TestRunRejectsAnUnknownAgentBeforeStarting(t *testing.T) {
+	_, err := parseRunOptions([]string{"--agent", "opencode"})
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("want ErrUsage, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "opencode") || !strings.Contains(err.Error(), "codex") {
+		t.Errorf("the error must name the invalid and expected harnesses, got %v", err)
+	}
+}
+
+func TestEveryRunningModeRejectsAnUnknownAgent(t *testing.T) {
+	for name, parse := range map[string]func([]string) error{
+		"lead": func(args []string) error {
+			_, err := parseLeadOptions(args)
+			return err
+		},
+		"fleet": func(args []string) error {
+			_, err := parseFleetOptions(args)
+			return err
+		},
+	} {
+		err := parse([]string{"--agent", "opencode"})
+		if !errors.Is(err, ErrUsage) {
+			t.Errorf("%s accepted an unknown agent: %v", name, err)
+		}
+	}
+}
+
 // ── luna run, dry ────────────────────────────────────────────────────────────
 
 // TestADryRunDrivesAnAutonomousTaskToTheEnd is the engine end to end with no
@@ -131,6 +159,20 @@ func TestADryRunDrivesAnAutonomousTaskToTheEnd(t *testing.T) {
 	// not a model call hidden behind a free-looking flag.
 	if h.judged != 0 {
 		t.Errorf("dry run asked the configured lead %d time(s)", h.judged)
+	}
+}
+
+// TestTheAgentOverrideDoesNotRewriteTheRecordedFlow catches the difference
+// between execution policy and flow identity. Agent is fingerprinted, so
+// forcing it before replay makes every existing task look like its flow changed.
+func TestTheAgentOverrideDoesNotRewriteTheRecordedFlow(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--simulated")
+	h.mustRun(t, "autonomy", "LUNA-1", "10")
+
+	out := h.mustRun(t, "lead", "LUNA-1", "--agent", "codex", "--dry-run")
+	if !strings.Contains(out, "LUNA-1 finished") {
+		t.Errorf("the invocation override changed the immutable flow:\n%s", out)
 	}
 }
 
@@ -636,15 +678,18 @@ func TestConductBuildsTheStageRunnerForARealRun(t *testing.T) {
 		t.Fatalf("want the stage runner, got %T", conductor.Node)
 	}
 
-	// --agent overrides every stage's agent, which is what makes a run
-	// reproducible against one harness while the briefs are still being tuned.
+	// The override belongs at the execution boundary. Rewriting runner.Flow would
+	// also rewrite the task's fingerprint and make replay reject its own log.
 	for _, stage := range runner.Flow {
 		if stage.Mechanical() {
 			continue
 		}
-		if stage.Agent != "codex" {
-			t.Errorf("stage %q kept %q instead of the override", stage.ID, stage.Agent)
+		if stage.Agent == "codex" {
+			t.Errorf("stage %q rewrote the recorded flow", stage.ID)
 		}
+	}
+	if runner.AgentOverride != "codex" {
+		t.Errorf("the execution boundary lost the override: %q", runner.AgentOverride)
 	}
 	if runner.Repo != "/some/repo" {
 		t.Errorf("want the runner pointed at the repository, got %q", runner.Repo)
@@ -1434,7 +1479,9 @@ func TestOpeningAStageOnAFlowThisBuildCannotReadIsRefused(t *testing.T) {
 type brokenNode struct{}
 
 func (brokenNode) Run(context.Context, fsm.TaskState, fsm.Stage) (lead.Result, error) {
-	return lead.Result{}, errors.New("the agent exited 2")
+	return lead.Result{Spent: fsm.Spend{
+		Agent: "codex", InputTokens: 25, Turns: 1,
+	}}, errors.New("the agent exited 2")
 }
 
 // TestAStageThatFailsIsAnErrorRatherThanABlock keeps the two kinds of failure
@@ -1461,8 +1508,43 @@ func TestAStageThatFailsIsAnErrorRatherThanABlock(t *testing.T) {
 	if !strings.Contains(err.Error(), "exited 2") {
 		t.Errorf("the failure does not carry what went wrong: %v", err)
 	}
-	if state := mustState(t, h, "W-2"); state.Status == fsm.StatusBlocked {
+	state := mustState(t, h, "W-2")
+	if state.Status == fsm.StatusBlocked {
 		t.Error("an ordinary stage failure spent the block that infrastructure needs")
+	}
+	if got := state.TotalSpend().Tokens(); got != 25 {
+		t.Errorf("the failed call recorded %d tokens, want 25", got)
+	}
+}
+
+func TestAStageThatExhaustsRetriesBlocksAndKeepsEveryBill(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "W-3", "--kind", "chore", "--flow", "chore")
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return brokenNode{}, func() {}, nil
+	}
+	notified := 0
+	h.env.Notify = func(context.Context, string, string) error {
+		notified++
+		return nil
+	}
+
+	openStage(t, h, "W-3")
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := h.run(t, "work", "W-3"); err == nil {
+			t.Fatalf("attempt %d hid the stage failure", attempt+1)
+		}
+	}
+
+	state := mustState(t, h, "W-3")
+	if state.Status != fsm.StatusBlocked {
+		t.Fatalf("exhausted retries left the task %s", state.Status)
+	}
+	if got := state.TotalSpend().Tokens(); got != 75 {
+		t.Errorf("three failed calls recorded %d tokens, want 75", got)
+	}
+	if notified != 1 || !strings.Contains(h.out.String(), "blocked") {
+		t.Errorf("the exhausted failure was not surfaced: notifications=%d\n%s", notified, h.out.String())
 	}
 }
 

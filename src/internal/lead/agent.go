@@ -70,6 +70,10 @@ type Agent struct {
 	// Zero leaves it to the caller's context, which is the same thing the node
 	// layer does with an unset budget.
 	Budget time.Duration
+
+	// StageAgent is an invocation-only override carried into the `luna work`
+	// command the conductor runs. Empty leaves each stage on its declared agent.
+	StageAgent string
 }
 
 // Autonomy is what this agent's knob means for a failure.
@@ -91,14 +95,22 @@ func (a *Agent) Autonomy() Autonomy {
 // transition — the brief exists so the lead understands the shape it is in
 // rather than fighting it.
 func Brief(autonomy Autonomy) string {
-	var b strings.Builder
+	return conductorBrief(autonomy, "")
+}
 
-	b.WriteString(`You conduct one task through Luna.
+func conductorBrief(autonomy Autonomy, stageAgent string) string {
+	var b strings.Builder
+	workCommand := "luna work <task>"
+	if stageAgent != "" {
+		workCommand += " --agent " + stageAgent
+	}
+
+	fmt.Fprintf(&b, `You conduct one task through Luna.
 
 You do not decide what happens next. Luna does. Your loop is:
 
   1. run "luna next <task> --json" — it returns an order
-  2. run "luna work <task>" — it runs the agent for that order and waits
+  2. run %q — it runs the agent for that order and waits
   3. go back to 1
 
 Step 2 is how the agent gets started, and it is the only way. It runs the
@@ -132,7 +144,7 @@ conductor, and a conductor that picks up an instrument has stopped conducting.
 
 When a person asks you something, answer them. That is why you are a model
 and not a loop.
-`)
+`, workCommand)
 
 	// Retrying once is what every setting does first, so it is stated once, above
 	// the branch, rather than being a thing the strictest setting forbids. It is
@@ -192,7 +204,7 @@ func (a *Agent) Conduct(ctx context.Context, order fsm.Order) (string, error) {
 		defer stop()
 	}
 
-	said, err := a.Ask(ctx, Brief(a.Autonomy())+"\n\nYour order:\n\n"+order.Text())
+	said, err := a.Ask(ctx, conductorBrief(a.Autonomy(), a.StageAgent)+"\n\nYour order:\n\n"+order.Text())
 	if err != nil {
 		return "", fmt.Errorf("the lead did not answer: %w", err)
 	}

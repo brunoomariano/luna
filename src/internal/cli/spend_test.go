@@ -54,6 +54,25 @@ func TestATaskThatSpentNothingSaysNothing(t *testing.T) {
 	}
 }
 
+func TestTaskShowDoesNotPriceCodexAtZero(t *testing.T) {
+	var out strings.Builder
+	state := fsm.TaskState{
+		ID: "T-4",
+		Spent: map[fsm.StageID]fsm.Spend{
+			"forge": {Agent: "codex", InputTokens: 100, OutputTokens: 20},
+		},
+	}
+
+	printSpend(Env{Out: &out}, state, fsm.DefaultFlow())
+	got := out.String()
+	if !strings.Contains(got, "cost n/a") {
+		t.Errorf("an unpriced Codex call was rendered as a price:\n%s", got)
+	}
+	if strings.Contains(got, "$0.0000") {
+		t.Errorf("an absent USD measurement was rendered as zero:\n%s", got)
+	}
+}
+
 // TestTheReportReadsInFlowOrder covers why the stages are not printed in map
 // order: the column is read against the run, and Go randomises map iteration, so
 // the same task would print differently every time.

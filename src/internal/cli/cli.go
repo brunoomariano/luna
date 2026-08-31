@@ -12,9 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/lead"
 	"github.com/brunoomariano/luna/src/internal/node"
@@ -103,6 +105,10 @@ func Run(env Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: %s", ErrUsage, Usage())
 	}
+	if os.Getenv(agent.StageEnv) != "" && !stageCommandAllowed(args[0]) {
+		return fmt.Errorf("a stage agent cannot run `luna %s`: the node owns task transitions; "+
+			"use `luna artifact put|get` for handoff", args[0])
+	}
 
 	switch args[0] {
 	case "help", "-h", "--help":
@@ -146,6 +152,15 @@ func Run(env Env, args []string) error {
 		return fmt.Errorf("%w: unknown command %q\n%s", ErrUsage, args[0], Usage())
 	}
 	return command(env, args[1:])
+}
+
+func stageCommandAllowed(command string) bool {
+	switch command {
+	case "artifact", "help", "-h", "--help", "version":
+		return true
+	default:
+		return false
+	}
 }
 
 // Usage is the help text. It is a function rather than a constant so the command
@@ -222,6 +237,9 @@ Two modes. Luna picks the stage in both; the knob picks who answers a gate.
         review: a judging stage can be denied the tools to edit, which one
         agent doing everything cannot be.
         The size of the pack is the flow's, not a flag's.
+
+        <kind> is claude or codex. The flag overrides stage execution only;
+        lead_harness selects the pack conductor and autonomous gate judge.
 
 ── how supervised it is
 
@@ -300,7 +318,7 @@ Two modes. Luna picks the stage in both; the knob picks who answers a gate.
         Luna hands it appears while it runs — but the harness writes its
         own transcript as the session goes, and that file is the console.
         This names it, per stage, prints the one-liner that follows it, and
-        shows how to reopen its Claude session. A finished session is safe
+        shows how to reopen its Claude or Codex session. A finished session is safe
         to open; typing into a running one changes that stage's conversation
         without adding the turn to Luna's log. Luna does not read the file —
         following it is the harness's format, and parsing it here would be a
@@ -379,8 +397,9 @@ The pack's lead runs these, and so can you.
         answers it.
 
   luna trust
-        tell the harness it trusts the directory Luna makes worktrees in,
-        so its agents start at a prompt instead of at a folder dialog.
+        record the directory Luna makes worktrees in as trusted by Claude,
+        so Claude starts at a prompt instead of at a folder dialog. Codex's
+        non-interactive adapter skips its repository check and needs no entry.
 
   luna daemon [--socket <path>] [--store <path>]
         run the one process that writes the log. It starts itself when a
@@ -1478,19 +1497,22 @@ func printSpend(env Env, state fsm.TaskState, flow []fsm.Stage) {
 		if !ran {
 			continue
 		}
-		fmt.Fprintf(env.Out, "  %-14s %8d tokens  $%.4f  %d turns  %s\n",
-			stage.ID, spend.Tokens(), spend.CostUSD, spend.Turns, spend.Context)
+		fmt.Fprintf(env.Out, "  %-14s %8d tokens  %-31s  %d turns  %s\n",
+			stage.ID, spend.Tokens(), spendCostLabel(spend), spend.Turns, spend.Context)
 	}
 
 	total := state.TotalSpend()
-	fmt.Fprintf(env.Out, "  %-14s %8d tokens  $%.4f\n", "total", total.Tokens(), total.CostUSD)
+	fmt.Fprintf(env.Out, "  %-14s %8d tokens  %s\n", "total", total.Tokens(), spendCostLabel(total))
 
 	// The ceiling beside the total, because a total on its own does not say whether
 	// the task can finish — which is the only question anybody reads this column for
 	// on a run nobody watched.
-	if state.BudgetUSD > 0 {
+	if state.BudgetUSD > 0 && total.CostReported {
 		fmt.Fprintf(env.Out, "  %-14s %8s  $%.2f  ($%.4f left)\n",
 			"budget", "", state.BudgetUSD, state.BudgetUSD-total.CostUSD)
+	} else if state.BudgetUSD > 0 {
+		fmt.Fprintf(env.Out, "  %-14s %8s  $%.2f  (unenforceable: total cost is not reported)\n",
+			"budget", "", state.BudgetUSD)
 	}
 }
 

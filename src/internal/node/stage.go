@@ -43,6 +43,11 @@ type Runner struct {
 	// for a real process.
 	Agent agent.Runner
 
+	// AgentOverride pins every agent-bearing stage to one harness for this run.
+	// It is applied to the call, not Flow: Agent participates in the flow
+	// fingerprint, and an invocation flag must not rewrite recorded identity.
+	AgentOverride string
+
 	// Artifacts opens the store a stage's handover is written to.
 	//
 	// A factory rather than an instance because the store is scoped to one task
@@ -91,7 +96,8 @@ type Runner struct {
 
 // Run executes one stage and returns what it delivered.
 func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
-	if err := checkStage(stage); err != nil {
+	stage, err := r.stageForRun(state, stage)
+	if err != nil {
 		return lead.Result{}, err
 	}
 
@@ -123,6 +129,33 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 	if stage.Mechanical() {
 		return r.runMechanically(ctx, state, stage, wt)
 	}
+	return r.runAgentStage(ctx, state, stage, wt)
+}
+
+func (r *Runner) stageForRun(state fsm.TaskState, stage fsm.Stage) (fsm.Stage, error) {
+	if r.AgentOverride != "" && !stage.Mechanical() {
+		stage.Agent = r.AgentOverride
+	}
+	if err := checkStage(stage); err != nil {
+		return fsm.Stage{}, err
+	}
+	if !stage.Mechanical() && state.BudgetUSD > 0 && !agent.ReportsCost(stage.Agent) {
+		return fsm.Stage{}, fmt.Errorf("%w: harness %q does not report USD cost, so task %q's $%.2f budget cannot be enforced",
+			lead.ErrInfrastructure, stage.Agent, state.ID, state.BudgetUSD)
+	}
+	return stage, nil
+}
+
+func (r *Runner) runAgentStage(
+	ctx context.Context,
+	state fsm.TaskState,
+	stage fsm.Stage,
+	wt Worktree,
+) (lead.Result, error) {
+	reportOnlyBefore, err := snapshotReportOnly(ctx, stage, wt.Path)
+	if err != nil {
+		return lead.Result{}, err
+	}
 
 	socket, handsOver, err := r.serveArtifacts(state, stage, wt)
 	if err != nil {
@@ -137,8 +170,11 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 	}
 
 	spend, said, err := r.call(ctx, state, stage, wt, handsOver)
+	if unchangedErr := verifyReportOnlyUnchanged(ctx, stage, wt.Path, reportOnlyBefore); unchangedErr != nil {
+		return lead.Result{Spent: spend}, unchangedErr
+	}
 	if err != nil {
-		return lead.Result{}, err
+		return lead.Result{Spent: spend}, err
 	}
 
 	// The agent stopped, whatever that means. Only the verifier says whether the
@@ -151,6 +187,47 @@ func (r *Runner) Run(ctx context.Context, state fsm.TaskState, stage fsm.Stage) 
 	r.reportEmptyDelivery(state, stage, result, said)
 	r.recordBootstrap(state, stage, err)
 	return result, err
+}
+
+type reportOnlySnapshot struct {
+	commit string
+	status string
+}
+
+func snapshotReportOnly(ctx context.Context, stage fsm.Stage, worktree string) (reportOnlySnapshot, error) {
+	if !stage.Uncontained {
+		return reportOnlySnapshot{}, nil
+	}
+	commit, _, err := Handover(ctx, worktree)
+	if err != nil {
+		return reportOnlySnapshot{}, err
+	}
+	status, err := git(ctx, worktree, "status", "--porcelain=v1", "--untracked-files=all")
+	if err != nil {
+		return reportOnlySnapshot{}, fmt.Errorf("reading report-only stage %q: %w", stage.ID, err)
+	}
+	return reportOnlySnapshot{commit: commit, status: status}, nil
+}
+
+func verifyReportOnlyUnchanged(
+	ctx context.Context,
+	stage fsm.Stage,
+	worktree string,
+	before reportOnlySnapshot,
+) error {
+	if !stage.Uncontained {
+		return nil
+	}
+	after, err := snapshotReportOnly(ctx, stage, worktree)
+	if err != nil {
+		return err
+	}
+	if after == before {
+		return nil
+	}
+	return fmt.Errorf("stage %q runs uncontained only because it is report-only, but it changed the worktree "+
+		"(HEAD %s -> %s, status %q -> %q)", stage.ID, short(before.commit), short(after.commit),
+		before.status, after.status)
 }
 
 // BootstrapArtifact is what `setup` hands over with the project's own preparation
@@ -255,7 +332,7 @@ func (r *Runner) call(
 		Deny:    denied(stage),
 		Budget:  r.Budget,
 		Context: agent.Fresh,
-		Env:     identity.Env(),
+		Env:     append(identity.Env(), agent.StageEnv+"=1"),
 
 		// The task's workstream, not the stage's and not the role's. Every agent a
 		// task starts writes to one ledger, so what the planner learned is there
@@ -286,13 +363,13 @@ func (r *Runner) call(
 	// continue — the first stage told this — and starting fresh is the honest
 	// answer rather than an error.
 	if !stage.Context.Fresh() {
-		if session := state.SessionOf(r.Flow, stage.Brief); session != "" {
+		if session := state.SessionOf(r.Flow, stage); session != "" {
 			call.Context, call.Session = agent.Live, session
 		}
 	}
 
 	result, err := r.Agent.Run(ctx, call)
-	spend := spendOf(result, call.Context)
+	spend := spendOf(result, call.Context, call.Kind)
 	if err != nil {
 		// A missing harness is the machinery breaking rather than the stage
 		// failing, so the lead does not spend the retry budget on a binary that
@@ -536,17 +613,21 @@ func checkStage(stage fsm.Stage) error {
 		}
 		return nil
 	}
+	if !agent.Known(stage.Agent) {
+		return fmt.Errorf("stage %q names unknown harness %q (expected claude or codex)",
+			stage.ID, stage.Agent)
+	}
 
 	// A stage that withholds capabilities on a harness Luna cannot gate stops
 	// rather than running ungated. The alternative is a judging stage that keeps
 	// every tool it was supposed to lose, with nothing saying so — and a review
 	// written by something that could edit the work is the one failure the flow
 	// cannot catch downstream.
-	if stage.Gated() && !agent.CanGate(stage.Agent) {
-		return fmt.Errorf(
-			"stage %q runs on %q, which denies %v — and Luna cannot withhold a capability on that harness",
-			stage.ID, stage.Agent, stage.ToolsDeny,
-		)
+	if stage.Gated() {
+		if err := agent.CheckGating(stage.Agent, denied(stage)); err != nil {
+			return fmt.Errorf("stage %q runs on %q, which denies %v: %w",
+				stage.ID, stage.Agent, stage.ToolsDeny, err)
+		}
 	}
 	return nil
 }
@@ -561,14 +642,16 @@ func denied(stage fsm.Stage) []string {
 }
 
 // spendOf turns a harness's report into what the log records.
-func spendOf(result agent.Result, ctx agent.Context) fsm.Spend {
+func spendOf(result agent.Result, ctx agent.Context, kind string) fsm.Spend {
 	return fsm.Spend{
 		InputTokens:  result.Usage.InputTokens,
 		OutputTokens: result.Usage.OutputTokens,
 		CacheRead:    result.Usage.CacheRead,
 		CacheWrite:   result.Usage.CacheWrite,
 		CostUSD:      result.Usage.CostUSD,
+		CostReported: result.Usage.CostReported,
 		Model:        result.Usage.Model,
+		Agent:        kind,
 		Turns:        result.Turns,
 		Context:      string(ctx),
 	}

@@ -141,6 +141,24 @@ func TestTheOrderIsWhatTheLeadIsGiven(t *testing.T) {
 	}
 }
 
+func TestTheConductorCarriesTheStageAgentOverrideIntoWork(t *testing.T) {
+	lead := &disobedientLead{says: "done"}
+	agent := &Agent{Ask: lead.ask, StageAgent: "codex"}
+
+	if _, err := agent.Conduct(context.Background(), fsm.Order{
+		Kind: fsm.OrderRun, TaskID: "LUNA-1", Stage: "build",
+	}); err != nil {
+		t.Fatalf("Conduct: %v", err)
+	}
+	prompt := lead.saw[0]
+	if !strings.Contains(prompt, `luna work <task> --agent codex`) {
+		t.Errorf("the conductor would drop the override:\n%s", prompt)
+	}
+	if strings.Contains(prompt, `run "luna work <task>"`) {
+		t.Errorf("the prompt carries a conflicting unoverridden work command:\n%s", prompt)
+	}
+}
+
 // TestTheLeadIsNotShownWhatComesAfterItsOrder. An order that arrived with the
 // rest of the flow attached would invite exactly the helpfulness this is shaped
 // against.

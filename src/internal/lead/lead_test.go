@@ -43,11 +43,12 @@ func (n *deliveringNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage
 type failingNode struct {
 	calls  int
 	reason string
+	spent  fsm.Spend
 }
 
 func (n *failingNode) Run(context.Context, fsm.TaskState, fsm.Stage) (Result, error) {
 	n.calls++
-	return Result{}, errors.New(n.reason)
+	return Result{Spent: n.spent}, errors.New(n.reason)
 }
 
 // partialNode delivers less than the stage promised — the case the contract's
@@ -272,7 +273,9 @@ func TestAFailingNodeConsultsTheJudge(t *testing.T) {
 	nightly(t, s, "LUNA-1", fsm.KindChore)
 
 	judge := &alwaysBlocks{}
-	l := &Lead{Store: s, Node: &failingNode{reason: "the compiler disagreed"}, Judge: judge}
+	l := &Lead{Store: s, Node: &failingNode{
+		reason: "the compiler disagreed", spent: fsm.Spend{Agent: "codex", InputTokens: 13},
+	}, Judge: judge}
 
 	state, err := l.Run(context.Background(), "LUNA-1")
 	if err != nil {
@@ -288,6 +291,9 @@ func TestAFailingNodeConsultsTheJudge(t *testing.T) {
 	// A blocked task that does not say why is the silent failure INV-5 forbids.
 	if state.Blocked == "" {
 		t.Error("a blocked task must carry its reason")
+	}
+	if got := state.TotalSpend().Tokens(); got != 13 {
+		t.Errorf("the blocked call recorded %d tokens, want 13", got)
 	}
 }
 

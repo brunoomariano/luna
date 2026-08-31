@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
@@ -167,7 +168,12 @@ func assignRoot(cfg *Config, key, value, where string) error {
 		cfg.Editor = strings.Trim(value, `"`)
 		return nil
 	case "lead_harness":
-		cfg.LeadHarness = strings.Trim(value, `"`)
+		selected := strings.Trim(value, `"`)
+		if selected != "" && !agent.Known(selected) {
+			return fmt.Errorf("%s: lead_harness %q is unknown (expected claude or codex)",
+				where, selected)
+		}
+		cfg.LeadHarness = selected
 		return nil
 	case "bootstrap":
 		cfg.Bootstrap = strings.Trim(value, `"`)

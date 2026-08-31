@@ -50,9 +50,11 @@ func consoleCommand(env Env, args []string) error {
 
 // ConsoleReport is one stage's session and where to watch it.
 type ConsoleReport struct {
-	Stage   string `json:"stage"`
-	Agent   string `json:"agent"`
-	Session string `json:"session"`
+	Stage        string `json:"stage"`
+	Agent        string `json:"agent"`
+	Session      string `json:"session"`
+	Resume       string `json:"resume,omitempty"`
+	FollowFilter string `json:"follow_filter,omitempty"`
 
 	// Path is the transcript, empty when Luna does not know this harness's
 	// layout. Live says only whether the file is there now; the task status says
@@ -81,11 +83,17 @@ func consolesOf(state fsm.TaskState, flow []fsm.Stage) []ConsoleReport {
 			continue
 		}
 
-		report := ConsoleReport{
-			Stage: string(stage.ID), Agent: stage.Agent, Session: spend.Session,
+		kind := spend.Agent
+		if kind == "" {
+			kind = stage.Agent
 		}
+		report := ConsoleReport{
+			Stage: string(stage.ID), Agent: kind, Session: spend.Session,
+		}
+		report.Resume, _ = agent.ResumeCommand(kind, spend.Session)
+		report.FollowFilter, _ = agent.ConsoleFilter(kind)
 		if worktree, err := node.WorktreePath(".", state.ID, string(stage.ID)); err == nil {
-			if path, known := agent.ConsolePath(stage.Agent, worktree, spend.Session); known {
+			if path, known := agent.ConsolePath(kind, worktree, spend.Session); known {
 				report.Path = path
 				if _, err := os.Stat(path); err == nil {
 					report.Live = true
@@ -104,7 +112,7 @@ func printConsoles(env Env, id string, state fsm.TaskState, consoles []ConsoleRe
 	}
 
 	fmt.Fprintf(env.Out, "%s\n\n", id)
-	example := ""
+	var example ConsoleReport
 	for _, one := range consoles {
 		here := ""
 		if currentStageIsRunning(state, one) {
@@ -118,8 +126,8 @@ func printConsoles(env Env, id string, state fsm.TaskState, consoles []ConsoleRe
 			continue
 		}
 		fmt.Fprintf(env.Out, "  %-13s %s%s\n", "", one.Path, missingNote(one))
-		if one.Live && example == "" {
-			example = one.Path
+		if one.Path != "" && (example.Path == "" || one.Live) {
+			example = one
 		}
 	}
 
@@ -127,11 +135,11 @@ func printConsoles(env Env, id string, state fsm.TaskState, consoles []ConsoleRe
 }
 
 func printResumeCommand(env Env, state fsm.TaskState, one ConsoleReport) {
-	if one.Agent != "claude" {
+	if one.Resume == "" {
 		return
 	}
 
-	fmt.Fprintf(env.Out, "  %-13s `claude -r %s`\n", "", one.Session)
+	fmt.Fprintf(env.Out, "  %-13s `%s`\n", "", one.Resume)
 	if currentStageIsRunning(state, one) {
 		fmt.Fprintf(env.Out, "  %-13s warning: this is the stage's conversation, not a copy.\n", "")
 		fmt.Fprintf(env.Out, "  %-13s Anything you type joins it, and Luna does not record that turn.\n", "")
@@ -153,32 +161,21 @@ func stageHasEnded(state fsm.TaskState, one ConsoleReport) bool {
 	return state.Status == fsm.StatusStageDone || state.IsTerminal()
 }
 
-// followFilter turns one transcript line into something readable.
-//
-// Measured against a real run's transcript rather than written from the format:
-// a string content is the prompt Luna handed the agent, a text block is what it
-// said, and a tool_use is what it ran. Reasoning is deliberately absent — the
-// blocks are there but their text is not stored, only a signature, so a filter
-// that printed them would print blank lines and look broken.
-const followFilter = `if (.message.content|type)=="string" then "» " + .message.content
-     else (.message.content[]?
-       | if .type=="text" then .text
-         elif .type=="tool_use" then "$ " + (.input.command // .name)
-         else empty end)
-     end`
-
-func printHowToFollow(env Env, example string) {
-	path := example
+func printHowToFollow(env Env, example ConsoleReport) {
+	path := example.Path
 	if path == "" {
 		path = "<path>"
 	}
 
 	fmt.Fprintf(env.Out, "\nfollow it as it happens:\n")
-	fmt.Fprintf(env.Out, "  tail -f %s \\\n    | jq -r '%s'\n", path, followFilter)
+	if example.FollowFilter == "" {
+		fmt.Fprintf(env.Out, "  tail -f %s\n", path)
+	} else {
+		fmt.Fprintf(env.Out, "  tail -f %s \\\n    | jq -r '%s'\n", path, example.FollowFilter)
+	}
 	fmt.Fprintf(env.Out, "\nThe transcript is the harness's own, written as the session goes, so this works\n")
 	fmt.Fprintf(env.Out, "in any pane — herdr, tmux, a second terminal. It carries what the agent said,\n")
-	fmt.Fprintf(env.Out, "what it ran, and the prompt Luna handed it. Not its reasoning: those blocks are\n")
-	fmt.Fprintf(env.Out, "recorded with a signature and no text.\n")
+	fmt.Fprintf(env.Out, "what it ran, and the prompt Luna handed it. It does not expose readable reasoning.\n")
 }
 
 // missingNote marks a transcript that is not on disk.

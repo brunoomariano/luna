@@ -29,6 +29,31 @@ func TestAskSendsThePromptAndReadsTheAnswer(t *testing.T) {
 	}
 }
 
+// TestCodexCanJudgeAGate covers lead_harness = "codex" through the process
+// boundary. Selection without the native `codex exec` arguments is not support.
+func TestCodexCanJudgeAGate(t *testing.T) {
+	fake := newFakeHarness(t, "APPROVE\n\nall criteria pass", 0)
+	h := Harness{Kind: "codex", Binary: fake.path()}
+
+	answer, err := h.Ask(context.Background(), "judge this contract")
+	if err != nil {
+		t.Fatalf("asking Codex: %v", err)
+	}
+	if !strings.Contains(answer, "APPROVE") {
+		t.Errorf("the Codex judgement did not come back: %q", answer)
+	}
+
+	argv := fake.argv(t)
+	for _, want := range []string{
+		"exec", "--dangerously-bypass-approvals-and-sandbox",
+		"already the conductor inside Luna", "Do not invoke an outer Luna orchestration skill",
+	} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("Codex Ask did not receive %q:\n%s", want, argv)
+		}
+	}
+}
+
 // TestAskDoesNotGoThroughTheSandbox is the difference between Ask and Run, as a
 // test rather than a comment.
 //

@@ -159,6 +159,25 @@ func TestFleetReportPrintsAConcreteBlocker(t *testing.T) {
 	}
 }
 
+func TestFleetReportDoesNotPriceCodexAtZero(t *testing.T) {
+	h := newHarness(t)
+	report := FleetReport{
+		Tasks: []FleetTaskReport{{
+			Project: "one-project", ID: "TASK-2", Product: "real", Flow: "full",
+			Operation: string(fsm.OperationStopped), Tokens: 120,
+		}},
+	}
+
+	printFleetReport(h.env, report)
+	got := h.out.String()
+	if strings.Count(got, "cost n/a") != 2 {
+		t.Errorf("the task and fleet totals must both report an absent price:\n%s", got)
+	}
+	if strings.Contains(got, "$0.0000") {
+		t.Errorf("the fleet rendered an absent Codex price as zero:\n%s", got)
+	}
+}
+
 // TestTheFleetTakesTheAgentOverride, so a whole night can be pinned to one
 // harness while the roles are still being tuned.
 func TestTheFleetTakesTheAgentOverride(t *testing.T) {
@@ -245,12 +264,18 @@ func TestTheReportShowsATaskSomebodyCalledOff(t *testing.T) {
 // of the order it is given: the fleet drives several at once, and a lead that
 // assumed one id would pass this test by conducting the same task N times.
 type fleetLead struct {
-	h  *harness
-	t  *testing.T
-	mu sync.Mutex
+	h             *harness
+	t             *testing.T
+	expectedAgent string
+	mu            sync.Mutex
 }
 
 func (l *fleetLead) ask(_ context.Context, prompt string) (string, error) {
+	if l.expectedAgent != "" && !strings.Contains(prompt,
+		"luna work <task> --agent "+l.expectedAgent) {
+		return "", fmt.Errorf("the pack dropped agent %q from its work command:\n%s",
+			l.expectedAgent, prompt)
+	}
 	// The task's id comes off the order the lead was handed, not out of band: a
 	// fake told which task it is would pass this test by conducting the same one
 	// N times, which is the exact failure a fleet has.
@@ -286,6 +311,14 @@ func (l *fleetLead) ask(_ context.Context, prompt string) (string, error) {
 		return "", err
 	}
 	return "carried out " + string(order.Stage), nil
+}
+
+func TestAPackCarriesItsAgentOverrideThroughTheConductor(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "F-CODEX", "--kind", "chore", "--flow", "chore")
+	h.env.Lead = (&fleetLead{h: h, t: t, expectedAgent: "codex"}).ask
+
+	h.mustRun(t, "fleet", "run", "F-CODEX", "--agent", "codex")
 }
 
 // TestAFleetConductsThroughTheLead is the fleet's engine.

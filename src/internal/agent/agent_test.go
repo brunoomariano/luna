@@ -98,6 +98,14 @@ const success = `{"result":"done","session_id":"s-1","is_error":false,"subtype":
 "usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40},
 "modelUsage":{"claude-opus-5":{"inputTokens":10}}}`
 
+// codexSuccess is the JSONL shape measured from codex-cli 0.151.0. Cached input
+// is included in input_tokens on that wire, so the parser must separate it
+// before the common Spend type adds the columns together.
+const codexSuccess = `{"type":"thread.started","thread_id":"01a059dd-3645-7d01-ba07-f5587c11480e"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":80,"cache_write_input_tokens":10,"output_tokens":7,"reasoning_output_tokens":3}}`
+
 // TestRunReportsWhatTheAgentSaidAndWhatItCost is the whole reason this package
 // replaced the terminal transport: the answer and the bill arrive together, in
 // one parse, with nothing read off a screen.
@@ -127,6 +135,122 @@ func TestRunReportsWhatTheAgentSaidAndWhatItCost(t *testing.T) {
 	}
 	if got.Elapsed <= 0 {
 		t.Error("want a measured duration, got zero")
+	}
+}
+
+// TestCodexReportsTheReplySessionAndUsage pins the second transport to output
+// from the installed CLI rather than treating --agent as a display-only flag.
+func TestCodexReportsTheReplySessionAndUsage(t *testing.T) {
+	fake := newFakeHarness(t, codexSuccess, 0)
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
+
+	got, err := h.Run(context.Background(), Call{Kind: "codex", Dir: t.TempDir(), Prompt: "build it"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got.Text != "done" || got.Session != "01a059dd-3645-7d01-ba07-f5587c11480e" {
+		t.Errorf("the Codex result was not preserved: %+v", got)
+	}
+	if got.Turns != 1 {
+		t.Errorf("want one completed Codex turn, got %d", got.Turns)
+	}
+	if got.Usage.InputTokens != 30 || got.Usage.CacheRead != 80 || got.Usage.CacheWrite != 10 ||
+		got.Usage.OutputTokens != 7 {
+		t.Errorf("Codex usage counted a cached token twice: %+v", got.Usage)
+	}
+	if got.Usage.CostUSD != 0 || got.Usage.Model != "" {
+		t.Errorf("Codex did not report cost or model, so Luna must not invent them: %+v", got.Usage)
+	}
+	if got.Usage.CostReported {
+		t.Error("Codex's JSONL has no USD cost, but Luna marked one as reported")
+	}
+}
+
+func TestCodexRefusesAStreamThatDoesNotProveACompletedTurn(t *testing.T) {
+	for name, stream := range map[string]string{
+		"empty":        "",
+		"malformed":    `{"type":"thread.started"`,
+		"unfinished":   `{"type":"thread.started","thread_id":"s-1"}`,
+		"error":        `{"type":"error","message":"model unavailable"}`,
+		"turn failure": `{"type":"turn.failed","error":{"message":"model unavailable"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseCodex([]byte(stream))
+			if err == nil {
+				t.Fatal("an incomplete Codex stream was accepted")
+			}
+		})
+	}
+}
+
+func TestCodexUsageNeverInventsNegativeUncachedInput(t *testing.T) {
+	var event codexEvent
+	event.Usage.Input = 5
+	event.Usage.Cached = 7
+	event.Usage.CacheWrite = 3
+
+	if got := codexUsage(event); got.InputTokens != 0 {
+		t.Errorf("overlapping Codex counters produced %d uncached tokens", got.InputTokens)
+	}
+}
+
+// TestCodexGetsTheRoleAndTheWritableSandboxMode covers the two inputs that a
+// Claude-shaped adapter would silently lose: Codex has no append-system flag,
+// and Luna's outer jail is what makes its no-sandbox mode safe.
+func TestCodexGetsTheRoleAndTheWritableSandboxMode(t *testing.T) {
+	fake := newFakeHarness(t, codexSuccess, 0)
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
+
+	_, err := h.Run(context.Background(), Call{
+		Kind: "codex", Dir: t.TempDir(), Prompt: "the task handoff",
+		System: "You build and commit the delivery.",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	argv := fake.argv(t)
+	for _, want := range []string{
+		"exec", "--json", "--dangerously-bypass-approvals-and-sandbox",
+		"already being orchestrated by Luna", "only luna artifact put/get",
+	} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("Codex did not receive %q:\n%s", want, argv)
+		}
+	}
+	stdin := fake.stdin(t)
+	if !strings.Contains(stdin, "You build and commit") || !strings.Contains(stdin, "the task handoff") {
+		t.Errorf("Codex did not receive both the role and handoff:\n%s", stdin)
+	}
+}
+
+// TestACodexReviewerIsReadOnly is the real gating mechanism for Codex. It takes
+// no tool names: the pair Edit+Write becomes a read-only sandbox.
+func TestACodexReviewerIsReadOnly(t *testing.T) {
+	fake := newFakeHarness(t, codexSuccess, 0)
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
+
+	_, err := h.Run(context.Background(), Call{
+		Kind: "codex", Dir: t.TempDir(), Prompt: "review it", Deny: []string{"Edit", "Write"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	argv := fake.argv(t)
+	if !strings.Contains(argv, "read-only") || strings.Contains(argv, "dangerously-bypass") {
+		t.Errorf("a Codex reviewer was not made read-only:\n%s", argv)
+	}
+}
+
+func TestCodexRefusesAPartialWriteDenial(t *testing.T) {
+	err := CheckGating("codex", []string{"Edit"})
+	if err == nil {
+		t.Fatal("Codex denies all writing and cannot honestly deny Edit alone")
+	}
+	if !strings.Contains(err.Error(), "Edit") || !strings.Contains(err.Error(), "Edit and Write") {
+		t.Errorf("the refusal must name the invalid and expected capabilities, got %v", err)
 	}
 }
 
@@ -442,11 +566,51 @@ func TestCanGateAnswersFromTheClosedTable(t *testing.T) {
 	if !CanGate("claude") {
 		t.Error("claude is in the table and must be gateable")
 	}
+	if !CanGate("codex") {
+		t.Error("codex is in the table and must be gateable")
+	}
 	if CanGate("gpt-cli") {
 		t.Error("an unlisted harness must not be reported as gateable")
 	}
 	if CanGate("") {
 		t.Error("an unnamed harness must not be reported as gateable")
+	}
+}
+
+func TestOnlyClaudeReportsUSDSpend(t *testing.T) {
+	if !ReportsCost("claude") {
+		t.Error("Claude reports total_cost_usd")
+	}
+	if ReportsCost("codex") {
+		t.Error("Codex JSONL reports tokens but no USD cost")
+	}
+}
+
+func TestKnownAnswersFromTheMeasuredHarnessTable(t *testing.T) {
+	if !Known("claude") || !Known("codex") {
+		t.Error("both measured harnesses must be selectable")
+	}
+	if Known("opencode") || Known("") {
+		t.Error("an unmeasured or empty harness must be refused")
+	}
+}
+
+func TestACodexLiveCallResumesTheNamedThread(t *testing.T) {
+	fake := newFakeHarness(t, codexSuccess, 0)
+	h := Harness{Sandbox: fakeSandbox(t), Binary: fake.path()}
+
+	_, err := h.Run(context.Background(), Call{
+		Kind: "codex", Dir: t.TempDir(), Prompt: "carry on",
+		Context: Live, Session: "01a059dd-3645-7d01-ba07-f5587c11480e",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	argv := fake.argv(t)
+	if !strings.Contains(argv, "exec") || !strings.Contains(argv, "resume") ||
+		!strings.Contains(argv, "01a059dd-3645-7d01-ba07-f5587c11480e") {
+		t.Errorf("the Codex thread was not resumed:\n%s", argv)
 	}
 }
 
@@ -682,6 +846,13 @@ func TestAStaleSessionFallsBackToAFreshOne(t *testing.T) {
 	argv := fake.argvAll(t)
 	if strings.Count(argv, "--resume") > 1 {
 		t.Errorf("the retry must not ask to resume again:\n%s", argv)
+	}
+}
+
+func TestCodexCallsALostThreadStale(t *testing.T) {
+	err := errors.New("thread/resume failed: no rollout found for thread id 00000000-0000-0000-0000-000000000000")
+	if !staleSession(err) {
+		t.Error("Codex's measured missing-thread diagnostic must trigger a fresh retry")
 	}
 }
 

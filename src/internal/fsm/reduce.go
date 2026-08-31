@@ -202,16 +202,21 @@ type Complete struct {
 
 // Spend is what one stage cost.
 //
-// Every field is reported by the harness rather than counted here. That is the
-// point: an estimate is the part that would have been wrong, and the argument
-// this exists to settle — whether driving a flow through stages beats doing the
-// same work in one session — is only worth having against measured numbers.
+// Usage is reported by the harness rather than estimated here. Agent identifies
+// which adapter produced it, including an invocation-only override, and
+// CostReported distinguishes an absent USD measurement from a measured zero.
 type Spend struct {
 	InputTokens  int     `json:"input_tokens,omitempty"`
 	OutputTokens int     `json:"output_tokens,omitempty"`
 	CacheRead    int     `json:"cache_read,omitempty"`
 	CacheWrite   int     `json:"cache_write,omitempty"`
 	CostUSD      float64 `json:"cost_usd,omitempty"`
+	CostReported bool    `json:"cost_reported,omitempty"`
+
+	// Agent is the harness actually invoked. It differs from Stage.Agent when an
+	// invocation uses --agent, and without recording it status and console would
+	// relabel a Codex run as the flow's default Claude run.
+	Agent string `json:"agent,omitempty"`
 
 	// Model is what answered, when exactly one did.
 	Model string `json:"model,omitempty"`
@@ -251,10 +256,11 @@ func (s Spend) Tokens() int {
 	return s.InputTokens + s.OutputTokens + s.CacheRead + s.CacheWrite
 }
 
-// Fail reports that the node broke. Retry until the budget is spent, then block
-// and notify.
+// Fail reports that the stage broke. Retry until the budget is spent, then block
+// and notify. Spent keeps a failed call from disappearing from the bill.
 type Fail struct {
 	Reason string `json:"reason"`
+	Spent  Spend  `json:"spent,omitzero"`
 }
 
 // GateApprove accepts what the gate was holding, as it is.
@@ -414,15 +420,17 @@ type ReviewFinding struct {
 	Progress string `json:"progress,omitempty"`
 }
 
-// Block stops the task and notifies, without pretending an attempt was made.
+// Block stops the task and notifies, without inventing retries.
 //
 // It exists because the lead used to reach a block by recording Fail until the
 // retry budget ran out, which left three failures in the log where there had been
 // one decision to escalate. The history is the audit trail (INV-2), and an
 // audit that shows retries that never happened is a worse kind of wrong than a
-// second path into the same state.
+// second path into the same state. Spent is present when the decision followed
+// a model call; it records usage without incrementing the retry counter.
 type Block struct {
 	Reason string `json:"reason"`
+	Spent  Spend  `json:"spent,omitzero"`
 }
 
 // Unblock is a human clearing a block.
@@ -973,6 +981,7 @@ func fail(state TaskState, a Fail) (TaskState, error) {
 		return state, fmt.Errorf("%w: no stage is running", ErrIllegalTransition)
 	}
 
+	state.Spent = withSpend(state.Spent, state.Stage, a.Spent)
 	state.Retry.Attempts++
 	if state.Retry.Attempts <= state.Retry.Max {
 		return state, nil
@@ -1284,11 +1293,11 @@ func block(state TaskState, a Block) (TaskState, error) {
 		return state, fmt.Errorf("%w: a block must carry a reason", ErrIllegalTransition)
 	}
 
+	state.Spent = withSpend(state.Spent, state.Stage, a.Spent)
 	state.Status = StatusBlocked
-	// A Block action arrives from the node layer, and the one thing that gets
-	// there is infrastructure: the caller blocks on ErrInfrastructure without
-	// consulting anyone, because there is no judgement to make about a binary that
-	// is missing. Anything the *work* did wrong is one of the cases above.
+	// A Block action arrives from the node boundary, either because infrastructure
+	// failed or because the lead escalated a stage failure without inventing
+	// retries. Both need a person before the task can move again.
 	state.BlockedBy = BlockTooling
 	state.Blocked = a.Reason
 	state.Gate = nil
@@ -1322,6 +1331,11 @@ func setBudget(state TaskState, a SetBudget) (TaskState, error) {
 	}
 	if a.BudgetUSD < 0 {
 		return state, fmt.Errorf("%w: a budget cannot be negative, got %v", ErrIllegalTransition, a.BudgetUSD)
+	}
+	spent := state.TotalSpend()
+	if a.BudgetUSD > 0 && !spent.Zero() && !spent.CostReported {
+		return state, fmt.Errorf("%w: a USD budget cannot be enforced after unpriced harness usage",
+			ErrIllegalTransition)
 	}
 
 	state.BudgetUSD = a.BudgetUSD
@@ -1667,7 +1681,8 @@ func withSpend(spent map[StageID]Spend, stage StageID, add Spend) map[StageID]Sp
 		spent = map[StageID]Spend{}
 	}
 
-	running := spent[stage]
+	running, already := spent[stage]
+	running.CostReported = combinedCostReport(already, running, add)
 	running.InputTokens += add.InputTokens
 	running.OutputTokens += add.OutputTokens
 	running.CacheRead += add.CacheRead
@@ -1681,6 +1696,9 @@ func withSpend(spent map[StageID]Spend, stage StageID, add Spend) map[StageID]Sp
 	if add.Model != "" {
 		running.Model = add.Model
 	}
+	if add.Agent != "" {
+		running.Agent = add.Agent
+	}
 	if add.Context != "" {
 		running.Context = add.Context
 	}
@@ -1692,35 +1710,63 @@ func withSpend(spent map[StageID]Spend, stage StageID, add Spend) map[StageID]Sp
 	return spent
 }
 
-// SessionOf is the conversation a role is in, and it is what a stage declaring
+func combinedCostReport(already bool, running, add Spend) bool {
+	addedReported := add.CostReported || add.CostUSD > 0
+	if !already {
+		return addedReported
+	}
+	previousReported := running.CostReported || running.CostUSD > 0
+	return previousReported && addedReported
+}
+
+// SessionOf is the conversation a worker is in, and it is what a stage declaring
 // `context = "live"` continues.
 //
-// Keyed by the brief rather than by the stage, because a session belongs to the
-// conversation one worker has been having: a stage continues what an identically
-// briefed stage opened, not whatever ran last. Reading it from the log rather
-// than from a map on a struct is what lets that survive a gate, a restart or a
-// crash — the map did not, and the shipped flow gates mid-run.
+// Keyed by the brief, actual harness and denied capabilities rather than by the
+// stage. A Codex override must not inherit Claude's session, and a read-only
+// reviewer must not inherit a writable thread even when their briefs match.
+// Reading it from the log rather than a map is what lets it survive a gate, a
+// restart or a crash — the map did not, and the shipped flow gates mid-run.
 //
 // The brief replaced a role name here, and is stricter than it was: two stages
 // told different things are two workers even where one label used to cover both.
-// The last identically briefed stage to have opened a session wins, since a
-// worker that ran twice is better continued from where it actually left off.
-func (s TaskState) SessionOf(flow []Stage, brief string) string {
+// The last matching stage to have opened a session wins, since a worker that ran
+// twice is better continued from where it actually left off.
+func (s TaskState) SessionOf(flow []Stage, current Stage) string {
 	session := ""
 	for _, stage := range flow {
-		if stage.Brief != brief {
+		if stage.Brief != current.Brief || !sameCapabilities(stage.ToolsDeny, current.ToolsDeny) {
 			continue
 		}
 		if spent, ran := s.Spent[stage.ID]; ran && spent.Session != "" {
-			session = spent.Session
+			harness := spent.Agent
+			if harness == "" {
+				harness = stage.Agent
+			}
+			if harness == current.Agent {
+				session = spent.Session
+			}
 		}
 	}
 	return session
 }
 
+func sameCapabilities(left, right []Capability) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TotalSpend is what the whole task cost.
 func (s TaskState) TotalSpend() Spend {
 	var total Spend
+	first := true
 	for _, stage := range s.Spent {
 		total.InputTokens += stage.InputTokens
 		total.OutputTokens += stage.OutputTokens
@@ -1728,6 +1774,13 @@ func (s TaskState) TotalSpend() Spend {
 		total.CacheWrite += stage.CacheWrite
 		total.CostUSD += stage.CostUSD
 		total.Turns += stage.Turns
+		reported := stage.CostReported || stage.CostUSD > 0
+		if first {
+			total.CostReported = reported
+			first = false
+		} else {
+			total.CostReported = total.CostReported && reported
+		}
 	}
 	return total
 }

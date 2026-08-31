@@ -41,8 +41,76 @@ func TestTheConsoleIsTheHarnessOwnTranscript(t *testing.T) {
 // conclude the agent produced nothing — which is the failure this whole command
 // exists to end, arriving by a different door.
 func TestAnUnknownHarnessIsSaidToBeUnknown(t *testing.T) {
-	if _, known := ConsolePath("codex", "/repos/wt", "s-1"); known {
+	if _, known := ConsolePath("gpt-cli", "/repos/wt", "s-1"); known {
 		t.Error("a harness Luna cannot even start answered with a transcript path")
+	}
+}
+
+// TestTheCodexConsolePathComesFromItsThreadID pins the UUIDv7 timestamp to the
+// layout measured from codex-cli 0.151.0.
+func TestTheCodexConsolePathComesFromItsThreadID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex-home"))
+	t.Setenv("TZ", "America/Recife")
+	const session = "01a059dd-3645-7d01-ba07-f5587c11480e"
+
+	path, known := ConsolePath("codex", "/ignored/worktree", session)
+	if !known {
+		t.Fatal("Codex is supported, but its transcript was reported as unknown")
+	}
+	want := filepath.Join(home, "codex-home", "sessions", "2026", "08", "31",
+		"rollout-2026-08-31T19-07-44-"+session+".jsonl")
+	if path != want {
+		t.Errorf("the Codex transcript is at\n  %s\nwant\n  %s", path, want)
+	}
+}
+
+func TestTheCodexConsoleRejectsAnInvalidThreadID(t *testing.T) {
+	for _, session := range []string{"short", "zzzzzzzzzzzz-7d01-ba07-f5587c11480e"} {
+		if path, known := ConsolePath("codex", "/ignored", session); known || path != "" {
+			t.Errorf("invalid Codex thread %q produced %q", session, path)
+		}
+	}
+}
+
+func TestTheCodexConsoleFallsBackToTheUserHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("TZ", "not/a-zone")
+
+	path, known := ConsolePath("codex", "/ignored", "01a059dd-3645-7d01-ba07-f5587c11480e")
+	if !known {
+		t.Fatal("a valid Codex thread has no path under the default home")
+	}
+	if !strings.HasPrefix(path, filepath.Join(home, ".codex", "sessions")) {
+		t.Errorf("the default Codex home was not used: %s", path)
+	}
+}
+
+func TestTheCodexConsoleNeedsAHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("CODEX_HOME", "")
+
+	if path, known := ConsolePath("codex", "/ignored", "01a059dd-3645-7d01-ba07-f5587c11480e"); known || path != "" {
+		t.Errorf("Codex produced %q without a home directory", path)
+	}
+}
+
+func TestEachSupportedConsoleHasAFilterAndResumeCommand(t *testing.T) {
+	for _, kind := range []string{"claude", "codex"} {
+		if command, ok := ResumeCommand(kind, "s-1"); !ok || !strings.Contains(command, "s-1") {
+			t.Errorf("%s has no usable resume command: %q, %v", kind, command, ok)
+		}
+		if filter, ok := ConsoleFilter(kind); !ok || strings.TrimSpace(filter) == "" {
+			t.Errorf("%s has no transcript filter", kind)
+		}
+	}
+	if _, ok := ResumeCommand("codex", ""); ok {
+		t.Error("an empty session produced a resume command")
+	}
+	if _, ok := ConsoleFilter("unknown"); ok {
+		t.Error("an unknown harness produced a transcript filter")
 	}
 }
 

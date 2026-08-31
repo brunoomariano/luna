@@ -613,6 +613,28 @@ func TestAFlowNobodyHasRunReportsNoCost(t *testing.T) {
 	}
 }
 
+func TestFlowCostHistoryExcludesUnpricedHarnessUsage(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "C-codex", "--kind", "chore", "--flow", "chore")
+	openStage(t, h, "C-codex")
+	flow, err := fsm.FlowNamed("chore")
+	if err != nil {
+		t.Fatalf("loading the flow: %v", err)
+	}
+	if err := h.env.Store.AppendAction("C-codex", fsm.Complete{
+		Delivered: []fsm.Artifact{"worktree"},
+		Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(1)},
+		Spent:     fsm.Spend{Agent: "codex", InputTokens: 100},
+		Flow:      flow,
+	}); err != nil {
+		t.Fatalf("recording unpriced usage: %v", err)
+	}
+
+	if got := pastSpend(h.env, "chore"); len(got) != 0 {
+		t.Errorf("unpriced usage became a flow price: %+v", got)
+	}
+}
+
 // TestTheMedianSurvivesOneRunawayStage. A mean would follow the outlier and say
 // nothing about the next run — which is the run somebody is deciding about.
 func TestTheMedianSurvivesOneRunawayStage(t *testing.T) {

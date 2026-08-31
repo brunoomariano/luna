@@ -53,7 +53,7 @@ type Asker interface {
 // The caller's context bounds it as well as the deadline, so a person who
 // cancels a run does not wait out a model's timeout.
 func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
-	kind, binary, timeout, err := h.asking()
+	kind, binary, args, timeout, err := h.asking()
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +88,7 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 	// path to make.
 	//
 	// #nosec G204 — the binary comes from the closed table above, not from input.
-	cmd := exec.CommandContext(asking, binary, "-p", "--permission-mode", "bypassPermissions")
+	cmd := exec.CommandContext(asking, binary, args...)
 	cmd.Stdin = strings.NewReader(prompt)
 
 	// Its own process group, and the deadline kills the group — the same
@@ -140,8 +140,8 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 	// successful turn and the caller got a blank line. A harness that fails
 	// silently is worse than one that is absent.
 	if strings.TrimSpace(string(out)) == "" {
-		return "", fmt.Errorf("%s exited 0 without answering — check that `%s -p` is how it takes a prompt",
-			kind, binary)
+		return "", fmt.Errorf("%s exited 0 without answering — check its non-interactive invocation `%s %s`",
+			kind, binary, strings.Join(args, " "))
 	}
 	return string(out), nil
 }
@@ -152,7 +152,7 @@ func (h Harness) Ask(ctx context.Context, prompt string) (string, error) {
 // Split out for the same reason Run has `resolve` — these are the refusals, and
 // keeping them apart from the running keeps "this question is wrong" separate
 // from "this question went wrong".
-func (h Harness) asking() (kind, binary string, timeout time.Duration, err error) {
+func (h Harness) asking() (kind, binary string, args []string, timeout time.Duration, err error) {
 	kind = h.Kind
 	if kind == "" {
 		kind = DefaultAsk
@@ -160,8 +160,8 @@ func (h Harness) asking() (kind, binary string, timeout time.Duration, err error
 
 	spec, ok := harnesses[kind]
 	if !ok {
-		return "", "", 0, fmt.Errorf("%w: %q is not a harness Luna can ask (%s)",
-			ErrNoHarness, kind, strings.Join(known(), ", "))
+		return "", "", nil, 0, fmt.Errorf("%w: %q is not a harness Luna can ask (%s)",
+			ErrNoHarness, kind, strings.Join(harnessNames(), ", "))
 	}
 
 	binary = h.Binary
@@ -173,7 +173,7 @@ func (h Harness) asking() (kind, binary string, timeout time.Duration, err error
 	if timeout <= 0 {
 		timeout = AskTimeout
 	}
-	return kind, binary, timeout, nil
+	return kind, binary, append([]string{}, spec.askArgs...), timeout, nil
 }
 
 // firstNonEmpty is the first of the diagnostics that says anything.

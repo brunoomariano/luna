@@ -93,9 +93,10 @@ type TaskReport struct {
 
 // SpendReport is what a task cost and what it may still spend.
 type SpendReport struct {
-	CostUSD float64 `json:"cost_usd"`
-	Tokens  int     `json:"tokens"`
-	Turns   int     `json:"turns"`
+	CostUSD      float64 `json:"cost_usd"`
+	CostReported bool    `json:"cost_reported"`
+	Tokens       int     `json:"tokens"`
+	Turns        int     `json:"turns"`
 
 	// BudgetUSD is the ceiling, absent when there is none.
 	BudgetUSD float64 `json:"budget_usd,omitempty"`
@@ -107,10 +108,12 @@ type SpendReport struct {
 
 // StageSpendReport is one stage's bill.
 type StageSpendReport struct {
-	Stage   string  `json:"stage"`
-	CostUSD float64 `json:"cost_usd"`
-	Tokens  int     `json:"tokens"`
-	Turns   int     `json:"turns"`
+	Stage        string  `json:"stage"`
+	Agent        string  `json:"agent"`
+	CostUSD      float64 `json:"cost_usd"`
+	CostReported bool    `json:"cost_reported"`
+	Tokens       int     `json:"tokens"`
+	Turns        int     `json:"turns"`
 
 	// Context says whether the call started cold or resumed, which is most of why
 	// two stages with the same work cost differently.
@@ -316,10 +319,11 @@ func spendReport(state fsm.TaskState, flow []fsm.Stage) *SpendReport {
 
 	total := state.TotalSpend()
 	report := &SpendReport{
-		CostUSD:   total.CostUSD,
-		Tokens:    total.Tokens(),
-		Turns:     total.Turns,
-		BudgetUSD: state.BudgetUSD,
+		CostUSD:      total.CostUSD,
+		CostReported: total.CostReported,
+		Tokens:       total.Tokens(),
+		Turns:        total.Turns,
+		BudgetUSD:    state.BudgetUSD,
 	}
 
 	// Flow order rather than map order, so the list reads like the run did.
@@ -328,12 +332,18 @@ func spendReport(state fsm.TaskState, flow []fsm.Stage) *SpendReport {
 		if !ran {
 			continue
 		}
+		agent := spend.Agent
+		if agent == "" {
+			agent = stage.Agent
+		}
 		report.Stages = append(report.Stages, StageSpendReport{
-			Stage:   string(stage.ID),
-			CostUSD: spend.CostUSD,
-			Tokens:  spend.Tokens(),
-			Turns:   spend.Turns,
-			Context: spend.Context,
+			Stage:        string(stage.ID),
+			Agent:        agent,
+			CostUSD:      spend.CostUSD,
+			CostReported: spend.CostReported || spend.CostUSD > 0,
+			Tokens:       spend.Tokens(),
+			Turns:        spend.Turns,
+			Context:      spend.Context,
 		})
 	}
 	return report
@@ -351,20 +361,33 @@ type FleetReport struct {
 	// can read is exactly the one that would otherwise sit unnoticed forever.
 	Unreadable []string `json:"unreadable,omitempty"`
 
-	// CostUSD is what everything in Tasks has cost, together.
-	CostUSD float64 `json:"cost_usd"`
+	// CostUSD is what the priced calls in Tasks reported. CostReported is false
+	// when at least one task used a harness that reports tokens but no USD cost.
+	CostUSD      float64 `json:"cost_usd"`
+	CostReported bool    `json:"cost_reported"`
 }
 
 // FleetTaskReport is one task as a fleet reads it: the two verdicts, the bill,
 // and what has to happen next.
 type FleetTaskReport struct {
-	Project   string  `json:"project"`
-	ID        string  `json:"id"`
-	Flow      string  `json:"flow,omitempty"`
-	Product   string  `json:"product"`
-	Operation string  `json:"operation"`
-	BlockedBy string  `json:"blocked_by,omitempty"`
-	Blocked   string  `json:"blocked,omitempty"`
-	CostUSD   float64 `json:"cost_usd"`
-	Tokens    int     `json:"tokens"`
+	Project      string  `json:"project"`
+	ID           string  `json:"id"`
+	Flow         string  `json:"flow,omitempty"`
+	Product      string  `json:"product"`
+	Operation    string  `json:"operation"`
+	BlockedBy    string  `json:"blocked_by,omitempty"`
+	Blocked      string  `json:"blocked,omitempty"`
+	CostUSD      float64 `json:"cost_usd"`
+	CostReported bool    `json:"cost_reported"`
+	Tokens       int     `json:"tokens"`
+}
+
+func spendCostLabel(spend fsm.Spend) string {
+	if spend.CostReported {
+		return fmt.Sprintf("$%.4f", spend.CostUSD)
+	}
+	if spend.CostUSD > 0 {
+		return fmt.Sprintf("$%.4f reported; total cost n/a", spend.CostUSD)
+	}
+	return "cost n/a"
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/node"
 	"github.com/brunoomariano/luna/src/internal/store"
 
@@ -369,6 +370,19 @@ func TestArtifactCommandsDoNotNeedTheLog(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "LUNA_ARTIFACT_SOCKET") {
 		t.Errorf("want the failure to be about the socket, got %q", err)
+	}
+}
+
+func TestAStageCannotCloseItselfThroughTheCentralDaemon(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv(agent.StageEnv, "1")
+
+	err := run([]string{"done", "CODEX-1", "--delivered", "worktree"})
+	if err == nil {
+		t.Fatal("a stage agent must not own its own completion")
+	}
+	if !strings.Contains(err.Error(), "node owns task transitions") {
+		t.Errorf("the refusal should explain the ownership boundary, got %v", err)
 	}
 }
 

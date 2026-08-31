@@ -323,7 +323,7 @@ func pastSpend(env Env, name string) map[fsm.StageID][]float64 {
 			continue
 		}
 		for stage, spend := range task.State.Spent {
-			if spend.CostUSD > 0 {
+			if spend.CostReported {
 				spent[stage] = append(spent[stage], spend.CostUSD)
 			}
 		}
