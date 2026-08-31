@@ -45,9 +45,17 @@ func daemonCommand(env Env, args []string) error {
 	// behind.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
 
-	fmt.Fprintln(env.Out, "stopping")
+	// Or the database goes away. Nothing else ever tells a daemon to stop — it
+	// outlives the command that started it on purpose — so without this a test
+	// that ran in a temporary directory leaves one behind for the life of the
+	// machine.
+	select {
+	case <-stop:
+		fmt.Fprintln(env.Out, "stopping")
+	case <-server.Gone():
+		fmt.Fprintf(env.Out, "the database at %s is gone; stopping\n", opts.Store)
+	}
 	return server.Close()
 }
 

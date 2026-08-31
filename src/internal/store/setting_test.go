@@ -173,3 +173,45 @@ func TestAReaderCannotWriteASetting(t *testing.T) {
 		t.Error("a read-only store wrote a setting, so the daemon is not the only writer")
 	}
 }
+
+// TestASettingNeedsAKey. An empty key would be a row nothing can ever read back
+// by name, written without complaint.
+func TestASettingNeedsAKey(t *testing.T) {
+	s := settingStore(t)
+
+	if err := s.PutSetting("app-1", "", "orphan"); err == nil {
+		t.Error("a setting with no key was accepted")
+	}
+}
+
+// TestAClosedStoreSaysSoRatherThanAnsweringEmpty.
+//
+// Every read here returns a collection, and a database error that came back as an
+// empty map would read as "nothing is configured" — so a project would silently
+// fall back to defaults because its store could not be reached.
+func TestAClosedStoreSaysSoRatherThanAnsweringEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "luna.db")
+	s, err := store.OpenAs(path, store.LunaOwnsTheLog)
+	if err != nil {
+		t.Fatalf("opening the store: %v", err)
+	}
+	if err := s.PutSetting("app-1", "workstream", "the-project"); err != nil {
+		t.Fatalf("setting: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+
+	if current, err := s.Settings("app-1"); err == nil {
+		t.Errorf("a closed store answered %v instead of an error", current)
+	}
+	if _, err := s.SettingHistory("app-1", "workstream"); err == nil {
+		t.Error("a closed store answered a history instead of an error")
+	}
+	if scopes, err := s.SettingScopes(); err == nil {
+		t.Errorf("a closed store answered %v instead of an error", scopes)
+	}
+	if err := s.PutSetting("app-1", "workstream", "again"); err == nil {
+		t.Error("a closed store accepted a write")
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/sock"
 	"github.com/brunoomariano/luna/src/internal/store"
@@ -25,7 +26,25 @@ type Options struct {
 	Socket     string
 	Store      string
 	LegacyRoot string
+
+	// StoreCheck is how often the daemon asks whether its database is still
+	// there. Zero takes StoreCheckInterval; a test sets it small.
+	StoreCheck time.Duration
 }
+
+// StoreCheckInterval is how long a daemon may go on serving a database that has
+// been deleted.
+//
+// It exists because a daemon outlives the command that started it, deliberately,
+// and nothing else ever tells it to stop. The test suite starts one per end-to-end
+// case in a temporary directory, the directory is removed when the case ends, and
+// the daemon stays: nineteen of them were found alive on one machine, each holding
+// a socket and a database nobody could reach. A person deleting their data home
+// leaves the same thing behind.
+//
+// Thirty seconds because nothing waits on it — the check costs one stat, and a
+// daemon that lingers half a minute after its file is gone bothers nobody.
+const StoreCheckInterval = 30 * time.Second
 
 // Server is the daemon. It holds the central store open and is its only writer.
 type Server struct {
@@ -33,6 +52,20 @@ type Server struct {
 	store    *store.Store
 	lock     *os.File
 	wg       sync.WaitGroup
+
+	// path is the database being served, kept so the watcher can ask whether it
+	// is still there.
+	path string
+
+	// gone closes when it is not. Separate from stopping, because the two have
+	// different callers: a signal stops the daemon from outside, and this is the
+	// daemon noticing it has nothing left to serve.
+	gone chan struct{}
+
+	// stopping closes when Close is called, so the watcher does not outlive the
+	// server it belongs to and hold Close's own wg.Wait open.
+	stopping chan struct{}
+	once     sync.Once
 }
 
 // Listen opens and migrates the central database before exposing its socket.
@@ -61,10 +94,50 @@ func Listen(opts Options) (*Server, error) {
 		_ = lock.Close()
 		return nil, err
 	}
-	s := &Server{listener: listener, store: central, lock: lock}
-	s.wg.Add(1)
+	s := &Server{
+		listener: listener, store: central, lock: lock,
+		path:     opts.Store,
+		gone:     make(chan struct{}),
+		stopping: make(chan struct{}),
+	}
+	s.wg.Add(2)
 	go s.accept()
+	go s.watchStore(opts.StoreCheck)
 	return s, nil
+}
+
+// Gone closes when the database this daemon serves has been deleted.
+//
+// A channel rather than an exit, because the daemon does not own the decision to
+// stop: whoever ran it does, and in the one command that does, stopping is the
+// same close a signal takes.
+func (s *Server) Gone() <-chan struct{} { return s.gone }
+
+// watchStore closes Gone once the database is no longer on disk.
+//
+// Only os.ErrNotExist counts. A stat that fails for any other reason — a
+// filesystem briefly unavailable, a permission that changed — is not evidence the
+// database was deleted, and shutting down on it would turn a hiccup into an
+// outage.
+func (s *Server) watchStore(every time.Duration) {
+	defer s.wg.Done()
+	if every <= 0 {
+		every = StoreCheckInterval
+	}
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopping:
+			return
+		case <-ticker.C:
+			if _, err := os.Stat(s.path); errors.Is(err, os.ErrNotExist) {
+				close(s.gone)
+				return
+			}
+		}
+	}
 }
 
 func lockStore(path string) (*os.File, error) {
@@ -105,11 +178,22 @@ func listenSocket(path string) (net.Listener, error) {
 }
 
 // Close stops the daemon and releases its one database handle.
+//
+// Idempotent, and that is not tidiness: there are two ways here now — a signal
+// and a database that went away — and a second call that reported "use of closed
+// network connection" would make a clean shutdown look like a failure.
+//
+// The stopping channel closes first. The watcher is in the same wait group, so a
+// Close that did not release it would block on it forever.
 func (s *Server) Close() error {
-	err := s.listener.Close()
-	s.wg.Wait()
-	_ = s.store.Close()
-	_ = s.lock.Close()
+	var err error
+	s.once.Do(func() {
+		close(s.stopping)
+		err = s.listener.Close()
+		s.wg.Wait()
+		_ = s.store.Close()
+		_ = s.lock.Close()
+	})
 	return err
 }
 
