@@ -315,10 +315,11 @@ delivery: `review` runs cold, on work it did not write, with `Edit` and `Write` 
 
 ## How an agent is run
 
-One subprocess per stage, through the harness's non-interactive mode
-(`claude -p --output-format json`). The prompt goes in on stdin, and what comes back is
-the answer, the session id, and what the call cost — reported by the harness rather than
-counted by Luna.
+One subprocess per stage, through the harness's non-interactive mode: Claude uses
+`claude -p --output-format json`; Codex uses `codex exec --json`. The prompt goes in on
+stdin, and Luna reduces each native reply to an answer, session id, turns and token usage.
+Claude also reports the model and USD cost. Codex's JSONL stream reports neither, and Luna
+records that absence rather than inventing a price.
 
 Luna used to drive the harness's terminal instead, and the reason it stopped is in
 [lessons.md](lessons.md): everything that path required — pty sizing, a folder-trust
@@ -327,10 +328,18 @@ interface, and none of it was about the model.
 
 Three things follow from the transport:
 
-- **Gating is real.** A denied tool is removed from the request, so it is absent from the
-  agent's tool list rather than discouraged in its brief.
-- **Cost is recorded.** Tokens, cache and price land in the log per stage, so what
-  orchestration costs is a measurement instead of an argument.
+- **Gating is real.** Claude removes each denied tool from the request. Codex has a coarser
+  boundary: the exact `Edit` plus `Write` denial runs the thread read-only with approvals
+  disabled. Luna refuses a partial Codex denial rather than overstating what it withheld.
+- **Usage is recorded.** Tokens and cache land in the log per stage for both harnesses;
+  price and model land there only when the harness reports them. `cost n/a` is an absent
+  measurement, not zero. A call rejected by a later node check carries the same spend in
+  its `Fail` or `Block` event, so failed attempts do not disappear from the bill.
+- **The node remains the conductor.** Every harness process receives `LUNA_STAGE=1`, and
+  the CLI refuses task-control commands under that marker. A stage may use `luna artifact
+  put|get`, but it cannot close, unblock or otherwise move its task. Codex also receives
+  developer instructions naming the inner stage or conductor role so host-installed Luna
+  orchestration skills do not start a second control loop.
 - **A stage can continue.** `context = "live"` resumes the session of an identically
   briefed stage, which is roughly an order of magnitude cheaper than starting cold. It is
   refused across a change of brief: a judging stage inheriting the builder's session would
@@ -360,6 +369,16 @@ Three things follow from the transport:
   time — one resumed pair out of three. A session the harness no longer has is retried
   fresh rather than failing the stage, and the retry reports `fresh`, so the cost column
   never claims a resumption that did not happen.
+
+  A resumable session is matched by brief, harness and denied capabilities. This matters
+  when `--agent codex` overrides a flow that declares Claude: the override changes only
+  the process being started, not the immutable flow fingerprint, and a later invocation
+  must not hand one harness another's session or resume a writable thread as a reviewer.
+
+The harness writes its transcript while it runs, but the native session id arrives in the
+same result as the completed call and is appended to Luna's log then. `luna console` can
+therefore locate every recorded stage and can follow a resumed stage, but it cannot locate
+the first call of a brand-new stage before that call returns.
 
 ## Briefs
 
@@ -408,6 +427,11 @@ through `Bash`. This is stated rather than hidden: the separation is structural 
 the containment behind it belongs to the sandbox (INV-4). A reviewer that writes corrupts
 a *review*, which the next stage reads and a person can reject — not a *record*, which
 nothing downstream could catch.
+
+Codex's reviewer boundary is stronger and coarser: `Edit` plus `Write` selects its
+read-only sandbox, which prevents worktree writes through the shell as well. Luna does not
+translate either capability alone because that would claim a precision Codex does not
+provide.
 
 ## The sandbox, the workstream and the socket
 
@@ -574,16 +598,14 @@ remembered:
   `contract` only when `spec` ran, and merging `spec` into the unconditional `plan` closed
   it. A flow that adds a conditional producer will want the mechanism back.
 - **Import adapters** — no tracker adapter ships.
-- **Per-model pricing** — the transport reports tokens and cost, both recorded per stage
-  and reported by `luna status`. A model price table is not embedded, so cost is the
-  harness's number rather than one Luna derives.
+- **Per-model pricing** — Claude reports cost and Luna records it. Codex reports token
+  usage but no USD value on this interface. Luna embeds no price table, so a Codex task
+  with a USD ceiling is refused before its first agent call rather than running under an
+  unenforceable budget.
 - **A stage's skills** — `src/stock/skills/` is empty. A stage declares an agent and a
   brief; the skill set is parsed, travels in the order as `skills=`, and is read by
   nothing. Not to be confused with `skills/` at the root, which is the opposite
   direction: how to *use* Luna, for whoever drives it from outside.
-- **A second harness.** Every agent-bearing stage names `claude`. The transport supports
-  four and `CanGate` knows which can deny a tool, but no shipped stage names another,
-  so "harness-agnostic" is built and unmeasured.
 
 Three things read as gaps and are not:
 

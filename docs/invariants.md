@@ -138,8 +138,11 @@ has nothing to contain. It is the only stage that runs before containment is est
 and any second exception is a change to this invariant rather than an application of it.
 
 The risk this accepts is stated: an uncontained agent reading a repository can read
-anything the user can. What it cannot do is change anything, and what it produces is a
-report a person answers at a gate before the trail continues.
+anything the user can. Luna snapshots the stage worktree's `HEAD` and porcelain status
+before and after the call; any change refuses the stage and the temporary worktree is
+discarded. What can enter the trail is therefore only a report a person answers at a gate
+before it continues. The exception does not claim to contain writes elsewhere on the host;
+that is the explicit residual risk of running this one process outside the jail.
 
 **What containment must still let through.** Delegating containment means the sandbox
 decides what an agent can reach, and two of its defaults make a stage unable to deliver
@@ -156,7 +159,8 @@ environment, because the jail has no `~/.gitconfig` to read one from.
 sandbox-invocation tests in `internal/agent` that assert what the jail is asked to allow;
 the central daemon tests that exercise event and blob writes through a read-only client
 and refuse a second daemon for one database; and a test that no stage but `setup` is exempt
-from containment — an exception that is not pinned is one the next stage inherits by accident.
+from containment; and the report-only snapshot test that refuses a changed `HEAD` or
+worktree status. An exception that is not pinned is one the next stage inherits by accident.
 
 ---
 
@@ -165,6 +169,8 @@ from containment — an exception that is not pinned is one the next stage inher
 Every task ends in a delivery, a gate, or a **notified** block. Retry is bounded — no
 infinite loop that burns tokens without converging. A task waiting for a human is
 discoverable by command (`luna gates`), never only by having watched the terminal.
+Any harness usage reported before a node failure is appended with that `Fail` or `Block`;
+rejecting an attempt does not make its spend invisible.
 
 **Why.** Silent death has two forms: the task that fails without warning, and the one that
 waits forever because nobody knew it was waiting. With gates that free the slot,
@@ -180,6 +186,11 @@ stops when it has cost what it was allowed to. That is a bound and not a detecto
 task still spends its whole ceiling before anything notices — and the thing that would
 actually close this is a signal the runner does not produce: telling an agent that is
 thinking from one that is stuck.
+
+That bound requires a measured price. Claude reports one; Codex reports tokens but no USD
+cost on its non-interactive stream. Luna refuses to start Codex on a task carrying a dollar
+ceiling rather than treating missing cost as zero. The per-turn elapsed-time budget still
+bounds both harnesses, but it is a different bound and is not presented as money.
 
 **A rule enforced at one end has to be stated at the other.** The gate holds the contract
 to declared criteria; the stage that writes the contract was never shown them. Four

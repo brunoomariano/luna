@@ -79,6 +79,7 @@ Everything else is `luna config`, and it is per project:
 
 ```sh
 luna config                                  # what this project and this machine set
+luna config set lead_harness codex           # conductor and gate judge
 luna config set workstream the-project
 luna config unset turn_budget
 ```
@@ -88,6 +89,11 @@ here has them. `workstream`, `turn_budget` and `profiles` are the project's, and
 a project setting wins over the machine's. `bootstrap` is shown and cannot be
 set: it is what `setup` discovered, and typing it as well would be two sources
 for one fact.
+
+The measured harness names are `claude` and `codex`. `lead_harness` selects the
+model Luna asks to conduct a pack and judge autonomous gates. Stage execution is
+selected separately by the flow or by `--agent` on `lead`, `fleet run` and
+`work`; an override changes the process used, not the task's flow fingerprint.
 
 The settings live in the central database, so nothing about them is in the
 checkout. A `.luna/config.toml` left over from an older build is not read at all
@@ -248,6 +254,7 @@ luna task statement AVG-1 --acceptance "…"
 ```sh
 luna lead      AVG-1     # solo — one agent carries the task end to end
 luna fleet run AVG-1     # pack — the lead conducts, each stage runs on its own brief
+luna fleet run AVG-1 --agent codex
 ```
 
 **Solo** is one broad agent policy across the task, with one stage worktree at a
@@ -294,6 +301,11 @@ luna budget AVG-1 15 "overnight, one feature"
 A task that stops on its budget is recoverable: raise it and unblock. The
 ceiling is checked where the *next* stage would open, so unblocking runs that
 stage rather than re-running and re-billing one that already delivered.
+
+USD ceilings require a harness that reports USD spend. Claude does; Codex's
+JSONL stream reports tokens but no price. Luna refuses a Codex stage on a task
+with a dollar ceiling before starting the agent, rather than treating unknown
+cost as zero. `turn_budget` still bounds Codex by elapsed time.
 
 ## Exercising a flow for free
 
@@ -440,13 +452,20 @@ luna done   <id> --delivered <a,b> [--commit <sha>]
 luna artifact put <name>  # hand a document to Luna — runs inside a stage only
 luna task show  <id>      # one task: its stage, contract, spend and artifacts
 luna task list            # every active task across projects
+luna console    <id>      # native Claude/Codex transcript, follower and resume command
 luna task abandon <id> <reason>
 luna task forget  <id>    # drop a finished task's documents; the log stays
 luna fleet report         # every project and task, grouped by next action
-luna trust                # tell the harness it trusts where Luna makes worktrees
+luna trust                # record Luna's worktree parent in Claude's trust file
 ```
 
 `luna next` is a read and changes nothing. `luna help` is the whole list.
+
+Inside a stage process, Luna deliberately accepts only `artifact put|get`, help and
+version. Do not call `luna done`, `luna work`, gate or task commands from a stage: the node
+owns transitions and will refuse them. `luna console` can locate a transcript after the
+harness has returned its native session id; the first call of a new stage is not
+discoverable through this command while it is still running.
 
 ## Installing this in a target project
 
@@ -460,7 +479,14 @@ Copy it where the work happens:
 ```sh
 mkdir -p <target>/.claude/skills
 cp -r <luna>/skills/luna <target>/.claude/skills/
+
+mkdir -p <target>/.agents/skills
+cp -r <luna>/skills/luna <target>/.agents/skills/
 ```
+
+The first location is Claude's project skill directory; the second is Codex's.
+Codex needs no equivalent of `luna trust`: Luna invokes its non-interactive
+adapter with the repository check skipped inside the outer sandbox.
 
 The target project needs no file of any kind. Its build step is discovered by
 `setup`, and the rest is `luna config`, which writes into the central database.

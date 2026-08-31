@@ -226,6 +226,11 @@ cheaper, only broken. *Rejected:* blocking at the `Complete` that spent the mone
 delivery is real and paid for, and throwing it away to enforce a limit costs more than the
 limit saves.
 
+Codex's JSONL execution stream reports tokens but not USD cost. A task with a dollar
+ceiling therefore refuses a Codex stage before opening its worktree. Treating the absent
+price as zero would turn a bound into an unlimited run while displaying it as enforced;
+embedding a price table would replace a harness measurement with Luna's estimate.
+
 **A task carries its own statement of work in its log.**
 
 **Nothing of Luna's is written into the checkout.** A real run committed `.luna/` into the
@@ -318,8 +323,9 @@ cleared.
 
 **The agent is fallible everywhere and adversarial at the evidence boundary.** Luna
 tolerates an agent that gets the *work* wrong; it does not tolerate one that gets the
-*record* wrong. Measured: a reviewer denied `Edit`/`Write` still writes through `Bash` on
-three of four harnesses. The worst case is not the reviewer editing — it is an agent
+*record* wrong. Measured: Claude removes the named `Edit`/`Write` tools but a reviewer can
+still write through `Bash`; Codex's equivalent is a coarser read-only sandbox. The worst
+case is not the reviewer editing — it is an agent
 rewriting the `Makefile` the check invokes, producing an `exit 0` that enters the log with
 the credential of truth.
 
@@ -360,14 +366,16 @@ of an identically briefed one.
 > *Rejected: keying the continued session on the stage id.* A stage runs once, so it would
 > only ever find its own retry — `live` would be dead while looking alive.
 
-**Four harnesses, four gating mechanisms; a stage declares a capability and Luna
-translates.** The table is closed: an unlisted harness is refused, because guessing fails
-open.
+**Two measured harnesses, two gating mechanisms; a stage declares a capability and Luna
+translates.** The table is closed: Claude denies named tools, while Codex maps the exact
+`Edit` plus `Write` pair to its read-only sandbox. An unlisted harness and a partial Codex
+denial are refused, because guessing fails open.
 
-> The prior measurement here was wrong and is recorded as wrong. Grepping four CLIs for
-> `disallowed-tools` found the flag only on claude and concluded the others could not gate.
-> All four can — `--disallowed-tools`, `--exclude-tools`, `-s read-only`, and an agent-file
-> permission. **A capability check that looks for one vendor's spelling finds one vendor.**
+> The prior measurement here was wrong in both directions. Grepping four CLIs for one
+> vendor's flag first concluded only Claude could gate; the replacement then listed four
+> harnesses without implementing three of their transports. A selectable name is not an
+> adapter. Only Claude and Codex remain in the closed table because their run, gate,
+> resume, usage and transcript paths have been exercised.
 
 **Luna starts every agent inside `ai-jail` and refuses to start one without it.** The bug
 this fixed: Luna chose the permission flag by asking whether *its own process* was
@@ -528,6 +536,15 @@ per repository and it going stale.
 > containment is the shape this project refuses everywhere else. It proposes; a person
 > answers the gate.
 
+The report-only boundary is checked after the process, not entrusted to that prompt. The
+node snapshots `HEAD` and `git status --porcelain` before the uncontained call and refuses
+any change. This was added after the real Codex setup call handed over the right artifacts
+and also made an empty setup commit: the report was correct, but the executable boundary
+did not yet match the decision. *Rejected:* treating an empty commit as harmless. The
+stage is report-only, not "content-preserving", and accepting one write makes the next
+kind of write a matter of interpretation again. The refused call's measured usage travels
+with the failure event; enforcing the boundary must not make the bill look cheaper.
+
 **`interpreter` is renamed to what it does.** It selects the harness the lead asks when it
 judges a gate, and it was named after `luna chat` — a command that turned a person's words
 into a Luna command and was removed. The key kept the old spelling on the argument that it
@@ -577,13 +594,19 @@ JSON reply, and the only time any of it reaches a person is when the stage deliv
 nothing. That was the last open half of "observabilidade" — the audit half has been the
 spine of the project since the log existed, and the live half had nothing at all.
 
-The harness already writes its session transcript, incrementally, at a path derivable from
-the stage's worktree and the session id — and Luna has recorded that session id all along,
-because it is what lets a later stage resume the same conversation. Nothing surfaced it.
-`luna console` names the file per stage, prints the one-liner that follows it and offers
-`claude -r <session>` to reopen the conversation. Claude resolves that id globally: a
-finished forge session resumed from the Luna checkout after its worktree was removed and
-opened the right conversation.
+Each harness already writes its session transcript incrementally, and Luna has recorded
+the session id all along because it is what lets a later stage resume the conversation.
+Nothing surfaced it. `luna console` now names the native file per stage, prints the
+harness-specific `jq` follower, and offers `claude -r <session>` or
+`codex resume <thread>` to reopen it. Claude's path is derived from the worktree and
+session. Codex's UUIDv7 thread id carries the timestamp used by
+`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-…jsonl`, measured against codex-cli 0.151.0.
+
+The first call has one unavoidable blind spot: Luna learns the native session id only when
+the harness returns its result, so it cannot derive that first transcript path while the
+call is still active. Once the id is recorded, later resumed calls are followable while
+they run. *Rejected:* scanning the harness directory for the newest file, which could
+attach another process's conversation to this task.
 
 That command is not a read-only view. Measured by resuming a headless call while it was
 still running: the original call finished intact, but the resumed prompt was appended to
@@ -936,8 +959,9 @@ sharpest point is that a tool with no measurement is an aesthetic preference.
   may not. No shipped flow needs it now; a future conditional producer may.
 - **Notification channels.** The queryable state is the base and does not depend on
   anything external. Which channel to push through is left open until real use answers it.
-- **Per-model pricing.** The harness reports tokens and cost and Luna records both. Luna
-  does not yet carry its own model price table, so cost is the harness's number.
+- **Per-model pricing.** Both measured harnesses report tokens; Claude also reports USD
+  cost and Codex does not. Luna does not carry its own model price table, so it reports
+  Codex cost as unavailable and refuses to pretend a dollar ceiling can be enforced.
 
 - **Skills that teach an agent to use Luna.** `Stage.Skills` parses and `Order` carries it;
   nothing reads it and `src/stock/skills/` is empty. What a skill would hold is what the

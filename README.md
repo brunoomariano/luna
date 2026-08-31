@@ -39,11 +39,12 @@ from confirming every gate to an overnight run that stops for nothing.
 ## State
 
 **Under construction, and honest about it.** A full 12-stage cycle ran zero-touch under
-the previous transport, delivering a real feature. The transport was then replaced — the
-terminal driving is gone, agents run headless — and on the new one the flow has been
-driven as far as the contract review gate: agents run sandboxed, hand artifacts to the
-store through the socket, and a gate opens showing the real content. A full cycle has not
-been repeated on it yet. What is decided but
+the previous transport, delivering a real feature. The terminal driving is now gone and
+both headless adapters have been exercised against their real binaries. A Codex run used
+the central daemon, a managed ai-memory workstream, artifact handover and the native
+transcript exposed by `luna console`; it reached the first contained stage, where the
+current nested development sandbox could not start another `bwrap`. A full seven-stage
+cycle has therefore not completed on the new transport yet. What is decided but
 not built is listed at the bottom of [`docs/architecture.md`](docs/architecture.md) rather
 than implied by silence.
 
@@ -67,6 +68,16 @@ and sends events and artifact writes to the daemon over its private socket. Rows
 project identity, so equal task ids in different repositories remain separate while
 `luna task list`, `luna gates`, `luna stuck`, `luna fleet report` and `luna flow check`
 can report the whole workload.
+
+Claude and Codex are measured harness adapters. Shipped flows declare Claude; passing
+`--agent codex` to `luna lead`, `luna fleet run` or `luna work` changes the execution
+harness without changing the flow fingerprint. `lead_harness = codex` selects Codex for
+the conductor and autonomous gate judgements. Both record native sessions and token usage,
+and `luna console` locates either transcript. Claude reports USD cost; Codex currently does
+not, so Luna displays `cost n/a` and refuses a Codex run carrying a dollar ceiling.
+Inside a stage, Luna exposes only artifact handover commands; task transitions remain the
+node's responsibility even if a harness discovers a host-installed Luna orchestration
+skill.
 
 ## Installation
 

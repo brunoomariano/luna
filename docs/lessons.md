@@ -195,6 +195,18 @@ what it cost in tokens against doing the same work in one session. Any claim abo
 value of orchestration that is not measured is an aesthetic preference. The harness reports
 usage for free; there was never a reason not to record it.
 
+**An absent measurement is not zero.** Codex's stream reports tokens and no USD price.
+Recording that as `$0` would make its stages look free and would silently disable a task's
+dollar ceiling. The absence has to survive replay and appear as `cost n/a`; when a ceiling
+is present, the run has to stop before spending what it cannot measure.
+
+**A selectable name is not harness support.** The CLI accepted `--agent codex` while the
+closed execution table contained only Claude, and applying the flag by rewriting the flow
+also changed the fingerprint of every open task. Support begins at the process boundary:
+native arguments, reply parsing, gating, resumption, usage and transcript discovery all
+need measured behavior. The override now stays at that boundary and the log records which
+harness actually ran.
+
 **And the first numbers were worse than expected.** The first measured run, on a feature
 whose entire content is a `--loud` flag for a two-line shell script:
 
@@ -268,6 +280,22 @@ unowned store still opened SQLite read-write, ran migrations and could grow anot
 write path; blobs did exactly that after event appends had moved behind the daemon. Opening
 the CLI with SQLite `mode=ro` made the boundary testable. Once that was done, event append,
 artifact append and artifact deletion all had to cross the same process boundary.
+
+**A harness adapter has to be followed through the conductor, not only to the process
+boundary.** The first Codex fleet run used Codex for the lead and Claude for the stage:
+`--agent codex` parsed correctly and reached the pack, then disappeared from the command
+the conductor was taught to issue. The second real run exposed a different boundary: a
+stage found a host-installed Luna orchestration skill and called `luna done` from inside
+its own worktree. Codex instructions now name the inner role, the override travels in the
+conductor order, and `LUNA_STAGE` makes task-control commands mechanically unavailable.
+
+**Report-only is a postcondition, not a tone of voice.** Codex read the setup brief,
+handed over both requested artifacts, and still made an empty commit. Nothing in the
+content contradicted the report, but `HEAD` changed and an uncontained stage had written.
+Snapshotting `HEAD` and worktree status around the call turns the phrase "never repairs"
+into a condition the node can reject. Returning the call's spend on that error matters as
+much as rejecting it: otherwise the strongest enforcement path would also erase the cost
+of the attempt it stopped.
 
 ## About this project's own process
 
