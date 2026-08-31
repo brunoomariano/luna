@@ -448,10 +448,13 @@ func notifyBlocked(env Env, id, reason string) {
 // verification failed. The person decides the situation is dealt with, and the
 // retry budget resets because the block was the escalation.
 func unblockCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: unblock needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
+	if len(rest) > 0 {
+		return fmt.Errorf("%w: unblock takes a task and nothing else, got %q", ErrUsage, rest[0])
+	}
 
 	// Replaying an empty log yields a healthy zero state, so a task that was
 	// never created would be reported as "ready, not blocked" — which tells the
@@ -502,12 +505,12 @@ func unblockCommand(env Env, args []string) error {
 // delivered stay apart, because `luna done` is where the lead's report meets the
 // contract check, and that seam is what makes the lead's word cost nothing.
 func workCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: work needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	opts, err := parseRunOptions(args[1:])
+	opts, err := parseRunOptions(rest)
 	if err != nil {
 		return err
 	}

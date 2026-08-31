@@ -374,10 +374,15 @@ func runTask(env Env, args []string) error {
 // three minutes after it had finished. Nineteen events of a completed run,
 // including what it cost, are unreachable behind the twentieth.
 func taskAbandon(env Env, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("%w: task abandon needs a task and a reason", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id, reason := args[0], strings.Join(args[1:], " ")
+	if len(rest) == 0 {
+		return fmt.Errorf("%w: task abandon needs a reason — the log records that a "+
+			"person called it off, and why", ErrUsage)
+	}
+	reason := strings.Join(rest, " ")
 
 	events, err := env.Store.Events(id)
 	if err != nil {
@@ -497,16 +502,23 @@ func taskNew(env Env, args []string) error {
 // this" and "here is what it turned out to be" — and because a revision is an
 // action of its own, so the previous statement stays in the log.
 func taskStatement(env Env, args []string) error {
+	// Before the id is resolved, because a bare `luna task statement` is somebody
+	// asking what this takes — and answering "I cannot tell where you are" teaches
+	// them nothing about the flags they came for.
 	if len(args) == 0 {
-		return fmt.Errorf("%w: luna task statement <id> [--about ...] [--design ...] [--acceptance ...]", ErrUsage)
+		return fmt.Errorf("%w: luna task statement [<id>] [--about ...] [--design ...] "+
+			"[--acceptance ...] — the id may be left out inside a task's own worktree", ErrUsage)
 	}
 
-	id := args[0]
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
+	}
 	if err := fsm.ValidateTaskID(id); err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 
-	opts, err := parseTaskOptions(env.profiles(), args[1:])
+	opts, err := parseTaskOptions(env.profiles(), rest)
 	if err != nil {
 		return err
 	}
@@ -670,12 +682,12 @@ func (e Env) profiles() Config {
 }
 
 func taskShow(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: task show needs an id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	asJSON, err := wantsJSON(args[1:])
+	asJSON, err := wantsJSON(rest)
 	if err != nil {
 		return err
 	}
@@ -1007,16 +1019,23 @@ func undefinedProfileNote(cfg Config, p fsm.Profile) string {
 }
 
 func runGate(env Env, args []string) error {
-	if len(args) < 2 {
+	if len(args) == 0 {
 		return fmt.Errorf("%w: gate needs a subcommand and an id", ErrUsage)
 	}
 
-	sub, id := args[0], args[1]
+	// The id may be left out and taken from the checkout, so the subcommand is
+	// split off first and what remains is resolved the way every other command
+	// resolves it.
+	sub := args[0]
+	env, id, rest, err := taskFrom(env, args[1:])
+	if err != nil {
+		return err
+	}
 
 	// Declaring checks is about a gate that has not opened yet, so it takes the
 	// branch before the one that insists on an open gate.
 	if sub == "checks" {
-		return gateChecks(env, id, args[2:])
+		return gateChecks(env, id, rest)
 	}
 
 	// The subcommand is checked before the task: a typo in the verb is a usage
@@ -1028,7 +1047,7 @@ func runGate(env Env, args []string) error {
 		return fmt.Errorf("%w: unknown gate subcommand %q", ErrUsage, sub)
 	}
 
-	return answerOpenGate(env, sub, id, args[2:])
+	return answerOpenGate(env, sub, id, rest)
 }
 
 // answerOpenGate handles the four subcommands that need a gate already waiting.

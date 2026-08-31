@@ -18,20 +18,20 @@ import (
 // chat` included. Whatever changes the value changes it by running this command
 // and writing this event — a proxy over the log, never a path around it.
 func autonomyCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: autonomy needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
 	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
 
-	if len(args) == 1 {
+	if len(rest) == 0 {
 		return showAutonomy(env, state)
 	}
-	return moveAutonomy(env, state, args[1], strings.Join(args[2:], " "))
+	return moveAutonomy(env, state, rest[0], strings.Join(rest[1:], " "))
 }
 
 // showAutonomy reports where the knob stands and what that reaches.

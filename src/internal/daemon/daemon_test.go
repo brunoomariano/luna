@@ -111,8 +111,10 @@ func TestTheConditionalAppendSurvivesTheSocket(t *testing.T) {
 	}
 }
 
-// TestTheDaemonListsEveryProjectInTheCentralStore is the central view.
-func TestTheDaemonListsEveryProjectInTheCentralStore(t *testing.T) {
+// TestEveryProjectCoexistsInTheCentralStore is what one database for every
+// project has to hold: two tasks with different projects, each replaying on its
+// own, neither seeing the other.
+func TestEveryProjectCoexistsInTheCentralStore(t *testing.T) {
 	client, dir := running(t)
 
 	database := filepath.Join(dir, "luna.db")
@@ -132,18 +134,26 @@ func TestTheDaemonListsEveryProjectInTheCentralStore(t *testing.T) {
 		_ = central.Close()
 	}
 
-	resp, err := client.Do(Request{Op: "tasks"})
+	// Read the way the CLI reads it: off its own read-only handle, across every
+	// project. The daemon owns the writing; the listing never asked it anything.
+	central, err := store.OpenReadOnly(database)
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() { _ = central.Close() })
+
+	refs, err := central.TaskRefs()
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
-	if len(resp.Tasks) != 2 {
-		t.Fatalf("want a task from each project, got %+v", resp.Tasks)
+	if len(refs) != 2 {
+		t.Fatalf("want a task from each project, got %+v", refs)
 	}
 	seen := map[string]bool{}
-	for _, line := range resp.Tasks {
-		seen[line.Project] = true
-		if line.Status == "" {
-			t.Errorf("%s is listed with no status", line.TaskID)
+	for _, ref := range refs {
+		seen[ref.Project] = true
+		if _, err := central.ForProject(ref.Project).ReplayOwnFlow(ref.ID); err != nil {
+			t.Errorf("%s/%s does not replay: %v", ref.Project, ref.ID, err)
 		}
 	}
 	if len(seen) != 2 {
@@ -397,23 +407,23 @@ func TestATaskWhoseFlowChangedIsListedRatherThanDropped(t *testing.T) {
 		t.Fatalf("seeding: %v", err)
 	}
 
-	resp, err := client.Do(Request{Op: "tasks"})
+	refs, err := central.TaskRefs()
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
 
 	var found bool
-	for _, line := range resp.Tasks {
-		if line.TaskID != "GONE-1" {
+	for _, ref := range refs {
+		if ref.ID != "GONE-1" {
 			continue
 		}
 		found = true
-		if line.Status != "unreadable" {
-			t.Errorf("a task that cannot be replayed is listed as %q", line.Status)
+		if _, err := central.ForProject(ref.Project).ReplayOwnFlow(ref.ID); err == nil {
+			t.Error("a task naming a flow this build has no longer should not replay")
 		}
 	}
 	if !found {
-		t.Errorf("the one task that needs reporting was dropped: %+v", resp.Tasks)
+		t.Errorf("the one task that needs reporting was dropped: %+v", refs)
 	}
 }
 

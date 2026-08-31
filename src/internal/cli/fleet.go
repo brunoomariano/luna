@@ -100,6 +100,12 @@ func fleetReport(env Env, args []string) error {
 	report := FleetReport{Tasks: []FleetTaskReport{}}
 	for _, task := range tasks {
 		if task.Err != nil {
+			// Unless somebody already ended it. Abandoning is the one way out of a
+			// task that stopped replaying, and reporting it as still unreadable
+			// afterwards is the panel disagreeing with the person who ended it.
+			if task.Ended {
+				continue
+			}
 			// Unreadable rather than skipped: a task nobody can replay is exactly
 			// the one that would otherwise sit unnoticed forever (INV-5).
 			report.Unreadable = append(report.Unreadable,
@@ -239,12 +245,12 @@ func parseReportOptions(args []string) (since time.Duration, asJSON bool, err er
 // The size of the pack is the flow's, not a flag's. Choosing the flow therefore
 // chooses both the contract and how many distinct agent briefings it runs.
 func fleetRun(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: fleet run needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	opts, err := parseFleetOptions(args[1:])
+	opts, err := parseFleetOptions(rest)
 	if err != nil {
 		return err
 	}

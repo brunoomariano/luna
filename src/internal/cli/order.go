@@ -21,12 +21,12 @@ import (
 // and restarted, and an order that advanced on being read would lose a stage
 // with nothing recording that it happened.
 func nextCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: next needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	asJSON, err := wantsJSON(args[1:])
+	asJSON, err := wantsJSON(rest)
 	if err != nil {
 		return err
 	}
@@ -101,12 +101,12 @@ func handReportedCompletion(env Env, id string, state fsm.TaskState, flags map[s
 }
 
 func doneCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: done needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	flags, err := parseFlags(args[1:])
+	flags, err := parseFlags(rest)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func doneCommand(env Env, args []string) error {
 // Keeping the panorama in a separate command means seeing it is an explicit act
 // rather than something that arrives alongside an instruction.
 func statusCommand(env Env, args []string) error {
-	id, rest, err := taskFrom(env, args)
+	env, id, rest, err := taskFrom(env, args)
 	if err != nil {
 		return err
 	}

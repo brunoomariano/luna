@@ -258,12 +258,6 @@ func (s *Server) answer(req Request) Response {
 // nothing.
 func (s *Server) read(req Request) Response {
 	switch req.Op {
-	case "tasks":
-		lines, err := s.tasks()
-		if err != nil {
-			return Response{Err: err.Error()}
-		}
-		return Response{Tasks: lines}
 	case "settings":
 		current, err := s.store.Settings(req.Project)
 		if err != nil {
@@ -318,24 +312,6 @@ func (s *Server) project(req Request) (*store.Store, error) {
 		return nil, errors.New("the request names no project")
 	}
 	return s.store.ForProject(req.Project), nil
-}
-
-func (s *Server) tasks() ([]TaskLine, error) {
-	refs, err := s.store.TaskRefs()
-	if err != nil {
-		return nil, err
-	}
-	lines := make([]TaskLine, 0, len(refs))
-	for _, ref := range refs {
-		line := TaskLine{Project: ref.Project, TaskID: ref.ID}
-		if state, err := s.store.ForProject(ref.Project).ReplayOwnFlow(ref.ID); err == nil {
-			line.Stage, line.Status = string(state.Stage), string(state.Status)
-		} else {
-			line.Status = "unreadable"
-		}
-		lines = append(lines, line)
-	}
-	return lines, nil
 }
 
 func importLegacyRoot(central *store.Store, root string) error {

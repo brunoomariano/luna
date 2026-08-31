@@ -28,7 +28,8 @@ import (
 // shape the handover socket uses, so there is one protocol to learn rather than
 // two.
 type Request struct {
-	// Op is what to do: append, put_blob, forget_blobs, import, tasks, ping.
+	// Op is what to do: append, put_blob, forget_blobs, import, settings,
+	// set_setting, ping.
 	Op string `json:"op"`
 
 	// Project scopes a task inside the one central log.
@@ -65,21 +66,9 @@ type Request struct {
 type Response struct {
 	Err string `json:"err,omitempty"`
 
-	// Tasks is what "tasks" answers: every task in the central database.
-	Tasks []TaskLine `json:"tasks,omitempty"`
-
 	// Settings is what "settings" answers: the current value of every key at the
 	// scope that was asked about.
 	Settings map[string]string `json:"settings,omitempty"`
-}
-
-// TaskLine is one task in the global listing — the central view the daemon exists
-// to make possible.
-type TaskLine struct {
-	Project string `json:"project"`
-	TaskID  string `json:"task_id"`
-	Stage   string `json:"stage"`
-	Status  string `json:"status"`
 }
 
 // encode writes one message and a newline, which is the frame.

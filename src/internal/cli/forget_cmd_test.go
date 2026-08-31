@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -86,7 +87,7 @@ func TestForgetUsageErrors(t *testing.T) {
 		{"task", "forget"},
 		{"task", "forget", "LUNA-1", "extra"},
 	} {
-		if err := Run(h.env, args); err == nil || !strings.Contains(err.Error(), "exactly one id") {
+		if err := Run(h.env, args); !errors.Is(err, ErrUsage) {
 			t.Errorf("%v: want the usage error, got %v", args, err)
 		}
 	}

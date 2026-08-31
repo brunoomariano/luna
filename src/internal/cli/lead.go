@@ -22,12 +22,12 @@ import (
 // decision about the flow would find nothing listening: there is no path from
 // what it says to a transition.
 func leadCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: lead needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
-	opts, err := parseLeadOptions(args[1:])
+	opts, err := parseLeadOptions(rest)
 	if err != nil {
 		return err
 	}

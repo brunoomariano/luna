@@ -14,6 +14,33 @@ type ActiveTaskReport struct {
 	Operation string `json:"operation,omitempty"`
 }
 
+// activeTasks is what is still going on: everything the log has not ended.
+//
+// Two ways a task is over, and the second is why this is not one condition. A
+// task that replays says so itself. A task whose flow changed under it does not
+// replay at all — abandoning is its one way out, and it appends without reading —
+// so being ended is read off the log rather than off a state nothing can rebuild.
+func activeTasks(tasks []globalTask) []ActiveTaskReport {
+	report := make([]ActiveTaskReport, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Ended || (task.Err == nil && task.State.IsTerminal()) {
+			continue
+		}
+		line := ActiveTaskReport{Project: projectName(task.Project), ID: task.ID}
+		if task.Err != nil {
+			line.Status = "unreadable"
+			report = append(report, line)
+			continue
+		}
+		line.Status = string(task.State.Status)
+		line.Stage = string(task.State.Stage)
+		line.Flow = task.State.FlowName
+		line.Operation = string(task.State.Operation())
+		report = append(report, line)
+	}
+	return report
+}
+
 func taskList(env Env, args []string) error {
 	asJSON, err := wantsJSON(args)
 	if err != nil {
@@ -24,22 +51,7 @@ func taskList(env Env, args []string) error {
 		return err
 	}
 
-	report := make([]ActiveTaskReport, 0, len(tasks))
-	for _, task := range tasks {
-		if task.Err == nil && task.State.IsTerminal() {
-			continue
-		}
-		line := ActiveTaskReport{Project: projectName(task.Project), ID: task.ID}
-		if task.Err != nil {
-			line.Status = "unreadable"
-		} else {
-			line.Status = string(task.State.Status)
-			line.Stage = string(task.State.Stage)
-			line.Flow = task.State.FlowName
-			line.Operation = string(task.State.Operation())
-		}
-		report = append(report, line)
-	}
+	report := activeTasks(tasks)
 
 	if asJSON {
 		return writeJSON(env.Out, report)

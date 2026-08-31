@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/brunoomariano/luna/src/internal/node"
 )
@@ -64,17 +65,18 @@ func whereAmI(env Env) (node.Identity, error) {
 // even standing somewhere else. What this removes is having to name it while
 // standing in its own worktree, which is where every command was asking for
 // something the directory could already answer.
-func taskFrom(env Env, args []string) (string, []string, error) {
+func taskFrom(env Env, args []string) (Env, string, []string, error) {
 	if len(args) > 0 && !isFlag(args[0]) {
-		return args[0], args[1:], nil
+		scoped, id, err := env.inProject(args[0])
+		return scoped, id, args[1:], err
 	}
 
 	id, err := whereAmI(env)
 	if err != nil {
-		return "", nil, err
+		return Env{}, "", nil, err
 	}
 	if id.TaskID == "" {
-		return "", nil, fmt.Errorf("%w: no task id, and %s names none — "+
+		return Env{}, "", nil, fmt.Errorf("%w: no task id, and %s names none — "+
 			"a checkout Luna made is on `luna/<task>/<stage>`", ErrUsage, id.Worktree)
 	}
 
@@ -82,9 +84,38 @@ func taskFrom(env Env, args []string) (string, []string, error) {
 	// convenience, and a convenience that guesses which of two sources is right is
 	// worse than asking.
 	if agrees, why := id.Agrees(); !agrees {
-		return "", nil, fmt.Errorf("%w: this checkout is ambiguous — %s", ErrUsage, why)
+		return Env{}, "", nil, fmt.Errorf("%w: this checkout is ambiguous — %s", ErrUsage, why)
 	}
-	return id.TaskID, args, nil
+	return env, id.TaskID, args, nil
+}
+
+// inProject scopes a command to the project a reference names, or leaves it on
+// the one the working directory is in.
+//
+// Every global listing prints `project/task`, and until now nothing accepted it
+// back: a person reading `luna gates` had to work out which checkout a task
+// belonged to and go there. A task in a project with no checkout at all — the
+// ones a test run leaves behind — could never be touched again, and sat in every
+// listing for the life of the machine.
+//
+// The separator is unambiguous by construction: a project key is a sanitised name
+// matching `[a-zA-Z0-9._-]` plus a digest, so it holds no slash and a bare id
+// cannot be mistaken for a qualified one.
+//
+// There is no guard for a missing global handle. One database holds every
+// project and the scoped view is a filter over the same handle, so a command with
+// one always has the other.
+func (e Env) inProject(ref string) (Env, string, error) {
+	project, id, qualified := strings.Cut(ref, "/")
+	if !qualified {
+		return e, ref, nil
+	}
+	if id == "" {
+		return Env{}, "", fmt.Errorf("%w: %q names a project and no task", ErrUsage, ref)
+	}
+	scoped := e
+	scoped.Store = e.GlobalStore.ForProject(project)
+	return scoped, id, nil
 }
 
 // isFlag reports whether an argument is a flag rather than an id, so that

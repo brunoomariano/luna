@@ -17,10 +17,13 @@ import (
 // block the next stage on a document that existed a moment ago — the person
 // ends the task first (`luna task abandon`), then forgets it.
 func taskForget(env Env, args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("%w: task forget needs exactly one id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
+	if len(rest) > 0 {
+		return fmt.Errorf("%w: task forget takes one task and nothing else, got %q", ErrUsage, rest[0])
+	}
 
 	state, err := env.Store.ReplayOwnFlow(id)
 	if err != nil {

@@ -42,8 +42,12 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{out: &bytes.Buffer{}, errOut: &bytes.Buffer{}}
 	h.env = Env{
 		Store: s,
-		Out:   h.out,
-		Err:   h.errOut,
+		// The same handle, unscoped, as the binary wires it: one central database
+		// with a project-scoped view over it. Without this a test cannot reach
+		// another project, which is most of what the central store is for.
+		GlobalStore: s,
+		Out:         h.out,
+		Err:         h.errOut,
 		// The real one, as the binary wires it, so a test that reaches a stage
 		// exercises the same construction. A test that means to drive a solo run
 		// replaces it with a fake — starting a contained agent here would wait out

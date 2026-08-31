@@ -15,21 +15,21 @@ import (
 // why — and "why did this task cost $40?" is exactly the question the log has to
 // answer for an unattended run.
 func budgetCommand(env Env, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%w: budget needs a task id", ErrUsage)
+	env, id, rest, err := taskFrom(env, args)
+	if err != nil {
+		return err
 	}
-	id := args[0]
 
 	state, err := env.replay(id)
 	if err != nil {
 		return err
 	}
 
-	if len(args) == 1 {
+	if len(rest) == 0 {
 		showBudget(env, state)
 		return nil
 	}
-	return moveBudget(env, state, args[1], strings.Join(args[2:], " "))
+	return moveBudget(env, state, rest[0], strings.Join(rest[1:], " "))
 }
 
 // showBudget reports the ceiling, what has gone against it, and what is left.
