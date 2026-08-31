@@ -418,8 +418,11 @@ func TestALogLeftInACheckoutIsAdoptedOnTheNextRun(t *testing.T) {
 	if _, err := os.Stat(old); err == nil {
 		t.Error("the log is still in the checkout")
 	}
-	if _, err := os.Stat(filepath.Join(repo, ".luna", ".gitignore")); err != nil {
-		t.Error("what Luna still leaves in the checkout is not ignored")
+	// And it did not put anything of its own back. Luna used to write a
+	// `.gitignore` here to hide its scratch; the scratch left the checkout, and so
+	// did the file that hid it.
+	if _, err := os.Stat(filepath.Join(repo, ".luna", ".gitignore")); !os.IsNotExist(err) {
+		t.Error("Luna wrote into the checkout; nothing of its own belongs there now")
 	}
 }
 
@@ -444,7 +447,12 @@ func TestAnUnreadableLegacyLogStopsTheMigration(t *testing.T) {
 		}
 	})
 
+	// The fixture makes the directory, because Luna no longer does: this is a
+	// checkout an older build wrote into, which is exactly what adoption is for.
 	old := filepath.Join(repo, ".luna", "luna.db")
+	if err := os.MkdirAll(filepath.Dir(old), 0o750); err != nil {
+		t.Fatalf("setting up the old log's directory: %v", err)
+	}
 	if err := os.WriteFile(old, []byte("an older build's log"), 0o600); err != nil {
 		t.Fatalf("writing the old log: %v", err)
 	}

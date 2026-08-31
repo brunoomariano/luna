@@ -228,21 +228,27 @@ limit saves.
 
 **A task carries its own statement of work in its log.**
 
-**The log directory ignores itself, and the intake hands its briefing over.** A real run
-committed `.luna/` into the project, and the agent was not being careless: `briefing` and
-`kind` were the only artifacts in the flow proven by a file on disk, and a file only
-survives into the next stage's worktree if it is committed. The contract left no other
-move. They are handed to the store now, like the plan's three, so nothing reaches the
-commit — and `.luna/` carries its own `.gitignore`, because the log holds task statements,
-handed-over documents and costs, and `git add -A` from an agent working in the repository
-takes all of it. *Rejected:* appending to the project's `.gitignore` — that file belongs to
-the project, and Luna editing it is a change somebody else has to review. A directory that
-ignores itself needs nobody's permission. `config.toml` stays committable: it is the
-project's settings, not Luna's state.
+**Nothing of Luna's is written into the checkout.** A real run committed `.luna/` into the
+project, and the agent was not being careless: `briefing` and `kind` were the only
+artifacts in the flow proven by a file on disk, and a file only survives into the next
+stage's worktree if it is committed. The contract left no other move. They are handed to
+the store now, like the plan's three, so nothing reaches the commit.
+
+The first answer was narrower: Luna wrote a `.gitignore` into `.luna/` so the directory
+ignored itself, because the log held task statements, handed-over documents and costs and
+`git add -A` from an agent working in the repository takes all of it. *Rejected:* appending
+to the project's own `.gitignore` — that file belongs to the project, and Luna editing it
+is a change somebody else has to review.
+
+That file has gone too, and by its own argument. The log, the artifacts and the sockets all
+left the checkout, so it was hiding scratch that no longer exists — and a directory Luna
+creates in a repository that never asked for one is the same unreviewed change through a
+smaller door. What is still written is the anchor, inside `.git`: the one place reachable
+from both sides of a sandbox, and tracked by nothing.
 
 The `kind` artifact went with them, and that is a removal rather than a move. `luna task
-new --kind` already records it, the reducer reads it to decide which conditional stages
-apply, and nothing but the `plan` stage's own `requires` ever read the file. An agent
+new --kind` already records it in the opening event, and nothing but the `plan` stage's own
+`requires` ever read the file. An agent
 writing a word into a file that the log already holds is ceremony with a bill.
 
 **A stage's worktree is bootstrapped before the stage starts.** Every serious repository has

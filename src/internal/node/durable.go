@@ -142,8 +142,6 @@ func recordLogLocation(repo, dir string) error {
 		return fmt.Errorf("creating %s: %w", dir, err)
 	}
 
-	keepOutOfGit(repo)
-
 	// Best effort: a repository Luna cannot write to still gets a working log, and
 	// the guard simply has nothing to compare against next time.
 	gitDir := filepath.Join(repo, ".git")
@@ -151,46 +149,4 @@ func recordLogLocation(repo, dir string) error {
 		_ = os.WriteFile(filepath.Join(gitDir, gitAnchorName), []byte(dir+"\n"), 0o600)
 	}
 	return nil
-}
-
-// keepOutOfGit keeps what Luna leaves in a checkout out of a commit.
-//
-// The log and handover socket have both left the checkout. This remains for
-// project settings and for old scratch files a prior build may have left behind;
-// a `git add -A` took the whole directory twice on real runs.
-//
-// Written into `.luna/.gitignore` rather than the project's, because the
-// project's belongs to the project: Luna appending to a file somebody else
-// maintains is a change they did not make and would have to review. A directory
-// that ignores itself needs nobody's permission.
-//
-// `config.toml` is the exception and is deliberately left committable: it is the
-// project's settings rather than Luna's state, and a team sharing a workstream
-// and a turn budget shares them through git. That negation only holds when no
-// outer rule already excludes the directory — git does not descend into an
-// ignored directory, so a global `.luna/` makes everything here moot.
-//
-// Best effort, like the anchor beside it: a repository Luna cannot write to still
-// gets a working log. What it loses is the protection, not the run.
-func keepOutOfGit(repo string) {
-	dir := filepath.Join(repo, ".luna")
-	const ignore = `# Written by Luna. Scratch under this directory does not belong in a commit.
-# config.toml is the exception: it is the project's settings, not Luna's state.
-*
-!.gitignore
-!config.toml
-`
-	// The directory is Luna's to create now: it used to be the log's own, made
-	// before this ran, and the log has left the checkout.
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return
-	}
-
-	path := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(path); err == nil {
-		// Somebody may have edited it, and overwriting would be Luna deciding it
-		// knows better about a file in their repository.
-		return
-	}
-	_ = os.WriteFile(path, []byte(ignore), 0o600)
 }

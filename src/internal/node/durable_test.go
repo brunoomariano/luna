@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/brunoomariano/luna/src/internal/node"
@@ -51,9 +50,9 @@ func TestNothingIsLeftBesideTheLog(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o750); err != nil {
 		t.Fatalf("setting up the repository: %v", err)
 	}
-	dir := filepath.Join(root, ".luna")
+	dir := filepath.Join(t.TempDir(), "luna")
 
-	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
+	if err := node.EnsureDurable(root, dir); err != nil {
 		t.Fatalf("the first run: %v", err)
 	}
 
@@ -62,13 +61,51 @@ func TestNothingIsLeftBesideTheLog(t *testing.T) {
 		t.Fatalf("reading the log directory: %v", err)
 	}
 	for _, entry := range entries {
-		// The ignore is the one thing that belongs here, and it is written rather
-		// than left: the log holds task statements, handed-over documents and
-		// costs, and a `git add -A` from an agent in the repository takes all of it.
-		if entry.Name() == ".gitignore" {
-			continue
-		}
 		t.Errorf("the guard left %q beside the log", entry.Name())
+	}
+}
+
+// TestNothingIsWrittenIntoTheCheckout is the promise the whole relocation was
+// for, held by a test rather than by everybody remembering.
+//
+// The log, the artifacts and the sockets all left the repository, and the last
+// thing writing into it was a `.gitignore` Luna created to hide scratch that no
+// longer exists. A directory Luna makes in somebody's repository is a change they
+// did not make and would have to review — and `.luna/` showing up in `git status`
+// of a project that never asked for Luna is exactly that.
+//
+// The anchor is the deliberate exception, and it is not in the checkout: it goes
+// inside `.git`, which is the one place reachable from both sides of a sandbox
+// and is not tracked by anything.
+func TestNothingIsWrittenIntoTheCheckout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o750); err != nil {
+		t.Fatalf("setting up the repository: %v", err)
+	}
+
+	before, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("reading the checkout: %v", err)
+	}
+
+	if err := node.EnsureDurable(root, filepath.Join(t.TempDir(), "luna")); err != nil {
+		t.Fatalf("ensuring durability: %v", err)
+	}
+
+	after, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("reading the checkout: %v", err)
+	}
+	if len(after) != len(before) {
+		var names []string
+		for _, entry := range after {
+			names = append(names, entry.Name())
+		}
+		t.Errorf("the checkout gained an entry: it now holds %v", names)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".luna")); !os.IsNotExist(err) {
+		t.Error("Luna created `.luna/` in a repository that did not have one")
 	}
 }
 
@@ -252,33 +289,6 @@ func TestRecordedAndVisibleIsTheOrdinaryCase(t *testing.T) {
 	}
 	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
 		t.Fatalf("a recorded directory that is visible must pass, got %v", err)
-	}
-}
-
-// TestTheLogDirectoryIgnoresItself is the leak.
-//
-// The log holds a task's statement, every document handed over and what each
-// stage cost, and a `git add -A` from an agent working in the repository takes
-// all of it. Measured twice on real runs, where a stage's own artifacts ended up
-// committed because nothing stopped them.
-func TestTheLogDirectoryIgnoresItself(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".luna")
-
-	if err := node.EnsureDurable(filepath.Dir(dir), dir); err != nil {
-		t.Fatalf("creating the log directory: %v", err)
-	}
-
-	body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if err != nil {
-		t.Fatalf("the log directory does not ignore itself: %v", err)
-	}
-	if !strings.Contains(string(body), "*") {
-		t.Errorf("the pattern does not cover the log:\n%s", body)
-	}
-	// The project's own settings stay committable: they are the project's, not
-	// Luna's state, and a team shares a workstream through git.
-	if !strings.Contains(string(body), "!config.toml") {
-		t.Errorf("the project's config was swept up with Luna's state:\n%s", body)
 	}
 }
 
