@@ -196,6 +196,7 @@ func statusCommand(env Env, args []string) error {
 	}
 
 	printStatus(env, state, flow, report)
+	printProduced(env, state)
 	return nil
 }
 
@@ -243,6 +244,14 @@ func printStatusFacts(env Env, state fsm.TaskState, flow []fsm.Stage, report Sta
 		line("workstream", "%s", state.Memory.Workstream)
 	}
 	line("autonomy", "%d  (%s)", int(state.Knob), knobMeaning(state.Knob, flow))
+
+	// What the task is for, and what it has to show for itself. Both used to be
+	// `task show`'s alone, so answering "where does this stand" took two commands
+	// and neither was complete: this one had the flow, the pack, the cost and the
+	// worktrees, and could not say what the task was about.
+	if about := state.Statement.Description; about != "" {
+		line("about", "%s", about)
+	}
 
 	spent := state.TotalSpend()
 	switch {

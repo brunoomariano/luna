@@ -279,8 +279,10 @@ watching
         Separate from next on purpose: an order carries no view of what
         comes after it.
 
-  luna task show <id> [--json]
-        the task's current state and what it has produced
+  luna task show [<id>] [--json]
+        the statement a task was opened with, and what it has produced.
+        luna status is the fuller view of the same task — the flow, the
+        pack, the cost, the worktrees — and carries both of these too.
 
   luna gates [--json]
         every task waiting on a person, across every project in the central store
@@ -950,6 +952,15 @@ func printTask(env Env, state fsm.TaskState, events int) {
 		}
 	}
 
+	printProduced(env, state)
+}
+
+// printProduced lists what the task has to show for itself, with the evidence.
+//
+// Shared by both views. It was `task show`'s alone, so "where does this stand"
+// took two commands and neither answered it: one had the flow, the pack, the cost
+// and the worktrees, the other had what was actually delivered.
+func printProduced(env Env, state fsm.TaskState) {
 	artifacts := sortedArtifacts(state.Context.Artifacts)
 	if len(artifacts) == 0 {
 		return

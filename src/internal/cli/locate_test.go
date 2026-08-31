@@ -175,3 +175,23 @@ func TestAnUnreachableLogIsNotAnEndedTask(t *testing.T) {
 		t.Error("a log that could not be read was reported as an ended task")
 	}
 }
+
+// TestStatusAnswersWhereATaskStandsWithoutASecondCommand.
+//
+// It had the flow, the pack, the cost and the worktrees and could not say what
+// the task was about or what it had delivered; `task show` had those and none of
+// the rest. Asking "where does this stand" took two commands and neither
+// answered it.
+func TestStatusAnswersWhereATaskStandsWithoutASecondCommand(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore", "--simulated",
+		"--about", "the thing that is missing")
+
+	out := h.mustRun(t, "status", "LUNA-1")
+
+	for _, want := range []string{"the thing that is missing", "produced", "task_id"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status does not carry %q, so it still takes two commands:\n%s", want, out)
+		}
+	}
+}
