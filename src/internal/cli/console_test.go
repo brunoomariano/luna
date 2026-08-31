@@ -95,7 +95,10 @@ func TestTheConsoleDoesNotReadTheTranscript(t *testing.T) {
 		fsm.Complete{
 			Delivered: []fsm.Artifact{"code", "tests_green"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{
-				"code": fsm.Exists(0), "tests_green": fsm.Exists(0),
+				"code": fsm.Exists(0),
+				"tests_green": {
+					Scope: fsm.ScopeTargeted, Verdict: fsm.VerdictPassed, Command: "make test",
+				},
 			},
 			Spent: fsm.Spend{Session: "s-1", InputTokens: 10, OutputTokens: 20, CostUSD: 0.01},
 		},
@@ -179,6 +182,92 @@ func TestTheConsoleAsJSONCarriesThePathAndWhetherItIsThere(t *testing.T) {
 	}
 }
 
+// TestAnEndedStageOffersItsClaudeSessionToOpen.
+//
+// A Claude session is global rather than tied to the worktree it started in.
+// Measured on AVG-1: resuming its finished forge session from the Luna checkout
+// reached the right conversation after the stage worktree had been removed.
+func TestAnEndedStageOffersItsClaudeSessionToOpen(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore", "--flow", "chore", "--simulated")
+	seedAgentStage(t, h, "s-ended")
+
+	out := h.mustRun(t, "console", "LUNA-1")
+
+	for _, want := range []string{"claude -r s-ended", "stage has ended", "safe to open"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("an ended stage does not say %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestARunningStageWarnsThatResumingWritesIntoItsConversation.
+//
+// Resuming a live headless call did not fork or damage it, but the injected
+// prompt landed in that call's original transcript. That turn bypasses Luna's
+// append-only log, so the console must name the boundary before offering it.
+func TestARunningStageWarnsThatResumingWritesIntoItsConversation(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore", "--flow", "chore", "--simulated")
+	flow := mustFlow(t, "chore")
+	for _, action := range []fsm.Action{
+		fsm.Advance{Flow: flow},
+		fsm.Complete{
+			Delivered: []fsm.Artifact{"worktree"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(0)},
+		},
+		fsm.Advance{Flow: flow},
+		fsm.Complete{
+			Delivered: []fsm.Artifact{"code"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"code": fsm.Exists(0)},
+			Spent:     fsm.Spend{Session: "s-running", CostUSD: 0.1},
+		},
+	} {
+		if err := h.env.Store.AppendAction("LUNA-1", action); err != nil {
+			t.Fatalf("seeding a running agent stage: %v", err)
+		}
+	}
+
+	out := h.mustRun(t, "console", "LUNA-1")
+
+	for _, want := range []string{
+		"claude -r s-running",
+		"not a copy",
+		"Anything you type joins it",
+		"Luna does not record",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a running stage does not say %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestOnlyTheCurrentRunningStageGetsTheConversationWarning. A stage can remain
+// named while it is closed, gated, blocked or terminal; none of those states may
+// be presented as a process that is currently running.
+func TestOnlyTheCurrentRunningStageGetsTheConversationWarning(t *testing.T) {
+	for _, status := range []fsm.Status{
+		fsm.StatusStageDone,
+		fsm.StatusAwaitingGate,
+		fsm.StatusBlocked,
+		fsm.StatusDone,
+		fsm.StatusAbandoned,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			h := newHarness(t)
+			state := fsm.TaskState{ID: "LUNA-1", Stage: "build", Status: status}
+			printConsoles(h.env, state.ID, state, []ConsoleReport{{
+				Stage: "build", Agent: "claude", Session: "s-stopped",
+			}})
+
+			out := h.out.String()
+			if strings.Contains(out, "not a copy") || strings.Contains(out, "← running") {
+				t.Errorf("a stage in %s was presented as running:\n%s", status, out)
+			}
+		})
+	}
+}
+
 // seedAgentStage walks a chore task to `build`, the one stage of it that starts
 // an agent, and closes it with a session.
 func seedAgentStage(t *testing.T, h *harness, session string) {
@@ -195,7 +284,10 @@ func seedAgentStage(t *testing.T, h *harness, session string) {
 		fsm.Complete{
 			Delivered: []fsm.Artifact{"code", "tests_green"},
 			Evidence: map[fsm.Artifact]fsm.Evidence{
-				"code": fsm.Exists(0), "tests_green": fsm.Exists(0),
+				"code": fsm.Exists(0),
+				"tests_green": {
+					Scope: fsm.ScopeTargeted, Verdict: fsm.VerdictPassed, Command: "make test",
+				},
 			},
 			Spent: fsm.Spend{Session: session, InputTokens: 18, OutputTokens: 8785, CostUSD: 0.6},
 		},

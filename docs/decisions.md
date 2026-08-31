@@ -580,7 +580,18 @@ spine of the project since the log existed, and the live half had nothing at all
 The harness already writes its session transcript, incrementally, at a path derivable from
 the stage's worktree and the session id — and Luna has recorded that session id all along,
 because it is what lets a later stage resume the same conversation. Nothing surfaced it.
-`luna console` names the file per stage and prints the one-liner that follows it.
+`luna console` names the file per stage, prints the one-liner that follows it and offers
+`claude -r <session>` to reopen the conversation. Claude resolves that id globally: a
+finished forge session resumed from the Luna checkout after its worktree was removed and
+opened the right conversation.
+
+That command is not a read-only view. Measured by resuming a headless call while it was
+still running: the original call finished intact, but the resumed prompt was appended to
+its transcript rather than forked into a new session. For an ended stage the console says
+the session is safe to open. For the current running stage it says this is the original
+conversation, not a copy, and that anything typed there changes a conversation outside
+Luna's log. Opening an interactive TUI without typing was not measured, so the command
+makes no stronger claim about it.
 
 *Rejected: teeing the agent's output to a file of Luna's own.* It would give Luna a second
 copy of something the harness already keeps, in a format it would have to track, and it

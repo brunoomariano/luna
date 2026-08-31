@@ -55,8 +55,8 @@ type ConsoleReport struct {
 	Session string `json:"session"`
 
 	// Path is the transcript, empty when Luna does not know this harness's
-	// layout. Live says whether the file is there now, which is the difference
-	// between a session in progress and one whose worktree has been cleaned up.
+	// layout. Live says only whether the file is there now; the task status says
+	// whether its stage is running.
 	Path string `json:"path,omitempty"`
 	Live bool   `json:"live"`
 }
@@ -107,10 +107,11 @@ func printConsoles(env Env, id string, state fsm.TaskState, consoles []ConsoleRe
 	example := ""
 	for _, one := range consoles {
 		here := ""
-		if string(state.Stage) == one.Stage {
+		if currentStageIsRunning(state, one) {
 			here = "  ← running"
 		}
 		fmt.Fprintf(env.Out, "  %-13s %s%s\n", one.Stage, one.Agent, here)
+		printResumeCommand(env, state, one)
 		if one.Path == "" {
 			fmt.Fprintf(env.Out, "  %-13s session %s — Luna does not know where this harness "+
 				"keeps its transcripts\n", "", one.Session)
@@ -123,6 +124,33 @@ func printConsoles(env Env, id string, state fsm.TaskState, consoles []ConsoleRe
 	}
 
 	printHowToFollow(env, example)
+}
+
+func printResumeCommand(env Env, state fsm.TaskState, one ConsoleReport) {
+	if one.Agent != "claude" {
+		return
+	}
+
+	fmt.Fprintf(env.Out, "  %-13s `claude -r %s`\n", "", one.Session)
+	if currentStageIsRunning(state, one) {
+		fmt.Fprintf(env.Out, "  %-13s warning: this is the stage's conversation, not a copy.\n", "")
+		fmt.Fprintf(env.Out, "  %-13s Anything you type joins it, and Luna does not record that turn.\n", "")
+		return
+	}
+	if stageHasEnded(state, one) {
+		fmt.Fprintf(env.Out, "  %-13s stage has ended — safe to open\n", "")
+	}
+}
+
+func currentStageIsRunning(state fsm.TaskState, one ConsoleReport) bool {
+	return state.Status == fsm.StatusRunning && string(state.Stage) == one.Stage
+}
+
+func stageHasEnded(state fsm.TaskState, one ConsoleReport) bool {
+	if string(state.Stage) != one.Stage {
+		return true
+	}
+	return state.Status == fsm.StatusStageDone || state.IsTerminal()
 }
 
 // followFilter turns one transcript line into something readable.

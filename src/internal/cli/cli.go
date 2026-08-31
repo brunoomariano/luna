@@ -299,10 +299,12 @@ Two modes. Luna picks the stage in both; the knob picks who answers a gate.
         headless, so nothing it says, nothing it reasons about and nothing
         Luna hands it appears while it runs — but the harness writes its
         own transcript as the session goes, and that file is the console.
-        This names it, per stage, and prints the one-liner that follows it.
-        It works in any pane: herdr, tmux, a second terminal. Luna does not
-        read the file — following it is the harness's format, and parsing
-        it here would be a second copy to keep in step.
+        This names it, per stage, prints the one-liner that follows it, and
+        shows how to reopen its Claude session. A finished session is safe
+        to open; typing into a running one changes that stage's conversation
+        without adding the turn to Luna's log. Luna does not read the file —
+        following it is the harness's format, and parsing it here would be a
+        second copy to keep in step.
 
 ── when it stops
 
