@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -498,6 +499,10 @@ type harness struct {
 	binary string
 	args   func(Call) []string
 	parse  func([]byte) (Result, error)
+
+	// console is where this harness leaves a session's transcript. Nil means Luna
+	// does not know, which is a different answer from "there is none".
+	console func(worktree, session string) string
 }
 
 // harnesses is closed on purpose. An unlisted harness is refused rather than
@@ -505,9 +510,10 @@ type harness struct {
 // produces an ungated agent and a report that it was gated.
 var harnesses = map[string]harness{
 	"claude": {
-		binary: "claude",
-		args:   claudeArgs,
-		parse:  parseClaude,
+		binary:  "claude",
+		args:    claudeArgs,
+		parse:   parseClaude,
+		console: claudeConsole,
 	},
 }
 
@@ -619,4 +625,46 @@ func oneModel(usage map[string]struct {
 		return name
 	}
 	return ""
+}
+
+// ConsolePath is where a harness leaves the transcript of one session.
+//
+// Luna starts every agent headless, so nothing of what it says, thinks or is
+// asked appears anywhere while it runs — the process's own output goes into a
+// buffer and is read for a JSON reply. The harness writes its own transcript
+// though, incrementally, and that file is the console: following it is watching
+// the stage happen.
+//
+// Derived rather than captured, and that is the choice. Luna could tee the
+// process's output to a file of its own, and it would then own a second copy of
+// something the harness already keeps, in a format it would have to keep in step
+// with. Pointing at the original costs nothing and cannot drift.
+//
+// Answers false for a harness whose layout Luna does not know, for the same
+// reason the table it reads is closed: a guessed path sends somebody to an empty
+// file and lets them conclude the agent produced nothing.
+func ConsolePath(kind, worktree, session string) (string, bool) {
+	if session == "" || worktree == "" {
+		return "", false
+	}
+	spec, known := harnesses[kind]
+	if !known || spec.console == nil {
+		return "", false
+	}
+	return spec.console(worktree, session), true
+}
+
+// claudeConsole is `~/.claude/projects/<cwd>/<session>.jsonl`, where the working
+// directory is flattened by replacing every separator with a dash.
+//
+// Measured against the transcripts of a real run: the worktree
+// `/tmp/.../scratchpad/real/wt-app-AVG-1-plan` becomes the directory
+// `-tmp-...-scratchpad-real-wt-app-AVG-1-plan`, leading separator included.
+func claudeConsole(worktree, session string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	flat := strings.ReplaceAll(worktree, string(filepath.Separator), "-")
+	return filepath.Join(home, ".claude", "projects", flat, session+".jsonl")
 }

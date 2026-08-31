@@ -570,6 +570,31 @@ Recording before the gate answers is safe, and the ordering is the reason: boots
 the way *into* a stage and `setup`'s gate opens on the way *out* of it, so the first stage
 that could run the command is the one after a person said yes.
 
+**The console is the harness's own transcript, and Luna only says where it is.** Every
+agent runs headless, so nothing it says, nothing it runs and nothing Luna hands it appears
+anywhere while a stage happens: the process's output goes into a buffer that is read for a
+JSON reply, and the only time any of it reaches a person is when the stage delivered
+nothing. That was the last open half of "observabilidade" — the audit half has been the
+spine of the project since the log existed, and the live half had nothing at all.
+
+The harness already writes its session transcript, incrementally, at a path derivable from
+the stage's worktree and the session id — and Luna has recorded that session id all along,
+because it is what lets a later stage resume the same conversation. Nothing surfaced it.
+`luna console` names the file per stage and prints the one-liner that follows it.
+
+*Rejected: teeing the agent's output to a file of Luna's own.* It would give Luna a second
+copy of something the harness already keeps, in a format it would have to track, and it
+changes the one code path that starts an agent. Pointing at the original costs nothing and
+cannot drift.
+
+*Rejected: printing the transcript.* Reading it means parsing one harness's format inside
+Luna — a coupling it does not have, and a second thing to keep in step — when `tail`, `jq`
+and a pane already read the file better. The path is the deliverable.
+
+What the transcript does not carry is the reasoning: the blocks are recorded with a
+signature and no text. The command says so, because a filter that printed them would print
+blank lines and look broken.
+
 **A task belongs to a project, and a project is its remote.** Two clones of one
 repository are one project, so a worktree opened to review a task sees that task and a
 second clone made to work on a branch is the same work. The remote is what says so: it is

@@ -135,6 +135,7 @@ func Run(env Env, args []string) error {
 		"artifact": artifactCommand,
 		"trust":    trustCommand,
 		"config":   configCommand,
+		"console":  consoleCommand,
 		"version":  versionCommand,
 		"where":    whereCommand,
 		"daemon":   daemonCommand,
@@ -292,6 +293,16 @@ Two modes. Luna picks the stage in both; the knob picks who answers a gate.
   luna where [--json]
         what this working directory already is: repository, worktree,
         branch, and the task and stage the branch names.
+
+  luna console [<id>] [--json]
+        where to watch each stage's agent. Luna starts every agent
+        headless, so nothing it says, nothing it reasons about and nothing
+        Luna hands it appears while it runs — but the harness writes its
+        own transcript as the session goes, and that file is the console.
+        This names it, per stage, and prints the one-liner that follows it.
+        It works in any pane: herdr, tmux, a second terminal. Luna does not
+        read the file — following it is the harness's format, and parsing
+        it here would be a second copy to keep in step.
 
 ── when it stops
 
