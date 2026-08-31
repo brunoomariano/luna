@@ -157,6 +157,10 @@ func (c Config) ProfileNames() []string {
 	return names
 }
 
+// Renamed spellings are not handled here. They are refused by CheckConfigKey,
+// before anything is written — which is the only door a person comes through now
+// that no file is read, and the only one where saying "this is now called X" can
+// still change what they do.
 func assignRoot(cfg *Config, key, value, where string) error {
 	switch key {
 	case "editor":
@@ -165,14 +169,6 @@ func assignRoot(cfg *Config, key, value, where string) error {
 	case "lead_harness":
 		cfg.LeadHarness = strings.Trim(value, `"`)
 		return nil
-	case "interpreter":
-		// Refused rather than accepted quietly. A project carrying the old spelling
-		// would otherwise fall through to the unknown-key error, which says the key
-		// is not recognised and not that it was renamed — and the person then has
-		// to find out which name replaced it.
-		return fmt.Errorf("%s: `interpreter` is now `lead_harness` — it names the harness "+
-			"the lead asks when it judges a gate, and was called after a command that no "+
-			"longer exists", where)
 	case "bootstrap":
 		cfg.Bootstrap = strings.Trim(value, `"`)
 		return nil

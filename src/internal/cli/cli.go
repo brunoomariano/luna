@@ -322,6 +322,27 @@ setting the machine up
         tell the harness it trusts the directory Luna makes worktrees in,
         so its agents start at a prompt instead of at a folder dialog.
 
+  luna config [--json]
+  luna config set <key> <value>
+  luna config unset <key>
+  luna config history <key>
+        what this project and this machine are set to. editor and
+        lead_harness are the machine's, set once for every project here;
+        turn_budget, workstream and profiles are the project's, and a
+        project setting wins. bootstrap is shown and cannot be set — it is
+        what setup discovered by reading the project. A setting is an
+        append, so history says what a key held before and when it changed.
+
+  luna where [--json]
+        what this working directory already is: repository, worktree,
+        branch, and the task and stage the branch names. Every command
+        that takes an id will take it from here when you leave it out.
+
+  luna daemon [--socket <path>] [--store <path>]
+        run the one process that writes the log. It starts itself when a
+        command finds nobody listening, so this is for running it in the
+        foreground where its failures are visible.
+
 config:   luna config — editor and lead_harness are this machine's;
           turn_budget, workstream and profiles are the project's
 state:    $XDG_DATA_HOME/luna/luna.db — one central database, written only

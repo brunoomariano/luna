@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -25,8 +26,10 @@ func TestFlowCheckReportsAnOpenTask(t *testing.T) {
 	if !strings.Contains(out, string(fsm.Fingerprint(fsm.DefaultFlow()))) {
 		t.Errorf("the check should name the flow it is reporting on, got %q", out)
 	}
-	if !strings.Contains(out, "LUNA-1") {
-		t.Errorf("an open task must be named, got %q", out)
+	// Counted rather than named: which tasks are open is `luna task list`, and
+	// this command answers whether the flow can change.
+	if !strings.Contains(out, "1 task(s) still open") {
+		t.Errorf("an open task must be counted, got %q", out)
 	}
 	if !strings.Contains(out, "still open") {
 		t.Errorf("the answer to 'can I change the flow' must be legible, got %q", out)
@@ -65,7 +68,7 @@ func TestFlowCheckNamesWhatNoLongerReplays(t *testing.T) {
 
 	out := h.mustRun(t, "flow", "check")
 
-	if !strings.Contains(out, "no longer replay") {
+	if !strings.Contains(out, "unreadable") {
 		t.Errorf("an unreadable task must be reported, got %q", out)
 	}
 	if !strings.Contains(out, "abandon") {
@@ -648,5 +651,54 @@ func TestFlowCheckNamesAStageThatEscapesTheSandbox(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("the report does not carry %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestFlowCheckAsJSONCarriesTheFactsAndNotThePlan. The medians and the gap notes
+// are a person's reading of a flow; a script reading them would be scraping
+// advice rather than state.
+func TestFlowCheckAsJSONCarriesTheFactsAndNotThePlan(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore", "--simulated")
+
+	out := h.mustRun(t, "flow", "check", "--json")
+
+	var report FlowCheckReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("the report is not readable json: %v\n%s", err, out)
+	}
+	if len(report.Flows) != 3 {
+		t.Fatalf("want every shipped flow, got %d", len(report.Flows))
+	}
+
+	var full FlowFacts
+	for _, flow := range report.Flows {
+		if flow.Name == "full" {
+			full = flow
+		}
+	}
+	if full.Fingerprint == "" || full.Stages != 7 {
+		t.Errorf("the full flow is not described: %+v", full)
+	}
+	if len(full.Gates) != 3 {
+		t.Errorf("want the three gates full opens, got %+v", full.Gates)
+	}
+	for _, gate := range full.Gates {
+		if gate.Floor == 0 || gate.Stage == "" {
+			t.Errorf("a gate is reported with no stage or no floor: %+v", gate)
+		}
+	}
+	if report.Open != 1 {
+		t.Errorf("the open task is not counted: %+v", report)
+	}
+}
+
+// TestFlowCheckJSONRefusesAnUnknownFlow, so `--json` does not become a way past
+// the validation the text form does.
+func TestFlowCheckJSONRefusesAnUnknownFlow(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "flow", "check", "--flow", "nope", "--json"); !errors.Is(err, ErrUsage) {
+		t.Errorf("an unknown flow answered %v, want a usage error", err)
 	}
 }

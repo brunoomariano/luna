@@ -306,3 +306,76 @@ func TestNoProfilesMeansTheShippedOnes(t *testing.T) {
 		t.Error("two different sets of the same size compared equal")
 	}
 }
+
+// TestConfigHistorySaysWhatAKeyHeld is what append-only settings buy.
+//
+// The file they replaced lived in git, so "who changed the workstream, and when"
+// was answered by the commit that changed it. A database keeping only the current
+// value would have traded an audit for a lookup.
+func TestConfigHistorySaysWhatAKeyHeld(t *testing.T) {
+	h := newHarness(t)
+	h.env.Store.Project = "app-1"
+
+	for _, value := range []string{"luna", "spike-tls"} {
+		h.mustRun(t, "config", "set", "workstream", value)
+	}
+	h.mustRun(t, "config", "unset", "workstream")
+
+	out := h.mustRun(t, "config", "history", "workstream")
+
+	for _, want := range []string{"luna", "spike-tls", "(unset)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the history does not carry %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "luna") > strings.Index(out, "spike-tls") {
+		t.Errorf("the history is not in the order it happened:\n%s", out)
+	}
+}
+
+// TestTheJSONConfigKeepsTheScopesApart. A script that wants the value in effect
+// can layer them the way a command does; one that wants to know where a value
+// came from cannot get that back out of a merged map.
+func TestTheJSONConfigKeepsTheScopesApart(t *testing.T) {
+	h := newHarness(t)
+	h.env.Store.Project = "app-1"
+	h.mustRun(t, "config", "set", "editor", "hx")
+	h.mustRun(t, "config", "set", "workstream", "the-project")
+
+	out := h.mustRun(t, "config", "--json")
+
+	if !strings.Contains(out, `"machine"`) || !strings.Contains(out, `"own"`) {
+		t.Errorf("the two scopes are merged, so where a value came from is lost:\n%s", out)
+	}
+}
+
+// TestConfigHistoryNeedsOneKey. Asking for the history of everything is a
+// different command, and answering it here would be guessing what was meant.
+func TestConfigHistoryNeedsOneKey(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "config", "history"); !errors.Is(err, ErrUsage) {
+		t.Errorf("history with no key answered %v, want a usage error", err)
+	}
+}
+
+// TestTheHistoryOfAKeyNobodySetSaysSo, rather than printing an empty listing
+// that reads like "it was never changed".
+func TestTheHistoryOfAKeyNobodySetSaysSo(t *testing.T) {
+	h := newHarness(t)
+	h.env.Store.Project = "app-1"
+
+	if err := h.run(t, "config", "history", "workstream"); err == nil {
+		t.Error("the history of a key nothing set printed a listing")
+	}
+}
+
+// TestConfigRefusesAnUnknownFlag. `--json` is the only one, and a typo that fell
+// through to the plain listing would look like it worked.
+func TestConfigRefusesAnUnknownFlag(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run(t, "config", "--jsonn"); !errors.Is(err, ErrUsage) {
+		t.Errorf("an unknown flag answered %v, want a usage error", err)
+	}
+}

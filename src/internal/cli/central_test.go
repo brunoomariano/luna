@@ -27,12 +27,13 @@ func TestGlobalWatchingCommandsReadEveryProjectFromTheCentralStore(t *testing.T)
 
 	h.env.Store = first
 	h.env.GlobalStore = central
+	// `flow check` is not here: it answers whether a flow can change, and names a
+	// count rather than the tasks. Which tasks exist is what these four answer.
 	for _, command := range [][]string{
 		{"task", "list"},
 		{"gates"},
 		{"stuck", "--for", "0s"},
 		{"fleet", "report"},
-		{"flow", "check"},
 	} {
 		out := h.mustRun(t, command...)
 		for _, want := range []string{"github.com-one-app-a1", "ONE-1", "github.com-two-app-b2", "TWO-1"} {

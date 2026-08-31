@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
 )
 
 // GlobalScope is the scope a setting has when it belongs to the machine rather
@@ -147,30 +146,4 @@ func (s *Store) SettingHistory(scope, key string) ([]Setting, error) {
 		return nil, fmt.Errorf("%w: nothing has set %s at scope %q", ErrNoSuchSetting, key, scope)
 	}
 	return history, nil
-}
-
-// SettingScopes is every scope that has ever had a setting, sorted.
-//
-// It exists so `luna config` can show what the machine holds without being told
-// which projects to ask about.
-func (s *Store) SettingScopes() ([]string, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT scope FROM settings`)
-	if err != nil {
-		return nil, fmt.Errorf("reading the configured scopes: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var scopes []string
-	for rows.Next() {
-		var scope string
-		if err := rows.Scan(&scope); err != nil {
-			return nil, fmt.Errorf("reading a configured scope: %w", err)
-		}
-		scopes = append(scopes, scope)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.Strings(scopes)
-	return scopes, nil
 }

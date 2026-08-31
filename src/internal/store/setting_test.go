@@ -130,14 +130,6 @@ func TestScopesDoNotSeeEachOther(t *testing.T) {
 	if global["editor"] != "vim" || project["editor"] != "hx" {
 		t.Errorf("one scope read the other's value: global=%q project=%q", global["editor"], project["editor"])
 	}
-
-	scopes, err := s.SettingScopes()
-	if err != nil {
-		t.Fatalf("reading the scopes: %v", err)
-	}
-	if len(scopes) != 2 || scopes[0] != store.GlobalScope || scopes[1] != "app-1" {
-		t.Errorf("the configured scopes are %v, want the global one and app-1", scopes)
-	}
 }
 
 // TestAKeyNothingSetIsSaidToBeMissing rather than answered with an empty value:
@@ -207,9 +199,6 @@ func TestAClosedStoreSaysSoRatherThanAnsweringEmpty(t *testing.T) {
 	}
 	if _, err := s.SettingHistory("app-1", "workstream"); err == nil {
 		t.Error("a closed store answered a history instead of an error")
-	}
-	if scopes, err := s.SettingScopes(); err == nil {
-		t.Errorf("a closed store answered %v instead of an error", scopes)
 	}
 	if err := s.PutSetting("app-1", "workstream", "again"); err == nil {
 		t.Error("a closed store accepted a write")

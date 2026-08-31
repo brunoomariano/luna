@@ -76,8 +76,10 @@ func TestE2EATaskRecordsTheFlowItWasBornUnder(t *testing.T) {
 	if !strings.Contains(checked, born) {
 		t.Errorf("the flow a task was born under (%s) must be the one check reports, got %q", born, checked)
 	}
-	if !strings.Contains(checked, "LUNA-1") {
-		t.Errorf("an open task must be named by the check, got %q", checked)
+	// The count, not the name: `flow check` answers whether a flow can change, and
+	// which tasks are open is `luna task list`.
+	if !strings.Contains(checked, "1 task(s) still open") {
+		t.Errorf("an open task must be counted by the check, got %q", checked)
 	}
 }
 

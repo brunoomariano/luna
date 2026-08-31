@@ -185,7 +185,8 @@ func printFleetReport(env Env, report FleetReport) {
 	}
 
 	if len(report.Unreadable) > 0 {
-		fmt.Fprintf(env.Out, "\nno longer replay (%d)\n", len(report.Unreadable))
+		fmt.Fprintf(env.Out, "\nunreadable — the flow they name is not in this build (%d)\n",
+			len(report.Unreadable))
 		for _, id := range report.Unreadable {
 			fmt.Fprintf(env.Out, "  %s\n", id)
 		}

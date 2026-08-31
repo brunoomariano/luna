@@ -216,7 +216,7 @@ func TestATaskThatNoLongerReplaysIsReportedRatherThanSkipped(t *testing.T) {
 	}
 
 	out := h.mustRun(t, "fleet", "report")
-	if !strings.Contains(out, "no longer replay") || !strings.Contains(out, "GONE-1") {
+	if !strings.Contains(out, "unreadable") || !strings.Contains(out, "GONE-1") {
 		t.Errorf("a task that cannot be replayed is missing from the report:\n%s", out)
 	}
 

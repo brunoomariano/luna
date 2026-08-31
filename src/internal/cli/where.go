@@ -13,10 +13,21 @@ import (
 // anything, and it answers it out loud: which repository, which checkout, and —
 // when the branch says so — which task and stage. Standing in a stage's worktree,
 // that is the whole identity, and nothing had to be typed.
-func whereCommand(env Env, _ []string) error {
+func whereCommand(env Env, args []string) error {
+	asJSON, err := wantsJSON(args)
+	if err != nil {
+		return err
+	}
 	id, err := whereAmI(env)
 	if err != nil {
 		return err
+	}
+	if asJSON {
+		return writeJSON(env.Out, WhereReport{
+			Repo: id.Repo, Remote: id.RemoteURL, Worktree: id.Worktree,
+			Branch: id.Branch, Task: id.TaskID, Stage: id.Stage,
+			Linked: id.Linked, Project: env.Store.Project,
+		})
 	}
 
 	line := func(k, v string) {
@@ -123,4 +134,19 @@ func (e Env) inProject(ref string) (Env, string, error) {
 // called `--json`.
 func isFlag(arg string) bool {
 	return len(arg) > 1 && arg[0] == '-'
+}
+
+// WhereReport is `luna where --json`: what the directory already is.
+//
+// It exists so a script can do what a person does — take the task from the
+// checkout instead of being told it — without parsing a listing meant for eyes.
+type WhereReport struct {
+	Project  string `json:"project"`
+	Repo     string `json:"repo"`
+	Remote   string `json:"remote,omitempty"`
+	Worktree string `json:"worktree,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Task     string `json:"task,omitempty"`
+	Stage    string `json:"stage,omitempty"`
+	Linked   bool   `json:"linked"`
 }

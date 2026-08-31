@@ -140,7 +140,7 @@ func flowsToCheck(args []string) ([]string, error) {
 		return nil, err
 	}
 	for name := range flags {
-		if name != "flow" {
+		if name != "flow" && name != "json" {
 			return nil, fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
 		}
 	}
@@ -157,6 +157,9 @@ func flowCheck(env Env, args []string) error {
 	names, err := flowsToCheck(args)
 	if err != nil {
 		return err
+	}
+	if wantsFlowJSON(args) {
+		return flowCheckJSON(env, names)
 	}
 	if err := auditFlows(env, names); err != nil {
 		return err
@@ -227,6 +230,9 @@ func surveyTasks(env Env) (open, unreadable []string, err error) {
 
 	for _, task := range tasks {
 		name := fmt.Sprintf("%s/%s", projectName(task.Project), task.ID)
+		if task.Ended {
+			continue
+		}
 		if errors.Is(task.Err, store.ErrFlowChanged) {
 			unreadable = append(unreadable, name)
 			continue
@@ -246,11 +252,9 @@ func surveyTasks(env Env) (open, unreadable []string, err error) {
 // one who knows whether those tasks matter.
 func reportTaskSurvey(env Env, open, unreadable []string) {
 	if len(unreadable) > 0 {
-		fmt.Fprintf(env.Out, "\n%d task(s) no longer replay against the flow they name:\n", len(unreadable))
-		for _, id := range unreadable {
-			fmt.Fprintf(env.Out, "  %s\n", id)
-		}
-		fmt.Fprintf(env.Out, "end one with `luna task abandon <id> <reason>`\n")
+		fmt.Fprintf(env.Out, "\n%d task(s) unreadable — the flow they name is not in this build\n",
+			len(unreadable))
+		fmt.Fprintf(env.Out, "end one with `luna task abandon <project>/<id> <reason>`\n")
 	}
 
 	if len(open) == 0 {
@@ -258,7 +262,10 @@ func reportTaskSurvey(env Env, open, unreadable []string) {
 		return
 	}
 
-	fmt.Fprintf(env.Out, "\n%d task(s) still open:\n  %s\n", len(open), strings.Join(open, "\n  "))
+	// The count rather than the list. This command answers whether a flow can
+	// change; which tasks are open is `luna task list`, and printing them here was
+	// a third rendering of one question, with a third wording for the same state.
+	fmt.Fprintf(env.Out, "\n%d task(s) still open — `luna task list` names them\n", len(open))
 	fmt.Fprintf(env.Out, "\nfinish or abandon them before changing the flow — "+
 		"a task whose flow changes under it stops replaying\n")
 }
@@ -341,4 +348,93 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// FlowCheckReport is `luna flow check --json`.
+//
+// It carries the facts a script can act on — which flows this build has, what
+// each fingerprints to, how big its pack is, and where it stops — and not the
+// prose the text form adds around them. The medians and the gap notes are a
+// person's reading of the same flow, and a script that wanted them would be
+// scraping advice rather than reading state.
+type FlowCheckReport struct {
+	Flows []FlowFacts `json:"flows"`
+
+	// Open and Unreadable are what stands between this build and a flow change.
+	Open       int `json:"open"`
+	Unreadable int `json:"unreadable"`
+}
+
+// FlowFacts is one flow, as data.
+type FlowFacts struct {
+	Name        string      `json:"name"`
+	Fingerprint string      `json:"fingerprint"`
+	Stages      int         `json:"stages"`
+	Pack        []string    `json:"pack"`
+	Gates       []GateFacts `json:"gates"`
+}
+
+// GateFacts is one gate and the knob that reaches it.
+type GateFacts struct {
+	Stage    string `json:"stage"`
+	Kind     string `json:"kind"`
+	Floor    int    `json:"autonomy_floor"`
+	Criteria int    `json:"criteria"`
+}
+
+// wantsFlowJSON reads the flag off the arguments this command already validated,
+// rather than through wantsJSON — that one refuses anything it does not know, and
+// `--flow <name>` is a flag this command does know.
+func wantsFlowJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "--json" {
+			return true
+		}
+	}
+	return false
+}
+
+// factsOf reads one flow into the shape both renderings are about.
+func factsOf(name string) (FlowFacts, error) {
+	flow, err := fsm.FlowNamed(name)
+	if err != nil {
+		return FlowFacts{}, err
+	}
+
+	facts := FlowFacts{
+		Name: name, Fingerprint: string(fsm.Fingerprint(flow)), Stages: len(flow),
+		Pack: []string{}, Gates: []GateFacts{},
+	}
+	for _, id := range packStages(flow) {
+		facts.Pack = append(facts.Pack, string(id))
+	}
+	for _, stage := range flow {
+		if stage.Gate == nil {
+			continue
+		}
+		facts.Gates = append(facts.Gates, GateFacts{
+			Stage: string(stage.ID), Kind: string(stage.Gate.Kind),
+			Floor: stage.Gate.Resolved(), Criteria: len(stage.Gate.Judge),
+		})
+	}
+	return facts, nil
+}
+
+// flowCheckJSON is the whole command, as data.
+func flowCheckJSON(env Env, names []string) error {
+	report := FlowCheckReport{Flows: []FlowFacts{}}
+	for _, name := range names {
+		facts, err := factsOf(name)
+		if err != nil {
+			return err
+		}
+		report.Flows = append(report.Flows, facts)
+	}
+
+	open, unreadable, err := surveyTasks(env)
+	if err != nil {
+		return err
+	}
+	report.Open, report.Unreadable = len(open), len(unreadable)
+	return writeJSON(env.Out, report)
 }

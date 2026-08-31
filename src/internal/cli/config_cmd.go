@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/store"
 )
@@ -18,15 +19,20 @@ import (
 // is not read at all any more — not even once, to import it.
 func configCommand(env Env, args []string) error {
 	if len(args) == 0 {
-		return showConfig(env)
+		return showConfig(env, nil)
 	}
 	switch args[0] {
 	case "set":
 		return setConfig(env, args[1:])
 	case "unset":
 		return unsetConfig(env, args[1:])
+	case "history":
+		return configHistory(env, args[1:])
 	default:
-		return fmt.Errorf("%w: unknown config subcommand %q (expected set, unset, or nothing)",
+		if isFlag(args[0]) {
+			return showConfig(env, args)
+		}
+		return fmt.Errorf("%w: unknown config subcommand %q (expected set, unset, history, or nothing)",
 			ErrUsage, args[0])
 	}
 }
@@ -36,10 +42,19 @@ func configCommand(env Env, args []string) error {
 // Both, rather than only the result: a person surprised by an editor wants to
 // know whether this project chose it or the machine did, and a merged view
 // answers "what am I running under" while leaving "why" unanswerable.
-func showConfig(env Env) error {
+func showConfig(env Env, args []string) error {
+	asJSON, err := wantsJSON(args)
+	if err != nil {
+		return err
+	}
 	global, project, err := readScopes(env)
 	if err != nil {
 		return err
+	}
+	if asJSON {
+		return writeJSON(env.Out, ConfigReport{
+			Project: env.Store.Project, Machine: global, Own: project,
+		})
 	}
 
 	fmt.Fprintf(env.Out, "project %s\n\n", env.Store.Project)
@@ -149,4 +164,44 @@ func scopeName(scope, project string) string {
 		return "this machine"
 	}
 	return "project " + project
+}
+
+// ConfigReport is `luna config --json`: both scopes, unmerged.
+//
+// Unmerged on purpose. A script that wants the value in effect can layer them the
+// way a command does; one that wants to know *where* a value came from cannot get
+// that back out of a merged map.
+type ConfigReport struct {
+	Project string            `json:"project"`
+	Machine map[string]string `json:"machine"`
+	Own     map[string]string `json:"own"`
+}
+
+// configHistory prints what a key has held, oldest first.
+//
+// The settings are append-only, and this is what that buys. The file they
+// replaced lived in git, so "who changed the workstream, and when" was answered
+// by the commit that changed it; a database that only kept the current value
+// would have traded an audit for a lookup.
+func configHistory(env Env, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("%w: config history needs one key", ErrUsage)
+	}
+	key := args[0]
+
+	scope := ScopeOf(key, env.Store.Project)
+	history, err := env.Store.SettingHistory(scope, key)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(env.Out, "%s (%s)\n\n", key, scopeName(scope, env.Store.Project))
+	for _, one := range history {
+		value := one.Value
+		if value == "" {
+			value = "(unset)"
+		}
+		fmt.Fprintf(env.Out, "  %-28s %s\n", value, time.Unix(one.At, 0).Format(time.RFC3339))
+	}
+	return nil
 }
