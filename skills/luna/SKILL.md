@@ -44,9 +44,10 @@ Measured: `diagnose` costs $0.88 over 19 turns on the task class it exists for
 and $2.88 over 48 on the wrong one — running an investigation where there is
 nothing to investigate is 3.3× for nothing.
 
-**The kind** decides which conditional stages apply — `diagnose` runs for a bug
-and not for a feature, `audit` runs for a feature and not for a chore. It
-defaults to `feature`.
+**The kind** says what you believe the work is, and it defaults to `feature`. It
+does not decide which stages run: the one conditional stage that ships is
+`full`'s `diagnose`, and it keys on what `intake` concluded after reading the
+code — not on what you typed before anyone had read anything.
 
 ```sh
 luna flow check          # what each flow carries, and where it stops
@@ -126,8 +127,9 @@ which of the three a task opens on, and it cannot change afterwards.
 and the code and concludes whether something is *broken* or *missing*; only the
 first opens `diagnose`. You do not have to know which when you open the task.
 
-`fix` is the shortcut for when you already do: it has no intake, so its
-`diagnose` keys on `--kind bug` instead.
+`fix` is the shortcut for when you already do: it has no intake, and its
+`diagnose` always runs. Choosing the flow *is* the declaration that something is
+broken, so there is nothing left for a condition to ask.
 
 ### Choosing from what the task says
 
@@ -139,10 +141,9 @@ Read the task's own words, in this order, and stop at the first that matches:
 2. **Is the shape of the change already settled?** — a version bump, a rename, a
    flag with one obvious implementation, a lint rule. Nothing to plan and
    nothing to judge: `chore --kind chore`.
-3. **Otherwise, `full`** — and it does not matter much whether you call it a
-   bug or a feature: `intake` reads the code and decides whether the
-   investigation runs. What `--kind` still does is keep `chore` off the
-   trail, so use it when the work genuinely is one.
+3. **Otherwise, `full`** — and it does not matter whether you call it a bug or
+   a feature: `intake` reads the code and decides whether the investigation
+   runs. Here the kind is a label on the task, not a fork in the trail.
 
 Two traps worth naming, both measured:
 
@@ -158,9 +159,13 @@ Two traps worth naming, both measured:
 
 | stop | shows you | needs autonomy |
 |---|---|---|
-| `setup` | the sandbox and the workstream, read from `.ai-jail` and `.ai-memory.toml` | 6 |
+| `setup` | what the containment will actually be and which workstream it writes to — measured by an agent that runs *outside* the jail, so it can read what the jail would do | 6 |
 | `plan` | the contract every later stage is held to | 9 |
 | `forge` | the commit plan and the delivery summary, **before** anything is committed | 9 |
+
+`chore` and `fix` open none. Nothing in them stops for a person — that is the
+trade for picking a flow with nothing to decide, and it means they run to the end
+unattended. `luna flow check` says so per flow, in those words.
 
 ### The loop
 
@@ -191,7 +196,8 @@ luna flow check          # what each flow carries, and where it stops
 ## Opening a task
 
 The statement is not description. It is what the `plan` stage turns into a
-contract, and what `verify` and `audit` hold the delivery against. A vague
+contract, and what the delivery is then held against — `forge`'s own check on
+`full`, `verify` on `chore` and `fix`. A vague
 acceptance line produces a contract nobody can check, and the whole flow
 downstream inherits it.
 
@@ -237,8 +243,8 @@ half of independence a single agent can have.
 
 **Pack** is the lead plus one agent per brief the flow declares, each with its own
 worktree and session. It costs a conductor billed every turn and a cold start at
-every stage. What it buys is an audit that is actually independent: `verify` and
-`audit` are denied `Edit` and `Write`, which one agent doing everything cannot be.
+every stage. What it buys is a review that is actually independent: `review` is
+denied `Edit` and `Write`, which one agent doing everything cannot be.
 
 Default to solo. Reach for the pack when the change is large enough that you
 want the judging done by something that cannot edit.
@@ -404,7 +410,7 @@ second ledger instead of stopping the stage.
   about who *may* answer, not about the answer.
 - **Do not edit the flow to make a task pass.** Changing a flow under an open
   task stops it replaying, and the flows come from the binary anyway.
-- **Do not treat a `[SHOULD-FIX]` from `audit` as this task's work.** It is a
+- **Do not treat a `[SHOULD-FIX]` from `review` as this task's work.** It is a
   real defect this change did not introduce. Open a task for it.
 - **Do not claim more than the check proved.** Evidence carries a scope —
   `existence` for a file that is there, `targeted` or `full` for a command that
@@ -418,6 +424,7 @@ luna next   <id>          # the order: stage, briefing, agent, worktree, base, w
 luna work   <id>          # run the agent for that stage and close it on its checks
 luna done   <id> --delivered <a,b> [--commit <sha>]
 luna artifact put <name>  # hand a document to Luna — runs inside a stage only
+luna task show  <id>      # one task: its stage, contract, spend and artifacts
 luna task list            # every active task across projects
 luna task abandon <id> <reason>
 luna task forget  <id>    # drop a finished task's documents; the log stays
