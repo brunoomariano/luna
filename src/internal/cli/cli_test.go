@@ -1832,3 +1832,68 @@ func TestTheVersionIsHonestAboutHowItWasBuilt(t *testing.T) {
 		})
 	}
 }
+
+// TestTheHelpNamesEveryCommand is the check nobody was doing by hand.
+//
+// `config` shipped registered and absent from the help, because it was added
+// without one — and so had `where` and `daemon` before it. A command nobody can
+// find is a command that does not exist, and the registry is the only thing that
+// knows the whole list.
+func TestTheHelpNamesEveryCommand(t *testing.T) {
+	help := Usage()
+
+	for _, command := range []string{
+		"task", "work", "unblock", "gates", "gate", "flow", "next", "done",
+		"status", "stuck", "lead", "autonomy", "budget", "fleet", "artifact",
+		"trust", "config", "version", "where", "daemon",
+	} {
+		if !strings.Contains(help, "luna "+command) {
+			t.Errorf("the help never names `luna %s`", command)
+		}
+	}
+
+	// And the subcommands, which are how most of them are actually typed.
+	for _, sub := range []string{
+		"task new", "task list", "task show", "task statement", "task abandon",
+		"task forget", "gate show", "gate approve", "gate reject", "gate adjust",
+		"gate checks", "fleet run", "fleet report", "flow check", "artifact put",
+		"artifact get", "config set", "config unset", "config history",
+	} {
+		if !strings.Contains(help, "luna "+sub) {
+			t.Errorf("the help never names `luna %s`", sub)
+		}
+	}
+}
+
+// TestTheHelpIsGroupedByWhatYouAreDoing. A flat list of twenty commands is a
+// list; the sections are what make it answerable, and they are the thing most
+// likely to rot as commands are added.
+func TestTheHelpIsGroupedByWhatYouAreDoing(t *testing.T) {
+	help := Usage()
+
+	sections := 0
+	for _, line := range strings.Split(help, "\n") {
+		if strings.HasPrefix(line, "── ") {
+			sections++
+		}
+	}
+	if sections < 6 {
+		t.Errorf("the help has %d sections, which is a list rather than a map of it", sections)
+	}
+
+	// The two facts a person needs while typing `task new` belong beside it, not
+	// in a footer they have already scrolled past.
+	_, after, found := strings.Cut(help, "── opening a task")
+	if !found {
+		t.Fatal("the help has no section for opening a task")
+	}
+	opening, _, found := strings.Cut(after, "── running it")
+	if !found {
+		t.Fatal("the section for opening a task never ends")
+	}
+	for _, want := range []string{"feature, bug, chore, docs", "interactive (default), turbo, nightly"} {
+		if !strings.Contains(opening, want) {
+			t.Errorf("opening a task does not say %q, so it is somewhere else", want)
+		}
+	}
+}

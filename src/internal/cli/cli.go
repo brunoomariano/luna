@@ -158,9 +158,55 @@ func Usage() string {
 	return strings.TrimSpace(`
 luna — deterministic orchestration for AI agents
 
+Luna decides which stage runs and closes it on what a command returned, not on
+what an agent said. Your part is the two ends: state the work well enough to
+build a contract from, and answer what Luna stops for.
+
+Most commands take a task id. Leave it out inside a task's own worktree and the
+branch answers; name it as <project>/<id> to reach a task in another project,
+which is the form every listing prints.
+
+── opening a task
+
+  luna task new <id> --kind <kind> [--flow <flow>] [--profile <profile>]
+        [--workstream <name> | --new-workstream <name>] [--simulated]
+        [--about <what>] [--design <how>] [--acceptance <done when>]
+        open a task's log, with what the task is about.
+
+        --about is what is wrong or missing today, in the present tense.
+        --design is how to approach it, and only where the approach is
+        actually constrained. --acceptance is the one that pays: every
+        clause has to be a command and an expected result, because it is
+        what the plan turns into a contract and what the delivery is held
+        against. "works correctly" is not one.
+
+        --kind      feature, bug, chore, docs. What you believe the work
+                    is. It does not pick stages: the one conditional stage
+                    that ships keys on what the intake concluded after
+                    reading the code.
+        --flow      which trail runs, and it cannot change afterwards —
+                    the flow's identity goes into the opening event, so a
+                    task that switched mid-run would be a log no replay
+                    could read. luna flow check lists them.
+        --profile   interactive (default), turbo, nightly, plus any this
+                    project names. A profile holds only its name now; the
+                    task records the one it was created under.
+
+        Every agent this task starts writes to one durable workstream, so
+        what one stage learned is there for the next. It is the project's
+        unless the task names another; --new-workstream is the only way
+        Luna opens one, because inferring that from an unknown name would
+        make a typo write to a second ledger instead of stopping.
+
+  luna task statement [<id>] [--about ...] [--design ...] [--acceptance ...]
+        correct what a task is about. The previous wording stays in the
+        log — a revision is an event, not an overwrite.
+
+── running it
+
 Two modes. Luna picks the stage in both; the knob picks who answers a gate.
 
-  luna lead <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
+  luna lead [<id>] [--autonomy 0-10] [--agent <kind>] [--dry-run]
         solo: one agent policy carries the task end to end. Luna starts it
         per stage, contained and in that stage's worktree; the stage's
         context setting decides whether its session is fresh or resumed.
@@ -169,190 +215,168 @@ Two modes. Luna picks the stage in both; the knob picks who answers a gate.
         --dry-run exercises the flow with no agent, no worktree and no
         model — it is what tells a broken flow from a broken integration.
 
-  luna fleet run <id> [--autonomy 0-10] [--agent <kind>] [--dry-run]
+  luna fleet run [<id>] [--autonomy 0-10] [--agent <kind>] [--dry-run]
         pack: the lead conducts, and every distinct stage briefing gets its
         own agent session and worktree. That is what buys an independent
-        audit: a judging stage can be denied the tools to edit, which one
+        review: a judging stage can be denied the tools to edit, which one
         agent doing everything cannot be.
-        The size of the pack is the flow's, not a flag's — luna flow
-        check says what each one names. A pack is inside one task.
+        The size of the pack is the flow's, not a flag's.
 
-how a stage is carried out — the pack's lead runs these, and so can you
+── how supervised it is
 
-  luna next <id> [--json]
-        the order for this task: which stage, briefing, agent, worktree,
-        base commit and denied capabilities. It is an instruction, not
-        advice, and reading it changes nothing.
+  luna autonomy [<id>] [<0-10> [reason]]
+        show the knob, or move it mid-run. Each gate declares the autonomy
+        it needs before the lead may answer it alone; 0 sends every gate to
+        a person and is the default. Moving it writes an event, so the log
+        says when it changed and why. A gate already open still goes to a
+        person; only later gates see the new value.
 
-  luna work <id> [--agent <kind>] [--dry-run]
-        run the agent for the stage the order names, and close that stage
-        with whatever its checks observed. It chooses no stage.
-
-  luna done <id> --delivered <a,b> [--commit <sha>]
-        report a stage carried out by hand, and hand in the commit it
-        produced. Luna checks the delivery against the contract — a stage
-        that owed more than it delivered does not close. A stage whose
-        contract names a command will not close this way.
-
-  luna artifact put <artifact> [--stage <stage>]
-  luna artifact get <artifact> [--stage <stage>]
-        hand a document to Luna, or read one back. This is how a stage
-        delivers something that is not a commit — a contract, a briefing —
-        without leaving it in the tree for everyone downstream.
-
-opening and correcting a task
-
-  luna task list [--json]
-        every active task in the central store, across projects. Project is
-        always shown because task ids are only unique inside one project.
-        Finished and abandoned history stays available in fleet report.
-
-  luna task new <id> --kind <kind> [--flow <flow>] [--profile <profile>]
-        [--workstream <name> | --new-workstream <name>] [--simulated]
-        [--about <what>] [--design <how>] [--acceptance <done when>]
-        open a task's log, with what the task is about. --flow picks which
-        flow it runs and cannot change afterwards: the flow's identity goes
-        into the opening event, so a task that switched flows mid-run would
-        be a log no replay could read. luna flow check lists them.
-        Every agent this task starts writes to one durable workstream, so
-        what one stage learned is there for the next. It is the project's
-        unless the task names another; --new-workstream is the only way
-        Luna opens one, because inferring that from an unknown name would
-        make a typo write to a second ledger instead of stopping.
-
-  luna task statement <id> [--about ...] [--design ...] [--acceptance ...]
-        correct what a task is about. The previous wording stays in the
-        log — a revision is an event, not an overwrite.
-
-  luna budget <id> [<usd> [reason]]
+  luna budget [<id>] [<usd> [reason]]
         show what the task may spend, or move the ceiling. No ceiling by
         default. A task that stops on its budget carries on by raising it
         and unblocking — a limit with no way past it makes the cheapest
-        failure the one you cannot recover from. Moving it writes an
-        event, so the log says when it changed and why.
+        failure the one you cannot recover from.
 
-  luna autonomy <id> [<0-10> [reason]]
-        show the knob, or move it mid-run. Moving it writes an event, so
-        the log says when it changed and why. A gate already open still
-        goes to a person; only later gates see the new value.
-
-  luna task abandon <id> <reason>
-        end a task that will not be finished. The log keeps everything —
-        abandoning records that a person called it off, and why.
-
-  luna task forget <id>
-        drop the documents a finished task handed over. The log is
-        untouched, hashes included, so what was produced outlives the
-        content. Only a task that has ended may be forgotten.
-
-answering a gate
-
-  luna gate show <id>
-        what a suspended task is waiting for, and what the lead already
-        concluded about it if the knob let it look
-
-  luna gate approve <id>
-        accept and carry on
-
-  luna gate reject <id> [reason]
-        refuse the artifact; the stage that produced it runs again
-
-  luna gate adjust <id> [--append <text> | --replace <text> | --stdin]
-        change the artifact under review, then accept the changed version.
-        With no flag, opens the editor. The flags exist so an agent or a
-        script can answer a gate without a terminal.
-
-  luna gate checks <id> --on <gate> [--run <command>]...
+  luna gate checks [<id>] --on <gate> [--run <command>]...
         declare the commands that answer a gate mechanically. They run
         against what the stage delivered, and the first failure is the
         answer. With no --run, the gate is declared to have no mechanical
         answer and goes to judgement.
 
-watching
+── answering a gate
 
-  luna status <id> [--json]
-        the current project's task: its whole flow and where it stands — which flow and
-        its fingerprint, the pack it keeps, the workstream it writes to,
-        what the knob means for these gates, the ceiling and what is
-        left, and per stage the model that answered, the turns and the
-        cost. Plus where each stage's worktree is, and which one is open.
-        Separate from next on purpose: an order carries no view of what
-        comes after it.
+  luna gate show [<id>]
+        what a suspended task is waiting for, and what the lead already
+        concluded about it if the knob let it look
+
+  luna gate approve [<id>]
+        accept and carry on
+
+  luna gate reject [<id>] [reason]
+        refuse the artifact; the stage that produced it runs again
+
+  luna gate adjust [<id>] [--append <text> | --replace <text> | --stdin]
+        change the artifact under review, then accept the changed version.
+        With no flag, opens the editor. The flags exist so an agent or a
+        script can answer a gate without a terminal.
+
+── where everything stands
+
+  luna status [<id>] [--json]
+        one task, whole: which flow and its fingerprint, the pack it keeps,
+        the workstream it writes to, what the knob means for these gates,
+        the ceiling and what is left, per stage the model that answered
+        with its turns and cost, where each worktree is, what the task is
+        about and what it has produced.
 
   luna task show [<id>] [--json]
-        the statement a task was opened with, and what it has produced.
-        luna status is the fuller view of the same task — the flow, the
-        pack, the cost, the worktrees — and carries both of these too.
+        the narrower view of the same task — the statement and what it
+        delivered. Its --json carries a different shape from status.
+
+  luna task list [--json]
+        every active task, across every project. Project is always shown
+        because task ids are only unique inside one.
 
   luna gates [--json]
-        every task waiting on a person, across every project in the central store
+        every task waiting on a person, across every project
 
   luna stuck [--for <duration>] [--notify] [--json]
-        what has been stopped for too long across every project — a blocked
-        merge, a gate nobody answered. Defaults to an hour. --notify tells
-        a person instead of only whoever ran the command.
+        what has been stopped for too long — a blocked merge, a gate nobody
+        answered. Defaults to an hour. --notify tells a person instead of
+        only whoever ran the command.
 
   luna fleet report [--since <duration>] [--json]
-        what every task in the central store is, grouped by what has to happen next.
-        This is the morning's product rather than a side effect of it.
+        every task grouped by what has to happen next. This is the
+        morning's product rather than a side effect of it.
 
-  luna unblock <id>
-        clear a block once whatever caused it is dealt with
+  luna where [--json]
+        what this working directory already is: repository, worktree,
+        branch, and the task and stage the branch names.
 
-  luna flow check [--flow <flow>]
-        what flows this build carries, whether anything is open globally, and
-        what each has cost before — median by stage, from the central log.
-        --flow cannot change once a task opens, so it
-        is the most expensive decision available and was the one made
-        with the least information.
-        They come from the binary and a project cannot override them —
+── when it stops
+
+  luna unblock [<id>]
+        clear a block once whatever caused it is dealt with. It resets the
+        retry budget, because the block was the escalation — so deal with
+        the cause first: unblocking a tooling failure without fixing the
+        machine is a second failure with a second bill.
+
+  luna task abandon [<id>] <reason>
+        end a task that will not be finished. The log keeps everything —
+        abandoning records that a person called it off, and why. It is also
+        the way out of a task whose flow this build no longer has, because
+        it appends without reading.
+
+  luna task forget [<id>]
+        drop the documents a finished task handed over. The log is
+        untouched, hashes included, so what was produced outlives the
+        content. Only a task that has ended may be forgotten.
+
+── choosing a flow
+
+  luna flow check [--flow <flow>] [--json]
+        what flows this build carries, what each fingerprints to, how big
+        its pack is, where it stops, and what it has cost before — median
+        by stage, from the central log. Also whether anything is open,
+        because changing a flow under an open task stops it replaying.
+        The flows come from the binary and a project cannot override them:
         one build, one set of flows, every repository the same.
-        Every flow by default — one that is never audited is one whose
-        contract nobody checked. Changing a flow under an open task stops
-        it replaying.
 
-setting the machine up
+── carrying a stage out yourself
+
+The pack's lead runs these, and so can you.
+
+  luna next [<id>] [--json]
+        the order for this task: which stage, briefing, agent, worktree,
+        base commit and denied capabilities. It is an instruction, not
+        advice, and reading it changes nothing.
+
+  luna work [<id>] [--agent <kind>] [--dry-run]
+        run the agent for the stage the order names, and close that stage
+        with whatever its checks observed. It chooses no stage.
+
+  luna done [<id>] --delivered <a,b> [--commit <sha>]
+        report a stage carried out by hand, and hand in the commit it
+        produced. Luna checks the delivery against the contract — a stage
+        that owed more than it delivered does not close.
+
+  luna artifact put <artifact> [--stage <stage>]
+  luna artifact get <artifact> [--stage <stage>]
+        hand a document to Luna, or read one back. Runs inside a stage
+        only, where Luna is listening on the handover socket.
+
+── the machine
+
+  luna config [--json]
+  luna config set <key> <value>
+  luna config unset <key>
+  luna config history <key>
+        editor and lead_harness are this machine's, set once for every
+        project here. turn_budget, workstream and profiles are the
+        project's, and a project setting wins over the machine's.
+        bootstrap is shown and cannot be set — it is what setup discovered
+        by reading the project. A setting is an append, so history says
+        what a key held before and when it changed.
 
   luna version
         which build this is, and the flows it carries with their
         fingerprints. A skill or a runbook written against one surface and
         run against another fails at the first unknown flag with no way to
-        tell which of the two is behind — this is the one comparison that
+        tell which of the two is behind — this is the comparison that
         answers it.
 
   luna trust
         tell the harness it trusts the directory Luna makes worktrees in,
         so its agents start at a prompt instead of at a folder dialog.
 
-  luna config [--json]
-  luna config set <key> <value>
-  luna config unset <key>
-  luna config history <key>
-        what this project and this machine are set to. editor and
-        lead_harness are the machine's, set once for every project here;
-        turn_budget, workstream and profiles are the project's, and a
-        project setting wins. bootstrap is shown and cannot be set — it is
-        what setup discovered by reading the project. A setting is an
-        append, so history says what a key held before and when it changed.
-
-  luna where [--json]
-        what this working directory already is: repository, worktree,
-        branch, and the task and stage the branch names. Every command
-        that takes an id will take it from here when you leave it out.
-
   luna daemon [--socket <path>] [--store <path>]
         run the one process that writes the log. It starts itself when a
         command finds nobody listening, so this is for running it in the
         foreground where its failures are visible.
 
-config:   luna config — editor and lead_harness are this machine's;
-          turn_budget, workstream and profiles are the project's
-state:    $XDG_DATA_HOME/luna/luna.db — one central database, written only
-          by the daemon; project identity scopes task ids inside it
-
-kinds:    feature, bug, chore, docs
-profiles: interactive (default), turbo, nightly, plus any the project
-          names with luna config set profiles
+state: $XDG_DATA_HOME/luna/luna.db — one central database, written only by the
+daemon; project identity scopes task ids inside it. Nothing of Luna's is written
+into a checkout.
 `)
 }
 
