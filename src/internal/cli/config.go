@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -11,7 +9,9 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// Config is what a project can set for itself, read from `.luna/config.toml`.
+// Config is what a project and the machine are set to, built from the settings
+// the daemon holds. It used to be read from `.luna/config.toml`, and nothing reads
+// that file now.
 //
 // It exists because a person's `$EDITOR` serves their git, not necessarily this
 // project: a repository whose contracts are long markdown may want a different
@@ -85,18 +85,6 @@ type Config struct {
 }
 
 // sectionKind is which `[...]` block the parser is inside.
-type sectionKind int
-
-const (
-	sectionNone sectionKind = iota
-	sectionProfile
-)
-
-// sectionRef is the section currently open, and what it names.
-type sectionRef struct {
-	kind sectionKind
-	name string
-}
 
 // ShippedProfiles are the names the shipped stock defines, expressed the same way
 // a configured one is. They are defaults, not special cases.
@@ -169,128 +157,6 @@ func (c Config) ProfileNames() []string {
 	return names
 }
 
-// LoadConfig reads the project's configuration.
-//
-// A missing file is not an error: it is the ordinary case, and returning the
-// shipped defaults keeps every caller from having to distinguish "no file" from
-// "empty file".
-func LoadConfig(path string) (Config, error) {
-	content, err := os.ReadFile(path) //nolint:gosec // the path comes from the CLI, not from input
-	if os.IsNotExist(err) {
-		return Config{Profiles: ShippedProfiles()}, nil
-	}
-	if err != nil {
-		return Config{}, fmt.Errorf("reading %s: %w", path, err)
-	}
-
-	return parseConfig(string(content), path)
-}
-
-// parseConfig reads the subset of TOML this file needs: `key = value`, string
-// arrays, and `[profile.<name>]` sections, plus comments and blank lines.
-//
-// Still hand-rolled rather than a dependency. The earlier note here said the
-// trade would flip the moment the file grew sections and arrays, and it has —
-// but the grammar is closed, not open: these are the only two shapes the config
-// will hold, and a TOML library would bring datetimes, nested tables and inline
-// arrays that nothing here accepts. The engine's single external dependency is a
-// line worth keeping; if the config ever takes a shape not listed above, that is
-// the point to replace this rather than extend it.
-func parseConfig(content, path string) (Config, error) {
-	cfg := Config{Profiles: map[fsm.Profile]bool{}}
-	var section sectionRef
-
-	for number, raw := range strings.Split(content, "\n") {
-		line := strings.TrimSpace(stripComment(raw))
-		if line == "" {
-			continue
-		}
-		where := fmt.Sprintf("%s:%d", path, number+1)
-
-		if header, ok := sectionName(line); ok {
-			parsed, err := openSection(&cfg, header, where)
-			if err != nil {
-				return Config{}, err
-			}
-			section = parsed
-			continue
-		}
-
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			return Config{}, fmt.Errorf("%s: expected key = value, got %q", where, line)
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-
-		if err := assign(&cfg, section, key, value, where); err != nil {
-			return Config{}, err
-		}
-	}
-
-	// A file that names no profiles still gets the shipped ones, so setting an
-	// editor does not silently cost someone their `--profile nightly`.
-	if len(cfg.Profiles) == 0 {
-		cfg.Profiles = ShippedProfiles()
-	}
-	return cfg, nil
-}
-
-// openSection declares what a `[...]` header opens.
-//
-// An empty section still declares the thing: `[profile.yolo]` is a profile name
-// even though profiles hold no settings. Refusing it would make the file
-// order-dependent.
-func openSection(cfg *Config, header, where string) (sectionRef, error) {
-	parsed, err := parseSection(header, where)
-	if err != nil {
-		return sectionRef{}, err
-	}
-
-	// Every kind is named rather than relying on a default: when a third section
-	// is added, this is the place that has to decide about it instead of silently
-	// declaring nothing.
-	switch parsed.kind {
-	case sectionNone:
-		return sectionRef{}, fmt.Errorf("%s: section [%s] names nothing", where, header)
-	case sectionProfile:
-		cfg.Profiles[fsm.Profile(parsed.name)] = true
-	}
-	return parsed, nil
-}
-
-// assign places one setting, in the root or inside a section.
-func assign(cfg *Config, section sectionRef, key, value, where string) error {
-	switch section.kind {
-	case sectionProfile:
-		return assignProfile(cfg, section.name, key, value, where)
-	default:
-		return assignRoot(cfg, key, value, where)
-	}
-}
-
-// assignProfile refuses every setting inside a `[profile.<name>]` section.
-//
-// A profile decides nothing any more: whether a gate waits is the stage's
-// declaration, who answers it is the knob, and the watchdog's clock is
-// project-wide. What survives is the *name* — a task's log carries the one it
-// was created under, and `task new --profile` validates against the set — so the
-// section still declares a profile into existence and simply holds no settings.
-//
-// Refused rather than ignored. A config that loads and decides nothing is the
-// silent kind of wrong: the person keeps a file that reads like supervision and
-// gets none.
-//
-// One message rather than one per retired key. `waits`, `turn_budget`,
-// `idle_budget` and `tool_budget` each had their own, naming where the setting
-// had moved — which is worth writing for a config somebody already has, and this
-// project has no released version and so no such config. What is left is the
-// sentence that is true for any key at all.
-func assignProfile(_ *Config, section, key, _, where string) error {
-	return fmt.Errorf("%s: unknown setting %q in [profile.%s] — a profile holds no "+
-		"settings now, only its name", where, key, section)
-}
-
 func assignRoot(cfg *Config, key, value, where string) error {
 	switch key {
 	case "editor":
@@ -327,65 +193,4 @@ func assignRoot(cfg *Config, key, value, where string) error {
 		return fmt.Errorf("%s: unknown setting %q (expected editor, lead_harness, turn_budget, "+
 			"bootstrap, workstream)", where, key)
 	}
-}
-
-// sectionName reports the name inside `[...]`, if the line is a section header.
-func sectionName(line string) (string, bool) {
-	if !strings.HasPrefix(line, "[") || !strings.HasSuffix(line, "]") {
-		return "", false
-	}
-	return strings.TrimSpace(line[1 : len(line)-1]), true
-}
-
-// parseSection reads a section header into the kind it opens and the thing it
-// names.
-//
-// Two kinds exist and an unknown one is refused: a mistyped header would
-// otherwise swallow every setting under it, and the file would parse into
-// something nobody wrote.
-func parseSection(header, where string) (sectionRef, error) {
-	kind, name, found := strings.Cut(header, ".")
-	if !found || name == "" {
-		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>])", where, header)
-	}
-	if strings.Contains(name, ".") {
-		return sectionRef{}, fmt.Errorf("%s: names hold no dots, got %q", where, name)
-	}
-
-	name = strings.Trim(name, `"`)
-	switch kind {
-	case "profile":
-		return sectionRef{kind: sectionProfile, name: name}, nil
-	default:
-		return sectionRef{}, fmt.Errorf("%s: unknown section [%s] (expected [profile.<name>])", where, header)
-	}
-}
-
-// stripComment drops a trailing `#` comment, leaving one inside quotes alone —
-// an editor command may legitimately contain a hash.
-func stripComment(line string) string {
-	quoted := false
-	for i, r := range line {
-		switch {
-		case r == '"':
-			quoted = !quoted
-		case r == '#' && !quoted:
-			return line[:i]
-		}
-	}
-	return line
-}
-
-// ConfigPath is where a project's configuration lives: inside the repository.
-//
-// It stays in the checkout after the log left it, and the difference is who the
-// file belongs to. The log is Luna's state about a project; the config is the
-// project's own settings — a bootstrap command, a workstream, a turn budget —
-// and a team shares those through git the way it shares everything else.
-//
-// Derived from the repository rather than from the store path, which is what it
-// used to be. Those were the same directory while the log lived in the checkout,
-// and became different the moment it did not.
-func ConfigPath(repo string) string {
-	return filepath.Join(repo, ".luna", "config.toml")
 }

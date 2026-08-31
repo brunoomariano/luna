@@ -101,67 +101,11 @@ func parseProfiles(value string) map[fsm.Profile]bool {
 	return names
 }
 
-// SettingsOf is a config taken apart into the settings that would rebuild it,
-// split by the scope each key belongs to.
+// renamedKeys are the spellings that used to work, and what each became.
 //
-// It exists for the one-time import of a project's `.luna/config.toml`: the file
-// is parsed by the parser it was always parsed by, and what comes out is written
-// through the daemon like any other setting.
-func SettingsOf(cfg Config, project string) (global, projectSettings map[string]string) {
-	global, projectSettings = map[string]string{}, map[string]string{}
-	put := func(key, value string) {
-		if value == "" {
-			return
-		}
-		if ScopeOf(key, project) == store.GlobalScope {
-			global[key] = value
-			return
-		}
-		projectSettings[key] = value
-	}
-
-	put("editor", cfg.Editor)
-	put("lead_harness", cfg.LeadHarness)
-	put("workstream", cfg.Workstream)
-	// Carried even though nobody may set it any more: a project that has the key
-	// today would otherwise lose its preparation step between the import and the
-	// first `setup` that discovers one.
-	put("bootstrap", cfg.Bootstrap)
-	if cfg.TurnBudget > 0 {
-		put("turn_budget", cfg.TurnBudget.String())
-	}
-	if names := profileNames(cfg.Profiles); names != "" {
-		put(ProfilesKey, names)
-	}
-	return global, projectSettings
-}
-
-// profileNames renders a profile set as the value the settings hold, or empty
-// when it is the shipped set — writing the default down would freeze it against
-// a later build that ships another.
-func profileNames(profiles map[fsm.Profile]bool) string {
-	if len(profiles) == 0 || sameProfiles(profiles, ShippedProfiles()) {
-		return ""
-	}
-	names := make([]string, 0, len(profiles))
-	for name := range profiles {
-		names = append(names, string(name))
-	}
-	sort.Strings(names)
-	return strings.Join(names, ",")
-}
-
-func sameProfiles(a, b map[fsm.Profile]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for name := range a {
-		if !b[name] {
-			return false
-		}
-	}
-	return true
-}
+// `interpreter` named the harness the lead asks when it judges a gate, and was
+// called after a command that no longer exists.
+var renamedKeys = map[string]string{"interpreter": "lead_harness"}
 
 // CheckConfigKey refuses a key nothing reads, before it is written.
 //
@@ -173,6 +117,12 @@ func CheckConfigKey(key string) error {
 		if key == known {
 			return nil
 		}
+	}
+	// Renamed keys answer with the new name rather than falling through to "not
+	// recognised" — which is true and sends the person looking for a spelling
+	// instead of telling them the one that replaced it.
+	if replacement, renamed := renamedKeys[key]; renamed {
+		return fmt.Errorf("%w: `%s` is now `%s`", ErrUsage, key, replacement)
 	}
 	for _, found := range DiscoveredKeys() {
 		if key == found {

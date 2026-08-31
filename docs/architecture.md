@@ -170,8 +170,9 @@ have no project key, and assigning an empty or guessed one would make the tasks 
 from their checkout. That opening is refused with an import instruction. Empty old tables
 may be upgraded in place because there is no identity to invent.
 
-What stays in the checkout is `.luna/config.toml`, which is the project's own settings
-rather than Luna's state, and the `.gitignore` that keeps it company.
+Nothing stays in the checkout. The settings went into the same database, keyed by project,
+and the `.gitignore` that used to hide Luna's scratch went with the scratch. What Luna still
+writes to a repository is one line inside `.git` naming where the database is.
 
 The handover socket left too. It is at `$XDG_RUNTIME_DIR/luna/<task>-<stage>.sock`, which
 the sandbox is asked to expose read-only, and one consequence is worth stating: how deep a
@@ -424,7 +425,7 @@ on the way in.
 
 **The workstream is the task's.** Every agent a task starts writes to one ledger, so what
 the planner learned is there for the coder and for the next task over the same ground. The
-default is the project's, from `.luna/config.toml`; a task may name another with
+default is the project's, from `luna config set workstream`; a task may name another with
 `--workstream`, or ask Luna to open one with `--new-workstream`. What it used is written
 into the opening event, so a replay reads where the work went rather than where the config
 points today.

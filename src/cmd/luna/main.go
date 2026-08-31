@@ -64,7 +64,6 @@ type storeOpening struct {
 	repo    string
 	path    string
 	chosen  bool
-	config  cli.Config
 	project node.Project
 }
 
@@ -104,7 +103,6 @@ func settingsConfig(client daemon.Client, project string) (cli.Config, error) {
 	if err != nil {
 		return cli.Config{}, err
 	}
-	delete(own, configImported)
 	return cli.ConfigFrom(global, own)
 }
 
@@ -126,18 +124,11 @@ func resolveStoreOpening(ctx context.Context) (storeOpening, error) {
 		return storeOpening{}, err
 	}
 
-	// The config is read before the store is opened: a malformed config should
-	// report itself rather than being discovered halfway through a command.
-	cfg, err := cli.LoadConfig(cli.ConfigPath(repo))
-	if err != nil {
-		return storeOpening{}, err
-	}
-
 	project, err := node.IdentifyProject(ctx, cwd)
 	if err != nil {
 		return storeOpening{}, err
 	}
-	return storeOpening{repo: repo, path: path, chosen: chosen, config: cfg, project: project}, nil
+	return storeOpening{repo: repo, path: path, chosen: chosen, project: project}, nil
 }
 
 func connectDaemon(opening storeOpening) (daemon.Client, error) {
@@ -157,57 +148,7 @@ func connectDaemon(opening storeOpening) (daemon.Client, error) {
 	if err := importCheckoutStore(client, opening); err != nil {
 		return daemon.Client{}, err
 	}
-	if err := importCheckoutConfig(client, opening); err != nil {
-		return daemon.Client{}, err
-	}
 	return client, nil
-}
-
-// configImported marks a project whose `.luna/config.toml` has already been read
-// into the settings.
-//
-// A marker rather than "the project has no settings yet", because a person who
-// unsets everything would otherwise have the file imported over the top of the
-// decision they just made.
-const configImported = "config_imported"
-
-// importCheckoutConfig moves a project's file into the settings, once.
-//
-// The file is parsed by the parser that always parsed it, and what comes out is
-// written through the daemon like any other setting. It is left on disk rather
-// than renamed: it is committed, shared through git, and renaming it would show
-// up as an unexplained change in every colleague's checkout.
-func importCheckoutConfig(client daemon.Client, opening storeOpening) error {
-	if opening.chosen {
-		return nil
-	}
-	already, err := client.Settings(opening.project.Key)
-	if err != nil {
-		return err
-	}
-	if already[configImported] != "" {
-		return nil
-	}
-
-	path := cli.ConfigPath(opening.repo)
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("checking %s: %w", path, err)
-	}
-
-	global, project := cli.SettingsOf(opening.config, opening.project.Key)
-	for key, value := range global {
-		if err := client.SetSetting("", key, value); err != nil {
-			return err
-		}
-	}
-	for key, value := range project {
-		if err := client.SetSetting(opening.project.Key, key, value); err != nil {
-			return err
-		}
-	}
-	return client.SetSetting(opening.project.Key, configImported, path)
 }
 
 func importCheckoutStore(client daemon.Client, opening storeOpening) error {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brunoomariano/luna/src/internal/fsm"
 	"github.com/brunoomariano/luna/src/internal/store"
@@ -166,49 +167,51 @@ func TestTheListingSaysWhereAValueCameFrom(t *testing.T) {
 	}
 }
 
-// TestAConfigSurvivesTheRoundTripIntoSettings is the migration path: a project's
-// file is parsed by the parser that always parsed it, taken apart into settings,
-// and has to come back as the same thing.
-func TestAConfigSurvivesTheRoundTripIntoSettings(t *testing.T) {
-	before, err := parseConfig(`
-editor = "hx"
-lead_harness = "codex"
-turn_budget = "45m"
-workstream = "the-project"
-
-[profile.patient]
-[profile.turbo]
-`, "the file")
+// TestEverySettingReachesTheConfigItFeeds. Each key is read by something —
+// `Turn`, `Memory`, the editor resolution, `--profile` validation — and a key
+// that stored fine and arrived nowhere would be a setting that looks applied.
+func TestEverySettingReachesTheConfigItFeeds(t *testing.T) {
+	cfg, err := ConfigFrom(
+		map[string]string{"editor": "hx", "lead_harness": "codex"},
+		map[string]string{
+			"turn_budget": "45m",
+			"workstream":  "the-project",
+			ProfilesKey:   "patient,turbo",
+		},
+	)
 	if err != nil {
-		t.Fatalf("parsing the file: %v", err)
+		t.Fatalf("building the config: %v", err)
 	}
 
-	global, project := SettingsOf(before, "app-1")
-	after, err := ConfigFrom(global, project)
-	if err != nil {
-		t.Fatalf("rebuilding from settings: %v", err)
+	if cfg.Editor != "hx" || cfg.LeadHarness != "codex" {
+		t.Errorf("the machine's settings did not arrive: %+v", cfg)
 	}
-
-	if after.Editor != before.Editor || after.LeadHarness != before.LeadHarness {
-		t.Errorf("the machine's settings did not survive: %+v", after)
+	if cfg.Turn() != 45*time.Minute {
+		t.Errorf("the turn budget is %v, want 45m", cfg.Turn())
 	}
-	if after.TurnBudget != before.TurnBudget || after.Workstream != before.Workstream {
-		t.Errorf("the project's settings did not survive: %+v", after)
+	if cfg.Memory() != "the-project" {
+		t.Errorf("the workstream is %q, want the-project", cfg.Memory())
 	}
-	if !sameProfiles(after.Profiles, before.Profiles) {
-		t.Errorf("the profiles did not survive: %v, want %v", after.Profiles, before.Profiles)
+	if !cfg.Defines("patient") || !cfg.Defines("turbo") {
+		t.Errorf("the declared profiles did not arrive: %v", cfg.ProfileNames())
+	}
+	if cfg.Defines("nightly") {
+		t.Error("a project that named two profiles still answers to a third")
 	}
 }
 
-// TestTheShippedProfilesAreNotWrittenDown. Storing the default would freeze this
-// build's set against a later one that ships another, and a project that never
-// declared a profile would silently start refusing a new name.
-func TestTheShippedProfilesAreNotWrittenDown(t *testing.T) {
-	_, project := SettingsOf(Config{Profiles: ShippedProfiles()}, "app-1")
-
-	if value, written := project[ProfilesKey]; written {
-		t.Errorf("the shipped profiles were written down as %q", value)
+// sameProfiles is the comparison these tests make, kept here because nothing in
+// the code needs it: a config's profiles are read one name at a time.
+func sameProfiles(a, b map[fsm.Profile]bool) bool {
+	if len(a) != len(b) {
+		return false
 	}
+	for name := range a {
+		if !b[name] {
+			return false
+		}
+	}
+	return true
 }
 
 // TestConfigRefusesWhatItCannotActOn covers the shapes a person gets wrong at

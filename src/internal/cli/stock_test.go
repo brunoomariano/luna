@@ -27,8 +27,8 @@ func TestTheStockProfilesMatchTheShippedPolicy(t *testing.T) {
 }
 
 // TestAStockFileHasNoSections. Its name is the filename, so a `[header]` is a
-// file written against the config's format — refused rather than ignored, since
-// ignoring it would silently drop everything under it.
+// file written against a format nothing here reads — refused rather than ignored,
+// since ignoring it would silently drop everything under it.
 func TestAStockFileHasNoSections(t *testing.T) {
 	files := fstest.MapFS{
 		"profiles/nightly.toml": &fstest.MapFile{Data: []byte("[profile.nightly]\nturn_budget = \"1h\"\n")},
@@ -38,8 +38,11 @@ func TestAStockFileHasNoSections(t *testing.T) {
 	if err == nil {
 		t.Fatal("a sectioned stock file was accepted")
 	}
-	if !strings.Contains(err.Error(), "config.toml") {
-		t.Errorf("the error does not say where sections belong: %v", err)
+	if !strings.Contains(err.Error(), "no sections") {
+		t.Errorf("the error does not say a stock file has no sections: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[profile.nightly]") {
+		t.Errorf("the error does not quote the line it refused: %v", err)
 	}
 }
 

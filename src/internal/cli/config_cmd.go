@@ -14,7 +14,8 @@ import (
 // The settings live in the one database the daemon owns, keyed by project, and
 // this is the only surface that writes them. They used to live in
 // `.luna/config.toml`, which is why the shape here is a key and a value rather
-// than a file: what changed is where they are kept, not what they are.
+// than a file: what changed is where they are kept, not what they are. That file
+// is not read at all any more — not even once, to import it.
 func configCommand(env Env, args []string) error {
 	if len(args) == 0 {
 		return showConfig(env)

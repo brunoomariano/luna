@@ -1,106 +1,36 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// TestAMissingConfigIsTheOrdinaryCase covers the default.
+// TestNothingConfiguredIsTheOrdinaryCase covers the default.
 //
-// Most projects will never write one. Treating its absence as an error would make
-// every command fail until someone created an empty file.
-func TestAMissingConfigIsTheOrdinaryCase(t *testing.T) {
-	cfg, err := LoadConfig(filepath.Join(t.TempDir(), "nothing-here.toml"))
+// Most projects will never set anything. Treating that as an error would make
+// every command fail until somebody configured something — and the profiles are
+// not empty either: a project that declared none still gets the three shipped
+// ones, or `--profile nightly` would stop working.
+func TestNothingConfiguredIsTheOrdinaryCase(t *testing.T) {
+	cfg, err := ConfigFrom(nil, nil)
 	if err != nil {
-		t.Fatalf("a missing config is not an error: %v", err)
+		t.Fatalf("an unconfigured project is not an error: %v", err)
 	}
 	if cfg.Editor != "" {
 		t.Errorf("want no editor configured, got %q", cfg.Editor)
 	}
-
-	// The profiles are not zero, though: a project with no config still gets the
-	// three shipped ones, or `--profile nightly` would stop working.
 	if !cfg.Defines("nightly") {
 		t.Errorf("want the shipped profiles, got %v", cfg.ProfileNames())
 	}
 }
 
-// TestTheProjectCanSetItsOwnEditor covers the setting that motivated the file.
-func TestTheProjectCanSetItsOwnEditor(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	write(t, path, `
-# how this project prefers to review contracts
-editor = "code --wait"
-`)
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Editor != "code --wait" {
-		t.Errorf("want the configured editor, got %q", cfg.Editor)
-	}
-}
-
-// TestAnUnknownSettingIsAnError covers the strict-parsing decision.
+// TestASettingThatCannotBeReadBackIsRefused covers the strict reading.
 //
-// A typo in `editor` would otherwise leave the setting silently unapplied, and the
-// person would conclude the feature does not work rather than that they misspelled
-// it.
-func TestAnUnknownSettingIsAnError(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	write(t, path, `editr = "vim"`)
-
-	_, err := LoadConfig(path)
-
-	if err == nil {
-		t.Fatal("an unknown setting must be reported")
-	}
-	if !strings.Contains(err.Error(), "editr") {
-		t.Errorf("the error should name the offending key, got %v", err)
-	}
-}
-
-// TestAMalformedLineIsReportedWithItsNumber covers the parse error path.
-func TestAMalformedLineIsReportedWithItsNumber(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	write(t, path, "editor = \"vim\"\nthis is not a setting\n")
-
-	_, err := LoadConfig(path)
-
-	if err == nil {
-		t.Fatal("a malformed line must be reported")
-	}
-	if !strings.Contains(err.Error(), ":2:") {
-		t.Errorf("the error should name the line, got %v", err)
-	}
-}
-
-// TestAnUnreadableConfigIsReported covers the I/O error path.
-func TestAnUnreadableConfigIsReported(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores file permissions, so this cannot be provoked")
-	}
-
-	path := filepath.Join(t.TempDir(), "config.toml")
-	write(t, path, `editor = "vim"`)
-	if err := os.Chmod(path, 0o000); err != nil {
-		t.Fatalf("preparing the fixture: %v", err)
-	}
-
-	if _, err := LoadConfig(path); err == nil {
-		t.Error("a config that cannot be read must be reported, not ignored")
-	}
-}
-
-// TestConfigSitsNextToTheStore covers the path convention.
-func TestConfigSitsNextToTheStore(t *testing.T) {
-	got := ConfigPath("/home/someone/project")
-
-	if got != "/home/someone/project/.luna/config.toml" {
-		t.Errorf("want the config beside the store, got %q", got)
+// A key nothing understands, sitting in the database, is a setting that looks
+// applied and does nothing. `luna config set` refuses it at the terminal; this is
+// the other end, where a database written by another build is read.
+func TestASettingThatCannotBeReadBackIsRefused(t *testing.T) {
+	if _, err := ConfigFrom(nil, map[string]string{"edtior": "hx"}); err == nil {
+		t.Error("a key nothing reads was accepted")
 	}
 }
 
@@ -156,13 +86,5 @@ func TestTheConfiguredEditorIsActuallyUsed(t *testing.T) {
 	}
 	if got != "the contract" {
 		t.Errorf("want the content back unchanged, got %q", got)
-	}
-}
-
-func write(t *testing.T, path, content string) {
-	t.Helper()
-
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("writing the fixture: %v", err)
 	}
 }

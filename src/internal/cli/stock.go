@@ -51,6 +51,37 @@ func LoadProfiles(files fs.FS, dir string) (map[fsm.Profile]bool, error) {
 	return profiles, nil
 }
 
+// assignProfile refuses every key inside a profile file.
+//
+// A profile holds only its name. What it used to carry moved to where each thing
+// is actually decided: whether a gate waits is the stage's declaration, who
+// answers it is the knob, and the watchdog's clock is project-wide. What survives
+// is the name — a task's log carries the one it was created under, and `task new
+// --profile` validates against the set.
+//
+// Refused rather than ignored. A file that loads and decides nothing is the
+// silent kind of wrong: somebody keeps a file that reads like supervision and
+// gets none.
+func assignProfile(_ *Config, section, key, _, where string) error {
+	return fmt.Errorf("%s: unknown setting %q in profile %s — a profile holds no "+
+		"settings now, only its name", where, key, section)
+}
+
+// stripComment drops a trailing `#` comment, leaving one inside quotes alone —
+// a value may legitimately contain a hash.
+func stripComment(line string) string {
+	quoted := false
+	for i, r := range line {
+		switch {
+		case r == '"':
+			quoted = !quoted
+		case r == '#' && !quoted:
+			return line[:i]
+		}
+	}
+	return line
+}
+
 // eachSetting walks a flat `key = value` file, calling assign for each line.
 //
 // Flat because the name is the filename: a stock file has no sections, so a
@@ -66,7 +97,7 @@ func eachSetting(content, where string, assign func(key, value, at string) error
 
 		if strings.HasPrefix(line, "[") {
 			return fmt.Errorf("%s: a stock file has no sections — its name is the filename, "+
-				"and %q belongs in a project's config.toml", at, line)
+				"and %q is a header it has no place for", at, line)
 		}
 
 		key, value, found := strings.Cut(line, "=")

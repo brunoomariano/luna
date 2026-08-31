@@ -322,14 +322,14 @@ setting the machine up
         tell the harness it trusts the directory Luna makes worktrees in,
         so its agents start at a prompt instead of at a folder dialog.
 
-config:   .luna/config.toml — editor, lead_harness, turn_budget,
-          workstream (the project's default), profiles
+config:   luna config — editor and lead_harness are this machine's;
+          turn_budget, workstream and profiles are the project's
 state:    $XDG_DATA_HOME/luna/luna.db — one central database, written only
           by the daemon; project identity scopes task ids inside it
 
 kinds:    feature, bug, chore, docs
 profiles: interactive (default), turbo, nightly, plus any the project
-          defines in .luna/config.toml
+          names with luna config set profiles
 `)
 }
 

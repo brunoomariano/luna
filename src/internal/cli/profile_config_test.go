@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,127 +9,13 @@ import (
 	"github.com/brunoomariano/luna/src/internal/fsm"
 )
 
-// TestAnUnknownSettingInsideAProfileIsAnError covers the section's key list.
-func TestAnUnknownSettingInsideAProfileIsAnError(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, `
-[profile.careful]
-wait = ["confirm"]
-`))
-
-	if err == nil {
-		t.Fatal("an unknown key inside a profile must be reported")
-	}
-	// The error names what arrived and says where settings went, because there is
-	// no list of valid keys to offer any more: a profile holds only its name.
-	if !strings.Contains(err.Error(), "wait") {
-		t.Errorf("the error should name what arrived, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "only its name") {
-		t.Errorf("the error should say a profile holds no settings, got %v", err)
-	}
-}
-
-// TestAnUnknownSectionIsAnError covers the one section that exists.
-//
-// A mistyped header would otherwise swallow every setting under it, silently.
-func TestAnUnknownSectionIsAnError(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profiles.paranoid]\nwaits = []\n"))
-
-	if err == nil {
-		t.Fatal("an unknown section must be reported")
-	}
-	if !strings.Contains(err.Error(), "profile.<name>") {
-		t.Errorf("the error should say what a section looks like, got %v", err)
-	}
-}
-
-// TestAMalformedListIsReported covers the array parser's refusals.
-func TestAMalformedListIsReported(t *testing.T) {
-	cases := map[string]string{
-		"not a list":        `waits = "confirm"`,
-		"unquoted entry":    `waits = [confirm]`,
-		"unclosed on line":  `waits = ["confirm",`,
-		"a bare open track": `waits = [`,
-	}
-
-	for name, line := range cases {
-		if _, err := LoadConfig(writeConfig(t, "[profile.p]\n"+line+"\n")); err == nil {
-			t.Errorf("%s: want an error for %q", name, line)
-		}
-	}
-}
-
-// TestASettingSurvivesAProfileSection covers the root/section boundary.
-//
-// The editor is a root setting. A parser that leaked the current section would
-// either reject it after a profile block or file it under the profile.
-func TestASettingSurvivesAProfileSection(t *testing.T) {
-	cfg := load(t, `
-editor = "hx"
-
-[profile.paranoid]
-`)
-
-	if cfg.Editor != "hx" {
-		t.Errorf("want the root setting, got %q", cfg.Editor)
-	}
-	if !cfg.Defines("paranoid") {
-		t.Error("want the profile too")
-	}
-}
-
-// TestAHashInsideQuotesIsNotAComment covers the comment stripper.
-//
-// An editor command may legitimately contain one, and losing everything after it
-// would leave a setting that looks right in the file and is wrong in memory.
-func TestAHashInsideQuotesIsNotAComment(t *testing.T) {
-	cfg := load(t, `editor = "sh -c 'edit #1'" # the real comment`)
-
-	if cfg.Editor != "sh -c 'edit #1'" {
-		t.Errorf("want the hash kept inside quotes, got %q", cfg.Editor)
-	}
-}
-
 // TestProfileNamesAreListedSorted covers the message someone sees after a typo.
 func TestProfileNamesAreListedSorted(t *testing.T) {
-	cfg := load(t, "[profile.zulu]\n[profile.alpha]\n")
+	cfg := from(t, map[string]string{ProfilesKey: "zulu,alpha"})
 
 	names := cfg.ProfileNames()
 	if len(names) != 2 || names[0] != "alpha" || names[1] != "zulu" {
 		t.Errorf("want the names sorted, got %v", names)
-	}
-}
-
-func load(t *testing.T, content string) Config {
-	t.Helper()
-
-	cfg, err := LoadConfig(writeConfig(t, content))
-	if err != nil {
-		t.Fatalf("loading config: %v", err)
-	}
-	return cfg
-}
-
-func writeConfig(t *testing.T, content string) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "config.toml")
-	write(t, path, content)
-	return path
-}
-
-// TestANestedProfileNameIsRejected covers the dotted-name refusal.
-//
-// `[profile.a.b]` names no profile this config can hold. Trimming it to "a" or
-// "b" would silently define a profile nobody wrote.
-func TestANestedProfileNameIsRejected(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profile.team.paranoid]\nturn_budget = \"1h\"\n"))
-
-	if err == nil {
-		t.Fatal("a dotted profile name must be reported")
-	}
-	if !strings.Contains(err.Error(), "team.paranoid") {
-		t.Errorf("the error should name what was typed, got %v", err)
 	}
 }
 
@@ -140,7 +25,7 @@ func TestANestedProfileNameIsRejected(t *testing.T) {
 // than about who answers a gate.
 
 func TestTheTurnBudgetIsProjectWide(t *testing.T) {
-	cfg := load(t, "turn_budget = \"45m\"\n")
+	cfg := from(t, map[string]string{"turn_budget": "45m"})
 
 	if got := cfg.Turn(); got != 45*time.Minute {
 		t.Errorf("want the configured turn budget, got %s", got)
@@ -152,7 +37,7 @@ func TestTheTurnBudgetIsProjectWide(t *testing.T) {
 // Falling back to no limit would mean a project that never set one has tasks
 // that hang forever.
 func TestAProjectWithNoBudgetStillHasAWatchdog(t *testing.T) {
-	cfg := load(t, "editor = \"vi\"\n")
+	cfg := from(t, map[string]string{"editor": "vi"})
 
 	if got := cfg.Turn(); got != fsm.DefaultBudgets().Turn {
 		t.Errorf("want the shipped budget, got %s", got)
@@ -164,7 +49,7 @@ func TestAProjectWithNoBudgetStillHasAWatchdog(t *testing.T) {
 // Someone who wrote `turn_budget = "30"` believes they tightened the watchdog. A
 // silent fallback would leave them believing it.
 func TestAMalformedBudgetIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "turn_budget = \"30\"\n"))
+	_, err := ConfigFrom(nil, map[string]string{"turn_budget": "30"})
 
 	if err == nil {
 		t.Fatal("a budget that is not a duration must be reported")
@@ -205,47 +90,28 @@ func TestEveryStageTheShippedFlowRunsCarriesWhatItNeeds(t *testing.T) {
 // recognised and not that it moved, and the person would then have to find out
 // which name replaced it — which is the search the rename was meant to end.
 func TestTheOldInterpreterKeyNamesItsReplacement(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "interpreter = \"claude\"\n"))
+	err := CheckConfigKey("interpreter")
 
 	if err == nil {
 		t.Fatal("the old spelling was accepted silently")
 	}
-	if !strings.Contains(err.Error(), "lead_harness") {
+	if !strings.Contains(err.Error(), "is now `lead_harness`") {
 		t.Errorf("the refusal does not name the replacement: %v", err)
+	}
+	// And not merely because the replacement appears in a list of every key: the
+	// point is being told what this one became.
+	if strings.Contains(err.Error(), "expected") {
+		t.Errorf("the refusal fell through to the unknown-key message: %v", err)
 	}
 }
 
 // TestTheLeadHarnessIsReadUnderItsOwnName is the other half: the new spelling
 // works, so the refusal above is a rename rather than a removal.
 func TestTheLeadHarnessIsReadUnderItsOwnName(t *testing.T) {
-	cfg := load(t, "lead_harness = \"codex\"\n")
+	cfg := from(t, map[string]string{"lead_harness": "codex"})
 
 	if cfg.LeadHarness != "codex" {
 		t.Errorf("lead_harness = %q, want codex", cfg.LeadHarness)
-	}
-}
-
-// TestAnUnknownSectionKindIsRefused covers the header.
-func TestAnUnknownSectionKindIsRefused(t *testing.T) {
-	_, err := LoadConfig(writeConfig(t, "[profiles.nightly]\nturn_budget = \"1h\"\n"))
-
-	if err == nil {
-		t.Fatal("a mistyped section must be reported")
-	}
-	if !strings.Contains(err.Error(), "profile.<name>") {
-		t.Errorf("the error should say what a section looks like, got %v", err)
-	}
-}
-
-// TestASectionWithNoNameIsRefused covers the header that opens nothing.
-//
-// `[profile]` and `[role]` name no thing to configure, and accepting them would
-// file every setting under an empty name.
-func TestASectionWithNoNameIsRefused(t *testing.T) {
-	for _, header := range []string{"[profile]", "[role]", "[]"} {
-		if _, err := LoadConfig(writeConfig(t, header+"\n")); err == nil {
-			t.Errorf("%s names nothing and must be refused", header)
-		}
 	}
 }
 
@@ -333,7 +199,7 @@ func TestAnUnknownCapabilityIsRefused(t *testing.T) {
 // project has no released version and so no such config.
 func TestEveryProfileKeyIsRefused(t *testing.T) {
 	for _, key := range []string{"waits", "turn_budget", "idle_budget", "tool_budget", "anything"} {
-		_, err := LoadConfig(writeConfig(t, "[profile.p]\n"+key+" = \"whatever\"\n"))
+		err := assignProfile(&Config{}, "p", key, "whatever", "a stock profile")
 
 		if err == nil {
 			t.Errorf("%q inside a profile was accepted", key)
@@ -361,37 +227,6 @@ func TestANonPositiveBudgetIsNotABudget(t *testing.T) {
 	}
 }
 
-// TestAMalformedListSaysWhatWentWrongWithIt covers the three ways a list is
-// written badly, each with its own message.
-//
-// `tools_deny` is the config's only list now — the profile section holds no
-// A refusal that did not quote what was typed would put a person in a
-// hand-written TOML file hunting a bracket, and the direction the mistake fails
-// in is the dangerous one: a list that did not load is a stage that keeps the
-// tool it was supposed to lose.
-func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
-	for name, malformed := range map[string]struct{ line, says string }{
-		"not a list at all": {`tools_deny = "Edit"`, `expected a list`},
-		"never closed":      {`tools_deny = ["Edit"`, `has to close with ]`},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := fsm.ParseStage("id = \"audit\"\n"+malformed.line+"\n", "audit.toml")
-
-			if err == nil {
-				t.Fatalf("%s was accepted as a list", name)
-			}
-			if !strings.Contains(err.Error(), malformed.says) {
-				t.Errorf("the refusal does not say what is wrong with it, got %v", err)
-			}
-			// And it says where, so the fix does not need a second pass over the
-			// file to find which line it meant.
-			if !strings.Contains(err.Error(), "audit.toml") {
-				t.Errorf("the refusal must say where it was written, got %v", err)
-			}
-		})
-	}
-}
-
 // TestTheProjectCanNameItsOwnLeadHarness covers the setting that decides which
 // model `luna chat` talks to.
 //
@@ -400,9 +235,21 @@ func TestAMalformedListSaysWhatWentWrongWithIt(t *testing.T) {
 // the project would keep a configured interpreter in its file and get "chat
 // needs an interpreter, and none is configured" with nothing pointing at why.
 func TestTheProjectCanNameItsOwnLeadHarness(t *testing.T) {
-	cfg := load(t, `lead_harness = "claude --model sonnet"`)
+	cfg := from(t, map[string]string{"lead_harness": "claude --model sonnet"})
 
 	if cfg.LeadHarness != "claude --model sonnet" {
 		t.Errorf("want the configured interpreter, got %q", cfg.LeadHarness)
 	}
+}
+
+// from builds a config the way a command gets one: out of the settings the daemon
+// holds for this project.
+func from(t *testing.T, settings map[string]string) Config {
+	t.Helper()
+
+	cfg, err := ConfigFrom(nil, settings)
+	if err != nil {
+		t.Fatalf("building the config from %v: %v", settings, err)
+	}
+	return cfg
 }

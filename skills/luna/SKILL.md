@@ -90,9 +90,9 @@ set: it is what `setup` discovered, and typing it as well would be two sources
 for one fact.
 
 The settings live in the central database, so nothing about them is in the
-checkout. A project that still has a `.luna/config.toml` has it read once, into
-the settings, and then ignored — the file is left alone, because it is committed
-and renaming it would show up in every colleague's checkout.
+checkout. A `.luna/config.toml` left over from an older build is not read at all
+— not even once — so a project that had one sets what it wants again with `luna
+config` and can then delete the file.
 
 ## Where state lives
 

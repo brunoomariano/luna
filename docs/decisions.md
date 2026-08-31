@@ -256,7 +256,7 @@ a step between `git clone` and "the tests run", and Luna opens a clean worktree 
 so without one, every stage rediscovers it and the ones that cannot fail on a check that was
 never about the work. Measured: `tests_green` runs `make test`, `make test` needs `make
 build`, and two build stages failed on it for $10.36 of a $19.13 task, producing code that
-had been correct since the first attempt. It is `bootstrap` in `.luna/config.toml`, because
+had been correct since the first attempt. It is the project's `bootstrap` setting, because
 one project builds with make and the next with pnpm and neither is the flow's business.
 *Rejected:* running it once per task — a worktree is opened clean per stage and removed
 after, so whatever the first one installed is not there for the second. That costs an
@@ -339,7 +339,7 @@ Luna was paying a model to run `git commit`.
 > accepted: the duplication is visible and a person can diff it, where the indirection hid
 > which stage was told what.
 >
-> *Rejected: a project overriding a role in `config.toml`.* Same reason `.luna/stock/` went
+> *Rejected: a project overriding a role in its own configuration.* Same reason `.luna/stock/` went
 > — the thing it enabled is drift. One build, one set of flows, every repository the same.
 
 **There is no role at all.** Absorbing the brief left `role` a field resolving to nothing,
@@ -418,7 +418,7 @@ guessed was worth keeping.
 The task is the unit and not the stage or the role, for the reason the contract already
 gives: a task is one piece of work handed along. What the planner learned has to be there
 for the coder, and a stage choosing its own ledger would answer "what happened on this
-task" with a shrug. The default is the project's, named in `.luna/config.toml`; a task may
+task" with a shrug. The default is the project's, set with `luna config`; a task may
 select another or ask Luna to open one, and what it used is written into `TaskCreated` —
 so replaying a finished run reads where the work actually went rather than where today's
 config points. *Rejected:* reading the workstream from config at replay time — a task's
@@ -502,7 +502,7 @@ has seen what is there is the opposite of what the gate is for.
 > way out, with the report attached.
 
 **`setup` discovers the project's own commands instead of reading them from a file, and
-runs uncontained to do it.** The bootstrap command was a key in `.luna/config.toml`. It is
+runs uncontained to do it.** The bootstrap command was a key somebody typed. It is
 found instead — from `.ai-jail`, `.ai-memory.toml`, the README, `AGENTS.md`, the Makefile —
 and reported at the gate `setup` already opens, where a person confirms or corrects it.
 
@@ -541,7 +541,10 @@ named after a command nobody can run is a name that costs a reader a search.
 
 **A project's settings live in the daemon's database, and its preparation command is
 discovered rather than configured.** `.luna/config.toml` was the last thing Luna read out
-of a checkout, and the log, the artifacts and the sockets had all already left it. The
+of a checkout, and the log, the artifacts and the sockets had all already left it. It is not
+read at all now — not even once, to import it. *Rejected:* importing it on first run, which
+is the migration a released tool would owe; this one has never been released, so the whole
+TOML parser would have been kept alive to move settings nobody has. The
 settings are keyed by project in the one central database, append-only like everything else
 there — which the file gave for free, through git, and a row that is overwritten would not:
 "who changed the workstream, and when" is a question a decision has to be able to answer.

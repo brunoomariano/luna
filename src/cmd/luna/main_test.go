@@ -596,34 +596,6 @@ func TestStoreResolutionReportsStartupAndCheckoutFailures(t *testing.T) {
 	}
 }
 
-func TestStoreResolutionReportsConfigurationErrors(t *testing.T) {
-	t.Setenv("LUNA_STORE", "")
-	t.Setenv("XDG_DATA_HOME", "relative")
-	if _, err := resolveStoreOpening(context.Background()); err == nil {
-		t.Fatal("a relative data home was accepted")
-	}
-
-	repo := t.TempDir()
-	cmd := exec.Command("git", "init", "-q", "-b", "main")
-	cmd.Dir = repo
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, out)
-	}
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	configPath := cli.ConfigPath(repo)
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(configPath, []byte("not = valid = toml"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	inDir(t, repo, func() {
-		if _, err := resolveStoreOpening(context.Background()); err == nil {
-			t.Fatal("a malformed project configuration was accepted")
-		}
-	})
-}
-
 func TestCommandsReportARemovedWorkingDirectory(t *testing.T) {
 	was, err := os.Getwd()
 	if err != nil {
@@ -661,94 +633,5 @@ func TestRunWithoutStoreLeavesAnEmptyCommandForUsageHandling(t *testing.T) {
 	handled, err := runWithoutStore(nil)
 	if handled || err != nil {
 		t.Fatalf("empty command bypass = %v, %v", handled, err)
-	}
-}
-
-// TestAProjectsFileIsImportedOnceAndThenIgnored is the migration path off
-// `.luna/config.toml`.
-//
-// The file is parsed by the parser that always parsed it and written through the
-// daemon like any other setting. It is left on disk rather than renamed: it is
-// committed and shared through git, so renaming it would show up as an
-// unexplained change in every colleague's checkout.
-//
-// Once, and the marker is why. A person who imports the file and then changes a
-// setting must not have the file put back over the top of the decision they just
-// made — which is what "the project has no settings yet" would have done.
-func TestAProjectsFileIsImportedOnceAndThenIgnored(t *testing.T) {
-	t.Setenv("LUNA_STORE", "")
-	data := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", data)
-
-	repo := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"config", "user.email", "t@t"},
-		{"config", "user.name", "t"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repo
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
-
-	if err := os.MkdirAll(filepath.Join(repo, ".luna"), 0o750); err != nil {
-		t.Fatalf("making the config directory: %v", err)
-	}
-	file := filepath.Join(repo, ".luna", "config.toml")
-	if err := os.WriteFile(file, []byte("editor = \"hx\"\nworkstream = \"the-project\"\n"), 0o600); err != nil {
-		t.Fatalf("writing the config: %v", err)
-	}
-
-	inDir(t, repo, func() {
-		if err := run([]string{"config"}); err != nil {
-			t.Fatalf("the first run: %v", err)
-		}
-		if err := run([]string{"config", "set", "workstream", "spike-tls"}); err != nil {
-			t.Fatalf("changing the workstream: %v", err)
-		}
-		// A third run, with the file still on disk and still saying `the-project`.
-		if err := run([]string{"config"}); err != nil {
-			t.Fatalf("the run after the change: %v", err)
-		}
-	})
-
-	central, err := store.Open(filepath.Join(data, "luna", "luna.db"))
-	if err != nil {
-		t.Fatalf("opening the central store: %v", err)
-	}
-	t.Cleanup(func() { _ = central.Close() })
-
-	global, err := central.Settings(store.GlobalScope)
-	if err != nil {
-		t.Fatalf("reading the machine's settings: %v", err)
-	}
-	if global["editor"] != "hx" {
-		t.Errorf("the file's editor did not reach the machine's settings: %v", global)
-	}
-
-	scopes, err := central.SettingScopes()
-	if err != nil {
-		t.Fatalf("reading the scopes: %v", err)
-	}
-	var project string
-	for _, scope := range scopes {
-		if scope != store.GlobalScope {
-			project = scope
-		}
-	}
-	own, err := central.Settings(project)
-	if err != nil {
-		t.Fatalf("reading the project's settings: %v", err)
-	}
-	if own["workstream"] != "spike-tls" {
-		t.Errorf("the workstream is %q — the file was imported again over a change "+
-			"somebody made", own["workstream"])
-	}
-
-	// And the file is still where the project keeps it.
-	if _, err := os.Stat(file); err != nil {
-		t.Errorf("the committed file was moved or removed: %v", err)
 	}
 }
