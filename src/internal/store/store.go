@@ -183,6 +183,29 @@ CREATE TABLE IF NOT EXISTS blobs (
     at       INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (project, task_id, stage, artifact, seq)
 );
+
+-- What a project, or the machine, is configured with.
+--
+-- Append-only for the same reason as everything else here (INV-2): a setting is
+-- a decision somebody took, and "who changed the workstream, and when" is a
+-- question the file in git answered by its commits. Losing that on the way into a
+-- database would be trading an audit for a lookup. The current value is the
+-- highest seq for the pair; every earlier one stays readable.
+--
+-- An empty scope is the machine's own: editor and lead_harness were never the
+-- project's, and setting them once should not have to be done per repository.
+-- Any other scope is a project key, and a project setting wins over a global one.
+CREATE TABLE IF NOT EXISTS settings (
+    scope TEXT    NOT NULL DEFAULT '',
+    key   TEXT    NOT NULL,
+    seq   INTEGER NOT NULL,
+    -- Empty is a real value and means "unset here": a project has to be able to
+    -- fall back to the global setting, and deleting the row would be an UPDATE
+    -- with extra steps.
+    value TEXT    NOT NULL DEFAULT '',
+    at    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (scope, key, seq)
+);
 `
 
 // TaskRef identifies a task in the central database. IDs are project-local, so

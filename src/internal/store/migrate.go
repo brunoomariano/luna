@@ -14,10 +14,12 @@ import (
 // `table blobs has no column named task_id`, which says nothing about why.
 //
 // Version 1 is the first that records anything. Version 2 moves every project's
-// history into one database and adds project to both primary keys. A file at 0
-// is either brand new or was written before this existed, and telling those
+// history into one database and adds project to both primary keys. Version 3 adds
+// the settings table, which the schema itself creates — the bump exists so a
+// reader refuses an unmigrated file instead of failing on a missing table. A file
+// at 0 is either brand new or was written before this existed, and telling those
 // apart is what migrateToOne does.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // ErrSchemaTooOld is a database this build cannot read without losing something.
 var ErrSchemaTooOld = errors.New("the store was written by an older build")
