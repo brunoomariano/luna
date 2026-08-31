@@ -497,11 +497,14 @@ func TestTheDaemonDoesNotForwardToItself(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	// A socket path of its own, so this does not meet a daemon somebody else left
-	// running.
+	// running — and a store of its own, so it does not open the machine's real
+	// one. Without the second the test needs a lock another daemon is holding,
+	// and it fails by never binding, which says nothing about what it tests.
 	socket := filepath.Join(dir, "daemon.sock")
+	path := filepath.Join(dir, "luna.db")
 
 	done := make(chan error, 1)
-	go func() { done <- run([]string{"daemon", "--socket", socket}) }()
+	go func() { done <- run([]string{"daemon", "--socket", socket, "--store", path}) }()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
