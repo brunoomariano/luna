@@ -671,6 +671,26 @@ func (r *Runner) warn(format string, args ...any) {
 	r.Warn(format, args...)
 }
 
+// readableRequires is what a stage can actually fetch of what it requires.
+//
+// `task_id` is the root of the artifact graph — the one input no stage produces,
+// because the task arrives carrying it — so no blob is ever written for it and
+// `luna artifact get task_id` answers "no such artifact". Listing it under a
+// line that says how to read one sent the setup stage of MAX-2 to fetch it, get
+// refused, and hand the gate an open question about whether the briefing or the
+// artifact store was stale. Neither was; the brief was describing the task id as
+// if it were a document. It is already in the first line of the brief.
+func readableRequires(stage fsm.Stage) []fsm.Artifact {
+	ready := make([]fsm.Artifact, 0, len(stage.Requires))
+	for _, artifact := range stage.Requires {
+		if artifact == fsm.TaskID {
+			continue
+		}
+		ready = append(ready, artifact)
+	}
+	return ready
+}
+
 // Brief is what an agent is told when it starts.
 //
 // It carries the handoff, because a fresh agent did not run the previous stage
@@ -708,8 +728,8 @@ func Brief(state fsm.TaskState, stage fsm.Stage) string {
 		fmt.Fprintf(&b, "Done when: %s\n", acceptance)
 	}
 
-	if len(stage.Requires) > 0 {
-		fmt.Fprintf(&b, "\nWhat you have: %s\n", join(stage.Requires))
+	if readable := readableRequires(stage); len(readable) > 0 {
+		fmt.Fprintf(&b, "\nWhat you have: %s\n", join(readable))
 		fmt.Fprintf(&b, "Read one with `luna artifact get <name>`.\n")
 	}
 

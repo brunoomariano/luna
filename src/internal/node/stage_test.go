@@ -1644,3 +1644,54 @@ func TestAConfigurationThatCannotBeWrittenDoesNotFailTheStage(t *testing.T) {
 		t.Errorf("a setting that could not be written failed the stage: %v", err)
 	}
 }
+
+// TestTheBriefDoesNotOfferTheTaskIDAsSomethingToFetch.
+//
+// `task_id` is the root of the artifact graph: no stage produces it, so no blob
+// is written for it and `luna artifact get task_id` answers "no such artifact".
+// Listing it under "read one with" sent MAX-2's setup stage to fetch it, get
+// refused, and hand the gate an open question about whether the briefing or the
+// store was stale. Neither was.
+func TestTheBriefDoesNotOfferTheTaskIDAsSomethingToFetch(t *testing.T) {
+	stage := fsm.Stage{
+		ID: "intake", Agent: "claude",
+		Requires: []fsm.Artifact{fsm.TaskID, "worktree"},
+	}
+
+	brief := Brief(runningState("MAX-2"), stage)
+
+	have := ""
+	for _, line := range strings.Split(brief, "\n") {
+		if strings.HasPrefix(line, "What you have:") {
+			have = line
+		}
+	}
+	if have == "" {
+		t.Fatalf("the brief no longer says what the stage has:\n%s", brief)
+	}
+	if strings.Contains(have, string(fsm.TaskID)) {
+		t.Errorf("the brief offers task_id as a document to fetch: %q", have)
+	}
+	if !strings.Contains(have, "worktree") {
+		t.Errorf("the brief lost an artifact that can be read: %q", have)
+	}
+	// The id itself is not hidden — it is in the first line, where it belongs.
+	if !strings.Contains(brief, "MAX-2") {
+		t.Error("the brief no longer names the task at all")
+	}
+}
+
+// TestAStageThatRequiresOnlyTheTaskIDIsOfferedNothingToFetch, rather than an
+// empty list under a line explaining how to read one.
+func TestAStageThatRequiresOnlyTheTaskIDIsOfferedNothingToFetch(t *testing.T) {
+	stage := fsm.Stage{ID: "setup", Agent: "claude", Requires: []fsm.Artifact{fsm.TaskID}}
+
+	brief := Brief(runningState("MAX-2"), stage)
+
+	if strings.Contains(brief, "What you have:") {
+		t.Errorf("a stage with nothing readable was still told what it has:\n%s", brief)
+	}
+	if strings.Contains(brief, "luna artifact get <name>") {
+		t.Error("the brief says how to read an artifact the stage cannot read")
+	}
+}
