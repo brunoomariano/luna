@@ -868,6 +868,52 @@ func TestTheSocketIsOpenedOnlyForAStageThatHandsSomethingOver(t *testing.T) {
 	}
 }
 
+// TestAStageThatOnlyReadsAHandoverStillGetsTheSocket.
+//
+// The socket was opened for what a stage writes and never for what it reads.
+// `shipping` requires `commit_plan` and owes only a commit, so it got no socket
+// and `luna artifact get commit_plan` answered "LUNA_ARTIFACT_SOCKET is not set"
+// from inside the jail. Measured on MAX-2: the stage could not read the plan a
+// person had approved at a gate, verified the block the previous stage had
+// already written instead, and reported that the approved plan was never
+// checked against what shipped.
+func TestAStageThatOnlyReadsAHandoverStillGetsTheSocket(t *testing.T) {
+	repo := repoWithCommit(t)
+	fake := &recordingAgent{result: agent.Result{Text: "done"}}
+
+	planning := fsm.Stage{
+		ID: "plan", Agent: "claude", Produces: []fsm.Artifact{"commit_plan"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{
+			"commit_plan": fsm.Existence{Handover: true},
+		},
+	}
+	// Owes a commit and nothing through the store, and still has to read the
+	// plan somebody approved.
+	shipping := fsm.Stage{
+		ID: "shipping", Agent: "claude",
+		Requires: []fsm.Artifact{"commit_plan"}, Produces: []fsm.Artifact{"shipped"},
+		Verifiers: map[fsm.Artifact]fsm.Verifier{"shipped": fsm.Existence{}},
+	}
+
+	r := &Runner{
+		Repo:      repo,
+		Agent:     fake,
+		Flow:      []fsm.Stage{planning, shipping},
+		Artifacts: func(string, int) ArtifactStore { return &memoryArtifacts{} },
+	}
+	if _, err := r.Run(context.Background(), runningState("MAX-2"), shipping); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, env := range fake.last(t).Env {
+		if strings.Contains(env, "ARTIFACT_SOCKET") {
+			return
+		}
+	}
+	t.Errorf("a stage required to read a handed-over artifact was given no way to "+
+		"reach it: %q", fake.last(t).Env)
+}
+
 // TestAMissingGitIsInfrastructureRatherThanAFailedStage keeps the lead from
 // spending its retry budget on a machine that will keep not having git.
 //

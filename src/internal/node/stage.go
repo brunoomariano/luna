@@ -527,7 +527,7 @@ const Sandbox = "ai-jail"
 // A stage that declares no handover opens nothing: there is no reason to expose
 // a writer to an agent that owes nothing through it.
 func (r *Runner) serveArtifacts(state fsm.TaskState, stage fsm.Stage, wt Worktree) (server *ArtifactServer, opened bool, err error) {
-	if !handsOver(stage) {
+	if !r.needsArtifactSocket(stage) {
 		return nil, false, nil
 	}
 	if r.Artifacts == nil {
@@ -543,6 +543,37 @@ func (r *Runner) serveArtifacts(state fsm.TaskState, stage fsm.Stage, wt Worktre
 
 // handsOver reports whether any of the stage's artifacts is handed to Luna
 // rather than committed.
+// needsArtifactSocket reports whether a stage has to reach the store at all —
+// to write what it owes, or to read what an earlier stage handed over.
+//
+// Reading counts, and it did not. `shipping` requires `commit_plan` and owes
+// only a commit, so no socket was opened and `luna artifact get commit_plan`
+// answered "LUNA_ARTIFACT_SOCKET is not set" from inside the jail. Measured on
+// MAX-2: the stage could not read the plan a person had approved at a gate, so
+// it verified the block the previous stage had already written and said so —
+// which left the approved plan never checked against what shipped. A gate whose
+// artifact the next stage cannot open is a gate that decided nothing.
+func (r *Runner) needsArtifactSocket(stage fsm.Stage) bool {
+	if handsOver(stage) {
+		return true
+	}
+	for _, required := range stage.Requires {
+		for _, other := range r.Flow {
+			if other.ID != stage.ID && handsOverArtifact(other, required) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// handsOverArtifact reports whether this stage delivers that one artifact
+// through the store rather than through the commit.
+func handsOverArtifact(stage fsm.Stage, artifact fsm.Artifact) bool {
+	existence, ok := stage.Verifiers[artifact].(fsm.Existence)
+	return ok && existence.Handover
+}
+
 func handsOver(stage fsm.Stage) bool {
 	for _, verifier := range stage.Verifiers {
 		if existence, ok := verifier.(fsm.Existence); ok && existence.Handover {
