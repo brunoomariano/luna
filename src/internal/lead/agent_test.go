@@ -316,6 +316,31 @@ func TestTheBriefNamesTheCommandThatStartsTheAgent(t *testing.T) {
 	}
 }
 
+// TestTheBriefRefusesToLetTheLeadBackgroundTheStage covers the failure that
+// wastes a whole run and looks like success while it happens.
+//
+// Measured on MAX-1: the lead ran `luna work` as a background shell, answered
+// "the setup stage is running, I'll report back when it finishes", and returned.
+// A lead is one non-interactive call — the turn ending killed the child, so the
+// stage left an open worktree that was never on disk and the task never moved.
+// "and waits" in the loop was not enough, because a harness that offers a
+// background shell makes backgrounding a long command look like the helpful
+// reading of it.
+func TestTheBriefRefusesToLetTheLeadBackgroundTheStage(t *testing.T) {
+	brief := Brief(AutonomyDecide)
+
+	for _, want := range []string{"foreground", "Backgrounding it"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief does not say %q, so nothing stops the lead from "+
+				"starting the stage and returning before it runs:\n%s", want, brief)
+		}
+	}
+	if !strings.Contains(brief, "report back") {
+		t.Error("the brief no longer names the answer the lead actually gave, " +
+			"which is the one a later reader has to recognise")
+	}
+}
+
 // TestTheLoopDoesNotReportAStageWorkAlreadyClosed keeps the brief in step with
 // what the commands do.
 //

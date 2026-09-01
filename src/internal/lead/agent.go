@@ -120,6 +120,12 @@ carrying what its checks actually observed, so there is nothing to report
 afterwards: do not run "luna done" after it. Doing so fails with
 "no running stage to finish", because there is not one.
 
+Run it in the foreground and wait for it, however long it takes. Waiting is
+the job. Backgrounding it and reporting that you will say how it went ends
+your turn while the stage is still starting, and your turn ending is what
+kills it — you are one non-interactive call, and nothing of yours outlives
+it. There is no later message in which you report back.
+
 "luna done <task> --delivered <names> --commit <sha>" is for the other case
 — a stage you carried out yourself, where nothing ran that could prove it.
 The <names> are the order's own "produces" list, comma-separated and
