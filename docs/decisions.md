@@ -602,11 +602,22 @@ harness-specific `jq` follower, and offers `claude -r <session>` or
 session. Codex's UUIDv7 thread id carries the timestamp used by
 `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-…jsonl`, measured against codex-cli 0.151.0.
 
-The first call has one unavoidable blind spot: Luna learns the native session id only when
-the harness returns its result, so it cannot derive that first transcript path while the
-call is still active. Once the id is recorded, later resumed calls are followable while
-they run. *Rejected:* scanning the harness directory for the newest file, which could
-attach another process's conversation to this task.
+Luna learns the native session id only when the harness returns its result, so the log
+cannot name the session of the stage running now — which left the command describing every
+finished stage and not the one a person opened it to watch. It answered "has started no
+agent yet" with an agent working. For Claude the transcript directory is read instead: it
+is named after the working directory, so a stage's worktree has one of its own and no
+other task can write there. Codex answers that it does not know, because it files
+transcripts by start time under a single sessions tree with nothing to match a worktree
+against, and a guess would point at another task's stage.
+
+*Rejected first, and revised:* scanning that directory, on the grounds that it could
+attach another process's conversation to this task. The danger is real and the scope was
+wrong — a worktree's directory is Luna's own, but its **name is reused across attempts**,
+so a rejected stage leaves its transcript exactly where the next attempt writes. Taking the
+newest file with no bound attached the pane to a conversation that had already ended, three
+times in twelve seconds. A one-minute window is what makes the reading sound: past any gap
+between a running stage's writes, and short enough to exclude the previous attempt.
 
 That command is not a read-only view. Measured by resuming a headless call while it was
 still running: the original call finished intact, but the resumed prompt was appended to

@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brunoomariano/luna/src/internal/agent"
 	"github.com/brunoomariano/luna/src/internal/fsm"
+	"github.com/brunoomariano/luna/src/internal/node"
 )
 
 // TestTheConsoleNamesTheSessionOfEveryStageThatRan.
@@ -399,5 +401,70 @@ func TestAHarnessLunaCannotPlaceIsSaidToBeUnplaceable(t *testing.T) {
 	}
 	if strings.Contains(out, ".jsonl") {
 		t.Errorf("a path was invented for a harness Luna cannot place:\n%s", out)
+	}
+}
+
+// TestTheRunningStageIsNamedBeforeItCloses is the difference between a console
+// and a history.
+//
+// A session id arrives in the harness's reply, so Luna records it when the stage
+// closes. Until this, the one stage a person opens the command to watch was the
+// one stage it could not name — `luna console` listed every finished stage and
+// said nothing about the agent working right now. The transcript directory is
+// the only place that session exists while it is current.
+func TestTheRunningStageIsNamedBeforeItCloses(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "chore", "--flow", "chore", "--simulated")
+	flow := mustFlow(t, "chore")
+	// As far as the log is concerned this stage has produced nothing: it is open,
+	// and no spend has been recorded against it.
+	for _, action := range []fsm.Action{
+		fsm.Advance{Flow: flow},
+		fsm.Complete{
+			Delivered: []fsm.Artifact{"worktree"},
+			Evidence:  map[fsm.Artifact]fsm.Evidence{"worktree": fsm.Exists(0)},
+		},
+		fsm.Advance{Flow: flow},
+	} {
+		if err := h.env.Store.AppendAction("LUNA-1", action); err != nil {
+			t.Fatalf("opening a stage with no session recorded: %v", err)
+		}
+	}
+
+	const session = "6f2b1c40-9a17-4d0e-b6a2-0f5c8d3e7a11"
+	seedLiveTranscript(t, "LUNA-1", "build", session)
+
+	out := h.mustRun(t, "console", "LUNA-1")
+
+	if !strings.Contains(out, session) {
+		t.Errorf("the console does not name the session running now:\n%s", out)
+	}
+	for _, want := range []string{"claude -r " + session, "not a copy"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the running stage does not say %q:\n%s", want, out)
+		}
+	}
+}
+
+// seedLiveTranscript writes the file the harness would be writing right now for
+// a stage's worktree.
+func seedLiveTranscript(t *testing.T, taskID, stage, session string) {
+	t.Helper()
+	worktree, err := node.WorktreePath(".", taskID, stage)
+	if err != nil {
+		t.Fatalf("naming the worktree: %v", err)
+	}
+	path, known := agent.ConsolePath("claude", worktree, session)
+	if !known {
+		t.Fatal("claude does not know where its transcripts are")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("making the transcript directory: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("writing the transcript: %v", err)
 	}
 }

@@ -21,9 +21,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -523,6 +521,11 @@ type harness struct {
 	resume  func(session string) string
 	filter  string
 
+	// live finds the session open in a worktree now, for the stage Luna has not
+	// recorded a session for yet. Nil where the harness does not file its
+	// transcripts by working directory.
+	live func(worktree string) (string, bool)
+
 	// reportsCost says whether the execution stream includes USD spend. It is a
 	// capability, not whether one particular call happened to cost zero.
 	reportsCost bool
@@ -542,6 +545,7 @@ var harnesses = map[string]harness{
 		console:     claudeConsole,
 		resume:      func(session string) string { return "claude -r " + session },
 		filter:      claudeConsoleFilter,
+		live:        claudeLive,
 		reportsCost: true,
 	},
 	"codex": {
@@ -828,119 +832,4 @@ func oneModel(usage map[string]struct {
 		return name
 	}
 	return ""
-}
-
-// ConsolePath is where a harness leaves the transcript of one session.
-//
-// Luna starts every agent headless, so nothing of what it says, thinks or is
-// asked appears anywhere while it runs — the process's own output goes into a
-// buffer and is read for a JSON reply. The harness writes its own transcript
-// though, incrementally, and that file is the console: following it is watching
-// the stage happen.
-//
-// Derived rather than captured, and that is the choice. Luna could tee the
-// process's output to a file of its own, and it would then own a second copy of
-// something the harness already keeps, in a format it would have to keep in step
-// with. Pointing at the original costs nothing and cannot drift.
-//
-// Answers false for a harness whose layout Luna does not know, for the same
-// reason the table it reads is closed: a guessed path sends somebody to an empty
-// file and lets them conclude the agent produced nothing.
-func ConsolePath(kind, worktree, session string) (string, bool) {
-	if session == "" || worktree == "" {
-		return "", false
-	}
-	spec, known := harnesses[kind]
-	if !known || spec.console == nil {
-		return "", false
-	}
-	path := spec.console(worktree, session)
-	return path, path != ""
-}
-
-// ResumeCommand is the harness's interactive command for reopening a session.
-func ResumeCommand(kind, session string) (string, bool) {
-	spec, ok := harnesses[kind]
-	if !ok || spec.resume == nil || session == "" {
-		return "", false
-	}
-	return spec.resume(session), true
-}
-
-// ConsoleFilter is the jq program that renders one harness's transcript as a
-// readable stream. Keeping it beside the transcript layout prevents a second
-// Claude-only table from masquerading as generic observability.
-func ConsoleFilter(kind string) (string, bool) {
-	spec, ok := harnesses[kind]
-	if !ok || spec.filter == "" {
-		return "", false
-	}
-	return spec.filter, true
-}
-
-const claudeConsoleFilter = `if (.message.content|type)=="string" then "» " + .message.content
-     else (.message.content[]?
-       | if .type=="text" then .text
-         elif .type=="tool_use" then "$ " + (.input.command // .name)
-         else empty end)
-     end`
-
-const codexConsoleFilter = `if .type=="response_item" and .payload.type=="message" then
-       (.payload.content[]?
-        | if .type=="input_text" then "» " + .text
-          elif .type=="output_text" then .text
-          else empty end)
-     elif .type=="event_msg" and .payload.type=="item_completed"
-          and .payload.item.type=="CommandExecution" then
-       "$ " + (.payload.item.command | join(" "))
-     else empty end`
-
-// claudeConsole is `~/.claude/projects/<cwd>/<session>.jsonl`, where the working
-// directory is flattened by replacing every separator with a dash.
-//
-// Measured against the transcripts of a real run: the worktree
-// `/tmp/.../scratchpad/real/wt-app-AVG-1-plan` becomes the directory
-// `-tmp-...-scratchpad-real-wt-app-AVG-1-plan`, leading separator included.
-func claudeConsole(worktree, session string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	flat := strings.ReplaceAll(worktree, string(filepath.Separator), "-")
-	return filepath.Join(home, ".claude", "projects", flat, session+".jsonl")
-}
-
-// codexConsole is `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<id>.jsonl`.
-// The first twelve hexadecimal digits of Codex's UUIDv7 thread id are the Unix
-// milliseconds used in both the id and filename, measured on codex-cli 0.151.0.
-func codexConsole(_ string, session string) string {
-	compact := strings.ReplaceAll(session, "-", "")
-	if len(compact) < 12 {
-		return ""
-	}
-	millis, err := strconv.ParseInt(compact[:12], 16, 64)
-	if err != nil {
-		return ""
-	}
-
-	home := os.Getenv("CODEX_HOME")
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		home = filepath.Join(userHome, ".codex")
-	}
-	started := time.UnixMilli(millis).In(localLocation())
-	return filepath.Join(home, "sessions", started.Format("2006/01/02"),
-		started.Format("rollout-2006-01-02T15-04-05-")+session+".jsonl")
-}
-
-func localLocation() *time.Location {
-	if name := os.Getenv("TZ"); name != "" {
-		if location, err := time.LoadLocation(name); err == nil {
-			return location
-		}
-	}
-	return time.Local
 }

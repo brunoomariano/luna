@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestTheConsoleIsTheHarnessOwnTranscript pins the path against a real run.
@@ -157,4 +158,84 @@ func TestTheDerivationMatchesWhatIsOnThisMachine(t *testing.T) {
 		return
 	}
 	t.Skip("no flattened project directory to check against")
+}
+
+// TestTheLiveSessionIsFoundWhileTheStageIsStillRunning covers the gap that made
+// the console describe only the past.
+//
+// A session id arrives in the harness's reply, so Luna records it when the stage
+// closes — which left `luna console` able to name every finished stage and not
+// the one somebody was actually watching. The transcript directory is the only
+// place the current session exists while it is current.
+func TestTheLiveSessionIsFoundWhileTheStageIsStillRunning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	const worktree = "/repos/app/wt-app-MAX-2-forge"
+
+	dir := filepath.Dir(mustConsolePath(t, worktree, "any"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The worktree name is reused across attempts, so a stage that was rejected
+	// leaves its transcript in the directory the next attempt writes to. Only the
+	// one being written to now is the session that is happening.
+	writeTranscript(t, dir, "11111111-1111-1111-1111-111111111111", -2*time.Hour)
+	writeTranscript(t, dir, "22222222-2222-2222-2222-222222222222", -5*time.Second)
+
+	session, found := LiveSession("claude", worktree)
+
+	if !found {
+		t.Fatal("a transcript written five seconds ago was not reported as live")
+	}
+	if session != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("live session is %q, want the one being written to now", session)
+	}
+}
+
+// TestAStaleTranscriptIsNotReportedAsLive keeps the answer to "what is running"
+// from being a conversation that ended.
+func TestAStaleTranscriptIsNotReportedAsLive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	const worktree = "/repos/app/wt-app-MAX-2-forge"
+
+	dir := filepath.Dir(mustConsolePath(t, worktree, "any"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTranscript(t, dir, "33333333-3333-3333-3333-333333333333", -2*time.Hour)
+
+	if session, found := LiveSession("claude", worktree); found {
+		t.Errorf("a transcript two hours old was reported as the live session (%s)", session)
+	}
+}
+
+// TestAHarnessThatDoesNotFileByWorktreeHasNoLiveSession, because Codex names its
+// transcripts by start time under one sessions tree. There is nothing to match a
+// worktree against, and a guess would point at another task's stage.
+func TestAHarnessThatDoesNotFileByWorktreeHasNoLiveSession(t *testing.T) {
+	if _, found := LiveSession("codex", "/repos/app/wt-app-MAX-2-forge"); found {
+		t.Error("codex answered with a live session it has no way to know")
+	}
+}
+
+func mustConsolePath(t *testing.T, worktree, session string) string {
+	t.Helper()
+	path, known := ConsolePath("claude", worktree, session)
+	if !known {
+		t.Fatal("claude does not know where its transcripts are")
+	}
+	return path
+}
+
+func writeTranscript(t *testing.T, dir, session string, age time.Duration) {
+	t.Helper()
+	path := filepath.Join(dir, session+".jsonl")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Now().Add(age)
+	if err := os.Chtimes(path, when, when); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -78,31 +78,51 @@ func consolesOf(state fsm.TaskState, flow []fsm.Stage) []ConsoleReport {
 		if stage.Mechanical() {
 			continue
 		}
-		spend, ran := state.Spent[stage.ID]
-		if !ran || spend.Session == "" {
-			continue
+		if report, has := consoleOf(state, stage); has {
+			reports = append(reports, report)
 		}
-
-		kind := spend.Agent
-		if kind == "" {
-			kind = stage.Agent
-		}
-		report := ConsoleReport{
-			Stage: string(stage.ID), Agent: kind, Session: spend.Session,
-		}
-		report.Resume, _ = agent.ResumeCommand(kind, spend.Session)
-		report.FollowFilter, _ = agent.ConsoleFilter(kind)
-		if worktree, err := node.WorktreePath(".", state.ID, string(stage.ID)); err == nil {
-			if path, known := agent.ConsolePath(kind, worktree, spend.Session); known {
-				report.Path = path
-				if _, err := os.Stat(path); err == nil {
-					report.Live = true
-				}
-			}
-		}
-		reports = append(reports, report)
 	}
 	return reports
+}
+
+// consoleOf is one stage's session, from the log or from the worktree.
+func consoleOf(state fsm.TaskState, stage fsm.Stage) (ConsoleReport, bool) {
+	kind, session := stage.Agent, ""
+	if spend, ran := state.Spent[stage.ID]; ran {
+		if spend.Agent != "" {
+			kind = spend.Agent
+		}
+		session = spend.Session
+	}
+
+	worktree, wtErr := node.WorktreePath(".", state.ID, string(stage.ID))
+
+	// The running stage is the one a person is trying to watch, and it is the one
+	// the log cannot name: a session id arrives in the harness's reply, so it is
+	// recorded when the stage closes. A stage running for the second time is
+	// worse than unnamed — the recorded id belongs to the attempt before this
+	// one, and following it shows a conversation that has already ended.
+	if wtErr == nil && stageIsRunning(state, stage.ID) {
+		if live, found := agent.LiveSession(kind, worktree); found {
+			session = live
+		}
+	}
+	if session == "" {
+		return ConsoleReport{}, false
+	}
+
+	report := ConsoleReport{Stage: string(stage.ID), Agent: kind, Session: session}
+	report.Resume, _ = agent.ResumeCommand(kind, session)
+	report.FollowFilter, _ = agent.ConsoleFilter(kind)
+	if wtErr == nil {
+		if path, known := agent.ConsolePath(kind, worktree, session); known {
+			report.Path = path
+			if _, err := os.Stat(path); err == nil {
+				report.Live = true
+			}
+		}
+	}
+	return report, true
 }
 
 func printConsoles(env Env, id string, state fsm.TaskState, consoles []ConsoleReport) {
@@ -151,7 +171,11 @@ func printResumeCommand(env Env, state fsm.TaskState, one ConsoleReport) {
 }
 
 func currentStageIsRunning(state fsm.TaskState, one ConsoleReport) bool {
-	return state.Status == fsm.StatusRunning && string(state.Stage) == one.Stage
+	return stageIsRunning(state, fsm.StageID(one.Stage))
+}
+
+func stageIsRunning(state fsm.TaskState, stage fsm.StageID) bool {
+	return state.Status == fsm.StatusRunning && state.Stage == stage
 }
 
 func stageHasEnded(state fsm.TaskState, one ConsoleReport) bool {
