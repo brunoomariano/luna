@@ -1576,3 +1576,146 @@ func TestWorkNamesTheWayOutOfWhereItStopped(t *testing.T) {
 		}
 	}
 }
+
+// blockingReviewNode closes a review stage with a report that names a defect
+// the change introduced, tagged the way Luna reads.
+type blockingReviewNode struct{}
+
+func (blockingReviewNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, artifact := range owed {
+		evidence[artifact] = fsm.Evidence{
+			Scope:   fsm.VerifierFor(stage, artifact).Proves(),
+			Verdict: fsm.VerdictPassed,
+			Detail: "[BLOCKING]\n`tally.sh:11`. In max mode the loop still runs " +
+				"total=$((total + n)), so an argument spelled --largest decrements " +
+				"the accumulator the next line reads.",
+		}
+	}
+	return lead.Result{Delivered: owed, Evidence: evidence}, nil
+}
+
+// TestWorkReadsWhatTheReviewFound covers the half of the loop `luna work` was
+// missing.
+//
+// The reviewer writes findings and Luna reads the tag — that is the mechanism,
+// and it lived only in `Lead.step`, which `luna lead` drives. `luna work`, which
+// is what the pack's conductor runs, appended the Complete and stopped: the
+// report was stored and read by nobody. Measured on MAX-2, whose log holds
+// eighteen events and not one Fact, Round or ReviewFinding, and which finished
+// `done` carrying a defect its own reviewer had found, named and located.
+func TestWorkReadsWhatTheReviewFound(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--flow", "full")
+	flow := mustFlow(t, "full")
+
+	// Down to `review`, closing each stage with what it owes. `diagnose` is
+	// skipped for a feature, so the trail is setup, intake, plan, forge, shipping.
+	for _, stage := range []fsm.StageID{"setup", "intake", "plan", "forge", "shipping"} {
+		if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: flow}); err != nil {
+			t.Fatalf("opening %s: %v", stage, err)
+		}
+		state := mustState(t, h, "LUNA-1")
+		if state.Stage != stage {
+			t.Fatalf("expected to be at %s, got %s", stage, state.Stage)
+		}
+		result, err := closingNode{}.Run(context.Background(), state, stageIn(flow, stage))
+		if err != nil {
+			t.Fatalf("closing %s: %v", stage, err)
+		}
+		if err := h.env.Store.AppendAction("LUNA-1", fsm.Complete{
+			Delivered: result.Delivered, Evidence: result.Evidence, Flow: flow,
+			// Answered, so the trail reaches review. What is under test is what
+			// happens after the review closes, not who answers the gates before it.
+			Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed},
+		}); err != nil {
+			t.Fatalf("recording %s: %v", stage, err)
+		}
+	}
+
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: flow}); err != nil {
+		t.Fatalf("opening review: %v", err)
+	}
+	if at := mustState(t, h, "LUNA-1").Stage; at != "review" {
+		t.Fatalf("expected to be at review, got %s", at)
+	}
+
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return blockingReviewNode{}, func() {}, nil
+	}
+	if err := Run(h.env, []string{"work", "LUNA-1"}); err != nil {
+		t.Fatalf("working the review stage: %v", err)
+	}
+
+	after := mustState(t, h, "LUNA-1")
+	if after.Stage != "forge" {
+		t.Errorf("a [BLOCKING] finding left the task at %q/%q; the review sends the "+
+			"work back to forge", after.Stage, after.Status)
+	}
+}
+
+// factNode closes a stage with a briefing that concludes something is broken.
+type factNode struct{}
+
+func (factNode) Run(_ context.Context, _ fsm.TaskState, stage fsm.Stage) (lead.Result, error) {
+	owed := append(append([]fsm.Artifact{}, stage.Produces...), stage.ProducesForHuman...)
+	evidence := map[fsm.Artifact]fsm.Evidence{}
+	for _, artifact := range owed {
+		evidence[artifact] = fsm.Evidence{
+			Scope:   fsm.VerifierFor(stage, artifact).Proves(),
+			Verdict: fsm.VerdictPassed,
+			Detail:  "The sum is wrong for a negative argument.\nFACT: triaged_bug\n",
+		}
+	}
+	return lead.Result{Delivered: owed, Evidence: evidence}, nil
+}
+
+// TestWorkReadsWhatAStageConcluded is the other half of the same gap.
+//
+// `FACT: triaged_bug` is how intake turns the conditional stage on, and Luna
+// reads that line and nothing else. Read only in `Lead.step`, it meant the pack
+// — whose conductor runs `luna work` — could never reach `diagnose`: intake
+// could conclude the work is a bug and the flow would go to `plan` anyway.
+func TestWorkReadsWhatAStageConcluded(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun(t, "task", "new", "LUNA-1", "--kind", "feature", "--flow", "full")
+	flow := mustFlow(t, "full")
+
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: flow}); err != nil {
+		t.Fatalf("opening setup: %v", err)
+	}
+	setup := mustState(t, h, "LUNA-1")
+	closed, err := closingNode{}.Run(context.Background(), setup, stageIn(flow, "setup"))
+	if err != nil {
+		t.Fatalf("closing setup: %v", err)
+	}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Complete{
+		Delivered: closed.Delivered, Evidence: closed.Evidence, Flow: flow,
+		Gate: fsm.GateAccount{Decision: fsm.GateDecisionPassed},
+	}); err != nil {
+		t.Fatalf("recording setup: %v", err)
+	}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: flow}); err != nil {
+		t.Fatalf("opening intake: %v", err)
+	}
+
+	h.env.Node = func(Env, runOptions, []fsm.Stage) (lead.Node, func(), error) {
+		return factNode{}, func() {}, nil
+	}
+	if err := Run(h.env, []string{"work", "LUNA-1"}); err != nil {
+		t.Fatalf("working intake: %v", err)
+	}
+
+	after := mustState(t, h, "LUNA-1")
+	if !after.Context.Facts[fsm.TriagedBug] {
+		t.Fatalf("intake concluded triaged_bug and nothing recorded it: %+v", after.Context.Facts)
+	}
+	if err := h.env.Store.AppendAction("LUNA-1", fsm.Advance{Flow: flow}); err != nil {
+		t.Fatalf("opening what follows intake: %v", err)
+	}
+	if next := mustState(t, h, "LUNA-1").Stage; next != "diagnose" {
+		t.Errorf("a task triaged as a bug went to %q; diagnose is the stage the fact "+
+			"turns on", next)
+	}
+}

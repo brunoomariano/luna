@@ -531,6 +531,18 @@ func workCommand(env Env, args []string) error {
 		return failWork(env, id, state, err, result.Spent)
 	}
 
+	if err := closeStage(env, id, state, flow, conductor, result); err != nil {
+		return err
+	}
+
+	reportWork(env, id, state.Stage, result)
+	return nil
+}
+
+func closeStage(
+	env Env, id string, state fsm.TaskState, flow []fsm.Stage,
+	conductor *lead.Lead, result lead.Result,
+) error {
 	// The evidence is recorded here, by the command whose verifiers produced it.
 	//
 	// The first version printed a `luna done` line instead and threw the verdict
@@ -555,7 +567,17 @@ func workCommand(env Env, args []string) error {
 		return err
 	}
 
-	reportWork(env, id, state.Stage, result)
+	// What the stage concluded, read the same way the solo loop reads it. Without
+	// this the command closed the stage and stopped: a `FACT:` line switched no
+	// stage on, a `VERDICT:` closed no loop, and a `[BLOCKING]` review finding
+	// sent nothing back. Measured on MAX-2, which finished `done` carrying a
+	// defect its own reviewer had found, named and located.
+	if err := conductor.ReadOutcome(
+		context.Background(), id, stageIn(flow, state.Stage), result,
+	); err != nil {
+		return err
+	}
+
 	return nil
 }
 

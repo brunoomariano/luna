@@ -239,3 +239,14 @@ func writeTranscript(t *testing.T, dir, session string, age time.Duration) {
 		t.Fatal(err)
 	}
 }
+
+// TestAWorktreeWithNoTranscriptsHasNoLiveSession. The directory appears when the
+// harness first writes, so a stage whose agent has not started yet has none —
+// and that is an answer, not a failure.
+func TestAWorktreeWithNoTranscriptsHasNoLiveSession(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if session, found := LiveSession("claude", "/repos/app/wt-app-MAX-2-never-ran"); found {
+		t.Errorf("a worktree the harness never wrote for answered with %q", session)
+	}
+}

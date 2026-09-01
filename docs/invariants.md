@@ -232,6 +232,19 @@ acceptance criterion. A defect that was already there is reported to a person ra
 reopening the work, because blocking on inherited ones turns every task into an audit of
 the repository.
 
+Then it broke a second time, at the third end nobody had checked: the reader ran on one of
+the two loops. `readReview` — and with it the fact that switches a conditional stage on
+and the verdict that closes a build loop — was called from `Lead.step`, which only
+`luna lead` drives. `luna work` closed a stage by appending the `Complete` and stopping,
+and `luna work` is what the pack's conductor runs. On MAX-2 the reviewer tagged
+`[BLOCKING]` in exactly the shape `ReadReport` matches, against a defect it had located to
+a line and reproduced with an input; the task's log holds eighteen events and not one
+`ReviewFinding`, `FactDiscovered` or `RoundJudged`, and it finished `done`. This is the
+same shape as the landing above — a mechanism complete in one loop and absent from the
+other — which is why the reading is one exported method now, called from both.
+`TestWorkReadsWhatTheReviewFound` and `TestWorkReadsWhatAStageConcluded` observe it being
+used rather than being wired.
+
 **Two things are called the contract, and only one was checked.** The stage contract —
 `requires` and `produces` — is the engine's. The contract *artifact*, the document the
 plan stage writes, was checked by nobody: the gate judged whether it was coherent, and

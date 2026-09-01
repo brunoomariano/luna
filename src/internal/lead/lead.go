@@ -409,10 +409,31 @@ func (l *Lead) step(ctx context.Context, taskID string, state fsm.TaskState, flo
 		return err
 	}
 
+	return l.ReadOutcome(ctx, taskID, stage, result)
+}
+
+// ReadOutcome turns what a stage concluded into the transitions it implies: the
+// fact that switches a later stage on, the verdict that closes or reopens a
+// loop, and the review finding that sends the work back.
+//
+// Exported because two loops close a stage and both have to do this, which is
+// the same shape as PointBranchIfDone above and the same bug. `Lead.step` closes
+// one; `luna work` closes the other, and it appended the Complete and stopped
+// there — so on the `luna fleet run` path a stage's conclusions were written to
+// an artifact and read by nobody.
+//
+// Measured on MAX-2. Its review report carried a correctly tagged [BLOCKING]
+// finding that Luna's own reader matches, and the log for that task holds no
+// ReviewFinding, no Fact and no Round at all: eighteen events, every one of them
+// an Advance or a Complete. The task finished `done` with a defect the reviewer
+// had found, named and located.
+func (l *Lead) ReadOutcome(
+	ctx context.Context, taskID string, stage fsm.Stage, result Result,
+) error {
 	// Read back rather than reusing the state from before the Complete: the base
 	// only moves on the path where the stage actually closed, and that is exactly
 	// the signal the round is judged by.
-	after, err := l.Store.Replay(taskID, flow)
+	after, err := l.Store.Replay(taskID, l.flow())
 	if err != nil {
 		return err
 	}
