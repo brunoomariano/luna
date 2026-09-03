@@ -78,15 +78,16 @@ prints, naming what failed and what never got a turn:
 ✓ fmt-check (0s)
 
 ▸ lint ───────────────────────────────────────────────────────────────
-src/internal/fsm/select.go:31:1: cyclomatic complexity 12 (gocyclo)
+src/internal/verify/verify.go:103:1: cyclomatic complexity 12 (gocyclo)
 ✗ lint (1s)
 
-ci-check — 4 steps, 1s ───────────────────────────────────────────────
+ci-check — 5 steps, 1s ───────────────────────────────────────────────
   ✓ fmt-check      0s
   ✗ lint           1s
   · lint-docs      not run
+  · lint-language  not run
   · cover          not run
-failed at lint — 2 step(s) not run
+failed at lint — 3 step(s) not run
 ```
 
 Colour is dropped when stdout is not a terminal, so CI logs stay readable.
@@ -98,6 +99,7 @@ Colour is dropped when stdout is not a terminal, so CI logs stay readable.
 | `fmt-check` | formatting drift (gofumpt, stricter than gofmt) |
 | `lint` | the linter set in [`.golangci.yaml`](../.golangci.yaml) — correctness, security, complexity, dependency direction |
 | `lint-docs` | the shape of the docs — links and headings, never their truth |
+| `lint-language` | Portuguese left in a project written in English |
 | `cover` | coverage below **95%** |
 
 **Runs in remote CI, outside the local gate.**

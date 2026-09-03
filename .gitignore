@@ -10,11 +10,6 @@ coverage.out
 *.db
 *.db-shm
 *.db-wal
-/.luna/
-
-# Secrets
-config/*.env
-!config/*.env.example
 
 # System
 .DS_Store
@@ -25,9 +20,7 @@ config/*.env
 .ai-jail
 .ai-memory.toml
 
-# Wave 5 research: five cloned orchestrators (~410 MB) plus the reports written
-# from them. Working material for a decision, not a layer of the docs suite — it
-# is written in Portuguese and stays in the worktree for alignment and for
-# borrowing ideas from the systems studied. docs/luna_study/README.md carries the
-# SHAs that make it reproducible if it is ever deleted.
-docs/luna_study/
+# Per-developer harness settings. `.local` is the convention for "yours, not the
+# project's" — permissions one person granted on one machine are not something a
+# clone should inherit.
+.claude/

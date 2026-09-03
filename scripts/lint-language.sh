@@ -4,10 +4,13 @@
 # The rule is in AGENTS.md: the whole project is written in English. This script
 # makes that rule checkable instead of trusting whoever writes to remember it.
 #
-# It is NOT part of ci-check by default. Natural language detection is heuristic:
-# a proper noun, a quoted example or a URL can trip it, and a linter that cries
-# wolf is a linter people learn to ignore. Run it after a translation pass, or
-# wire it into ci-check once the false-positive rate is known to be zero.
+# It IS part of ci-check, which it was not at first. Natural language detection is
+# heuristic — a proper noun, a quoted example or a URL can trip it — so the bar
+# for wiring it in was a false-positive rate of zero, and that is where it is now:
+# the one legitimate exception is marked with `lint-language:` and a reason.
+#
+# Leaving it out had its own cost. It sat red for two commits and nobody noticed,
+# because a target that no pipeline runs is a target nobody runs.
 #
 # Exits 1 on any hit. Read-only.
 
@@ -33,7 +36,16 @@ tracked() {
 
 # --- layer 1: accented characters ---------------------------------------------
 # The cheapest signal, and the one that catches most of it.
-found=$(tracked | xargs grep -nE '[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]' 2>/dev/null || true)
+#
+# A line carrying `lint-language: <reason>` is exempt. The one use today is a
+# quotation in decisions.md: the surrounding stack reached this project's own
+# conclusion in Portuguese, and a quotation that is translated stops being a
+# quotation. It is kept verbatim with the English beside it. The marker has to
+# state a reason, so an exemption is a sentence somebody wrote rather than a
+# silence.
+exempt() { grep -v 'lint-language:'; }
+
+found=$(tracked | xargs grep -nE '[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]' 2>/dev/null | exempt || true)
 [ -z "$found" ] || hit "$found"
 
 # --- layer 2: unaccented Portuguese words -------------------------------------
@@ -44,12 +56,12 @@ found=$(tracked | xargs grep -nE '[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕ�
 # words and with acronyms, and the noise is not worth the catch.
 PT_WORDS='nao|entao|porem|voce|atraves|qualquer|onde|quando|porque|antes|depois|deve|fazer|isso|aquilo|outro|tudo|nada|sempre|nunca|assim|pois|embora|desde|apos|durante|conforme|pelo|pela|essa|esse|aquele|aquela|muito|ainda|apenas|mesmo|algum|nenhum|talvez'
 found=$(tracked | xargs grep -nwiE "($PT_WORDS)" 2>/dev/null \
-  | grep -viE 'https?://|conventionalcommits|keepachangelog' || true)
+  | grep -viE 'https?://|conventionalcommits|keepachangelog' | exempt || true)
 [ -z "$found" ] || hit "$found"
 
 # --- layer 3: Portuguese suffixes ---------------------------------------------
 # Morphology catches words the fixed list above misses.
-found=$(tracked | xargs grep -noiE '\b[a-z]{4,}(ção|ções|mente|ável|ível|agem|ência)\b' 2>/dev/null || true)
+found=$(tracked | xargs grep -niE '\b[a-z]{4,}(ção|ções|mente|ável|ível|agem|ência)\b' 2>/dev/null | exempt || true)
 [ -z "$found" ] || hit "$found"
 
 # --- layer 4: domain terms that should have been translated -------------------
@@ -60,7 +72,7 @@ found=$(tracked | xargs grep -noiE '\b[a-z]{4,}(ção|ções|mente|ável|ível|a
 # example explaining why mixed languages hurt search — those two are expected.
 PT_DOMAIN='etapa|etapas|papel|papeis|fluxo|tarefa|tarefas|artefato|artefatos|lacuna|achado|teto|perfil|perfis|contrato|invariante|decisao|decisoes'
 found=$(tracked | xargs grep -nwiE "($PT_DOMAIN)" 2>/dev/null \
-  | grep -viE '"etapa"' || true)
+  | grep -viE '"etapa"' | exempt || true)
 [ -z "$found" ] || hit "$found"
 
 [ "$fail" = "0" ] && echo "lint-language: ok"

@@ -49,6 +49,12 @@ jobs:
           # without this every job recompiled the module graph from scratch.
           # golangci-lint keeps its own cache and it is by far the slowest step.
           #
+          # The dependency half of the key is go.mod, not go.sum: Luna has no
+          # dependencies, so there is no go.sum, and hashFiles returns an empty
+          # string for a pattern that matches nothing. That made the key equal to
+          # its own restore-key, so the cache could never be invalidated by a
+          # dependency change — silently, and exactly when it would matter.
+          #
           # mise.toml is hashed into the key PREFIX, not just the key: a `go:`
           # backend tool is compiled against whatever Go installed it, and
           # restore-keys matches by prefix. With the toolchain only in the key,
@@ -59,7 +65,7 @@ jobs:
             ~/.cache/go-build
             ~/go/pkg/mod
             ~/.cache/golangci-lint
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-check-${{ hashFiles('go.sum') }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-check-${{ hashFiles('go.mod') }}
           restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-check-
       - run: make ci-check
       - run: make cyclo
@@ -84,7 +90,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-race-${{ hashFiles('go.sum') }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-race-${{ hashFiles('go.mod') }}
           restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-race-
       - run: make race
 
@@ -104,6 +110,6 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-vuln-${{ hashFiles('go.sum') }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-vuln-${{ hashFiles('go.mod') }}
           restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-vuln-
       - run: make vuln

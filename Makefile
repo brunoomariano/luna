@@ -23,11 +23,11 @@ doctor: ## check the environment without installing anything
 	@printf 'gofumpt        '; command -v gofumpt       >/dev/null && gofumpt --version || echo '— missing'
 	@printf 'govulncheck    '; command -v govulncheck   >/dev/null && echo present || echo '— missing'
 	@printf 'gocyclo        '; command -v gocyclo       >/dev/null && echo present || echo '— missing'
-	@printf 'sqlite3        '; command -v sqlite3       >/dev/null && sqlite3 --version || echo '— missing'
+	@printf 'git            '; command -v git           >/dev/null && git --version | cut -d' ' -f3 || echo '— missing'
 
-# Hard coverage floor. Luna orchestrates agents that write code, so the metrics
-# stand in for the review nobody performs line by line. Raise it as the engine
-# grows; never lower it to make CI pass.
+# Hard coverage floor. Luna's whole job is to be believed about whether something
+# passed, so its own suite is the only thing standing behind that. Raise it as the
+# tool grows; never lower it to make CI pass.
 COVER_MIN ?= 95
 
 # Cyclomatic complexity ceiling. Matches .golangci.yaml — the same number in two
@@ -110,7 +110,11 @@ mutation: ## mutation testing — does the suite catch an injected bug?
 # Both go through run-steps.sh rather than chaining prerequisites, because make
 # stops at the first failure. A full pass that reports every problem turns four
 # fix-and-rerun cycles into one.
-CHECK_STEPS := fmt-check lint lint-docs cover
+#
+# lint-language joined the gate once its false-positive rate was zero, which is
+# the condition its own header set. Leaving it out had a cost: it was red for two
+# commits and nobody saw, because a target nothing runs is a target nobody runs.
+CHECK_STEPS := fmt-check lint lint-docs lint-language cover
 CI_STEPS    := fmt $(CHECK_STEPS) mod
 
 ci-check: ## verify only — the same thing remote CI runs

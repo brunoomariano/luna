@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/brunoomariano/luna/src/internal/contract"
 	"github.com/brunoomariano/luna/src/internal/verify"
@@ -334,33 +335,34 @@ func TestAPlainDirectoryIsCheckedRatherThanRefused(t *testing.T) {
 
 // The output that travels with a failure is bounded, and cut on a rune boundary
 // so non-ASCII output does not leave broken UTF-8 in the record.
+//
+// The command is tuned so the 300-byte bound lands *inside* a two-byte rune:
+// 60 of them after a single ASCII character, three lines joined. Without that
+// the truncation path never runs, and an earlier version of this test passed
+// against a `summarise` that sliced by raw byte index.
 func TestAFailingCommandsDetailIsBoundedAndValidUTF8(t *testing.T) {
 	r := newRepo(t)
 	head := r.commit("a.txt", "one")
 
 	got := proveOne(t, verify.Shell{Dir: r.dir, Commit: head},
 		commandContract("forge", "ci_green",
-			"for i in $(seq 1 40); do printf 'çãéêô compilação falhou linha %s\\n' $i; done; exit 1",
+			`for i in 1 2 3; do printf 'x'; for j in $(seq 1 60); do printf '\303\247'; done; `+
+				`printf ' build failed\n'; done; exit 1`,
 			contract.ScopeFull))
 
 	if got.Verdict != verify.VerdictFailed {
 		t.Fatal("expected a failure")
 	}
 	if len(got.Detail) > 300 {
-		t.Errorf("the detail is %d bytes, past the bound", len(got.Detail))
+		t.Errorf("the detail is %d bytes, past the 300-byte bound", len(got.Detail))
 	}
-	if !utf8ValidString(got.Detail) {
+	if len(got.Detail) < 250 {
+		t.Fatalf("the detail is only %d bytes, so the truncation path never ran and this "+
+			"test proves nothing", len(got.Detail))
+	}
+	if !utf8.ValidString(got.Detail) {
 		t.Errorf("the detail was cut mid-rune: %q", got.Detail)
 	}
-}
-
-func utf8ValidString(s string) bool {
-	for _, r := range s {
-		if r == '�' {
-			return false
-		}
-	}
-	return true
 }
 
 // The branch travels with the work, and the directory is only a cross-check.

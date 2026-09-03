@@ -29,8 +29,10 @@ start to re-read code the previous phase had just written.
 
 **What Luna keeps is the part nothing else had.** A delivery verified by running the tool;
 a contract that says what "delivered" means; a loop whose floor is mechanical. The
-surrounding stack had already reached the same conclusion in prose — *"sem prova executável,
-não há compensação"* — without the machine to enforce it.
+surrounding stack had already reached the same conclusion in prose, without the machine to
+enforce it — no executable proof, no compensating control:
+
+> *"sem prova executável, não há compensação"* <!-- lint-language: quoted verbatim -->
 
 **What Luna drops is everything it was reimplementing.** Worktrees, sandbox composition,
 agent invocation, durable memory, conducting. Each belongs to a tool that already does it
@@ -255,6 +257,12 @@ preference.**
 - **`PreToolUse` hooks.** Rejected once as a gating mechanism because harnesses differ. Luna
   now targets a session it does not start, and the harnesses in use both have hooks — this
   is unevaluated rather than settled.
+- **The autonomy floor is modelled and unwired.** `Autonomy.Clears`, `.Blocks` and
+  `.Valid` are tested and called by nothing in production: which mode clears which gate
+  lives in the conducting skill's prose. Either the code goes, or a verb reads the floor
+  from the ledger and answers — and the second is flow control moving back into Luna,
+  which is what this redesign took out. Leaving it as it is repeats `Stage.Skills`, which
+  parsed for months with no reader.
 - **Whether a merged build loop judges its own rounds well.** Unmeasured. The argument for
   merging is that a biased fast verdict inside the loop, corrected by an unbiased one after
   it, beats an unbiased slow verdict at every step.
