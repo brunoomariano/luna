@@ -176,6 +176,13 @@ apart is worse than no control.
 **The mode can move mid-run; a gate already open keeps whoever opened it.** Changing the
 mode while a question is on somebody's screen would rewrite who answered it.
 
+**Luna records a mode; it does not resolve a gate against one.** `Autonomy.Clears` and
+`Autonomy.Blocks` were written to answer "does this mode clear this gate" here, were
+tested, and were called by nothing — `make deadcode` found them. They are gone rather than
+wired: which mode clears which gate is a flow decision, and putting flow decisions back
+inside Luna is precisely what this redesign undid. What survives is the closed set and the
+refusal, because a typo recorded as an autonomy would sit in an append-only record forever.
+
 **A phase may stop for missing information at any mode, including `auto`.** The difference
 between running without asking and running without thinking is the whole value of an
 unattended fleet, and a fleet that cannot stop produces expensive noise.
@@ -257,12 +264,6 @@ preference.**
 - **`PreToolUse` hooks.** Rejected once as a gating mechanism because harnesses differ. Luna
   now targets a session it does not start, and the harnesses in use both have hooks — this
   is unevaluated rather than settled.
-- **The autonomy floor is modelled and unwired.** `Autonomy.Clears`, `.Blocks` and
-  `.Valid` are tested and called by nothing in production: which mode clears which gate
-  lives in the conducting skill's prose. Either the code goes, or a verb reads the floor
-  from the ledger and answers — and the second is flow control moving back into Luna,
-  which is what this redesign took out. Leaving it as it is repeats `Stage.Skills`, which
-  parsed for months with no reader.
 - **Whether a merged build loop judges its own rounds well.** Unmeasured. The argument for
   merging is that a biased fast verdict inside the loop, corrected by an unbiased one after
   it, beats an unbiased slow verdict at every step.

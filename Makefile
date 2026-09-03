@@ -85,18 +85,42 @@ vuln: ## known vulnerabilities in dependencies, filtered by reachability
 cyclo: ## report the most complex functions
 	@gocyclo -top 15 -avg src/ || true
 
+# Pinned through mise rather than `go run ...@latest`: `latest` is a question
+# asked over the network on every run, and this project has already lost a CI job
+# to one such lookup timing out. See the note in mise.toml.
 deadcode: ## report unreachable functions
-	@go run golang.org/x/tools/cmd/deadcode@latest ./src/... || \
-	  echo "(deadcode unavailable — needs network)"
+	@command -v deadcode >/dev/null || { echo "(deadcode missing — run: mise install)"; exit 0; }
+	@deadcode ./src/...
 
 crap: ## CRAP index: complexity weighted by coverage
 	@go test -coverprofile=coverage.out ./src/... >/dev/null 2>&1
 	@go run github.com/gilbertchen/crap4go@latest -c coverage.out ./src/... 2>/dev/null || \
 	  echo "(crap4go unavailable — needs network)"
 
+# What a mutant costs to survive: gremlins changes one operator — `>=` to `>`, `<`
+# to `<=`, a negation — reruns the tests, and reports the ones that still pass.
+# A survivor is a line no assertion actually pins.
+#
+# It answers the question coverage cannot: `cover` says a line executed, and this
+# says something would have noticed if it were wrong. Two real holes came out of
+# the first run — `Scope.Satisfies` never checked that a scope satisfies itself,
+# and a loop ceiling of zero (meaning "no ceiling") was one mutation away from
+# being refused.
+#
+# The coefficient is not decoration. gremlins bounds each mutant by the original
+# test time, and the default is tight enough that every mutant here timed out and
+# the score read 0.00% — a number that looks like a verdict and is a stopwatch.
+#
+# MUTATE names what to mutate. The whole tree is the default because it measured
+# at 50s — every mutant is a full test run, so that number is a property of a
+# small suite and will not survive the tree doubling. Narrow it when it stops
+# being cheap: `make mutation MUTATE=./src/internal/contract/`.
+MUTATE ?= ./src/
+MUTATION_TIMEOUT_COEFFICIENT ?= 60
+
 mutation: ## mutation testing — does the suite catch an injected bug?
-	@go run github.com/gtramontina/ooze/cmd/ooze@latest ./src/... 2>/dev/null || \
-	  echo "(mutation tool unavailable — needs network)"
+	@command -v gremlins >/dev/null || { echo "(gremlins missing — run: mise install)"; exit 0; }
+	@gremlins unleash --timeout-coefficient $(MUTATION_TIMEOUT_COEFFICIENT) $(MUTATE)
 
 # ── pipelines ────────────────────────────────────────────────────────────────
 # ci fixes what it can and then verifies; ci-check ONLY verifies.

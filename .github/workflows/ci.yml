@@ -32,6 +32,13 @@ jobs:
   # had just built. `cyclo` cannot fail (it ends in `|| true`); `mod` can, and
   # deliberately: a go.mod that is not tidy is a real defect and was previously
   # reported into a log nobody reads.
+  #
+  # `deadcode` runs here rather than in ci-check for a reason worth stating: a
+  # function written before its caller is ordinary mid-TDD, and a gate that goes
+  # red in the middle of the cycle is a gate people learn to ignore. It stays
+  # visible, though — three unreachable methods lived for two weeks because
+  # nothing ran it, which is the cost of "reported, never gated" when nothing
+  # reports either.
   check:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -69,6 +76,7 @@ jobs:
           restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-check-
       - run: make ci-check
       - run: make cyclo
+      - run: make deadcode
       - run: make mod
 
   # Kept out of ci-check because it needs CGO and roughly doubles the test time.

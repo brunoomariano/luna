@@ -210,7 +210,7 @@ what the agent said; one that delivers does not, because there the reply narrate
 delivery that already speaks for itself.
 
 **Covered by.** `TestABlockMustSayWhereTheAnswerWasLookedFor` and the report ordering tests
-in `internal/ledger`; `TestEveryModeStillBlocksOnMissingInformation`; and, in `internal/cli`,
+in `internal/ledger`; and, in `internal/cli`,
 `TestABlockWithNoAccountOfWhatWasConsultedIsRefused` and
 `TestAFailedCheckIsToldApartFromABrokenLuna`.
 

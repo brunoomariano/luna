@@ -118,6 +118,16 @@ func TestScopeNeverUpgrades(t *testing.T) {
 	if !contract.ScopeFull.Satisfies(contract.ScopeTargeted) {
 		t.Error("full should satisfy a demand for targeted")
 	}
+	// A scope satisfies itself. Mutation testing found this missing: `>=` mutated
+	// to `>` survived the whole suite, and under it `full` would have stopped
+	// meeting a demand for `full`.
+	for _, scope := range []contract.Scope{
+		contract.ScopeExistence, contract.ScopeHuman, contract.ScopeTargeted, contract.ScopeFull,
+	} {
+		if !scope.Satisfies(scope) {
+			t.Errorf("%s does not satisfy a demand for %s", scope, scope)
+		}
+	}
 	if contract.Scope("thorough").Satisfies(contract.ScopeExistence) {
 		t.Error("an unknown scope satisfied a demand; a typo must not outrank the floor")
 	}
@@ -354,6 +364,29 @@ kind = "existence"
 converges_on = ["code"]
 max_rounds   = "four"
 `, "whole number")
+}
+
+// Zero is a real answer — "no ceiling" — and only below zero is a mistake. The
+// boundary matters: `< 0` mutated to `<= 0` survived, and under it a contract
+// declaring no ceiling would have been refused.
+func TestALoopLimitOfZeroIsAcceptedAsNoCeiling(t *testing.T) {
+	c := parse(t, `
+phase    = "forge"
+produces = ["code"]
+
+[verify.code]
+kind = "existence"
+
+[loop]
+converges_on = ["code"]
+max_rounds   = 0
+`)
+	if err := c.Lint(); err != nil {
+		t.Fatalf("a loop with no ceiling was refused: %v", err)
+	}
+	if c.Loop.MaxRounds != 0 {
+		t.Errorf("max_rounds: got %d", c.Loop.MaxRounds)
+	}
 }
 
 func TestANegativeLoopLimitIsRefused(t *testing.T) {

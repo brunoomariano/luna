@@ -116,13 +116,40 @@ a merge.
 | Target | Reports |
 |---|---|
 | `cyclo` | the most cyclomatically complex functions |
-| `deadcode` | unreachable functions |
+| `deadcode` | unreachable functions — including the ones reachable only from tests |
 | `crap` | CRAP index — complexity weighted by coverage |
 | `mutation` | whether the suite would catch an injected bug |
 
-Mutation testing is the one that measures test **strength** rather than test
-quantity: 100% coverage with weak assertions passes `cover` and fails `mutation`.
-It is slow, so it stays manual — run it before a release, not on every commit.
+`cyclo` and `deadcode` also run in remote CI, where they cannot fail the build but
+stay visible. That is not belt-and-braces: three unreachable methods lived for two
+weeks because "reported, never gated" had nothing reporting either.
+
+`deadcode` is deliberately **not** in `ci-check`. A function written before its
+caller is ordinary mid-TDD, and a gate that goes red in the middle of the cycle is
+a gate people learn to ignore.
+
+**Mutation testing measures test strength**, which is the one thing coverage cannot:
+100% coverage with weak assertions passes `cover` and fails `mutation`. `gremlins`
+changes one operator — `>=` to `>`, a negation, an arithmetic base — reruns the
+suite, and reports every mutant that still passed. A survivor is a line no
+assertion actually pins.
+
+```sh
+make mutation                                    # the tree: ~50s
+make mutation MUTATE=./src/internal/contract/    # one package: ~2s
+```
+
+Two real holes came out of the first run, and both are now regression tests:
+`Scope.Satisfies` never checked that a scope satisfies *itself* (`>=` mutated to
+`>` survived), and the ledger's line-size guard was never tested at the boundary
+(`>` mutated to `>=` survived) — the guard standing between this format and its one
+unrecoverable failure.
+
+It stays out of every pipeline. Each mutant is a full test run, so the cost scales
+with the suite, and a survivor is a prompt to think rather than a build to fail.
+The `--timeout-coefficient` in the target is not decoration: at the default, every
+mutant here timed out and the score read `0.00%` — a number that looks like a
+verdict and is a stopwatch.
 
 ### Two thresholds worth understanding
 

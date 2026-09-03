@@ -2,12 +2,18 @@ package ledger
 
 import "fmt"
 
-// Autonomy is how much runs without a person.
+// Autonomy is how much runs without a person, as recorded.
 //
 // Three named modes rather than a numeric scale. The scale that preceded this had
 // eleven values and three meanings, so eight of them were indistinguishable while
 // still reading as a choice — the same defect this project already recorded for a
 // set of profiles that had silently collapsed into each other.
+//
+// What Luna does with a mode is *record it*. Which mode clears which gate is a
+// flow decision, and it belongs to whoever conducts. This type once carried
+// `Clears` and `Blocks` to answer that here; both were tested, called by nothing,
+// and removed — putting the answer in Luna is the thing the September 2026
+// redesign undid.
 type Autonomy string
 
 const (
@@ -19,50 +25,19 @@ const (
 	// Semi clears the gates that are reversible.
 	Semi Autonomy = "semi"
 
-	// Auto clears every gate that declares a floor. It does not clear a block:
-	// see Blocks.
+	// Auto clears every gate that declares a floor. It does not clear a block —
+	// see INV-5, and that rule is the conductor's to honour.
 	Auto Autonomy = "auto"
 )
 
-// rank orders the modes. An unknown mode has no rank and clears nothing.
-var autonomyRank = map[Autonomy]int{Manual: 1, Semi: 2, Auto: 3}
-
 // ParseAutonomy reads a mode, naming the alternatives when it cannot.
+//
+// The closed set is the whole point: a typo recorded as an autonomy is a mode
+// nobody can act on, and it would sit in an append-only record forever.
 func ParseAutonomy(value string) (Autonomy, error) {
-	mode := Autonomy(value)
-	if _, known := autonomyRank[mode]; !known {
-		return Manual, fmt.Errorf("autonomy is manual, semi or auto, got %q", value)
+	switch Autonomy(value) {
+	case Manual, Semi, Auto:
+		return Autonomy(value), nil
 	}
-	return mode, nil
+	return Manual, fmt.Errorf("autonomy is manual, semi or auto, got %q", value)
 }
-
-// Valid reports whether this is a mode Luna knows.
-func (a Autonomy) Valid() bool {
-	_, known := autonomyRank[a]
-	return known
-}
-
-// Clears reports whether this mode answers a gate whose floor is `floor`.
-//
-// Both sides are refused when unknown: an unrecognised floor is cleared by
-// nothing, and an unrecognised mode clears nothing. Guessing in either direction
-// hands a gate to a machine because somebody made a typo.
-func (a Autonomy) Clears(floor Autonomy) bool {
-	have, ok := autonomyRank[a]
-	if !ok {
-		return false
-	}
-	need, ok := autonomyRank[floor]
-	if !ok {
-		return false
-	}
-	return have >= need
-}
-
-// Blocks reports whether a phase may stop for missing information at this mode.
-//
-// It is always true, and it is a function rather than a comment so that the rule
-// has somewhere to be tested. INV-5: the difference between running without
-// asking and running without thinking is the whole value of an unattended fleet,
-// and a fleet that cannot stop produces expensive noise.
-func (Autonomy) Blocks() bool { return true }

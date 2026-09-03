@@ -1,6 +1,7 @@
 package ledger_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -239,6 +240,46 @@ func TestALineTooLongToAppendAtomicallyIsRefused(t *testing.T) {
 	if got, _ := l.Read(); len(got) != 0 {
 		t.Error("the refused line was written anyway")
 	}
+}
+
+// The boundary itself, because the guard is what stands between this format and
+// its one unrecoverable failure. Mutation testing found it: `>` mutated to `>=`
+// survived the whole suite, and under it a line exactly at the limit — which is
+// safe — would have been refused.
+func TestALineExactlyAtTheLimitIsAccepted(t *testing.T) {
+	l := newLedger(t)
+
+	// Grow a note until the line is one byte under the cap, then keep it.
+	fits := ""
+	for size := 0; ; size++ {
+		e := ledger.Entry{At: at(0), Run: "MAX-2", Event: ledger.EventCheck, Note: strings.Repeat("x", size)}
+		encoded, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(encoded)+1 > 4000 {
+			break
+		}
+		fits = strings.Repeat("x", size)
+	}
+
+	if err := l.Append(ledger.Entry{
+		At: at(0), Run: "MAX-2", Event: ledger.EventCheck, Note: fits,
+	}); err != nil {
+		t.Fatalf("a line at the limit was refused: %v", err)
+	}
+	if got := h(t, l); got != 1 {
+		t.Errorf("got %d lines, want 1", got)
+	}
+}
+
+func h(t *testing.T, l ledger.Ledger) int {
+	t.Helper()
+	got, err := l.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(got)
 }
 
 func TestALineWithNoRunIsRefused(t *testing.T) {
