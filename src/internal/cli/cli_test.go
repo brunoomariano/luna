@@ -366,12 +366,12 @@ func TestAnUnknownCommandNamesWhatIsAvailable(t *testing.T) {
 	}
 }
 
-// The branch travels with the work, so a checkout on luna/<run>/<phase> knows
-// which run it is without being told.
+// The branch travels with the work, so a checkout on luna/<run> knows which run
+// it is without being told.
 func TestTheBranchNamesTheRunWhenNobodyDoes(t *testing.T) {
 	h := newHarness(t)
 	h.commit("a.txt", "one")
-	h.git("checkout", "--quiet", "-b", "luna/MAX-2/forge")
+	h.git("checkout", "--quiet", "-b", "luna/MAX-2")
 
 	if err := h.run("record", "--event", "phase", "--status", "running", "--phase", "forge"); err != nil {
 		t.Fatalf("recording without --run: %v", err)

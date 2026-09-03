@@ -59,7 +59,7 @@ No dependencies. `go.mod` is three lines.
 
 ![The six verbs](docs/assets/imgs/verbs.svg)
 
-A checkout on `luna/<run>/<phase>` knows which run it is, so `--run` is optional
+A checkout on `luna/<run>` knows which run it is, so `--run` is optional
 everywhere. The branch is the authority because it travels with the work, where a
 directory can be moved or made by hand.
 

@@ -366,14 +366,44 @@ func TestAFailingCommandsDetailIsBoundedAndValidUTF8(t *testing.T) {
 }
 
 // The branch travels with the work, and the directory is only a cross-check.
+//
+// One branch per run: a run has one worktree and walks several phases on it, so a
+// phase in the name goes stale at the first transition. Both branches from the
+// first real use say `intake` for runs that reached `pr`.
 func TestACheckoutOnALunaBranchKnowsWhichRunItIs(t *testing.T) {
 	r := newRepo(t)
 	r.commit("a.txt", "one")
-	r.git("checkout", "--quiet", "-b", "luna/MAX-2/forge")
+	r.git("checkout", "--quiet", "-b", "luna/MAX-2")
 
 	where := verify.Identify(context.Background(), r.dir)
-	if where.Run != "MAX-2" || where.Phase != "forge" {
-		t.Errorf("got run=%q phase=%q from branch %q", where.Run, where.Phase, where.Branch)
+	if where.Run != "MAX-2" {
+		t.Errorf("got run=%q from branch %q", where.Run, where.Branch)
+	}
+	if where.Phase != "" {
+		t.Errorf("a branch with no phase reported one: %q", where.Phase)
+	}
+}
+
+// The older shape still resolves — branches in it exist — but the phase it names
+// is history rather than state.
+func TestAnOlderPerPhaseBranchStillNamesItsRun(t *testing.T) {
+	r := newRepo(t)
+	r.commit("a.txt", "one")
+	r.git("checkout", "--quiet", "-b", "luna/MAX-2/intake")
+
+	where := verify.Identify(context.Background(), r.dir)
+	if where.Run != "MAX-2" {
+		t.Errorf("an older branch stopped naming its run: %+v", where)
+	}
+}
+
+func TestABranchWithMoreThanTwoSegmentsNamesNoRun(t *testing.T) {
+	r := newRepo(t)
+	r.commit("a.txt", "one")
+	r.git("checkout", "--quiet", "-b", "luna/a/b/c")
+
+	if where := verify.Identify(context.Background(), r.dir); where.Run != "" {
+		t.Errorf("a branch Luna does not define was read as a run: %q", where.Run)
 	}
 }
 

@@ -196,7 +196,7 @@ luna trail [<id>]                                                      # the who
 luna report [--since 12h]                                              # every run, blocked first
 ```
 
-With no `--run`, the branch answers: a checkout on `luna/<run>/<phase>` knows which run it
+With no `--run`, the branch answers: a checkout on `luna/<run>` knows which run it
 is. The branch is the authority because it travels with the work, where a directory can be
 moved or made by hand.
 

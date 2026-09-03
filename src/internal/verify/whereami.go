@@ -30,15 +30,27 @@ type Where struct {
 	// Run is the run this checkout belongs to, when the branch names one.
 	Run string
 
-	// Phase is the phase, when the branch names one.
+	// Phase is what an older branch named after the run, when there is one.
+	//
+	// It is not the phase the run is in. A branch is cut once and the run walks
+	// several phases on it, so whatever a name carried is the phase the work
+	// *started* in and goes stale immediately — both branches from the first real
+	// use say `intake` for runs that reached `pr`. Read it as history, never as
+	// state; `luna state` answers where a run is.
 	Phase string
 }
 
-// lunaBranch matches the branch a conductor is asked to use: `luna/<run>/<phase>`.
+// lunaBranch matches the branch a conductor is asked to use: `luna/<run>`.
 //
 // The branch is the authority rather than the directory name, because a branch
 // travels with the work and a directory can be moved or made by hand.
-var lunaBranch = regexp.MustCompile(`^luna/([^/]+)/([^/]+)$`)
+//
+// One branch per run, not per phase. The older shape was `luna/<run>/<phase>`,
+// from a design where each stage had its own worktree and branch; a run has one
+// worktree now, so a phase in the name is a label that stops being true after the
+// first transition. The trailing segment is still parsed — branches in that shape
+// exist — but nothing depends on it.
+var lunaBranch = regexp.MustCompile(`^luna/([^/]+?)(?:/([^/]+))?$`)
 
 // scpLike matches `git@host:owner/repo`, which is not a URL and does not parse as
 // one. It is the default form for github and gitlab, so it is the common case

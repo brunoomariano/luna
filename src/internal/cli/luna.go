@@ -123,7 +123,7 @@ a phase boundary to prove what was delivered, and to record what happened.
 
   luna state [--run <id>] [--json]
         where a run stands: its most recent line. With no --run, the branch
-        answers — a checkout on luna/<run>/<phase> knows which run it is.
+        answers — a checkout on luna/<run> knows which run it is.
 
   luna trail [<id>] [--json]
         everything that happened in one run, oldest first: the phases it
