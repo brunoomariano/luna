@@ -72,10 +72,11 @@ func checkCommand(env Env, args []string) error {
 // really delivered nothing (its HEAD equals its base, which --base catches)
 // while making the documented default true.
 func proveDelivery(ctx context.Context, where verify.Where, c contract.Contract, commit, base string) ([]verify.Evidence, error) {
-	if commit == "" {
+	resolved := commit == ""
+	if resolved {
 		commit = headOf(ctx, where.Repo)
 	}
-	return verify.Shell{Dir: where.Repo, Commit: commit, Base: base}.Prove(ctx, c)
+	return verify.Shell{Dir: where.Repo, Commit: commit, Base: base, Resolved: resolved}.Prove(ctx, c)
 }
 
 // reportEvidence prints the verdicts and answers whether the phase is proven.

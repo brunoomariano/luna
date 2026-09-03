@@ -118,8 +118,14 @@ type Entry struct {
 	// what lets a record outlive the tree it describes.
 	Worktree string `json:"worktree,omitempty"`
 
-	// Round is which round of a loop this is, counted here rather than by the
-	// model.
+	// Round is which round of the phase's convergent loop this is — build, clean,
+	// check, judge — counted here rather than by the model.
+	//
+	// Not a count of verification attempts. The distinction cost a real run: a
+	// caller numbered three `check` calls 1, 2 and 3 while the loop had gone
+	// round twice, and the loop's ceilings are read off this field. A retry
+	// recorded as a round makes a phase look like it iterated when it was the
+	// same round being checked again.
 	Round int `json:"round,omitempty"`
 
 	// Artifact, Verdict, Scope, Command and Exit describe a check.

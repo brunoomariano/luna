@@ -609,3 +609,88 @@ func TestAShortCommitIsNotTruncatedFurther(t *testing.T) {
 		t.Errorf("the detail does not name the base it was handed: %q", got.Detail)
 	}
 }
+
+// A caller passed --base expecting HEAD to be the subject, Luna resolved HEAD,
+// the two matched, and the refusal described the symptom without naming the fix.
+func TestAResolvedCommitEqualToItsBaseSaysHowToNameAnother(t *testing.T) {
+	r := newRepo(t)
+	base := r.commit("a.txt", "one")
+
+	got := proveOne(t, verify.Shell{Dir: r.dir, Commit: base, Base: base, Resolved: true},
+		commandContract("forge", "ci_green", "true", contract.ScopeFull))
+
+	if got.Verdict != verify.VerdictFailed {
+		t.Fatal("a delivery equal to its base was accepted")
+	}
+	for _, want := range []string{"no --commit was given", "name it"} {
+		if !strings.Contains(got.Detail, want) {
+			t.Errorf("the refusal does not say what to do (%q):\n%s", want, got.Detail)
+		}
+	}
+}
+
+// A commit the caller chose gets no such advice: they named it on purpose.
+func TestANamedCommitEqualToItsBaseIsReportedWithoutAdvice(t *testing.T) {
+	r := newRepo(t)
+	base := r.commit("a.txt", "one")
+
+	got := proveOne(t, verify.Shell{Dir: r.dir, Commit: base, Base: base},
+		commandContract("forge", "ci_green", "true", contract.ScopeFull))
+
+	if strings.Contains(got.Detail, "no --commit was given") {
+		t.Errorf("a named commit was told to name one:\n%s", got.Detail)
+	}
+}
+
+// The contract named the repository's own gate — properly discovered — and it
+// failed anyway, because the gate assumes an installed workspace and the check
+// runs in a clean checkout. Nothing in the flow said so.
+func TestAGateThatNeedsAnInstalledWorkspaceIsToldWhyItFailed(t *testing.T) {
+	r := newRepo(t)
+	head := r.commit("a.txt", "one")
+
+	got := proveOne(t, verify.Shell{Dir: r.dir, Commit: head},
+		commandContract("forge", "ci_green",
+			"echo \"Error: Cannot find module './node_modules/dep.js'\" >&2; exit 1",
+			contract.ScopeFull))
+
+	if got.Verdict != verify.VerdictFailed {
+		t.Fatal("expected a failure")
+	}
+	if !strings.Contains(got.Detail, "clean checkout") {
+		t.Errorf("the failure does not explain the clean checkout:\n%s", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "install it first") {
+		t.Errorf("the failure does not say what the contract is missing:\n%s", got.Detail)
+	}
+}
+
+// The hint is matched on what the command printed, never on its absence: a check
+// that fails for a real reason must not be excused by a guess.
+func TestAnOrdinaryFailureGetsNoBootstrapHint(t *testing.T) {
+	r := newRepo(t)
+	head := r.commit("a.txt", "one")
+
+	got := proveOne(t, verify.Shell{Dir: r.dir, Commit: head},
+		commandContract("forge", "ci_green",
+			"echo 'FAIL: expected 4, got 6' >&2; exit 1", contract.ScopeFull))
+
+	if strings.Contains(got.Detail, "clean checkout") {
+		t.Errorf("a real test failure was excused as a missing workspace:\n%s", got.Detail)
+	}
+}
+
+// A working-tree check is run by somebody who said the tree is the subject, so
+// the hint about clean checkouts does not apply to it.
+func TestAWorkingTreeCheckGetsNoBootstrapHint(t *testing.T) {
+	r := newRepo(t)
+	r.commit("a.txt", "one")
+
+	got := proveOne(t, verify.Shell{Dir: r.dir, OverWorkingTree: true},
+		commandContract("forge", "ci_green",
+			"echo 'Cannot find module' >&2; exit 1", contract.ScopeTargeted))
+
+	if strings.Contains(got.Detail, "clean checkout") {
+		t.Errorf("a working-tree check was told about clean checkouts:\n%s", got.Detail)
+	}
+}

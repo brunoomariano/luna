@@ -89,7 +89,11 @@ a phase boundary to prove what was delivered, and to record what happened.
         --base         what the phase started from. Given, a delivery equal to
                        it is reported as no delivery — a phase that committed
                        nothing would otherwise pass on the code it was handed.
-        --round        which round of a loop this is.
+        --round        which round of the phase's convergent loop this is —
+                       build, clean, check, judge. It is not a count of how
+                       many times check was called: the loop's ceilings are
+                       read off it, and a retry numbered as a round makes a
+                       phase look like it iterated when it did not.
         --dry-run      say what would run, run nothing, record nothing.
 
   luna contract lint <file|->
@@ -113,7 +117,8 @@ a phase boundary to prove what was delivered, and to record what happened.
         --found --where       for a discovery: what was concluded about this
                    project, and which file it was read from. Both are
                    required — a finding nobody can check is a claim.
-        --round    which round of a loop this is
+        --round    which round of the phase's convergent loop this is — not how
+                   many times the phase was retried
         --project  which repository this run is about, when the command runs
                    somewhere else — a batch seeding runs from one checkout
         --note     anything the fields above do not cover

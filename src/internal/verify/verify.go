@@ -35,6 +35,15 @@ type Shell struct {
 	// every phase.
 	Dir string
 
+	// Resolved says the commit was worked out rather than named by the caller.
+	//
+	// It only changes what a failure *says*: a delivery that turns out to equal
+	// its base reads differently depending on whether somebody chose that commit
+	// or Luna resolved it. Measured on a real run — a caller passed `--base` and
+	// expected HEAD to be the subject, Luna resolved HEAD, the two matched, and
+	// the refusal described the symptom without naming the fix.
+	Resolved bool
+
 	// Commit is what to verify. Empty means the delivery is whatever the
 	// repository's HEAD is, which is what a caller with no handoff to name has.
 	//
@@ -160,13 +169,17 @@ func (s Shell) proveOne(ctx context.Context, artifact string, v contract.Verifie
 	if exit != 0 {
 		verdict = VerdictFailed
 	}
+	detail := summarise(output, verdict)
+	if verdict == VerdictFailed && !s.OverWorkingTree {
+		detail = addBootstrapHint(detail, output)
+	}
 	return Evidence{
 		Artifact: artifact,
 		Scope:    command.Proves(),
 		Verdict:  verdict,
 		Command:  command.Run,
 		ExitCode: exit,
-		Detail:   summarise(output, verdict),
+		Detail:   detail,
 	}, nil
 }
 
@@ -313,6 +326,53 @@ func (s Shell) runIn(ctx context.Context, dir, command string) (int, string, err
 	return 0, string(out), nil
 }
 
+// missingDependencies are the ways an ecosystem says "this workspace was never
+// installed". They are matched on a failing command's output, never on its
+// absence: a check that fails for a real reason must not be excused by a guess.
+//
+// The list is short and every entry is a phrase a tool prints, not a word that
+// could appear in ordinary test output. `cannot find module` catches Node,
+// `no such file or directory (os error 2)` and `could not compile` catch Rust and
+// Go builds against absent vendor trees, and the rest name their own ecosystem.
+var missingDependencies = []string{
+	"cannot find module",
+	"module not found",
+	"no module named",
+	"command not found",
+	"executable file not found",
+	"is not recognized as an internal",
+	"could not find a version that satisfies",
+	"node_modules",
+	"vendor/autoload.php",
+}
+
+// addBootstrapHint says the thing Luna knows and the contract's author did not
+// think about: this ran in a clean checkout.
+//
+// Measured on a real run. The contract named the repository's own gate — properly
+// discovered, properly recorded — and it failed anyway, because the gate assumes
+// an installed workspace and Luna checks out the delivered commit into an empty
+// tree. The command was right for a person and wrong for a contract, and nothing
+// in the flow said so.
+//
+// A hint rather than a fix: Luna does not know how this project installs itself,
+// and guessing `npm ci` would be a second place for the gate to live.
+func addBootstrapHint(detail, output string) string {
+	lower := strings.ToLower(output)
+	for _, sign := range missingDependencies {
+		if !strings.Contains(lower, sign) {
+			continue
+		}
+		hint := "the check runs in a clean checkout of the delivered commit, " +
+			"so a gate that assumes an installed workspace has to install it first"
+		if detail == "" {
+			return hint
+		}
+		return detail + "\n     " + hint
+	}
+	return detail
+}
+
 // How much of a failing command's output travels with the evidence.
 //
 // The tail rather than the head, because the reason a build failed is at the end
@@ -362,5 +422,16 @@ func (s Shell) undeliveredDetail() string {
 	if s.Commit == "" {
 		return "the phase committed nothing, so there is no delivery to run it over"
 	}
-	return "the phase committed nothing on top of " + short(s.Base) + ", so there is no delivery to run it over"
+
+	said := "the phase committed nothing on top of " + short(s.Base) +
+		", so there is no delivery to run it over"
+	if !s.Resolved {
+		return said
+	}
+
+	// Nobody named this commit — Luna took it from HEAD, and it turned out to be
+	// the base. That is either a phase that really delivered nothing, or a caller
+	// who meant a different commit and did not say which. Only they can tell, so
+	// the message names both rather than guessing.
+	return said + ".\n     HEAD was used because no --commit was given; if the delivery is elsewhere, name it"
 }

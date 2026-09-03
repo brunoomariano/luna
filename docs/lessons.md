@@ -149,6 +149,20 @@ run id. There was a skill documenting it. A CLI learned by trial leaves its
 mistakes in an append-only record — one of them is a phase note that says `teste`,
 permanently.
 
+**The right command for a person is the wrong command for a contract.** A run
+named its repository's own gate — discovered properly, recorded with its source,
+exactly as the flow asks — and the check failed anyway. The gate assumed an
+installed workspace; the check runs in a clean checkout of the delivered commit,
+which is the guarantee. Both halves were correct and together they were wrong, and
+nothing in the flow said so. `contract lint` validates a contract's shape, not
+whether its commands can run where they will be run.
+
+**A field whose name does not say which thing it counts gets counted wrong.**
+`--round` meant "which round of the convergent loop", and a caller used it for
+"which attempt at verifying" — three checks numbered 1, 2, 3 while the loop had
+gone round twice. The loop's ceilings are read off that field. Nobody noticed,
+because both readings produce numbers that look sensible.
+
 ## About this redesign
 
 **A tool that wants to be the parent process cannot be added to a setup that already has
