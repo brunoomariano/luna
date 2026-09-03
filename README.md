@@ -14,25 +14,7 @@ exit code, over **what was actually committed**.
 **You don't.** Luna is a tool your *agent* runs, at the boundary between two phases of
 work. You keep the setup you already have.
 
-```
-   you                     your agent                        luna
-    │                          │                               │
-    │  "implement XPTO-45"     │                               │
-    ├─────────────────────────▶│                               │
-    │                          │  writes code, commits         │
-    │                          │                               │
-    │                          │  "am I done?"  ──────────────▶│
-    │                          │                               │  runs `make ci`
-    │                          │                               │  over the COMMIT
-    │                          │◀───────────  exit 2, ci_green │
-    │                          │                               │
-    │                          │  not done. keeps working.     │
-    │                          │                               │
-    │                          │  "now?"       ──────────────▶ │
-    │                          │◀───────────  exit 0, proven   │
-    │  "done, and here's       │                               │
-    │◀──  what proved it"      │                               │
-```
+![Who calls Luna](docs/assets/imgs/who-calls.svg)
 
 The agent cannot skip this the way it can skip a sentence in a prompt: the exit code is
 not a suggestion, and what it ran is in the record either way.
@@ -56,42 +38,7 @@ in a typical setup does:
 
 Four pieces, and only one of them decides anything.
 
-```
-                  the contract                        what a phase owes,
-                  (TOML, on stdin)                    and how each debt is proven
-                        │
-                        │  phase = "forge"
-                        │  produces = ["code", "ci_green"]
-                        │  [verify.ci_green] run = "make ci", scope = "full"
-                        ▼
-   ┌───────────────────────────────────────────────────────────────────┐
-   │  contract    parse · lint                                         │
-   │              refuses a contract that cannot be read, and says     │
-   │              every fault at once. Nothing here executes.          │
-   └───────────────────────────────┬───────────────────────────────────┘
-                                   ▼
-   ┌───────────────────────────────────────────────────────────────────┐
-   │  verify      a throwaway checkout at the DELIVERED COMMIT,        │
-   │              cut from the repository — never the working tree     │
-   │                                                                   │
-   │                git worktree add --detach <sha>                    │
-   │                  └─ sh -c "make ci"  →  exit code                 │
-   │                                                                   │
-   │              one piece of evidence per artifact, each carrying    │
-   │              the scope it proves. Scope never upgrades.           │
-   └───────────────────────────────┬───────────────────────────────────┘
-                                   ▼
-   ┌───────────────────────────────────────────────────────────────────┐
-   │  ledger      one JSON line per verdict, appended, never rewritten │
-   │                                                                   │
-   │              ~/.local/share/luna/ledger.jsonl                     │
-   │              ├─ outside every checkout                            │
-   │              ├─ statfs first: refuses tmpfs, loudly               │
-   │              └─ O_APPEND: a fleet writes with no lock             │
-   └───────────────────────────────┬───────────────────────────────────┘
-                                   ▼
-                            exit 0 · 2 · 1
-```
+![Inside Luna](docs/assets/imgs/inside.svg)
 
 **Where a run stands is its most recent line** — read by tailing, not by replaying. Luna
 decides no transitions, so it has no state to reconstruct, only a position to report.
@@ -110,35 +57,7 @@ No dependencies. `go.mod` is three lines.
 
 ## The five verbs
 
-```
-   ┌──────────────────┬──────────────────────────────────────────────────────┐
-   │ luna contract    │  read a contract and report every way it is unusable │
-   │      lint <file> │  before anything runs. Cheap, and the mistake costs  │
-   │                  │  nothing here.                                       │
-   ├──────────────────┼──────────────────────────────────────────────────────┤
-   │ luna check       │  run every declared check over the delivered commit, │
-   │   --contract ─   │  and record each verdict.                            │
-   │                  │                                                      │
-   │                  │    --commit  what to verify (default: HEAD)          │
-   │                  │    --base    what the phase started from. Given, a   │
-   │                  │              delivery equal to it is no delivery     │
-   │                  │    --round   which round of a loop this is           │
-   │                  │    --dry-run say what would run, run nothing         │
-   │                  │                                                      │
-   │                  │  → exit 0 proven · 2 not proven · 1 could not run    │
-   ├──────────────────┼──────────────────────────────────────────────────────┤
-   │ luna record      │  record what Luna did not verify: a phase starting,  │
-   │   --event <kind> │  a gate answered, a block, an autonomy change.       │
-   │                  │                                                      │
-   │                  │    phase · gate · block · unblock · autonomy         │
-   ├──────────────────┼──────────────────────────────────────────────────────┤
-   │ luna state       │  where a run stands: its most recent line.           │
-   │                  │  With no --run, the branch answers.                  │
-   ├──────────────────┼──────────────────────────────────────────────────────┤
-   │ luna report      │  every run, blocked first, most recent next.         │
-   │   --since 12h    │  This is the morning's product.                      │
-   └──────────────────┴──────────────────────────────────────────────────────┘
-```
+![The five verbs](docs/assets/imgs/verbs.svg)
 
 A checkout on `luna/<run>/<phase>` knows which run it is, so `--run` is optional
 everywhere. The branch is the authority because it travels with the work, where a

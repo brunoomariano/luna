@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 496" width="960" height="496" role="img" aria-labelledby="t d">
+  <title id="t">The five verbs</title>
+  <desc id="d">luna contract lint reads a contract and reports every way it is unusable, before anything runs. luna check runs every declared check over the delivered commit and records each verdict, answering with exit 0 proven, 2 not proven, or 1 could not run; its flags are commit, base, round and dry-run. luna record records what Luna did not verify: a phase, a gate, a block, an unblock or an autonomy change. luna state reports where a run stands, which is its most recent line. luna report lists every run, blocked first.</desc>
+
+  <defs>
+  </defs>
+
+  <rect width="960" height="496" fill="#14150f"/>
+
+  <!-- celestial hairlines, margins only -->
+  <g fill="none" stroke="#6a675d" stroke-width=".55" opacity=".38">
+    <circle cx="944" cy="392" r="104"/>
+    <ellipse cx="944" cy="392" rx="132" ry="44" transform="rotate(-14 944 392)"/>
+    <circle cx="16" cy="112" r="86"/>
+    <ellipse cx="16" cy="112" rx="112" ry="38" transform="rotate(16 16 112)"/>
+  </g>
+  <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".35" d="M56 66 A 50 50 0 1 0 56 152"/>
+  <g fill="#c9a227" opacity=".7">
+    <path d="M902 92 l1.4 6.6 6.6 1.4 -6.6 1.4 -1.4 6.6 -1.4 -6.6 -6.6 -1.4 6.6 -1.4z"/>
+  </g>
+
+  <text x="56" y="48" fill="#6f6b60" font-family="Georgia, 'Times New Roman', serif" font-size="10.5" letter-spacing="2">THE FIVE VERBS</text>
+  <path fill="none" stroke="#d8d4cb" stroke-width="1" opacity=".3" d="M56 58 H 904"/>
+
+  <!-- 1 · contract lint -->
+  <g transform="translate(56 86)">
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 44"/>
+    <text x="18" y="14" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna contract lint</text>
+    <text x="18" y="34" fill="#8a8578" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11">&lt;file&gt; or -</text>
+    <text x="330" y="14" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Every way the contract is unusable, reported at once.</text>
+    <text x="330" y="34" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">Before anything runs — the mistake costs nothing here.</text>
+  </g>
+  <path fill="none" stroke="#6a675d" stroke-width=".55" d="M56 142 H 904"/>
+
+  <!-- 2 · check -->
+  <g transform="translate(56 164)">
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".7" d="M0 -4 v 122"/>
+    <text x="18" y="14" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna check</text>
+    <text x="18" y="34" fill="#8a8578" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11">--contract -</text>
+
+    <text x="330" y="14" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Run every declared check over the delivered commit,</text>
+    <text x="330" y="32" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">and record each verdict.</text>
+
+    <g fill="#8a8578" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" transform="translate(330 58)">
+      <text x="0" y="0">--commit</text>   <text x="86" y="0" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">what to verify · defaults to HEAD</text>
+      <text x="0" y="18">--base</text>     <text x="86" y="18" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">what the phase started from; a delivery equal to it is none</text>
+      <text x="0" y="36">--round</text>    <text x="86" y="36" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">which round of a loop this is</text>
+      <text x="0" y="54">--dry-run</text>  <text x="86" y="54" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">say what would run, run nothing</text>
+    </g>
+
+    <text x="330" y="132" fill="#c9a227" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12">→  0 proven   ·   2 not proven   ·   1 could not run</text>
+  </g>
+  <path fill="none" stroke="#6a675d" stroke-width=".55" d="M56 316 H 904"/>
+
+  <!-- 3 · record -->
+  <g transform="translate(56 338)">
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 44"/>
+    <text x="18" y="14" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna record</text>
+    <text x="18" y="34" fill="#8a8578" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11">--event &lt;kind&gt;</text>
+    <text x="330" y="14" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">What Luna did not verify.</text>
+    <text x="330" y="34" fill="#8a8578" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11">phase · gate · block · unblock · autonomy</text>
+  </g>
+  <path fill="none" stroke="#6a675d" stroke-width=".55" d="M56 394 H 904"/>
+
+  <!-- 4 · state -->
+  <g transform="translate(56 414)">
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 22"/>
+    <text x="18" y="12" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna state</text>
+    <text x="330" y="12" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Where a run stands: its most recent line.</text>
+  </g>
+
+  <!-- 5 · report -->
+  <g transform="translate(56 446)">
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 22"/>
+    <text x="18" y="12" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna report</text>
+    <text x="330" y="12" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Every run, blocked first. The morning's product.</text>
+  </g>
+</svg>
