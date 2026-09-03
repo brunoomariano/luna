@@ -1,6 +1,0 @@
---about
-tally.sh gets the wrong answer for arguments with a leading zero, and does not fail when it does. Reproduce with: ./tally.sh 1 08 3 — it prints 1, writes an error to stderr, and still exits 0. The correct total is 12.
---design
-Fix the cause, not the symptom. Every argument the script already accepted must keep summing exactly as it does today.
---acceptance
-./tally.sh 1 08 3 prints 12; ./tally.sh 010 prints 10; ./tally.sh 1 2 3 still prints 6; ./tally.sh -3 -2 still prints -5; ./tally.sh with no arguments still prints 0; nothing is written to stderr for any of these; each exits 0; shellcheck passes.

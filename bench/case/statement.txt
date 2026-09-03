@@ -1,6 +1,0 @@
---about
-Add an --avg flag to tally.sh. Today it only sums.
---design
-Keep the existing summing behaviour exactly as it is. The flag may appear anywhere on the command line.
---acceptance
-tally.sh 1 2 3 prints 6; tally.sh --avg 1 2 3 prints 2; tally.sh --avg 1 2 prints 1 (integer division, truncating); tally.sh --avg with no numbers prints 0 rather than dividing by zero; tally.sh 1 --avg 2 prints 1, because the flag is positional-independent; shellcheck passes.

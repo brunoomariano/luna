@@ -2,123 +2,126 @@
 
 # Luna
 
-**AI agents do not follow a deterministic process just because you asked for one in
-prose.**
+**An agent will tell you the tests pass. Luna runs them.**
 
-You write a workflow — investigate, plan, test, implement, review, deliver — and the agent
-follows it *most of the time*. It skips a step it decided was unnecessary. It reinterprets
-an instruction. It stops iterating for no reason. In a long session it forgets which role
-it had. Each failure is cheap alone and expensive together: you stop trusting the result
-and go back to reviewing everything by hand.
+Coding agents produce completion language whether or not the work is done — "tests
+passing" while the suite is red, files "created" that exist only in the prompt. The usual
+answer is more prose in the instructions. Luna's answer is to run the command and read the
+exit code, over **what was actually committed**.
 
-Luna moves **flow control** out of the model, and then refuses to believe the model about
-whether the work is done.
+```sh
+$ luna check --contract - <<'TOML'
+phase    = "forge"
+produces = ["ci_green"]
 
-> *"Ensure that everything that can be deterministic, is done with a deterministic tool.
-> Don't try to get the poor agents to follow a deterministic process."*
-> — Robert C. Martin
+[verify.ci_green]
+run   = "make ci"
+scope = "full"
+TOML
 
-## What it actually gives you
+FAIL ci_green                 full       make ci
+     FAIL  internal/parser  0.4s · exit status 1
 
-Three things, in order of how much they matter:
+forge is not proven: ci_green
+$ echo $?
+2
+```
 
-- **A stage closes because a command proved it, not because an agent said so.** `make ci`
-  returned zero, the artifact is in the store with its hash, the commit resolves. The
-  check runs over what was *delivered*, not over whatever was left in the working tree.
-- **An audit trail you can replay.** Append-only log, one record per transition, refusing
-  to replay against a flow it was not written under. For unattended runs, the evidence is
-  the product.
-- **Agents that stay in their box.** Every agent runs inside a sandbox; scratch artifacts
-  are handed to Luna through a socket instead of being committed, so the delivered tree
-  holds the work and nothing else.
+Exit 0 proven, 2 not proven, 1 Luna could not run.
 
-On top of those: a stage never starts without what it requires, failure ends in a bounded
-retry and then a *notified* block, and you choose how much autonomy to grant per task —
-from confirming every gate to an overnight run that stops for nothing.
+## What it is not
 
-## State
+Luna does not run your agent, open your worktree, build your sandbox, or decide what
+happens next. Those belong to whatever you already use. It is called *by* the agent, at a
+phase boundary, and it does three things nothing else in a typical setup does:
 
-**Under construction, and honest about it.** A full 12-stage cycle ran zero-touch under
-the previous transport, delivering a real feature. The terminal driving is now gone and
-both headless adapters have been exercised against their real binaries. A Codex run used
-the central daemon, a managed ai-memory workstream, artifact handover and the native
-transcript exposed by `luna console`; it reached the first contained stage, where the
-current nested development sandbox could not start another `bwrap`. A full seven-stage
-cycle has therefore not completed on the new transport yet. What is decided but
-not built is listed at the bottom of [`docs/architecture.md`](docs/architecture.md) rather
-than implied by silence.
+- **Verification that ran.** A command returning zero over the delivered commit — not over
+  the working tree, where an uncommitted file or a stale build artifact makes a green
+  meaningless.
+- **A contract.** What a phase owes and how each debt is proven, checked on the way out.
+  Evidence carries how much it proves, and `existence` — "the artifact is there, nothing
+  more is claimed" — is an honest answer.
+- **A floor under the loop.** The model judges whether a round made progress; it may not
+  declare the loop finished while the command it converges on is red.
 
-**What it costs is now measured, and the numbers are the open question.** A feature whose
-entire content is a `--loud` flag for a two-line shell script cost **$6.78 and 5.4 million
-tokens across six stages**. The work was good — five tests including a shellcheck pass,
-idempotent repeated flags, exit 2 with a diagnostic on an unknown argument — but a single
-session would have done it for a fraction of that. The per-stage column is in
-`luna task show`, and it says the expense is in the stages *before* the code: scenarios
-and spec are $4.14 of the $6.78, build is $0.64.
-
-That reading has since been acted on: the full flow is seven stages instead of twelve.
-Solo execution uses one broad agent policy; pack execution gives each distinct stage
-briefing an independent agent. Whether the shorter flow is cheaper is the next thing to
-measure, not something to claim here. See
-[`docs/lessons.md`](docs/lessons.md).
-
-Task state is global to the installed Luna, not stored in a checkout. One daemon owns
-`$XDG_DATA_HOME/luna/luna.db`; every CLI process opens that file in SQLite read-only mode
-and sends events and artifact writes to the daemon over its private socket. Rows carry a
-project identity, so equal task ids in different repositories remain separate while
-`luna task list`, `luna gates`, `luna stuck`, `luna fleet report` and `luna flow check`
-can report the whole workload.
-
-Claude and Codex are measured harness adapters. Shipped flows declare Claude; passing
-`--agent codex` to `luna lead`, `luna fleet run` or `luna work` changes the execution
-harness without changing the flow fingerprint. `lead_harness = codex` selects Codex for
-the conductor and autonomous gate judgements. Both record native sessions and token usage,
-and `luna console` locates either transcript. Claude reports USD cost; Codex currently does
-not, so Luna displays `cost n/a` and refuses a Codex run carrying a dollar ceiling.
-Inside a stage, Luna exposes only artifact handover commands; task transitions remain the
-node's responsibility even if a harness discovers a host-installed Luna orchestration
-skill.
-
-## Installation
+## Install
 
 ```sh
 go install github.com/brunoomariano/luna/src/cmd/luna@latest
 ```
 
-Or from a checkout, which is the same build by the same route:
+No dependencies. `go.mod` is three lines.
+
+## Use
+
+Five verbs.
 
 ```sh
-make install          # into GOBIN, else GOPATH/bin
-make uninstall
+luna check --contract - [--commit <sha>] [--base <sha>]  # prove, and record each verdict
+luna contract lint <file|->                              # static, before anything runs
+luna record --run <id> --event <kind> …                  # what Luna did not verify
+luna state [--run <id>]                                  # where a run stands
+luna report [--since 12h]                                # every run, blocked first
 ```
 
-`make install` prints what it installed, where, and — separately — what `luna`
-resolves to for your shell. Those two are not always the same binary, and a
-stale copy earlier on your PATH is invisible until it refuses a flag the current
-build has.
+With no `--run`, the branch answers: a checkout on `luna/<run>/<phase>` knows which run it
+is.
 
-```sh
-luna version
+### The ledger
+
+One file outside every checkout, one JSON line per event, append-only.
+
+```
+$XDG_DATA_HOME/luna/ledger.jsonl
 ```
 
-says which build this is and which flows it carries, with their fingerprints.
-Check it against whatever runbook or skill you are following: a document written
-for one surface and run against another fails at the first unknown flag, with
-nothing saying which of the two is behind.
+Where a run stands is its most recent line — read by tailing, not by replaying. Lines are
+self-contained and bounded, so a concurrent fleet appends with no lock.
+
+**Luna refuses to write when that directory is not durable.** Inside a sandbox with a tmpfs
+`$HOME`, a write succeeds, reports success and evaporates — so Luna asks the kernel first
+and stops with instructions rather than losing the record in silence.
+
+```
+the ledger is not on durable storage: ~/.local/share/luna is in memory…
+  For ai-jail, that is `rw_maps` in the config, or `--rw-map ~/.local/share/luna`
+```
+
+## Blocking
+
+A phase that cannot settle a question from what it has may stop and hand it over — at every
+autonomy setting, including `auto`. Running without asking is the point; running without
+thinking is how an unattended fleet produces expensive noise.
+
+```
+$ luna state --run MAX-2
+MAX-2  blocked
+  phase     forge
+
+  the question   is --largest meant to return an argument?
+  looked in
+    the contract, clause 4 — says "the largest", undefined with --max
+    tests/ — the combination is not covered
+  what unblocks  which of the two readings holds
+```
+
+The middle section is required. A block that says only what it wants is indistinguishable
+from a phase that did not read what it already had.
 
 ## Documentation
 
-Four files. If one disagrees with the code, the file is the bug.
+Four files, each answering one question.
 
-| Document | Subject |
+| File | Question |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | how the system works today |
-| [`docs/invariants.md`](docs/invariants.md) | the five rules that always hold |
-| [`docs/decisions.md`](docs/decisions.md) | what was decided, and what was tried and abandoned |
-| [`docs/lessons.md`](docs/lessons.md) | what building this taught, including the mistakes |
-| [`AGENTS.md`](AGENTS.md) | for agents working in this repository |
-| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | commits, tags, the pipeline |
+| [architecture.md](docs/architecture.md) | how does it work today? |
+| [invariants.md](docs/invariants.md) | what always holds? |
+| [decisions.md](docs/decisions.md) | what was chosen, and what was rejected? |
+| [lessons.md](docs/lessons.md) | what did building it teach? |
 
-## License
+## Development
 
-To be defined.
+```sh
+make ci        # fixes what it can, then verifies. Run before a PR.
+make ci-check  # verify only — what remote CI runs
+```

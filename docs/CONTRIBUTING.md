@@ -14,16 +14,19 @@ If the change touches a permanent rule of the domain, also check
 
 ## Project state
 
-Luna has an executable reducer, three embedded flows, a headless agent transport, a
-central daemon-owned store and both solo and conducted pack execution. It remains
-pre-release: design critique and full-cycle evidence are still especially useful,
-particularly from people who have operated multiple agents and seen a failure mode the
-current flow does not cover.
+Luna is a verifier an agent calls at a phase boundary: a contract on stdin, checks run over
+the delivered commit, one line per verdict in a durable ledger. It stopped being an
+orchestrator in September 2026 — [`decisions.md`](decisions.md) says why. It remains
+pre-release: design critique and evidence from real cycles are especially useful,
+particularly from people who have operated agents unattended and seen a failure mode the
+contract does not cover.
 
-Tests that invoke the CLI must isolate `XDG_DATA_HOME` or set `LUNA_STORE`; otherwise they
-can reach the developer's central database. Production CLI code opens that database with
-`store.OpenReadOnly` and forwards every mutation to the daemon. Tests may use
-`store.OpenAs` directly when the store itself is the unit under test.
+Two things to know before writing a test:
+
+- **Give it its own ledger.** A test that leaves `XDG_DATA_HOME` alone writes into the
+  developer's real record. The CLI takes the path through `cli.Env`, so a test names one.
+- **`t.TempDir()` is on tmpfs here**, and the durability guard refuses it — correctly. A
+  test that needs durable storage uses the helper that finds some, or skips.
 
 ## Git-flow
 

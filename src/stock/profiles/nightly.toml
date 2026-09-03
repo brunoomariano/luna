@@ -1,5 +1,0 @@
-# Stops at nothing. It is what makes an unattended run unattended.
-#
-# "Nothing" does not include the loop ceiling: a spent ceiling with nobody
-# waiting blocks the task, because the alternative is the infinite loop
-# INV-5 names.

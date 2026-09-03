@@ -32,7 +32,9 @@ Scope has no upgrade path.
 schema instead of execution; a verdict about a tree that is not the delivery it names.
 
 **What it does not claim.** This is not containment. An agent controls what it commits,
-and therefore what is verified. Confinement is INV-4's job.
+and therefore what is verified. Luna builds no sandbox — a person composes the environment
+before the agent starts, and Luna inherits it. What Luna guarantees about its own writing
+is INV-4.
 
 **The case that got through.** A stage that delivered *nothing* used to pass. An empty
 commit reached `CheckoutAt`, which read it as `HEAD` and resolved it against the main
@@ -51,291 +53,205 @@ green when the stage received it. Measured on TALLY-5: `build` was billed $0.64 
 turns, ended clean at its base with none of the feature written, and closed `tests_green`
 as `targeted` and `passed`. A delivery equal to the base is not a delivery.
 
-**Covered by.** Verifier scope tests in `internal/fsm`; the delivered-tree test,
-`TestAStageThatCommittedNothingDoesNotPassOnSomebodyElsesCode` and
-`TestAStageThatDeliveredNothingNewIsNotProvenByItsBase` in `internal/node`.
+**Covered by.** The scope tests in `internal/contract`; and in `internal/verify`,
+`TestTheCheckRunsOverTheDeliveryAndNotTheWorkingTree`,
+`TestAPhaseThatCommittedNothingDoesNotPassOnSomebodyElsesCode` and
+`TestAPhaseThatDeliveredNothingNewIsNotProvenByItsBase`.
 
 ---
 
-## INV-2 — State is append-only, and the log is the state
+## INV-2 — The record is append-only, and the last line is the state
 
-No event `UPDATE`, no event `DELETE`. Every state change is a new record. Killing the
-process and restarting rebuilds the exact state, because it was never only in memory.
-Artifact bodies are versioned appends; a finished task may delete those bodies, but its
-events and recorded hashes remain.
+No line is rewritten and none is removed. Every change is a new line in the ledger, and
+where a run stands is its most recent line — read by tailing, not by replaying. A line is
+self-contained: it carries the run, the project, the phase and what happened, so reading
+one never requires reading those before it.
 
-**Why.** The history *is* the audit, and for unattended operation the evidence is the
-product. A projection can be rebuilt; a discarded fact cannot.
+**Why.** The history is the audit, and for an unattended run the evidence is the product.
+What was dropped deliberately is *replay*: rebuilding state by folding every event from
+the beginning. Replay is what forced flow fingerprints, strict sequence ownership and a
+single writing process, and it bought a guarantee this design does not need — Luna no
+longer decides transitions, so it has no state to reconstruct, only a position to report.
 
-The log records which flow it was written under — a fingerprint of the stage ids, in
-order, with what each requires and produces. Replaying a log against a different flow is
-refused rather than attempted, because a renamed stage used to replay as the new name and
-a stage inserted mid-flow made a task re-run finished work, both in silence.
+**What that costs, stated rather than hidden.** A corrupted or partial line is not
+detectable by reconciliation against the lines around it. The mitigation is the format
+rather than a checker: one JSON object per line, appended with `O_APPEND` and under the
+size a write is atomic at, so a concurrent fleet appends without a lock and a torn line
+would have to come from outside Luna.
 
-There is one central log. Every event and artifact is keyed by project as well as task id,
-so replaying `TASK-1` in one repository cannot consume `TASK-1` from another. A global
-listing carries both values rather than pretending ids are globally unique.
+**What violates it.** Editing or deleting a line; a state that only the process holds
+between two commands; a line that cannot be read without its predecessors.
 
-**What violates it.** Any `UPDATE` on the state table; state kept only in memory between
-transitions; compaction that discards history; a replay that guesses.
-
-**Covered by.** Replay tests in `internal/store`; the fingerprint refusal test;
-`TestOneLogKeepsEqualTaskIDsSeparateByProject`; and
-`TestAnUnscopedLogIsRefusedAsCentral`, which prevents migration from inventing a project.
+**Covered by.** In `internal/ledger`: `TestAppendingNeverRewritesWhatIsAlreadyThere`,
+`TestSeveralProcessesAppendWithoutCorruptingEachOther`,
+`TestALineTooLongToAppendAtomicallyIsRefused`, `TestTheStateOfARunIsItsMostRecentLine` and
+`TestOneRunsLinesDoNotAnswerForAnother`.
 
 ---
 
 ## INV-3 — No stage starts without what it requires, nor closes without what it produces
 
-Every stage declares `requires` and `produces`. Three checks: static (walking the stages in
-order, before anything runs), on entry, and on exit.
+Every stage declares `requires` and `produces`. Two checks survive here: **static**, over a
+contract before the phase runs (`luna contract lint`), and **on exit**, over what the phase
+delivered (`luna check`).
 
 **Why.** It distinguishes "the model got it wrong" from "the model did not receive what it
-needed". Without it, the failure surfaces two stages later, when the symptom has already
+needed". Without it, the failure surfaces two phases later, when the symptom has already
 moved away from the cause.
 
 This includes `produces_for_human` — the report nobody downstream consumes. If its
 delivery depended on the flow feeling it missing, it would never be demanded.
 
-**What violates it.** A stage with no contract; a `produces` marked delivered without
-verification; a transition that ignores a missing `requires`.
+**Where the entry check went.** Luna no longer walks a flow, so it cannot refuse to start a
+phase — starting one is the conductor's act, not Luna's. What replaces it is the contract
+itself: a phase whose `requires` name an artifact the ledger has no record of is a contract
+`lint` refuses before a model is called. The check moved from the engine's hands to the
+document's, and it is weaker in exactly one way, said plainly: a conductor that never lints
+is not stopped.
 
-**Covered by.** The static check in `internal/fsm`; entry and exit tests per stage.
+**What violates it.** A phase with no contract; a `produces` marked delivered without
+verification; a `check` that reports a verdict for an artifact it did not look for.
+
+**Covered by.** The lint tests in `internal/contract` — including a loop converging on
+something the phase never produces — and `TestEveryOwedArtifactIsReportedInAStableOrder` in
+`internal/verify`.
 
 ---
 
-## INV-4 — Every agent runs inside the sandbox, and hands artifacts over rather than scattering them
+## INV-4 — The ledger is durable, or nothing is recorded
 
-Luna starts agents inside `ai-jail`. Scratch artifacts — the ones that exist to cross
-stages or to be read by a human — are handed to the node through a stage socket that Luna
-asks the sandbox to expose read-only. The node records the producing stage and forwards
-the body through its CLI store; only the central daemon has a writable SQLite connection.
-The stage never supplies its own project or stage identity.
+Luna records to one ledger outside every checkout. Before the first write of a run, it
+proves that ledger is on a filesystem that survives the process — and refuses to run when
+it is not.
 
-The socket was inside the worktree, because that was the only position measured to work
-under Landlock. What changed is that Luna asks: it builds the sandbox's command line, so
-it passes `--map` for the socket's directory, and against ai-jail 1.20.1 that connects.
-Read-only is enough — Landlock permits `connect()` on an inode it can merely see — so the
-agent now reaches the socket and cannot write into the directory holding it, which it
-could when the socket lived in a worktree it owned. The same mapping through a project's
-own `.ai-jail` is refused by design, so it has to come from Luna's flags: a repository
-must not be able to name what gets mounted into the sandbox it runs in.
+**Why.** Luna does not build the environment it runs in. A person composes it before the
+agent starts (`ai-run`: sandbox, memory, both, or neither), so Luna inherits whatever that
+choice produced and cannot know it from the inside. Under a sandbox that gives the process
+a tmpfs `$HOME`, a ledger under `$XDG_DATA_HOME` is writable, is written, reports success,
+and evaporates. That failure is silent in both directions: the write and the read agree
+with each other and with nobody else. The guard is what turns it loud.
 
-**Why.** Containment is delegated, not built: reimplementing a sandbox would be a worse
-copy of what the layer below already does. And an artifact that is neither committed nor
-handed over is an artifact nobody can find — which is the same as one that does not exist.
+**The signal is the filesystem, not a heuristic.** `statfs` on the ledger's directory,
+compared against `TMPFS_MAGIC`. Three earlier signals were tried in this project for a
+related guard and each either passed when it should have failed or broke a legitimate
+case; the one that worked was the boring one that asks the kernel.
 
-**What violates it.** An agent started outside the sandbox; an artifact written to an
-unrecorded path; the store trusting a stage name that came from the agent.
+**What violates it.** Recording to a path nobody proved durable; degrading to a warning
+and continuing; inferring containment from the process's own environment rather than from
+the filesystem the write lands on.
 
-**The one exception, and it is named rather than implied.** `setup` runs its agent
-uncontained. It is the stage that reads `.ai-jail` to report what the containment will be,
-so containing it means running it under the configuration it exists to inspect — and when
-that configuration is wrong or absent, it runs under the wrong jail to say the jail is
-wrong. The exception is bounded by what the stage is allowed to do rather than by trust:
-it **reports and never repairs**, so it writes nothing, and an agent that writes nothing
-has nothing to contain. It is the only stage that runs before containment is established,
-and any second exception is a change to this invariant rather than an application of it.
+**What it does not claim.** This is not containment. Luna starts no agent and builds no
+sandbox, so it guarantees nothing about what an agent may reach — that belongs to the
+layer the person chose. What Luna guarantees is that its own record either persists or
+refuses.
 
-The risk this accepts is stated: an uncontained agent reading a repository can read
-anything the user can. Luna snapshots the stage worktree's `HEAD` and porcelain status
-before and after the call; any change refuses the stage and the temporary worktree is
-discarded. What can enter the trail is therefore only a report a person answers at a gate
-before it continues. The exception does not claim to contain writes elsewhere on the host;
-that is the explicit residual risk of running this one process outside the jail.
-
-**What containment must still let through.** Delegating containment means the sandbox
-decides what an agent can reach, and two of its defaults make a stage unable to deliver
-at all. The network is one: without it the harness blocks forever on a connection it
-cannot make, and never reaches a model. Git metadata is the other: a stage's checkout is
-a worktree whose `.git` points into the main repository, outside the jail, so without
-`--worktree` every git command answers `fatal: not a git repository` and the agent has
-no way to commit what it built. Both were found by a run rather than by a test — five
-stages of TALLY-5 billed $3.33 and left HEAD on the base commit — because a fake sandbox
-has no boundary to get this wrong. The identity a commit needs travels the same way, as
-environment, because the jail has no `~/.gitconfig` to read one from.
-
-**Covered by.** The socket boundary tests in `internal/node`; the ghost-store guard; the
-sandbox-invocation tests in `internal/agent` that assert what the jail is asked to allow;
-the central daemon tests that exercise event and blob writes through a read-only client
-and refuse a second daemon for one database; and a test that no stage but `setup` is exempt
-from containment; and the report-only snapshot test that refuses a changed `HEAD` or
-worktree status. An exception that is not pinned is one the next stage inherits by accident.
+**Covered by.** `TestALedgerInMemoryIsRefused` and `TestTheWritingVerbsRefuseBeforeTheirFirstAppend`
+in `internal/ledger`; `TestAVerdictThatCannotBeRecordedIsReported` in `internal/cli`; and
+`TestTheBinaryRefusesALedgerThatWouldNotSurvive`, which exercises the real binary.
 
 ---
 
 ## INV-5 — No failure is silent, and no wait is invisible
 
-Every task ends in a delivery, a gate, or a **notified** block. Retry is bounded — no
-infinite loop that burns tokens without converging. A task waiting for a human is
-discoverable by command (`luna gates`), never only by having watched the terminal.
-Any harness usage reported before a node failure is appended with that `Fail` or `Block`;
-rejecting an attempt does not make its spend invisible.
+Every phase ends in a delivery, a gate, or a **recorded** block. A run waiting for a person
+is discoverable by command (`luna report`), never only by having watched a terminal. A
+phase that came up short records what it was missing by name.
 
-**Why.** Silent death has two forms: the task that fails without warning, and the one that
-waits forever because nobody knew it was waiting. With gates that free the slot,
-suspension is invisible by construction — the process is not there to remind you.
+**Why.** Silent death has two forms: the run that fails without warning, and the one that
+waits forever because nobody knew it was waiting. Under an unattended fleet the second is
+the expensive one — the process is not there to remind anybody.
 
-**What violates it.** Retry with no ceiling; a suspended task that does not appear in the
-listing; an exception swallowed between transitions.
+**Blocking on missing information is a first-class ending, at every autonomy.** A phase
+that cannot resolve a question from what it has may stop and hand it to a person, and
+`auto` does not suppress that. The difference between running without asking and running
+without thinking is what this rule protects, and a fleet that cannot stop produces
+expensive noise. A block carries three things and no ceremony: the question, where the
+answer was looked for and what each source failed to say, and what would unblock it. The
+middle one is what separates a real block from an unread file.
 
-**Known gap, narrowed rather than closed.** An agent that is busy and achieving nothing
-is still not detected as such. What bounds it now is money: a task carries a spending
-ceiling, checked where the next stage would open, so a task circling without converging
-stops when it has cost what it was allowed to. That is a bound and not a detector — the
-task still spends its whole ceiling before anything notices — and the thing that would
-actually close this is a signal the runner does not produce: telling an agent that is
-thinking from one that is stuck.
+**What violates it.** A loop with no ceiling; a blocked run that does not appear in the
+listing; an exception swallowed between phases; an autonomy setting that turns a block into
+a guess.
 
-That bound requires a measured price. Claude reports one; Codex reports tokens but no USD
-cost on its non-interactive stream. Luna refuses to start Codex on a task carrying a dollar
-ceiling rather than treating missing cost as zero. The per-turn elapsed-time budget still
-bounds both harnesses, but it is a different bound and is not presented as money.
+**A rule enforced at one end has to be stated at the other.** The gate held a contract to
+declared criteria while the phase that wrote the contract was never shown them. Four
+contracts went through and two were rejected for the same criterion — "with no
+suggestions" — and neither was a lapse in writing: both documents were imperative
+throughout, and both put the offending sentence in a section one of them titled "Note for
+the maker". An agent being helpful in a document with no room for help. Whoever produces a
+judged artifact sees the criteria it will be judged on.
 
-**A rule enforced at one end has to be stated at the other.** The gate holds the contract
-to declared criteria; the stage that writes the contract was never shown them. Four
-contracts went through, two rejected for the same criterion — "with no suggestions" — and
-neither was a lapse in writing: both documents were properly imperative throughout, and
-both put the offending sentence in a section the second one titled "Note for the maker".
-An agent being helpful in a document that has no room for help. The stage producing a
-judged artifact now sees the criteria it will be judged on, and the brief says a contract
-admits no recommendation.
-
-**A wired field is not a called field.** The same landing broke twice, and the second
-break was caused by the fix for the first. `luna lead` built its lead without `Land`, so a
-finished task's work stayed on the stage branches; that was fixed and tested by asserting
-the field was non-nil. But `land` is only called by `Lead.Run`, and `luna lead` runs
-`conductTask` — a different loop, which still never called it. TALLY-8 finished six stages
-and `luna status` printed `luna/TALLY-8/done` for a ref that did not exist, with a green
-suite either side of the fix. A test that observes a dependency being *used* is worth
-several that observe it being *set*.
-
-**A refusal after the write is not a refusal.** `task abandon` skipped reading the state,
-on the reasoning that the reducer would reject an illegal one on the next read and that
-nobody would abandon a finished task by accident. The reducer rejecting it afterwards is
-not a rejection — the event is already in an append-only log, and every command that reads
-a task replays it, so `task show`, `status` and `forget` all fail and the task can neither
-be read nor got rid of. It happened on the first occasion anyone tried, three minutes
-after TALLY-6 finished. The read happens first now, and the one failure it passes over is
-the one the command exists for: a task whose flow changed under it, which cannot be
-replayed and most needs ending.
+**A wired field is not a called field.** The same landing broke twice, and the second break
+was caused by the fix for the first: the fix asserted a dependency was *set*, and the
+second loop that should have used it never called it. TALLY-8 finished six phases and
+reported a ref that did not exist, with a green suite either side. A test that observes a
+dependency being **used** is worth several that observe it being set.
 
 **A review that cannot be read sends nothing back.** The mechanism was complete at both
-ends and the vocabulary crossed neither way: `ReadReport` looks for `[BLOCKING]`,
-`[SHOULD-FIX]`, `[NIT]` and `[UNCERTAIN]`, the judging stage declares `sends_back_to`, and
-nothing ever told the agent those tags existed. On TALLY-7 the critic — a separate role,
-back then — found four real defects, every one verified against a named input, wrote them
-under a heading called "Findings" in prose, and the parser read nothing. The brief teaches
-the tags now,
-and what may block is deliberately narrow: introduced by this change, or breaks a stated
-acceptance criterion. A defect that was already there is reported to a person rather than
-reopening the work, because blocking on inherited ones turns every task into an audit of
-the repository.
+ends and the vocabulary crossed neither way: the reader looked for `[BLOCKING]`,
+`[SHOULD-FIX]`, `[NIT]` and `[UNCERTAIN]`, and nothing ever told the agent those tags
+existed. On TALLY-7 the reviewer found four real defects, each verified against a named
+input, wrote them under a heading called "Findings", and the parser read nothing. What may
+block is deliberately narrow — introduced by this change, or breaks a stated acceptance
+criterion — because blocking on inherited defects turns every task into an audit of the
+repository.
 
-Then it broke a second time, at the third end nobody had checked: the reader ran on one of
-the two loops. `readReview` — and with it the fact that switches a conditional stage on
-and the verdict that closes a build loop — was called from `Lead.step`, which only
-`luna lead` drives. `luna work` closed a stage by appending the `Complete` and stopping,
-and `luna work` is what the pack's conductor runs. On MAX-2 the reviewer tagged
-`[BLOCKING]` in exactly the shape `ReadReport` matches, against a defect it had located to
-a line and reproduced with an input; the task's log holds eighteen events and not one
-`ReviewFinding`, `FactDiscovered` or `RoundJudged`, and it finished `done`. This is the
-same shape as the landing above — a mechanism complete in one loop and absent from the
-other — which is why the reading is one exported method now, called from both.
-`TestWorkReadsWhatTheReviewFound` and `TestWorkReadsWhatAStageConcluded` observe it being
-used rather than being wired.
+**A simulation is not a result.** `--dry-run` exercises the machine with no agent, and its
+evidence used to claim the scope each contract declared, with the truth in a field the
+renderer never printed. A run is marked as a simulation from its first line, and every view
+says so. A lie with the truth beside it is still the lie, once the reader only sees one of
+the two.
 
-**Two things are called the contract, and only one was checked.** The stage contract —
-`requires` and `produces` — is the engine's. The contract *artifact*, the document the
-plan stage writes, was checked by nobody: the gate judged whether it was coherent, and
-nothing afterwards asked whether the delivery honoured it. On TALLY-7 that document
-required a test pinning one of its own decisions, the test was never written, `build`
-closed green — correctly, since its stage contract was satisfied — and `verify` reported
-that all three decisions were pinned. `verify` now requires the contract and is told what
-it is for.
+**The account of a failure is the agent's own reply, and it was being discarded.** Five
+phases of TALLY-5 each recorded "delivered nothing" while the agent was saying, five times
+over, that git was unreachable inside the sandbox. Loud at the boundary and silent in the
+record, which is the exact shape this rule forbids. A phase that delivers nothing reports
+what the agent said; one that delivers does not, because there the reply narrates a
+delivery that already speaks for itself.
 
-**A simulation is not a result.** `--dry-run` exercises the machine with no agent, and
-its evidence used to claim the scope each contract declared — with the truth in a `Detail`
-field the CLI's own renderer never printed. So `luna task show` displayed
-`ci_green passed (full) make ci → 0` for a command nothing ran, and `luna status` drew the
-stage with the same `x` as any other. Worse, the flag could be pointed at a task with real
-stages in it: on TALLY-6 it walked a task with four genuine commits to `done`, inventing
-the two that check. A task is now marked as a simulation when it is created, both runners
-refuse to mix the two, and every view says so on the first line. A lie with the truth
-beside it is still the lie, once the reader only sees one of the two.
-
-**What the invariant reaches, and what it did not.** A stage that produces nothing has an
-account of why, and it is the agent's own reply. That reply was being discarded: it
-reached the runner and nothing read it, so five stages of TALLY-5 each recorded
-"delivered nothing" while the agent was saying, five times over, that git was unreachable
-inside the sandbox. The failure was loud at the boundary and silent in the log, which is
-the exact shape this rule exists to forbid. A stage that commits nothing on top of its
-base now reports what the agent said; a stage that delivered does not, because there the
-reply is the agent narrating a delivery that already speaks for itself.
-
-**The retry budget was spent on the wrong failure.** A harness that would not start got
-two retries; an agent that delivered everything but one handover got none, and blocked on
-the first attempt with the budget untouched. The second is the more recoverable of the
-two — Luna knows exactly which artifact is missing, the socket is still open, and a stage
-declaring `context = "live"` resumes the session it already paid for. It is asked again
-now, and told by name what did not arrive and that its earlier work stands; only the
-attempt past the budget blocks. This is what killed a benchmark run whose code was
-otherwise correct: the judging stage produced `ci_green` from a real `make ci` and forgot
-the checklist it also owed.
-
-**Covered by.** Retry-exhaustion and budget tests in `internal/agent`; the gate listing
-test in `internal/cli`; the empty-delivery reporting tests in `internal/node`; the spending
-ceiling tests in `internal/fsm`; and, for the fleet, the tests that a blocked task is not
-retried nightly and that a task which no longer replays is reported rather than skipped.
+**Covered by.** `TestABlockMustSayWhereTheAnswerWasLookedFor` and the report ordering tests
+in `internal/ledger`; `TestEveryModeStillBlocksOnMissingInformation`; and, in `internal/cli`,
+`TestABlockWithNoAccountOfWhatWasConsultedIsRefused` and
+`TestAFailedCheckIsToldApartFromABrokenLuna`.
 
 ---
 
 ## What is deliberately not an invariant
 
-**Fresh context per stage.** It was INV-core-5 until August 2026. The reasoning was role
+**Fresh context per phase.** It was an invariant until August 2026. The reasoning was role
 erosion in long sessions — real, and observed. But the mechanism was wrong: what protects
 the flow is INV-1, not the agent's amnesia. An agent with live context that drifts is
 caught by the same wall that catches a fresh agent that is simply bad.
 
-Context is now a per-stage setting (`fresh` or `live`), and the choice is measured rather
-than assumed. One piece of it stays mandatory: the stage that judges delivered work never
-inherits the session that produced it. With separate roles that was half of what made a
-review independent; it is now one of three again, and `review` declares `fresh` rather
-than inheriting like every other stage after the first.
+Context is a per-phase setting, and the choice belongs to whoever conducts. One piece of it
+stays load-bearing by convention rather than by enforcement: the phase that judges
+delivered work never inherits the session that produced it.
 
-`AuditContextChain` earned its keep the first time the flow tried to use `live` in
-earnest: `plan` was declared live, and on a bug task `diagnose` ran immediately before it —
-so "continue the previous session" would have meant continuing the investigation's. It
-refused that statically, before a task ran. It compares briefs now rather than role names,
-which is stricter: a builder and a judge once held one role and are told different things,
-so the old test would have let them share a session neither should inherit from the other.
+**Containment.** Luna starts no agent and builds no sandbox. A person composes the
+environment before the agent starts — sandbox, durable memory, both or neither — and Luna
+inherits whatever that produced. This was an invariant (INV-4) while Luna was the process
+that launched agents; it stopped being one when it stopped being that process, and
+pretending otherwise would be a rule the code cannot hold. What replaced it is narrower and
+actually enforceable: Luna's own record either persists or refuses.
 
-**A prose summary never crosses the handoff.** Still true in the code — the payload is
-synthesized by Luna, and the agent fills structured fields. It is a design rule rather
-than an invariant: breaking it degrades quality, it does not make Luna stop being Luna.
+**Whoever writes does not review.** Held by placement rather than by mechanism, and
+deliberately *not* held inside the loop. The build loop judges its own rounds, which is a
+self-assessment by construction; it buys speed, because a failure found by the check goes
+back into building in the same session without a cold start. What it cannot buy is an
+honest verdict on the delivery as a whole, so the independent read is a separate phase
+after the delivery, in a session that did not write the code.
 
-**Whoever writes does not review.** It was demoted from the invariant list, then lost
-entirely when one agent came to do every stage, and it is back — placed differently, and
-for a reason worth stating rather than quietly restoring.
+That independence is now the conductor's to arrange, not Luna's to enforce — Luna does not
+start the reviewer and cannot deny it a tool. What is *not* soft is the half that never
+depended on who was asking: **a command that runs over the delivered commit does not care
+who wrote it.** That is the half Luna keeps.
 
-It is deliberately *not* held inside the loop. `forge` builds, cleans, checks and judges
-its own rounds, and that is a self-assessment by construction. It buys speed: a failure
-found by the check goes back into building in the same session, without a cold start. What
-it cannot buy is an honest verdict on the delivery as a whole.
-
-So the independent read is a separate stage after the delivery. `review` has all three
-halves this time: a session it did not write (`fresh`), tools it does not hold (`Edit` and
-`Write` denied, on a harness Luna can actually gate), and work it did not do. A judging
-stage missing any of them reads its own reasoning back and agrees with it.
-
-This is still not proof. Tool gating removes named tools, not the shell — the floor is
-honest and soft, and containment is the sandbox's job. What is *not* soft is the half that
-never depended on who was asking: a command that runs over the delivered commit does not
-care who wrote it.
+**A prose summary never crosses the handoff.** A design rule rather than an invariant:
+breaking it degrades quality, it does not make Luna stop being Luna.
 
 **What is unmeasured, and stated rather than assumed.** On the one full cycle that reached
-it, an independent judging stage found a genuine violation of the contract's own clause and
-sent the work back — the first time that mechanism ever fired. Whether the merged loop
-judges its own rounds well is not known, and it is the thing to measure first: the whole
-argument for merging is that a biased fast verdict inside the loop, corrected by an
-unbiased one after it, beats an unbiased slow verdict at every step.
+it, an independent judging phase found a genuine violation of the contract's own clause and
+sent the work back — the first time that mechanism ever fired. Whether a merged loop judges
+its own rounds well is not known, and it is the thing to measure first: the whole argument
+for merging is that a biased fast verdict inside the loop, corrected by an unbiased one
+after it, beats an unbiased slow verdict at every step.

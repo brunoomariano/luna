@@ -5,6 +5,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Luna is called by the agent, not the other way round.** It no longer runs agents, opens
+  worktrees, builds sandboxes or decides what happens next. A person composes the session
+  before any agent starts; something conducts the phases; Luna is invoked at a boundary to
+  prove what was delivered. Production code went from 21,150 lines to 2,734, and `go.mod`
+  from one dependency to none.
+- **The contract arrives on stdin and nothing is written into a checkout.** No state file,
+  no anchor, no ignore entry.
+- **The record is one append-only JSONL ledger outside every checkout, and the state is a
+  run's most recent line.** Replay, flow fingerprints, the central SQLite database and the
+  daemon that owned it are gone with the decisions that required them.
+- **Autonomy is `manual` / `semi` / `auto`** rather than a 0–10 knob, and every mode still
+  blocks on missing information.
+- **Exit codes are the contract with whoever conducts:** 0 proven, 2 not proven, 1 Luna
+  could not run.
+
+### Added
+- **`luna check` refuses to write to a ledger that would not survive the process** — a
+  `statfs` against `TMPFS_MAGIC` before the first write, with a refusal that says how to map
+  the directory into a sandbox. Verified inside a real `ai-jail`, with and without the map.
+
+### Removed
+- `luna task`, `luna lead`, `luna fleet`, `luna gate`, `luna daemon`, `luna artifact`, the
+  embedded flows under `src/stock/`, and the packages behind them.
+
+## [Superseded by the redesign above]
+
+### Changed
 - **State is one central, project-scoped SQLite database owned by the daemon.** The CLI
   opens `$XDG_DATA_HOME/luna/luna.db` in physical read-only mode and forwards events,
   artifacts and artifact cleanup over the daemon socket. A per-database process lock
