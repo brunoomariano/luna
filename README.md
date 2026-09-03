@@ -73,7 +73,7 @@ phase    = "forge"
 produces = ["code", "ci_green"]
 
 [verify.ci_green]
-run   = "make ci"        # the command that proves it
+run   = "make ci"        # this project's own gate — pnpm check, cargo test, …
 scope = "full"           # what a zero exit establishes
 
 [verify.code]

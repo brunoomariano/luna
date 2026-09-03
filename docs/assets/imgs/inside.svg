@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="960" height="620" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640" role="img" aria-labelledby="t d">
   <title id="t">Inside Luna</title>
-  <desc id="d">A contract arrives on stdin and is parsed and linted, with nothing executed. Verify cuts a throwaway checkout at the delivered commit and runs the project's own command there, producing one piece of evidence per artifact, each carrying the scope it proves. The ledger appends one JSON line per verdict to a file outside every checkout, refusing to write when that file is not on durable storage. The whole thing answers with an exit code: 0 proven, 2 not proven, 1 Luna could not run.</desc>
+  <desc id="d">A contract arrives on stdin and is parsed and linted, with nothing executed. Verify cuts a throwaway checkout at the delivered commit and runs the project's own command there — make, pnpm, cargo, whatever the contract names — producing one piece of evidence per artifact, each carrying the scope it proves. The ledger appends one JSON line per verdict to a file outside every checkout, refusing to write when that file is not on durable storage. The whole thing answers with an exit code: 0 proven, 2 not proven, 1 Luna could not run.</desc>
 
   <defs>
     <marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
@@ -11,7 +11,7 @@
     </marker>
   </defs>
 
-  <rect width="960" height="620" fill="#14150f"/>
+  <rect width="960" height="640" fill="#14150f"/>
 
   <!-- celestial hairlines in the margins -->
   <g fill="none" stroke="#6a675d" stroke-width=".55" opacity=".4">
@@ -36,7 +36,7 @@
     <g fill="#7d7a6f" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" transform="translate(0 20)">
       <text x="0" y="0">phase    = "forge"</text>
       <text x="0" y="15">produces = ["code", "ci_green"]</text>
-      <text x="0" y="30">[verify.ci_green]  run = "make ci"  scope = "full"</text>
+      <text x="0" y="30">[verify.ci_green]  run = "pnpm check"  scope = "full"</text>
     </g>
   </g>
   <path fill="none" stroke="#d8d4cb" stroke-width="1" marker-end="url(#a)" d="M330 138 V 168" opacity=".8"/>
@@ -57,8 +57,8 @@
 
   <!-- 2 · verify -->
   <g transform="translate(96 282)">
-    <path fill="none" stroke="#7d7a6f" stroke-width=".8" d="M0 0 h 768 v 150 h -768 z"/>
-    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".55" d="M0 0 v 150"/>
+    <path fill="none" stroke="#7d7a6f" stroke-width=".8" d="M0 0 h 768 v 168 h -768 z"/>
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".55" d="M0 0 v 168"/>
     <text x="24" y="30" fill="#e6e2d8" font-family="Georgia, 'Times New Roman', serif" font-size="17" letter-spacing="1.7">verify</text>
     <text x="24" y="50" fill="#8a8578" font-family="Georgia, 'Times New Roman', serif" font-size="11.5" font-style="italic">the only place</text>
     <text x="24" y="66" fill="#8a8578" font-family="Georgia, 'Times New Roman', serif" font-size="11.5" font-style="italic">a command runs</text>
@@ -67,18 +67,19 @@
     <g transform="translate(230 20)">
       <path fill="none" stroke="#6a675d" stroke-width=".55" d="M0 0 h 380 v 84 h -380 z" opacity=".7"/>
       <text x="18" y="24" fill="#b9b4a8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11.5">git worktree add --detach &lt;delivered sha&gt;</text>
-      <text x="34" y="46" fill="#b9b4a8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11.5">└─ sh -c "make ci"  →  exit code</text>
+      <text x="34" y="46" fill="#b9b4a8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11.5">└─ sh -c "pnpm check"  →  exit code</text>
       <text x="18" y="70" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5" font-style="italic">the delivered commit, never the working tree</text>
     </g>
 
     <text x="230" y="128" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">One piece of evidence per artifact, each carrying the scope it proves.</text>
+    <text x="230" y="146" fill="#8a8578" font-family="Georgia, 'Times New Roman', serif" font-size="11" font-style="italic">The command is the project's — make, pnpm, cargo, just. Luna knows none of them.</text>
     <text x="646" y="128" fill="#8a8578" font-family="Georgia, 'Times New Roman', serif" font-size="11" font-style="italic">scope never upgrades</text>
   </g>
 
-  <path fill="none" stroke="#d8d4cb" stroke-width="1" marker-end="url(#a)" d="M480 432 V 468"/>
+  <path fill="none" stroke="#d8d4cb" stroke-width="1" marker-end="url(#a)" d="M480 450 V 486"/>
 
   <!-- 3 · ledger -->
-  <g transform="translate(96 468)">
+  <g transform="translate(96 486)">
     <path fill="none" stroke="#7d7a6f" stroke-width=".8" d="M0 0 h 768 v 92 h -768 z"/>
     <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".55" d="M0 0 v 92"/>
     <text x="24" y="30" fill="#e6e2d8" font-family="Georgia, 'Times New Roman', serif" font-size="17" letter-spacing="1.7">ledger</text>
@@ -90,6 +91,6 @@
     <text x="230" y="84" fill="#9b968a" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">where a run stands is its most recent line — a tail, not a replay</text>
   </g>
 
-  <path fill="none" stroke="#c9a227" stroke-width="1.1" marker-end="url(#ag)" d="M480 560 V 588"/>
-  <text x="336" y="604" fill="#c9a227" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12.5">exit 0 proven · 2 not proven · 1 could not run</text>
+  <path fill="none" stroke="#c9a227" stroke-width="1.1" marker-end="url(#ag)" d="M480 578 V 606"/>
+  <text x="336" y="622" fill="#c9a227" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12.5">exit 0 proven · 2 not proven · 1 could not run</text>
 </svg>
