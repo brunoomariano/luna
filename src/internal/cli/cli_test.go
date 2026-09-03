@@ -908,3 +908,102 @@ func TestTheTrailPutsABlocksThreeParts(t *testing.T) {
 		}
 	}
 }
+
+// A field that was written and is not shown is worse than one that was refused:
+// the writer believes they left a record. Four phases recorded with `--found`
+// rendered as blank lines on the first real use, while the text sat in the
+// ledger intact.
+func TestTheTrailShowsFoundOnAnyEventNotJustDiscovery(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("record", "--run", "REAL-1", "--event", "phase",
+		"--phase", "hygiene", "--status", "running",
+		"--found", "the whole suite was red on the base: vitest 4 shadows jsdom"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("trail", "REAL-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "vitest 4 shadows jsdom") {
+		t.Errorf("what was recorded is not in the trail:\n%s", h.stdout())
+	}
+}
+
+func TestATrailLineCarriesBothFoundAndNote(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("record", "--run", "REAL-1", "--event", "phase", "--status", "running",
+		"--found", "the finding", "--note", "the aside"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("trail", "REAL-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"the finding", "the aside"} {
+		if !strings.Contains(h.stdout(), want) {
+			t.Errorf("the trail dropped %q:\n%s", want, h.stdout())
+		}
+	}
+}
+
+// The tool exists to prove things, and on its first two real tasks it proved
+// nothing: both ran to completion and neither called `check` once. It warns
+// rather than refuses — a phase with nothing mechanically provable is ordinary,
+// and refusing would be Luna deciding what counts as finished.
+func TestClosingARunThatProvedNothingSaysSo(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("record", "--run", "UNPROVEN-1", "--event", "phase",
+		"--phase", "close", "--status", "done"); err != nil {
+		t.Fatalf("the warning must not fail the command: %v", err)
+	}
+	if !strings.Contains(h.err.String(), "nothing was ever proven") {
+		t.Errorf("no warning for a run that never ran a check:\n%s", h.err.String())
+	}
+}
+
+func TestClosingARunThatWasProvenIsQuiet(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	if err := h.run("check", "--contract", h.contract(greenContract), "--run", "PROVEN-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("record", "--run", "PROVEN-1", "--event", "phase",
+		"--phase", "close", "--status", "done"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(h.err.String(), "nothing was ever proven") {
+		t.Errorf("a proven run was warned about:\n%s", h.err.String())
+	}
+}
+
+// A batch seeding several runs from one checkout stamped all of them with that
+// checkout's remote, and `report` groups by project — so they filed under a repo
+// none of them touched.
+func TestTheProjectCanBeNamedWhenTheCommandRunsElsewhere(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("record", "--run", "SEEDED-1", "--event", "phase",
+		"--status", "awaiting_resume", "--project", "github.com/me/other-repo"); err != nil {
+		t.Fatal(err)
+	}
+	lines := h.lines()
+	if len(lines) != 1 || lines[0].Project != "github.com/me/other-repo" {
+		t.Errorf("the named project did not survive: %+v", lines)
+	}
+}
+
+// `--where` beside nothing found is a line that points at a file and says
+// nothing about it.
+func TestASourceWithNothingFoundIsRefused(t *testing.T) {
+	h := newHarness(t)
+
+	err := h.run("record", "--run", "X-1", "--event", "phase", "--where", "Makefile")
+	if err == nil {
+		t.Fatal("a source with no finding was recorded")
+	}
+	if !strings.Contains(err.Error(), "says nothing") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
+}

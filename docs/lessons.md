@@ -117,6 +117,38 @@ argument.
   prose for the same phase; the spread across runs is model variance. The cost is the
   agent's own turns.
 
+## About the first real use
+
+Two tasks, driven by two different models, each asked afterwards what the tool was
+like to use. Both reports were more useful than the sessions.
+
+**The tool proved nothing, twice.** Ten `phase` events, one `gate`, and **zero
+`check`** across both tasks. Both reported green, and both were telling the truth —
+they had run the gates in their own tree. But the ledger held a claim where the
+whole point of the tool is that it holds evidence. Nothing about the design made
+that hard to do: `record --status done` was accepted in silence on a run that had
+proved nothing. A tool whose one job is easy to skip gets skipped.
+
+**A written field that is not shown is worse than one that is refused.** Four
+phases were recorded with `--found` carrying the real finding of each — *"the whole
+suite was red on the base: vitest 4 shadows jsdom"* — and the trail rendered them
+as blank lines. The data was in the ledger, intact. The renderer read `Found` only
+for a `discovery`, so everything else was dropped without a word. The writer
+believed they had left a record. That is the failure this project keeps meeting in
+new costumes: silent, agreeing with itself, and wrong.
+
+**A model reported two bugs, checked, and both were its own.** An exit code eaten
+by `| tail`, and a `node_modules` missing inside the throwaway checkout — which is
+the tool working exactly as designed, over the delivered commit rather than the
+working tree. Both reports said so, unprompted. That is worth more than a report
+that finds three real bugs and no mistakes of its own.
+
+**The syntax cost five calls before anyone read the help.** One model got `record`
+wrong three times running, then discovered by accident that the branch supplies the
+run id. There was a skill documenting it. A CLI learned by trial leaves its
+mistakes in an append-only record — one of them is a phase note that says `teste`,
+permanently.
+
 ## About this redesign
 
 **A tool that wants to be the parent process cannot be added to a setup that already has

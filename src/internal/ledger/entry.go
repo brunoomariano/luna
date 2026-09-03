@@ -218,6 +218,13 @@ func (e Entry) validateBlock() []string {
 // next gate can go and look.
 func (e Entry) validateDiscovery() []string {
 	if e.Event != EventDiscovery {
+		// `--found` on anything else is accepted and rendered, but `--where` is
+		// the half that only means something beside a finding: a source with
+		// nothing found is a line that points at a file and says nothing about it.
+		if strings.TrimSpace(e.Where) != "" && strings.TrimSpace(e.Found) == "" {
+			return []string{fmt.Sprintf(
+				"--where on a %q event with no --found: a source with nothing found says nothing", e.Event)}
+		}
 		return nil
 	}
 	var faults []string

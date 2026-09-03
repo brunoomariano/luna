@@ -144,8 +144,17 @@ func summary(e ledger.Entry) string {
 	if e.Round > 0 {
 		said += fmt.Sprintf("  round %d", e.Round)
 	}
-	if e.Note != "" {
-		said += "  " + e.Note
+
+	// Found on a phase reaches here rather than through the discovery case, and
+	// it used to be dropped: the summary read Found only for a discovery, so four
+	// phases recorded with `--found` rendered as blank lines while the text sat
+	// in the ledger, intact and invisible. A field that was written and is not
+	// shown is worse than one that was refused, because the writer believes they
+	// left a record.
+	for _, extra := range []string{e.Found, e.Note} {
+		if extra != "" {
+			said += "  " + extra
+		}
 	}
 	return strings.TrimSpace(said)
 }

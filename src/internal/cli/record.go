@@ -38,6 +38,7 @@ func recordCommand(env Env, args []string) error {
 		note     = set.String("note", "", "anything the fields above do not cover")
 		round    = set.Int("round", 0, "which round of a loop this is")
 		worktree = set.String("worktree", "", "where the work is checked out (default: here)")
+		project  = set.String("project", "", "which repository this run is about (default: this checkout's)")
 		simulate = set.Bool("dry-run", false, "mark the line as a simulation")
 	)
 	var looked repeatable
@@ -61,9 +62,18 @@ func recordCommand(env Env, args []string) error {
 		tree = where.Worktree
 	}
 
+	// Naming the project matters when the command runs somewhere other than the
+	// repository the run is about — a batch seeding six runs from one checkout
+	// stamped all of them with that checkout's remote, and `report` groups by
+	// project, so they filed under a repo none of them touched.
+	repo := *project
+	if repo == "" {
+		repo = where.Project
+	}
+
 	line := ledger.Entry{
 		Run:       runID(*run, where),
-		Project:   where.Project,
+		Project:   repo,
 		Phase:     *phase,
 		Event:     ledger.Event(*event),
 		Status:    ledger.Status(*status),
@@ -86,7 +96,38 @@ func recordCommand(env Env, args []string) error {
 		return err
 	}
 	fmt.Fprintf(env.Out, "recorded: %s %s\n", line.Run, line.Event)
+	warnUnproven(env, l, line)
 	return nil
+}
+
+// warnUnproven says something when a run ends having proved nothing.
+//
+// Measured on the first two real tasks: both ran to completion, both reported
+// green, and neither called `check` once. The verification is the whole tool,
+// and nothing about the tool made it hard to skip — a `record --status done` was
+// accepted in silence, so the ledger held a claim where it should have held
+// evidence.
+//
+// It warns rather than refuses, and that line is deliberate. Luna does not decide
+// flow: a phase with nothing mechanically provable is ordinary, and a `done` it
+// rejected would be Luna overruling the conductor about what counts as finished.
+// What it can do is refuse to be quiet about it.
+func warnUnproven(env Env, l ledger.Ledger, line ledger.Entry) {
+	if line.Status != ledger.StatusDone {
+		return
+	}
+	trail, err := l.Trail(line.Run)
+	if err != nil {
+		return
+	}
+	for _, e := range trail {
+		if e.Event == ledger.EventCheck {
+			return
+		}
+	}
+	fmt.Fprintf(env.Err,
+		"\n  note: %s is done and nothing was ever proven — no `luna check` ran for it.\n"+
+			"  The ledger has what you said, not what a command observed.\n", line.Run)
 }
 
 func stateCommand(env Env, args []string) error {

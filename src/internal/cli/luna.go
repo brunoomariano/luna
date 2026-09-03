@@ -114,7 +114,12 @@ a phase boundary to prove what was delivered, and to record what happened.
                    project, and which file it was read from. Both are
                    required — a finding nobody can check is a claim.
         --round    which round of a loop this is
+        --project  which repository this run is about, when the command runs
+                   somewhere else — a batch seeding runs from one checkout
         --note     anything the fields above do not cover
+
+        --found also reads on a phase, not only on a discovery, and the trail
+        shows it there. Closing a run that never ran a check says so.
 
   luna state [--run <id>] [--json]
         where a run stands: its most recent line. With no --run, the branch
