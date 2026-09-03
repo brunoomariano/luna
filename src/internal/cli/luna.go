@@ -113,6 +113,8 @@ a phase boundary to prove what was delivered, and to record what happened.
         --found --where       for a discovery: what was concluded about this
                    project, and which file it was read from. Both are
                    required — a finding nobody can check is a claim.
+        --round    which round of a loop this is
+        --note     anything the fields above do not cover
 
   luna state [--run <id>] [--json]
         where a run stands: its most recent line. With no --run, the branch
