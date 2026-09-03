@@ -57,7 +57,7 @@ No dependencies. `go.mod` is three lines.
 
 ## The five verbs
 
-![The five verbs](docs/assets/imgs/verbs.svg)
+![The six verbs](docs/assets/imgs/verbs.svg)
 
 A checkout on `luna/<run>/<phase>` knows which run it is, so `--run` is optional
 everywhere. The branch is the authority because it travels with the work, where a
@@ -96,6 +96,35 @@ $ echo $?
 
 In real use the contract does not live in a file — it comes from the acceptance criteria a
 person approved, and the agent pipes it in with `--contract -`. Luna keeps none of it.
+
+## The log of a task
+
+`state` says where a run is. `trail` says what it did — every phase it walked, every
+check with its verdict and scope, what it found out about the project, the gates, the
+blocks.
+
+```
+$ luna trail WID-1
+WID-1  github.com/me/widget
+done, 9 events
+
+17:19  discovery  setup     gate: node test.js   (package.json scripts.check)
+17:19  discovery  setup     bootstrap: pnpm install   (no Makefile here)
+17:19  phase      forge     running  round 1
+17:19  check      forge     FAIL ci_green   full   r1   node test.js
+                            AssertionError: 6 !== 4
+17:19  check      forge     ok   ci_green   full   r2   node test.js
+17:19  gate       commit    confirm-write approved
+17:19  phase      close     done  widen delivered
+```
+
+**Nothing here is Luna's command.** `node test.js` came from the contract, which came
+from whoever conducts — Luna never learns a project's gate and reuses it. A `discovery`
+records what a phase concluded about the repository *and the file it read to conclude it*,
+because a finding nobody can check is a claim.
+
+That is what makes the tool project-agnostic: `make ci`, `pnpm check`, `cargo test`,
+`just verify` — Luna runs what the contract names and records what it observed.
 
 ## Blocking
 

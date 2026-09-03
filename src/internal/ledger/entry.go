@@ -31,11 +31,24 @@ const (
 
 	// EventAutonomy is the autonomy mode moving mid-run.
 	EventAutonomy Event = "autonomy"
+
+	// EventDiscovery is what a phase found out about the project it is working
+	// in: which command is this repository's own gate, how it bootstraps, what
+	// its sandbox allows.
+	//
+	// Recorded, never consulted. Luna does not learn a project's gate and reuse
+	// it — the command arrives in the contract on every call, because a gate Luna
+	// remembered is configuration Luna owns, and owning project configuration is
+	// what `luna init` and the per-project store were removed for. What this
+	// buys is a trail that says *why* a later check ran `pnpm check` rather than
+	// leaving a reader to guess.
+	EventDiscovery Event = "discovery"
 )
 
 var events = map[Event]bool{
 	EventPhase: true, EventCheck: true, EventGate: true,
 	EventBlock: true, EventUnblock: true, EventAutonomy: true,
+	EventDiscovery: true,
 }
 
 // Status is where a run stands. Closed for the same reason as Event.
@@ -130,6 +143,15 @@ type Entry struct {
 	Looked   []string `json:"looked,omitempty"`
 	Needs    string   `json:"needs,omitempty"`
 
+	// Found is what a discovery concluded, and Where is what it read to conclude
+	// it. Both are prose: "pnpm check" and "package.json, scripts.check".
+	//
+	// Where is not decoration. A gate named with no source is a claim, and the
+	// person answering the gate that follows has to be able to check it against
+	// the file it came from.
+	Found string `json:"found,omitempty"`
+	Where string `json:"where,omitempty"`
+
 	// Note is free text for whatever the fields above do not cover.
 	Note string `json:"note,omitempty"`
 
@@ -151,12 +173,14 @@ func (e Entry) Validate() error {
 		faults = append(faults, "no run named: a line nothing can be grouped by is a line nobody can read back")
 	}
 	if !events[e.Event] {
-		faults = append(faults, fmt.Sprintf("unknown event %q — one of phase, check, gate, block, unblock, autonomy", e.Event))
+		faults = append(faults, fmt.Sprintf(
+			"unknown event %q — one of phase, check, gate, block, unblock, autonomy, discovery", e.Event))
 	}
 	if e.Status != "" && !statuses[e.Status] {
 		faults = append(faults, fmt.Sprintf("unknown status %q", e.Status))
 	}
 	faults = append(faults, e.validateBlock()...)
+	faults = append(faults, e.validateDiscovery()...)
 
 	if len(faults) == 0 {
 		return nil
@@ -183,6 +207,26 @@ func (e Entry) validateBlock() []string {
 	}
 	if strings.TrimSpace(e.Needs) == "" {
 		faults = append(faults, "a block that does not say what would unblock it")
+	}
+	return faults
+}
+
+// validateDiscovery holds a discovery to both of its halves.
+//
+// The one that earns the rule is `where`: a finding with no source cannot be
+// checked, and the whole point of recording it is that somebody answering the
+// next gate can go and look.
+func (e Entry) validateDiscovery() []string {
+	if e.Event != EventDiscovery {
+		return nil
+	}
+	var faults []string
+	if strings.TrimSpace(e.Found) == "" {
+		faults = append(faults, "a discovery with nothing found: say what was concluded")
+	}
+	if strings.TrimSpace(e.Where) == "" {
+		faults = append(faults, "a discovery with no source — say which file it was read from, "+
+			"because a finding nobody can check is a claim")
 	}
 	return faults
 }

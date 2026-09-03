@@ -33,6 +33,8 @@ func recordCommand(env Env, args []string) error {
 		autonomy = set.String("autonomy", "", "manual | semi | auto")
 		question = set.String("question", "", "what could not be settled")
 		needs    = set.String("needs", "", "what would unblock it")
+		found    = set.String("found", "", "what a discovery concluded about this project")
+		source   = set.String("where", "", "which file the discovery was read from")
 		note     = set.String("note", "", "anything the fields above do not cover")
 		round    = set.Int("round", 0, "which round of a loop this is")
 		worktree = set.String("worktree", "", "where the work is checked out (default: here)")
@@ -73,6 +75,8 @@ func recordCommand(env Env, args []string) error {
 		Question:  *question,
 		Looked:    looked,
 		Needs:     *needs,
+		Found:     *found,
+		Where:     *source,
 		Note:      *note,
 		Simulated: *simulate,
 	}

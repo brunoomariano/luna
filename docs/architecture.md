@@ -132,7 +132,16 @@ $XDG_DATA_HOME/luna/ledger.jsonl
 ```
 
 **Where a run stands is its most recent line** — read by tailing, not by folding. Luna
-decides no transitions, so it has no state to reconstruct, only a position to report.
+decides no transitions, so it has no state to reconstruct, only a position to report. What
+it *did* is every line for that run, in order, which is `luna trail`: the phases it walked,
+each check with its verdict and scope, the gates, the blocks, the notes.
+
+**A phase can also record what it found out about the project it is working in** — which
+command is this repository's own gate, how it bootstraps — as a `discovery`, with the file
+it read to conclude it. That is recorded and never consulted: the command still arrives in
+the contract on every call. A gate Luna remembered would be project configuration Luna
+owns, and owning that is what the per-project store was removed for. What the record buys
+is a reader who can see *why* a later check ran `pnpm check` rather than guessing.
 
 Each line is self-contained: reading one never requires reading the ones before it. That is
 what lets a concurrent fleet append with **no lock** — a write under 4 KB to a file opened
@@ -183,6 +192,7 @@ luna check --contract - [--commit <sha>] [--base <sha>] [--round N]   # prove an
 luna contract lint <file|->                                            # static, cheap
 luna record --run <id> --event <kind> …                                # what Luna did not verify
 luna state [--run <id>]                                                # the most recent line
+luna trail [<id>]                                                      # the whole story of one run
 luna report [--since 12h]                                              # every run, blocked first
 ```
 

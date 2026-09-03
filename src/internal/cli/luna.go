@@ -38,6 +38,7 @@ var commands = map[string]command{
 	"check":    checkCommand,
 	"record":   recordCommand,
 	"state":    stateCommand,
+	"trail":    trailCommand,
 	"report":   reportCommand,
 	"contract": contractCommand,
 	"version":  versionCommand,
@@ -99,7 +100,7 @@ a phase boundary to prove what was delivered, and to record what happened.
         record something Luna did not verify: a phase starting, a gate being
         answered, a block, an autonomy change.
 
-        --event    phase | gate | block | unblock | autonomy
+        --event    phase | gate | block | unblock | autonomy | discovery
         --phase    which phase this is about
         --status   running | awaiting_gate | awaiting_resume | blocked | done
                    | abandoned
@@ -109,10 +110,19 @@ a phase boundary to prove what was delivered, and to record what happened.
                    looked for is what separates a real block from an unread
                    file, so it is not optional.
         --autonomy manual | semi | auto
+        --found --where       for a discovery: what was concluded about this
+                   project, and which file it was read from. Both are
+                   required — a finding nobody can check is a claim.
 
   luna state [--run <id>] [--json]
         where a run stands: its most recent line. With no --run, the branch
         answers — a checkout on luna/<run>/<phase> knows which run it is.
+
+  luna trail [<id>] [--json]
+        everything that happened in one run, oldest first: the phases it
+        walked, every check with its verdict and scope, what it discovered
+        about the project, the gates, the blocks and the notes. This is the
+        log of a task: state says where it is, this says what it did.
 
   luna report [--since <duration>] [--json]
         every run, most recently touched first, with what needs a person.

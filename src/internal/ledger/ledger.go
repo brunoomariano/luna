@@ -152,6 +152,26 @@ func (l Ledger) State(run string) (Entry, bool, error) {
 	return Entry{}, false, nil
 }
 
+// Trail returns every line for one run, oldest first.
+//
+// Separate from State, which answers "where is this now" with a tail. This
+// answers "what happened", and the difference matters enough to be two verbs: a
+// person reading a finished task wants the whole story, and a conductor deciding
+// what to do next wants one line.
+func (l Ledger) Trail(run string) ([]Entry, error) {
+	entries, err := l.Read()
+	if err != nil {
+		return nil, err
+	}
+	trail := make([]Entry, 0, 8)
+	for _, e := range entries {
+		if e.Run == run {
+			trail = append(trail, e)
+		}
+	}
+	return trail, nil
+}
+
 // Run is one run as a report sees it: its latest line, and what it took.
 type Run struct {
 	// Latest is the most recent line for this run.

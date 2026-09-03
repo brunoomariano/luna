@@ -755,3 +755,156 @@ func TestAVerdictThatCannotBeRecordedIsReported(t *testing.T) {
 		t.Error("a machine failure was reported as a failed delivery")
 	}
 }
+
+// The trail is the log of a task: what it discovered, what it walked, what each
+// check observed. `state` says where a run is; this says what it did.
+func TestTheTrailIsTheWholeStoryOfARunInOrder(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	if err := h.run("record", "--run", "WID-1", "--event", "discovery", "--phase", "setup",
+		"--found", "gate: node test.js", "--where", "package.json scripts.check"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("record", "--run", "WID-1", "--event", "phase",
+		"--phase", "forge", "--status", "running", "--round", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("check", "--contract", h.contract(greenContract), "--run", "WID-1", "--round", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("record", "--run", "WID-1", "--event", "phase",
+		"--phase", "close", "--status", "done"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("trail", "WID-1"); err != nil {
+		t.Fatalf("reading the trail: %v", err)
+	}
+	out := h.stdout()
+	for _, want := range []string{
+		"discovery", "gate: node test.js", "package.json scripts.check",
+		"forge", "ci_green", "close", "done",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the trail is missing %q:\n%s", want, out)
+		}
+	}
+
+	// Oldest first: the discovery has to precede the phase it informed.
+	if strings.Index(out, "discovery") > strings.Index(out, "close") {
+		t.Errorf("the trail is not in order:\n%s", out)
+	}
+}
+
+// A discovery is recorded and never consulted: the command still arrives in the
+// contract. What the trail buys is a reader who can see *why* a later check ran
+// the command it ran.
+func TestADiscoveryIsRecordedWithWhatItReadToConcludeIt(t *testing.T) {
+	h := newHarness(t)
+
+	err := h.run("record", "--run", "WID-1", "--event", "discovery",
+		"--found", "gate: cargo test")
+	if err == nil {
+		t.Fatal("a discovery with no source was recorded; a finding nobody can check is a claim")
+	}
+	if !strings.Contains(err.Error(), "no source") {
+		t.Errorf("the refusal does not say what is missing: %v", err)
+	}
+
+	if err := h.run("record", "--run", "WID-1", "--event", "discovery",
+		"--found", "gate: cargo test", "--where", "Cargo.toml"); err != nil {
+		t.Fatalf("a complete discovery was refused: %v", err)
+	}
+	lines := h.lines()
+	if len(lines) != 1 || lines[0].Found != "gate: cargo test" || lines[0].Where != "Cargo.toml" {
+		t.Errorf("the discovery came back changed: %+v", lines)
+	}
+}
+
+// Go's flag package stops at the first non-flag argument, so an id before a flag
+// would silently drop the flag. Both orders have to mean the same thing.
+func TestTheRunIdIsAcceptedBeforeOrAfterAFlag(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "WID-1", "--event", "phase", "--status", "done"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{
+		{"trail", "WID-1", "--json"},
+		{"trail", "--json", "WID-1"},
+		{"trail", "--run", "WID-1", "--json"},
+	} {
+		if err := h.run(args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if !strings.HasPrefix(strings.TrimSpace(h.stdout()), "[") {
+			t.Errorf("%v did not produce JSON:\n%s", args, h.stdout())
+		}
+	}
+}
+
+func TestATrailForARunNobodyRecordedSaysSo(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("trail", "NEVER-1"); err != nil {
+		t.Fatalf("asking for an unknown trail was an error: %v", err)
+	}
+	if !strings.Contains(h.stdout(), "nothing recorded") {
+		t.Errorf("got %q", h.stdout())
+	}
+}
+
+func TestATrailWithNoRunAndNoBranchAsksForOne(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	err := h.run("trail")
+	if err == nil || !errors.Is(err, cli.ErrUsage) {
+		t.Fatalf("expected a usage error, got %v", err)
+	}
+}
+
+// A failing check's output belongs under the line it belongs to, because that is
+// what somebody reading a finished run needs to see.
+func TestTheTrailCarriesWhatAFailingCheckSaid(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	_ = h.run("check", "--contract", h.contract(`
+phase    = "forge"
+produces = ["ci_green"]
+
+[verify.ci_green]
+run   = "echo 'the suite is red' >&2; exit 1"
+scope = "full"
+`), "--run", "WID-1", "--round", "2")
+
+	if err := h.run("trail", "WID-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"FAIL", "the suite is red", "r2"} {
+		if !strings.Contains(h.stdout(), want) {
+			t.Errorf("the trail is missing %q:\n%s", want, h.stdout())
+		}
+	}
+}
+
+// The three parts of a block are indented under it, in the order they are read.
+func TestTheTrailPutsABlocksThreeParts(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("record", "--run", "WID-1", "--event", "block", "--status", "blocked",
+		"--phase", "forge", "--question", "does --avg round down?",
+		"--looked", "test.js — not covered", "--needs", "which behaviour holds"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("trail", "WID-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"does --avg round down?", "looked in", "test.js", "needs", "which behaviour holds"} {
+		if !strings.Contains(h.stdout(), want) {
+			t.Errorf("the trail is missing %q:\n%s", want, h.stdout())
+		}
+	}
+}

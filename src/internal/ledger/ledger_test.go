@@ -588,3 +588,58 @@ func TestBlankLinesInTheLedgerAreSkipped(t *testing.T) {
 		t.Errorf("got %d lines, want 2", len(got))
 	}
 }
+
+// The trail is every line for one run, oldest first — distinct from State, which
+// is the last line. Two questions, two verbs.
+func TestTheTrailIsEveryLineForOneRunOldestFirst(t *testing.T) {
+	l := newLedger(t)
+	for i, e := range []ledger.Entry{
+		{Run: "MAX-2", Event: ledger.EventDiscovery, Found: "gate: make ci", Where: "Makefile"},
+		phase("OTHER-9", "forge", ledger.StatusRunning),
+		phase("MAX-2", "forge", ledger.StatusRunning),
+		phase("MAX-2", "close", ledger.StatusDone),
+	} {
+		e.At = at(i)
+		if err := l.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	trail, err := l.Trail("MAX-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trail) != 3 {
+		t.Fatalf("got %d lines, want 3 — another run's lines leaked in", len(trail))
+	}
+	if trail[0].Event != ledger.EventDiscovery || trail[2].Phase != "close" {
+		t.Errorf("the trail is not oldest-first: %+v", trail)
+	}
+}
+
+func TestATrailForARunWithNoLinesIsEmptyRatherThanAnError(t *testing.T) {
+	l := newLedger(t)
+
+	trail, err := l.Trail("NEVER-1")
+	if err != nil {
+		t.Fatalf("an unknown run was an error: %v", err)
+	}
+	if len(trail) != 0 {
+		t.Errorf("got %d lines for a run that never ran", len(trail))
+	}
+}
+
+// A finding nobody can check is a claim, so both halves are required.
+func TestADiscoveryMustSayWhatItReadToConcludeIt(t *testing.T) {
+	l := newLedger(t)
+
+	err := l.Append(ledger.Entry{Run: "MAX-2", Event: ledger.EventDiscovery, Found: "gate: make ci"})
+	if err == nil || !strings.Contains(err.Error(), "no source") {
+		t.Errorf("a discovery with no source: %v", err)
+	}
+
+	err = l.Append(ledger.Entry{Run: "MAX-2", Event: ledger.EventDiscovery, Where: "Makefile"})
+	if err == nil || !strings.Contains(err.Error(), "nothing found") {
+		t.Errorf("a discovery that concluded nothing: %v", err)
+	}
+}
