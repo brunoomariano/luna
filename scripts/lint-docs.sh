@@ -38,15 +38,18 @@ done
 
 # --- and no fifth ------------------------------------------------------------
 # The rule in AGENTS.md is "four files"; checking only that the four exist let a
-# fifth ship unnoticed, which is how the suite grew the first time. CHANGELOG and
-# CONTRIBUTING are conventional root-of-docs files, not a layer of the suite.
+# fifth ship unnoticed, which is how the suite grew the first time. CHANGELOG,
+# CONTRIBUTING and DESIGN are conventional root-of-docs files, not a layer of the
+# suite: none of them answers a question about how Luna works. DESIGN describes
+# how the project's visual material is *drawn*, and it changes on a different
+# clock from the code. Adding a name here is a decision, not a convenience.
 for f in $(docs_md); do
   case "$f" in
     docs/*/*) continue ;;
   esac
   case "$(basename "$f")" in
     architecture.md|invariants.md|decisions.md|lessons.md) ;;
-    CHANGELOG.md|CONTRIBUTING.md|README.md) ;;
+    CHANGELOG.md|CONTRIBUTING.md|DESIGN.md|README.md) ;;
     *) err "$f" "a fifth document: which of the four should have held this instead?" ;;
   esac
 done
@@ -62,7 +65,7 @@ for f in $(docs_md); do
 
   # kebab-case.md, with the conventional capitalised exceptions.
   case "$base" in
-    README.md|CHANGELOG.md|CONTRIBUTING.md) ;;
+    README.md|CHANGELOG.md|CONTRIBUTING.md|DESIGN.md) ;;
     *)
       echo "$base" | grep -qE '^[a-z0-9]+(-[a-z0-9]+)*\.md$' \
         || err "$f" "file name is not kebab-case.md" ;;

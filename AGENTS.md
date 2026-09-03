@@ -32,7 +32,14 @@ Three rules about them:
 - **`decisions.md` is living.** Revising a decision means editing it, not appending a new
   record. What it must keep is the **rejected alternative** — that is why the file exists.
 - **Do not add a fifth file** without an answer to *"which of the four should have held
-  this instead?"*
+  this instead?"* `CHANGELOG.md`, `CONTRIBUTING.md` and `DESIGN.md` are conventional
+  root-of-docs files rather than a layer of the suite — none answers a question about how
+  Luna works.
+
+Drawing anything — a diagram, a plate, a new image for the README — starts at
+[`docs/DESIGN.md`](docs/DESIGN.md), which holds the palette, the line weights and the one
+rule that is easy to get wrong: GitHub strips CSS from SVG, so every value goes on the
+element.
 
 ## Standard workflow
 
