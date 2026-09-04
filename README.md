@@ -152,10 +152,10 @@ That is what makes the tool project-agnostic: `make ci`, `pnpm check`, `cargo te
 
 ## What is going on right now
 
-`trail` reads one run. `report` is the listing: every run, what needs a person first.
+`trail` reads one run. `runs` is the listing: every run, what needs a person first.
 
 ```
-$ luna report --here
+$ luna runs --here
 needs somebody
   WID-4          awaiting_gate    pr           2h ago
                  which of the two readings did you mean?
@@ -272,7 +272,7 @@ Four files, each answering one question.
 | [lessons.md](docs/lessons.md) | what did building it teach? |
 
 Beside them, [GLOSSARY.md](docs/GLOSSARY.md) answers *what does this word mean?* —
-`run`, `phase`, `check`, `discovery`, `trail`, `report` and the rest, each defined once.
+`run`, `phase`, `check`, `discovery`, `trail`, `runs` and the rest, each defined once.
 
 ## Development
 

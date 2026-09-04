@@ -205,8 +205,33 @@ tells the agent to **ask**. A session may have been opened for something else en
 resuming the wrong task costs more than the question. It is the reason autonomy starts at
 `manual`.
 
-**`report` is the listing, and it filters by repository, not by the run's latest one.** A
-run is listed under every repository its lines name.
+**The listing is `luna runs`, and it filters by repository, not by the run's latest one.**
+A run is listed under every repository its lines name.
+
+*Rejected: `report`, which was its name for the whole redesign.* Three faults, each
+enough on its own. It named three unrelated things in one binary — the verb, check's
+verdict printer, and main's error-to-exit-code mapper. It cannot be found: 85 hits in Go,
+almost all of them the mandatory `reports whether` doc-comment idiom, so `rg report`
+answers with everything except the command — the exact failure the "specific, searchable
+names" rule was written against, made worse by the collisions being unremovable Go style.
+And it misdescribes: nothing is reported, runs are listed, and the skills that call it
+gloss it every single time ("a frota, bloqueados primeiro", four times over).
+
+`runs` also fixes the trio at the set level. `state` and `trail` are singular-run verbs
+and the listing is the plural one, which no name said: now `luna runs` / `luna state` /
+`luna trail` carries the scope in the grammar.
+
+*Rejected: `list`* — names an action with no object, and would want to be `luna list runs`,
+two words where the other seven verbs have one. *Rejected: `queue`* — implies FIFO and an
+order of work that Luna decides, which is the flow control the redesign removed.
+*Rejected: `board`* — collides with the Plane board vocabulary in the surrounding skills.
+*Rejected: `ls`* — imports a filesystem metaphor into a tool that writes no file in your
+repository. *Rejected: reviving `fleet`* — the name existed and went with the orchestrator;
+bringing it back would suggest the daemon came back with it.
+
+`report` stays in the dispatch map as an undocumented alias for one release, so a skill
+stack calling it does not break the moment the binary updates. It is absent from the help
+on purpose: an alias somebody discovers is an alias somebody starts typing.
 
 *Rejected: grouping by the latest line's project.* The obvious reading, and the ledger
 already disproves it: two runs there carry two repositories each, because a batch seeded

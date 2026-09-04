@@ -203,8 +203,8 @@ func printBlock(out io.Writer, e ledger.Entry) {
 	}
 }
 
-func reportCommand(env Env, args []string) error {
-	set := flags("report", env)
+func runsCommand(env Env, args []string) error {
+	set := flags("runs", env)
 	var (
 		since   = set.Duration("since", 0, "only runs touched within this window")
 		project = set.String("project", "", "only runs that touched this repository")
@@ -233,24 +233,24 @@ func reportCommand(env Env, args []string) error {
 	}
 
 	if *asJSON {
-		return writeJSON(env.Out, reportPayload(runs))
+		return writeJSON(env.Out, runsPayload(runs))
 	}
 	if len(runs) == 0 {
-		fmt.Fprintln(env.Out, emptyReport(filter))
+		fmt.Fprintln(env.Out, emptyListing(filter))
 		return nil
 	}
-	printReport(env.Out, runs)
+	printRuns(env.Out, runs)
 	return nil
 }
 
-// emptyReport says why the listing is empty, which is not always the same reason.
+// emptyListing says why the listing is empty, which is not always the same reason.
 //
 // "nothing recorded yet" in a repository that simply has no runs sends somebody
 // looking for a broken ledger. The filter that excluded everything is the thing
 // worth naming — and when several are on, all of them are, because naming only
 // the first says "no run has touched this repository" about a repository with
 // four finished runs in it.
-func emptyReport(f ledger.Filter) string {
+func emptyListing(f ledger.Filter) string {
 	var narrowed []string
 	if f.Project != "" {
 		narrowed = append(narrowed, "touched "+f.Project)
@@ -267,12 +267,12 @@ func emptyReport(f ledger.Filter) string {
 	return "no run " + strings.Join(narrowed, " and ")
 }
 
-// printReport puts what needs a person first.
+// printRuns puts what needs a person first.
 //
 // A listing ordered only by time buries the blocked run under three that are
 // merrily running, and the whole reason to read a report is to find the one that
 // stopped.
-func printReport(out io.Writer, runs []ledger.Run) {
+func printRuns(out io.Writer, runs []ledger.Run) {
 	var waiting, moving, finished []ledger.Run
 	for _, r := range runs {
 		switch {
@@ -358,7 +358,7 @@ func ago(t time.Time) string {
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
-func reportPayload(runs []ledger.Run) []map[string]any {
+func runsPayload(runs []ledger.Run) []map[string]any {
 	out := make([]map[string]any, 0, len(runs))
 	for _, r := range runs {
 		out = append(out, map[string]any{

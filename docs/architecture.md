@@ -259,7 +259,7 @@ luna contract lint <file|->                                            # static,
 luna record --run <id> --event <kind> …                                # what Luna did not verify
 luna state [--run <id>]                                                # the most recent line
 luna trail [<id>]                                                      # the whole story of one run
-luna report [--here] [--open] [--project <r>] [--since 12h]             # every run, blocked first
+luna runs [--here] [--open] [--project <r>] [--since 12h]               # every run, blocked first
 luna session <agent>                                                   # start one, briefed
 luna version                                                           # what this build is
 ```
@@ -274,7 +274,7 @@ composes the session (`ai-run` here). Luna builds no sandbox and no memory — i
 a briefing and stops existing, which is why starting a process here is not the parent-process
 shape the redesign removed.
 
-`report` is the listing — which runs exist, and where each one stands. `--here` narrows it
+`runs` is the listing — which runs exist, and where each one stands. `--here` narrows it
 to the repository you are standing in, and `--project` to one you are not. A run is listed
 under **every** repository its lines name, not only the latest: the ledger has runs whose
 first line names the checkout a batch seeded them from and whose later lines name the

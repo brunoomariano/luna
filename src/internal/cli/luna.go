@@ -44,10 +44,16 @@ var commands = map[string]command{
 	"record":   recordCommand,
 	"state":    stateCommand,
 	"trail":    trailCommand,
-	"report":   reportCommand,
+	"runs":     runsCommand,
 	"contract": contractCommand,
 	"session":  sessionCommand,
 	"version":  versionCommand,
+
+	// `report` was this verb's name until it was found to mean three things in
+	// one binary and to be unfindable with rg among Go's "reports whether"
+	// idiom. Kept undocumented for one release so a skill stack calling it does
+	// not break the moment the binary updates.
+	"report": runsCommand,
 }
 
 // Run dispatches one command line.
@@ -151,7 +157,7 @@ a phase boundary to prove what was delivered, and to record what happened.
         about the project, the gates, the blocks and the notes. This is the
         log of a task: state says where it is, this says what it did.
 
-  luna report [--here] [--open] [--project <repo>] [--since <duration>] [--json]
+  luna runs [--here] [--open] [--project <repo>] [--since <duration>] [--json]
         every run, most recently touched first, with what needs a person.
         This is the listing: which tasks exist, and where each one stands.
 

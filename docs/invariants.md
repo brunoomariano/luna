@@ -165,7 +165,7 @@ in `internal/ledger`; `TestAVerdictThatCannotBeRecordedIsReported` in `internal/
 ## INV-5 — No failure is silent, and no wait is invisible
 
 Every phase ends in a delivery, a gate, or a **recorded** block. A run waiting for a person
-is discoverable by command (`luna report`), never only by having watched a terminal. A
+is discoverable by command (`luna runs`), never only by having watched a terminal. A
 phase that came up short records what it was missing by name.
 
 **Why.** Silent death has two forms: the run that fails without warning, and the one that

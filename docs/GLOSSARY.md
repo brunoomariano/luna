@@ -182,7 +182,7 @@ default is a missing convenience; an absent named launcher is a broken instructi
 | `luna record` | *(writes)* something happened that Luna did not verify |
 | `luna state` | where is this run **now**? |
 | `luna trail` | what did this run **do**? |
-| `luna report` | which runs exist, and which need me? |
+| `luna runs` | which runs exist, and which need me? |
 | `luna session` | *(starts an agent)* here is what this repository has open |
 | `luna version` | which build am I talking to? |
 
@@ -235,7 +235,7 @@ The distinction worth knowing, and the reason these are two verbs:
 A conductor deciding what to do next wants one line. A person reading a finished task
 wants the whole story.
 
-### report
+### runs
 
 The listing: every run, most recently touched first, with what needs a person at the top.
 

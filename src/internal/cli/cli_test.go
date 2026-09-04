@@ -1633,3 +1633,47 @@ func sweepStaleTestDirs(home string) {
 		_ = os.RemoveAll(filepath.Join(home, entry.Name()))
 	}
 }
+
+// The listing is `luna runs`. `report` was its name until it was found to mean
+// three things in one binary — the verb, check's verdict printer, and main's
+// exit-code mapper — and to be unfindable with rg among Go's "reports whether"
+// idiom.
+//
+// The alias exists so a skill stack calling the old name does not break the
+// moment the binary updates, and it is deliberately absent from the help: an
+// alias somebody discovers is an alias somebody starts typing.
+func TestTheListingAnswersToBothNamesButIsDocumentedUnderOne(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "OPEN-1", "--event", "phase",
+		"--status", "running", "--phase", "forge"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("runs"); err != nil {
+		t.Fatalf("luna runs: %v", err)
+	}
+	byNewName := h.stdout()
+	if !strings.Contains(byNewName, "OPEN-1") {
+		t.Fatalf("the listing does not carry the open run:\n%s", byNewName)
+	}
+
+	h.out.Reset()
+	if err := h.run("report"); err != nil {
+		t.Fatalf("the old name stopped working: %v", err)
+	}
+	if h.stdout() != byNewName {
+		t.Errorf("the alias answers differently:\n--- runs ---\n%s\n--- report ---\n%s",
+			byNewName, h.stdout())
+	}
+
+	h.out.Reset()
+	if err := h.run("help"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(h.stdout(), "luna report") {
+		t.Error("the compatibility alias is advertised in the help")
+	}
+	if !strings.Contains(h.stdout(), "luna runs") {
+		t.Error("the help does not document the listing under its own name")
+	}
+}
