@@ -32,6 +32,8 @@ func durableDir(t *testing.T) string {
 	if err != nil {
 		t.Skipf("no home directory: %v", err)
 	}
+	sweepStaleTestDirs(home)
+
 	dir, err := os.MkdirTemp(home, ".luna-cli-test-")
 	if err != nil {
 		t.Skipf("cannot write under home: %v", err)
@@ -1602,5 +1604,32 @@ func TestAnExplicitBareSessionWarnsAboutNothing(t *testing.T) {
 	h.launched(t, "some-agent", "--bare")
 	if strings.Contains(h.err.String(), "no sandbox") {
 		t.Errorf("--bare was warned about as though it were a fallback:\n%s", h.err.String())
+	}
+}
+
+// sweepStaleTestDirs removes what a killed test run left behind.
+//
+// These live under $HOME rather than /tmp because the durability guard refuses
+// tmpfs — correctly — so the usual "the OS cleans it" does not apply. t.Cleanup
+// covers a test that finishes, and covers nothing when the run is killed by a
+// timeout or a ctrl-c. Fifty-eight directories accumulated over two days that
+// way before anybody looked.
+//
+// An hour is well past any real run of this suite, and old enough that a
+// directory still in use by a concurrent run is not touched.
+func sweepStaleTestDirs(home string) {
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), ".luna-cli-test-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || time.Since(info.ModTime()) < time.Hour {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(home, entry.Name()))
 	}
 }
