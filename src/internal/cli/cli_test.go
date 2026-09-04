@@ -1515,3 +1515,19 @@ func TestAMissingLauncherSaysHowToProceedWithoutIt(t *testing.T) {
 		}
 	}
 }
+
+// A launcher is a thing Luna calls, never a thing Luna needs. `--bare` has to
+// work on a machine that has none installed — otherwise the verb would have
+// quietly given this project its first dependency, and it would be one that
+// `go.mod` cannot show.
+func TestStartingAnAgentNeedsNoLauncherInstalled(t *testing.T) {
+	h := newHarness(t)
+
+	got := h.launched(t, "some-agent", "--bare")
+	if len(got) != 2 || got[0] != "some-agent" {
+		t.Fatalf("--bare did not start the agent on its own: %v", got)
+	}
+	if !strings.Contains(got[1], "starting work in") {
+		t.Errorf("a bare session lost the briefing: %q", got[1])
+	}
+}

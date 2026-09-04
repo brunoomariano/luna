@@ -163,6 +163,11 @@ What composes a session's layers around the agent: sandbox, durable memory, perm
 Luna calls one and builds none of it. Each of those layers is another tool's main product,
 and taking them over is what the redesign undid.
 
+**A launcher is not a dependency of Luna.** Luna has none — `go.mod` is three lines, and
+that includes this. It only needs the launcher to be on `PATH` when you ask for one, says
+so plainly when it is not, and `--bare` skips the whole idea. Whatever the launcher itself
+needs is the launcher's business.
+
 ---
 
 ## The verbs
