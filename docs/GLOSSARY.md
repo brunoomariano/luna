@@ -155,6 +155,13 @@ blocked on, and how to conduct the work.
 Composed from the ledger at launch and kept nowhere. It is a message, not a file — Luna
 writes nothing into a checkout, and that includes this.
 
+### skill
+
+A document that teaches an agent how to use a tool, read from the harness's own directory.
+
+Luna carries one, about Luna itself, and `install-skills` writes it out. It knows nothing
+about your flow: which phases exist and what they are called stays yours.
+
 ### launcher
 
 What composes a session's layers around the agent: sandbox, durable memory, permissions.
@@ -184,6 +191,7 @@ default is a missing convenience; an absent named launcher is a broken instructi
 | `luna trail` | what did this run **do**? |
 | `luna runs` | which runs exist, and which need me? |
 | `luna session` | *(starts an agent)* here is what this repository has open |
+| `luna install-skills` | *(writes)* teach an agent how to call Luna |
 | `luna version` | which build am I talking to? |
 
 ### check
@@ -260,6 +268,21 @@ of this project, and `execve` is neither.
 
 An open run is **not** an instruction to resume it. The briefing tells the agent to ask
 first, for the same reason autonomy starts at `manual`.
+
+### install-skills
+
+Writes the skills this build carries into an agent's skill directory —
+`~/.claude/skills/` or `~/.codex/skills/`, or anywhere with `--dir`.
+
+**Idempotent.** It overwrites what it wrote before and deletes nothing else; an install
+that refuses because a file is already there is an install nobody runs twice.
+
+The skill is **embedded in the binary**, which is the point: one that documented `luna
+report` against a build answering `luna runs` would cost somebody a session. A test holds
+every verb the skill names to one `luna help` documents, so the two cannot drift — and an
+alias that still answers but is no longer documented fails it.
+
+`--print` writes the skill to stdout for somebody who would rather place it themselves.
 
 ---
 

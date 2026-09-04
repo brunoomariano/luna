@@ -261,6 +261,7 @@ luna state [--run <id>]                                                # the mos
 luna trail [<id>]                                                      # the whole story of one run
 luna runs [--here] [--open] [--project <r>] [--since 12h]               # every run, blocked first
 luna session <agent>                                                   # start one, briefed
+luna install-skills <claude|codex>                                     # teach an agent
 luna version                                                           # what this build is
 ```
 
@@ -285,11 +286,12 @@ right to see it.
 
 ```
 src/
-  cmd/luna/          the binary: seven verbs and an exit code
+  cmd/luna/          the binary: eight verbs and an exit code
   internal/contract/ what a phase owes and how each debt is proven
   internal/verify/   running the checks over the delivered commit
   internal/ledger/   the record, its durability guard, and autonomy
   internal/cli/      the command surface
+  internal/skills/   the skill Luna installs, embedded
 docs/                four files
 ```
 

@@ -169,6 +169,34 @@ later is trusting a mount that could have changed, and the check is a single sys
 > right, and the tests say so — the mistake is easy to make in the other direction and
 > would have them "fixed" by weakening what they guard.
 
+**Luna carries one skill, about itself, embedded in the binary.**
+
+`install-skills` writes it into a harness's own directory. Embedded rather than shipped
+beside the binary because the two drift the moment they are separate: the copy deployed on
+this machine still said "six verbs" and `luna report` a day after the binary stopped
+answering that, which is a lost session for whoever read it. A test holds every verb the
+skill names to one `luna help` documents — an alias that still answers but is no longer
+documented fails it.
+
+*Rejected: shipping the conductor's skill.* The flow skill in this house delegates to
+sixteen others and reads a tracker. Installing it alone hands somebody a map to sixteen
+places that do not exist. What travels is the tool: the contract, the scopes, the exit
+codes, how to discover a project's own command rather than assuming `make`. Which phases
+exist and what they are called is the conductor's, and a skill from Luna that named them
+would be flow control wearing a different hat.
+
+*Rejected: a skill with modes.* The house's flow skill has two, and they share only their
+setup — one conducts a task end to end, the other prepares worktrees and stops. The cost is
+visible in its own frontmatter, which spends twelve lines teaching a model to choose
+between them, in every session, for a decision the person already made by typing the
+request. If Luna ever needs two behaviours, they are two skills.
+
+*Rejected: writing nothing and printing only.* `--print` exists, and it is the honest
+escape. But an install everybody has to finish by hand is an install that goes stale, and
+staleness is the failure this whole decision is about. Writing under `$HOME` is a boundary
+Luna had not crossed — it is crossed explicitly, by a command somebody types, into a
+directory that harness owns, and it deletes nothing it did not write.
+
 **`luna session` starts an agent, and then stops existing.**
 
 It composes a briefing from the ledger — this repository's open runs, what each is blocked

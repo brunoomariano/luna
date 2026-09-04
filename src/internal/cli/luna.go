@@ -1,4 +1,4 @@
-// Package cli is the command surface: seven verbs over a contract and a ledger.
+// Package cli is the command surface: eight verbs over a contract and a ledger.
 //
 // Luna is invoked by whoever conducts the work, at a phase boundary. It starts no
 // agent, builds no sandbox and decides no transition — a person composes the
@@ -48,6 +48,8 @@ var commands = map[string]command{
 	"contract": contractCommand,
 	"session":  sessionCommand,
 	"version":  versionCommand,
+
+	"install-skills": installSkillsCommand,
 
 	// `report` was this verb's name until it was found to mean three things in
 	// one binary and to be unfindable with rg among Go's "reports whether"
@@ -187,6 +189,19 @@ a phase boundary to prove what was delivered, and to record what happened.
                     names none, and the briefing still says how to use Luna.
         --bare      start the agent directly, with no launcher at all.
         --print     print the briefing and exit, launching nothing.
+
+  luna install-skills <claude|codex> [--dir <path>] [--dry-run] [--print]
+        write the skills this build carries into an agent's skill directory, so
+        a session knows how to call Luna without being told. Idempotent: it
+        overwrites what it wrote before and deletes nothing else.
+
+        The skill is embedded in the binary rather than shipped beside it. A
+        skill that documents a verb this build does not answer costs somebody a
+        session, and a test holds the two together.
+
+        --dir       install somewhere else — for a harness Luna does not know
+        --print     print the skills and place them yourself
+        --dry-run   say what would be written, write nothing
 
   luna version
         what this build calls itself, and the commit it came from.

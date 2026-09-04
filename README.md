@@ -83,6 +83,9 @@ No dependencies. `go.mod` is three lines.
 
 ![The seven verbs](docs/assets/imgs/verbs.svg)
 
+`luna install-skills` is an eighth, left out of the drawing because it is setup you run
+once rather than something a phase calls. `luna help` has it.
+
 A checkout on `luna/<run>` knows which run it is, so `--run` is optional
 everywhere. The branch is the authority because it travels with the work, where a
 directory can be moved or made by hand.
@@ -227,6 +230,26 @@ instruction. `--bare` says you meant to run without one, and warns about nothing
 
 The skill it names is `--skill`, and an empty one names none — the briefing still says how
 to use Luna.
+
+## Teaching an agent to use it
+
+Luna carries a skill about itself. One command writes it where the agent looks:
+
+```sh
+$ luna install-skills claude       # or codex, or --dir <path>
+wrote ~/.claude/skills/luna/SKILL.md
+```
+
+Idempotent — it overwrites what it wrote before and deletes nothing else. `--print` writes
+it to stdout instead, `--dry-run` says what it would write.
+
+**The skill is embedded in the binary**, and that is the point: one shipped separately
+would eventually document a verb the build no longer answers, which costs a session. A
+test holds every verb the skill names to one `luna help` documents.
+
+It teaches the tool and nothing else — the contract, the scopes, the exit codes, how to
+discover *this* project's verification command instead of assuming `make`. Which phases
+exist and what they are called stays yours.
 
 ## Blocking
 
