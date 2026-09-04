@@ -51,7 +51,7 @@ func trailCommand(env Env, args []string) error {
 	set := flags("trail", env)
 	var (
 		run    = set.String("run", "", "which run (default: the branch says)")
-		asJSON = set.Bool("json", false, "report as JSON")
+		asJSON = set.Bool("json", false, "as JSON")
 	)
 
 	// A positional id reads better here than a flag — `luna trail MAX-2` is what

@@ -134,7 +134,7 @@ func stateCommand(env Env, args []string) error {
 	set := flags("state", env)
 	var (
 		run    = set.String("run", "", "which run (default: the branch says)")
-		asJSON = set.Bool("json", false, "report as JSON")
+		asJSON = set.Bool("json", false, "as JSON")
 	)
 	if err := set.Parse(args); err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
@@ -210,7 +210,7 @@ func reportCommand(env Env, args []string) error {
 		project = set.String("project", "", "only runs that touched this repository")
 		here    = set.Bool("here", false, "only runs that touched the repository you are standing in")
 		open    = set.Bool("open", false, "only runs that have not finished")
-		asJSON  = set.Bool("json", false, "report as JSON")
+		asJSON  = set.Bool("json", false, "as JSON")
 	)
 	if err := set.Parse(args); err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)

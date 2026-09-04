@@ -27,7 +27,7 @@ func checkCommand(env Env, args []string) error {
 		round    = set.Int("round", 0, "which round of a loop this is")
 		dry      = set.Bool("dry-run", false, "say what would run, run nothing, record nothing")
 		noRecord = set.Bool("no-record", false, "verify without writing to the ledger")
-		asJSON   = set.Bool("json", false, "report as JSON")
+		asJSON   = set.Bool("json", false, "as JSON")
 	)
 	if err := set.Parse(args); err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
@@ -86,7 +86,7 @@ func reportEvidence(env Env, c contract.Contract, evidence []verify.Evidence, ru
 			return err
 		}
 	} else {
-		report(env.Out, c, evidence)
+		printEvidence(env.Out, c, evidence)
 	}
 
 	if !verify.Passed(evidence) {
@@ -207,11 +207,11 @@ func wouldRun(c contract.Contract) []map[string]string {
 	return out
 }
 
-// report prints what each check observed.
+// printEvidence prints what each check observed.
 //
-// Every owed artifact, passing ones included: a report listing only failures
-// cannot be told from one where nothing ran.
-func report(out io.Writer, c contract.Contract, all []verify.Evidence) {
+// Every owed artifact, passing ones included: a listing of only failures cannot
+// be told from one where nothing ran.
+func printEvidence(out io.Writer, c contract.Contract, all []verify.Evidence) {
 	for _, e := range all {
 		mark := "ok  "
 		if e.Verdict != verify.VerdictPassed {
