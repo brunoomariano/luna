@@ -32,9 +32,11 @@ Three rules about them:
 - **`decisions.md` is living.** Revising a decision means editing it, not appending a new
   record. What it must keep is the **rejected alternative** — that is why the file exists.
 - **Do not add a fifth file** without an answer to *"which of the four should have held
-  this instead?"* `CHANGELOG.md`, `CONTRIBUTING.md` and `DESIGN.md` are conventional
-  root-of-docs files rather than a layer of the suite — none answers a question about how
-  Luna works.
+  this instead?"* `CHANGELOG.md`, `CONTRIBUTING.md`, `DESIGN.md` and
+  [`GLOSSARY.md`](docs/GLOSSARY.md) are conventional root-of-docs files rather than a
+  layer of the suite — none answers a question about how Luna works. The glossary answers
+  *"what does this word mean?"*: **look a term up there, not in prose**, and when a
+  definition there and the code disagree, the code is right.
 
 Drawing anything — a diagram, a plate, a new image for the README — starts at
 [`docs/DESIGN.md`](docs/DESIGN.md), which holds the palette, the line weights and the one

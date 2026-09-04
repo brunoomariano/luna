@@ -42,6 +42,10 @@ command returned zero.
 
 ## The words
 
+**[GLOSSARY.md](GLOSSARY.md) defines every one of these, and the verbs besides.** Look a
+term up there; what follows is the short form, in the order the rest of this document
+uses them.
+
 Twelve of them, and they are used precisely throughout. The two that cost a reader the most
 are first: `conductor` is the subject of most rules here and was never defined, and the
 scopes lived only in Go while an invariant depended on them.

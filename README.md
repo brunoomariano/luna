@@ -66,7 +66,10 @@ so a record outlives the tree it describes.
 Three of these mean a second thing in ordinary use: **gate** and **check** also name *the
 project's own* verification command (`make ci`, `pnpm check`), and **floor** is both the
 loop's mechanical floor and the 95% coverage minimum. All six senses are real and none is
-being renamed; [architecture.md](docs/architecture.md#the-words) says which is which.
+being renamed.
+
+**[docs/GLOSSARY.md](docs/GLOSSARY.md) defines every part of Luna in one place** — these
+words, the verbs, the six statuses, the seven events, and what Luna deliberately is not.
 
 ## Install
 
@@ -214,6 +217,9 @@ Four files, each answering one question.
 | [invariants.md](docs/invariants.md) | what always holds? |
 | [decisions.md](docs/decisions.md) | what was chosen, and what was rejected? |
 | [lessons.md](docs/lessons.md) | what did building it teach? |
+
+Beside them, [GLOSSARY.md](docs/GLOSSARY.md) answers *what does this word mean?* —
+`run`, `phase`, `check`, `discovery`, `trail`, `report` and the rest, each defined once.
 
 ## Development
 

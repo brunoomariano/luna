@@ -769,3 +769,48 @@ func TestEveryStatusLandsInExactlyOneGroupOfTheListing(t *testing.T) {
 		}
 	}
 }
+
+// docs/GLOSSARY.md tabulates the six statuses and seven events, and a glossary
+// that is wrong is worse than none: it is looked up precisely when somebody does
+// not already know.
+//
+// The closed sets are unexported, so this reaches them the way a caller does —
+// through Validate, which accepts what is in the set and refuses what is not.
+// Adding a value without documenting it fails here.
+func TestTheClosedSetsAreTheOnesTheGlossaryLists(t *testing.T) {
+	events := []ledger.Event{
+		ledger.EventPhase, ledger.EventCheck, ledger.EventGate, ledger.EventBlock,
+		ledger.EventUnblock, ledger.EventAutonomy, ledger.EventDiscovery,
+	}
+	for _, event := range events {
+		line := ledger.Entry{Run: "GLOSS-1", Event: event}
+		if event == ledger.EventBlock {
+			line.Question, line.Looked, line.Needs = "q", []string{"here"}, "an answer"
+		}
+		if event == ledger.EventDiscovery {
+			line.Found, line.Where = "gate: make ci", "Makefile"
+		}
+		if err := line.Validate(); err != nil {
+			t.Errorf("the glossary lists %q as an event, and it is refused: %v", event, err)
+		}
+	}
+	if err := (ledger.Entry{Run: "GLOSS-1", Event: "deployed"}).Validate(); err == nil {
+		t.Error("an event outside the closed set was accepted; the glossary claims seven")
+	}
+
+	statuses := []ledger.Status{
+		ledger.StatusRunning, ledger.StatusAwaitingResume, ledger.StatusAwaitingGate,
+		ledger.StatusBlocked, ledger.StatusDone, ledger.StatusAbandoned,
+	}
+	for _, status := range statuses {
+		line := ledger.Entry{Run: "GLOSS-1", Event: ledger.EventPhase, Status: status}
+		if err := line.Validate(); err != nil {
+			t.Errorf("the glossary lists %q as a status, and it is refused: %v", status, err)
+		}
+	}
+	if err := (ledger.Entry{
+		Run: "GLOSS-1", Event: ledger.EventPhase, Status: "ready",
+	}).Validate(); err == nil {
+		t.Error("a status outside the closed set was accepted; the glossary claims six")
+	}
+}
