@@ -42,7 +42,7 @@ command returned zero.
 
 ## The words
 
-Eleven of them, and they are used precisely throughout. The two that cost a reader the most
+Twelve of them, and they are used precisely throughout. The two that cost a reader the most
 are first: `conductor` is the subject of most rules here and was never defined, and the
 scopes lived only in Go while an invariant depended on them.
 
@@ -58,6 +58,7 @@ scopes lived only in Go while an invariant depended on them.
 | **scope** | how much a passing check establishes. See below — it is the one word that carries a rule. |
 | **gate** | a decision handed to a person, with an answer recorded. Also see the note below. |
 | **block** | a run stopping because information is missing, carrying three parts: the question, where the answer was looked for and what each source failed to say, and what would unblock it. Distinct from a gate — a gate has an artifact to judge, a block has a question nobody answered. |
+| **status** | where a run stands, from a closed set of six: `running`, `awaiting_gate`, `awaiting_resume`, `blocked`, `done`, `abandoned`. The listing groups them into three — *needs somebody* (`awaiting_gate`, `blocked`), *finished* (`done`, `abandoned`), and everything else in flight. `awaiting_resume` is the one that is easy to miss: a batch prepared the run and nobody has picked it up. It is the whole handoff — there is no file beside it — and it counts as unfinished. |
 | **discovery** | what a phase found out about the project it works in — which command is this repository's own verification, how it bootstraps — recorded with the file it was read from. Recorded and **never consulted**: the command arrives in the contract every time. |
 
 ### Three words that mean two things

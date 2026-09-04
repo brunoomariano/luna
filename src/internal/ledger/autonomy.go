@@ -17,16 +17,18 @@ import "fmt"
 type Autonomy string
 
 const (
-	// Manual sends every gate to a person. It is the default, and the default is
-	// deliberately the careful one: an autonomy that has to be asked for is one
-	// nobody gets by forgetting.
+	// Manual is the default, and the default is deliberately the careful one: an
+	// autonomy that has to be asked for is one nobody gets by forgetting. The
+	// conductor sends every gate to a person under it.
 	Manual Autonomy = "manual"
 
-	// Semi clears the gates that are reversible.
+	// Semi is the middle mode, under which a conductor answers the reversible
+	// gates itself.
 	Semi Autonomy = "semi"
 
-	// Auto clears every gate that declares a floor. It does not clear a block —
-	// see INV-5, and that rule is the conductor's to honour.
+	// Auto is the unattended mode. Every mode still blocks on missing
+	// information, including this one — see INV-5. That rule is the conductor's
+	// to honour; Luna records the mode and resolves nothing against it.
 	Auto Autonomy = "auto"
 )
 

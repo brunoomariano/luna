@@ -139,9 +139,12 @@ type Contract struct {
 	// ledger so a record says what was being proven.
 	Phase string
 
-	// Requires names artifacts this phase was handed. Nothing here is checked by
-	// running anything — it is what `lint` reads to catch a phase asking for
-	// something no earlier phase produced.
+	// Requires names artifacts this phase was handed.
+	//
+	// Read by nothing, including `lint` — which this comment claimed for the whole
+	// redesign, as did INV-3. It is documentation a person reads. Checking it would
+	// mean deciding from the ledger whether a phase may start, and that is flow
+	// control; see INV-3 for why it stays unenforced rather than being built.
 	Requires []string
 
 	// Produces maps each owed artifact to how it is proven. An artifact with no

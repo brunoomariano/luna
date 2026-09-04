@@ -10,15 +10,15 @@ permits teaches people to stop believing the list.
 
 ## INV-1 — Delivery is verified by running the tool, over what was delivered
 
-A stage does not close because the agent said it was done. It closes because a command
-returned zero, the blob is in the store with its hash, the commit resolves to exactly one
-object and that object is a commit.
+A phase does not close because the agent said it was done. It closes because a command
+returned zero over the delivered commit — and that commit resolves to exactly one object,
+which is a commit, and is not the base the phase was handed.
 
 **Why.** Well-formed output can describe something that does not exist. This is the one
 piece that worked without exception in real cycles, and it is what makes the rest
 unnecessary to trust.
 
-The verification runs over **what the stage delivered**, not over whatever was left in the
+The verification runs over **what the phase delivered**, not over whatever was left in the
 working tree. The failure mode it closes is not sabotage — it is incoherence: an
 uncommitted file, a local `.env`, a stale build artifact. A tree that passes and a
 delivery that does not.
@@ -36,20 +36,20 @@ and therefore what is verified. Luna builds no sandbox — a person composes the
 before the agent starts, and Luna inherits it. What Luna guarantees about its own writing
 is INV-4.
 
-**The case that got through.** A stage that delivered *nothing* used to pass. An empty
+**The case that got through.** A phase that delivered *nothing* used to pass. An empty
 commit reached `CheckoutAt`, which read it as `HEAD` and resolved it against the main
 repository — so the command ran over whatever was already committed there and exited zero.
 Measured on TALLY-3: `build` recorded `make test → 0` while its branch sat on the base
-commit with a clean worktree. The green was true, and it was true about code the stage did
-not write. A stage that owes a committed artifact and adds no commit now fails; a pure
-verification stage is different because the commit it received is the thing it is asked to
-prove. A repository with no commit at all is still the first stage of the first task, and
+commit with a clean worktree. The green was true, and it was true about code the phase did
+not write. A phase that owes a committed artifact and adds no commit now fails; a pure
+verification phase is different because the commit it received is the thing it is asked to
+prove. A repository with no commit at all is still the first phase of the first run, and
 still verifies its tree.
 
 The other half of it took a second run to find. That guard asked whether a commit
-*existed*, and a stage that adds none hands back the base — which exists, and resolves. So
-the check ran over the code the stage was given and passed, because that code was already
-green when the stage received it. Measured on TALLY-5: `build` was billed $0.64 over 17
+*existed*, and a phase that adds none hands back the base — which exists, and resolves. So
+the check ran over the code the phase was given and passed, because that code was already
+green when the phase received it. Measured on TALLY-5: `build` was billed $0.64 over 17
 turns, ended clean at its base with none of the feature written, and closed `tests_green`
 as `targeted` and `passed`. A delivery equal to the base is not a delivery.
 
@@ -89,11 +89,13 @@ between two commands; a line that cannot be read without its predecessors.
 
 ---
 
-## INV-3 — No stage starts without what it requires, nor closes without what it produces
+## INV-3 — No phase closes without what it produces
 
-Every stage declares `requires` and `produces`. Two checks survive here: **static**, over a
-contract before the phase runs (`luna contract lint`), and **on exit**, over what the phase
-delivered (`luna check`).
+Every phase declares what it produces, and each debt names how it is proven. Two checks
+run: **static**, over the contract before the phase runs (`luna contract lint`), and **on
+exit**, over what the phase delivered (`luna check`).
+
+A phase also declares `requires`. Nothing enforces it — see below, and that is deliberate.
 
 **Why.** It distinguishes "the model got it wrong" from "the model did not receive what it
 needed". Without it, the failure surfaces two phases later, when the symptom has already
@@ -102,12 +104,21 @@ moved away from the cause.
 This includes `produces_for_human` — the report nobody downstream consumes. If its
 delivery depended on the flow feeling it missing, it would never be demanded.
 
-**Where the entry check went.** Luna no longer walks a flow, so it cannot refuse to start a
-phase — starting one is the conductor's act, not Luna's. What replaces it is the contract
-itself: a phase whose `requires` name an artifact the ledger has no record of is a contract
-`lint` refuses before a model is called. The check moved from the engine's hands to the
-document's, and it is weaker in exactly one way, said plainly: a conductor that never lints
-is not stopped.
+**Where the entry check went: nowhere. Only the exit half of this invariant is enforced.**
+
+Luna no longer walks a flow, so it cannot refuse to start a phase — starting one is the
+conductor's act. `requires` is parsed, carried, and **read by nothing**: `lint` accepts a
+contract requiring artifacts no phase ever produced, and exits 0.
+
+This paragraph used to claim `lint` refused exactly that. It did not, and the claim stood
+for the whole redesign — in the file whose preamble says an invariant that forbids what
+the code permits teaches people to stop believing the list. It was the list's own defect.
+
+Building it is possible: only `check` events carry an artifact, so the ledger does know
+what has been proven. It is not built, because deciding whether a phase may *start* from
+what the ledger holds is flow control, and moving that back into Luna is what the redesign
+removed. `requires` stays as documentation a person reads — the honest description of a
+field nothing enforces.
 
 **What violates it.** A phase with no contract; a `produces` marked delivered without
 verification; a `check` that reports a verdict for an artifact it did not look for.
@@ -193,7 +204,7 @@ ends and the vocabulary crossed neither way: the reader looked for `[BLOCKING]`,
 existed. On TALLY-7 the reviewer found four real defects, each verified against a named
 input, wrote them under a heading called "Findings", and the parser read nothing. What may
 block is deliberately narrow — introduced by this change, or breaks a stated acceptance
-criterion — because blocking on inherited defects turns every task into an audit of the
+criterion — because blocking on inherited defects turns every run into an audit of the
 repository.
 
 **A simulation is not a result.** `--dry-run` exercises the machine with no agent, and its

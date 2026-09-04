@@ -115,9 +115,16 @@ a `post-checkout` calling a mise shim; inside a sandbox with a tmpfs `$HOME` mis
 resolve it, and `git worktree add` exited 1 having created the worktree anyway. Reading that
 exit code blocked a phase that had delivered.
 
-**A simulation is not a result.** `--dry-run` runs nothing and records nothing, and says so
-on its first line. The earlier version claimed each contract's declared scope with the truth
-in a field the renderer never printed, so a task walked to `done` on checks nothing ran.
+**A simulation is not a result.** The earlier version claimed each contract's declared scope
+with the truth in a field the renderer never printed, so a run walked to `done` on checks
+nothing ran.
+
+`--dry-run` means two different things, one per verb, and both are deliberate. On `check`
+it runs nothing and **records nothing** — a simulated verdict in the ledger is the exact
+failure above. On `record` it writes the line and **marks it `simulated`**, because a
+rehearsal of a flow has to leave a trail to be worth rehearsing, and every view says so.
+The rule that unifies them: *a simulation never produces evidence, and never hides that it
+was one.*
 
 ---
 

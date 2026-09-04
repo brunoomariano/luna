@@ -25,7 +25,7 @@ func recordCommand(env Env, args []string) error {
 	set := flags("record", env)
 	var (
 		run      = set.String("run", "", "which run this is (default: the branch says)")
-		event    = set.String("event", "", "phase | gate | block | unblock | autonomy")
+		event    = set.String("event", "", "phase | gate | block | unblock | autonomy | discovery")
 		phase    = set.String("phase", "", "which phase this is about")
 		status   = set.String("status", "", "running | awaiting_gate | awaiting_resume | blocked | done | abandoned")
 		gate     = set.String("gate", "", "which gate was answered")

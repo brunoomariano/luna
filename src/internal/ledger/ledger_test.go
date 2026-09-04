@@ -736,3 +736,36 @@ func TestAReportCanLeaveOutWhatIsFinished(t *testing.T) {
 		t.Errorf("--open did not leave out the finished run: %+v", runs)
 	}
 }
+
+// The listing sorts six statuses into three groups, and two of the six are easy
+// to place wrongly. `awaiting_resume` is a run a batch prepared and nobody has
+// picked up: it needs a session, not a person answering a question, so it is
+// neither "needs somebody" nor finished. `abandoned` is finished.
+//
+// Nothing enforced this grouping — it fell out of two predicates that name four
+// of the six statuses and say nothing about the others.
+func TestEveryStatusLandsInExactlyOneGroupOfTheListing(t *testing.T) {
+	for _, want := range []struct {
+		status              ledger.Status
+		needsSomebody, done bool
+	}{
+		{ledger.StatusRunning, false, false},
+		{ledger.StatusAwaitingResume, false, false},
+		{ledger.StatusAwaitingGate, true, false},
+		{ledger.StatusBlocked, true, false},
+		{ledger.StatusDone, false, true},
+		{ledger.StatusAbandoned, false, true},
+	} {
+		run := ledger.Run{Latest: ledger.Entry{Status: want.status}}
+		if run.NeedsSomebody() != want.needsSomebody {
+			t.Errorf("%s: NeedsSomebody() is %v, want %v",
+				want.status, run.NeedsSomebody(), want.needsSomebody)
+		}
+		if run.Finished() != want.done {
+			t.Errorf("%s: Finished() is %v, want %v", want.status, run.Finished(), want.done)
+		}
+		if run.NeedsSomebody() && run.Finished() {
+			t.Errorf("%s lands in two groups at once", want.status)
+		}
+	}
+}

@@ -60,6 +60,7 @@ so a record outlives the tree it describes.
 | **scope** | how much a passing check establishes: `full > targeted > human > existence`. It never upgrades. |
 | **gate** | a decision handed to a person, with the answer recorded. |
 | **block** | a run stopping for missing information, carrying the question, where the answer was looked for, and what would unblock it. |
+| **status** | where a run stands, one of six: `running`, `awaiting_gate`, `awaiting_resume`, `blocked`, `done`, `abandoned`. `awaiting_resume` means a batch prepared it and nobody has picked it up yet — that line *is* the handoff, there is no file beside it. |
 | **discovery** | what a phase found out about the project — its verification command, how it bootstraps — recorded with the file it was read from, and never consulted afterwards. |
 
 Three of these mean a second thing in ordinary use: **gate** and **check** also name *the

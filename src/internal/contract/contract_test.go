@@ -573,3 +573,31 @@ func TestTheLadderIsTheOrderTheDocumentPrints(t *testing.T) {
 		}
 	}
 }
+
+// INV-3 claimed for the whole redesign that `lint` refuses a phase whose
+// `requires` name an artifact nothing produced. It never did, and the field is
+// read by nothing at all.
+//
+// This test pins the behaviour the documentation now describes. If somebody
+// builds the check, this test fails and INV-3 has to be rewritten in the same
+// change — which is the point: the last time these two disagreed, the document
+// won for a year while the code did something else.
+func TestRequiresIsCarriedAndEnforcedByNothing(t *testing.T) {
+	c, err := contract.Parse(`
+phase    = "forge"
+requires = ["an_artifact_no_phase_ever_produced"]
+produces = ["code"]
+
+[verify.code]
+kind = "existence"
+`, "requires.toml")
+	if err != nil {
+		t.Fatalf("parsing: %v", err)
+	}
+	if len(c.Requires) != 1 || c.Requires[0] != "an_artifact_no_phase_ever_produced" {
+		t.Errorf("requires did not survive the parse: %v", c.Requires)
+	}
+	if err := c.Lint(); err != nil {
+		t.Errorf("lint refused an unmet requires; INV-3 says it does not: %v", err)
+	}
+}

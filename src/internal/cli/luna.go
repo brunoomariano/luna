@@ -94,7 +94,10 @@ a phase boundary to prove what was delivered, and to record what happened.
                        many times check was called: the loop's ceilings are
                        read off it, and a retry numbered as a round makes a
                        phase look like it iterated when it did not.
-        --dry-run      say what would run, run nothing, record nothing.
+        --dry-run      say what would run, run nothing, record nothing. On
+                       record the same flag does the opposite and writes the
+                       line, marked as a simulation — a rehearsed flow has to
+                       leave a trail, a rehearsed verdict must not.
 
   luna contract lint <file|->
         read a contract and report every way it is unusable, without running
@@ -105,6 +108,12 @@ a phase boundary to prove what was delivered, and to record what happened.
         answered, a block, an autonomy change.
 
         --event    phase | gate | block | unblock | autonomy | discovery
+
+                   check is the seventh event and is deliberately not here: it
+                   is written by luna check, from a command that ran. Recording
+                   one by hand is accepted by the ledger and carries no verdict,
+                   because there are no flags for one, so it reads as a failed
+                   check. Prove it or record a phase; do not assert it.
         --phase    which phase this is about
         --status   running | awaiting_gate | awaiting_resume | blocked | done
                    | abandoned
