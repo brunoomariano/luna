@@ -247,17 +247,24 @@ func reportCommand(env Env, args []string) error {
 //
 // "nothing recorded yet" in a repository that simply has no runs sends somebody
 // looking for a broken ledger. The filter that excluded everything is the thing
-// worth naming.
+// worth naming — and when several are on, all of them are, because naming only
+// the first says "no run has touched this repository" about a repository with
+// four finished runs in it.
 func emptyReport(f ledger.Filter) string {
-	switch {
-	case f.Project != "":
-		return "no run has touched " + f.Project
-	case f.Open:
-		return "no run is open"
-	case f.Since > 0:
-		return "no run was touched in the last " + f.Since.String()
+	var narrowed []string
+	if f.Project != "" {
+		narrowed = append(narrowed, "touched "+f.Project)
 	}
-	return "nothing recorded yet"
+	if f.Open {
+		narrowed = append(narrowed, "is unfinished")
+	}
+	if f.Since > 0 {
+		narrowed = append(narrowed, "moved in the last "+f.Since.String())
+	}
+	if len(narrowed) == 0 {
+		return "nothing recorded yet"
+	}
+	return "no run " + strings.Join(narrowed, " and ")
 }
 
 // printReport puts what needs a person first.

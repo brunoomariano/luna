@@ -1232,7 +1232,7 @@ func TestOpenThatMatchesNothingSaysNoRunIsOpen(t *testing.T) {
 	if err := h.run("report", "--open"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(h.stdout(), "no run is open") {
+	if !strings.Contains(h.stdout(), "unfinished") {
 		t.Errorf("an empty --open listing does not say why:\n%s", h.stdout())
 	}
 }
@@ -1278,5 +1278,28 @@ func TestTheVersionSaysWhichCommitItWasBuiltFrom(t *testing.T) {
 	}
 	if !strings.Contains(h.stdout(), "abc1234") {
 		t.Errorf("the version does not name the commit it came from:\n%s", h.stdout())
+	}
+}
+
+// Naming only the first active filter is how an empty listing lies: --project
+// with --open said "no run has touched X" about a repository with four finished
+// runs in it, sending the reader to look for a recording fault that was not
+// there.
+func TestAnEmptyListingNamesEveryFilterThatNarrowedIt(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "ENDED-1", "--event", "phase",
+		"--project", "github.com/me/app", "--status", "done", "--phase", "close"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report", "--project", "github.com/me/app", "--open"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "github.com/me/app") {
+		t.Errorf("the empty listing does not name the repository:\n%s", out)
+	}
+	if !strings.Contains(out, "unfinished") {
+		t.Errorf("the empty listing blames the repository for what --open excluded:\n%s", out)
 	}
 }
