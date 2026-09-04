@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 528" width="960" height="528" role="img" aria-labelledby="t d">
-  <title id="t">The six verbs</title>
-  <desc id="d">luna contract lint reads a contract and reports every way it is unusable, before anything runs. luna check runs every declared check over the delivered commit and records each verdict, answering with exit 0 proven, 2 not proven, or 1 could not run; its flags are commit, base, round and dry-run. luna record records what Luna did not verify: a phase, a gate, a block, an unblock, an autonomy change, or a discovery about the project. luna state reports where a run stands, which is its most recent line. luna trail prints the whole story of one run in order: every phase, check, discovery and block. luna report lists every run, blocked first, and narrows to one repository with --here or --project, or to unfinished work with --open.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 590" width="960" height="590" role="img" aria-labelledby="t d">
+  <title id="t">The seven verbs</title>
+  <desc id="d">luna contract lint reads a contract and reports every way it is unusable, before anything runs. luna check runs every declared check over the delivered commit and records each verdict, answering with exit 0 proven, 2 not proven, or 1 could not run; its flags are commit, base, round and dry-run. luna record records what Luna did not verify: a phase, a gate, a block, an unblock, an autonomy change, or a discovery about the project. luna state reports where a run stands, which is its most recent line. luna trail prints the whole story of one run in order: every phase, check, discovery and block. luna report lists every run, blocked first, and narrows to one repository with --here or --project, or to unfinished work with --open. luna session starts an agent with the repository’s open runs as its first message, then replaces itself with the launcher.</desc>
 
   <defs>
   </defs>
 
-  <rect width="960" height="528" fill="#14150f"/>
+  <rect width="960" height="590" fill="#14150f"/>
 
   <!-- celestial hairlines, margins only -->
   <g fill="none" stroke="#6a675d" stroke-width=".55" opacity=".38">
@@ -19,7 +19,7 @@
     <path d="M902 92 l1.4 6.6 6.6 1.4 -6.6 1.4 -1.4 6.6 -1.4 -6.6 -6.6 -1.4 6.6 -1.4z"/>
   </g>
 
-  <text x="56" y="48" fill="#6f6b60" font-family="Georgia, 'Times New Roman', serif" font-size="10.5" letter-spacing="2">THE SIX VERBS</text>
+  <text x="56" y="48" fill="#6f6b60" font-family="Georgia, 'Times New Roman', serif" font-size="10.5" letter-spacing="2">THE SEVEN VERBS</text>
   <path fill="none" stroke="#d8d4cb" stroke-width="1" opacity=".3" d="M56 58 H 904"/>
 
   <!-- 1 · contract lint -->
@@ -81,5 +81,15 @@
     <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 22"/>
     <text x="18" y="12" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna report</text>
     <text x="330" y="12" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Every run, blocked first. Narrows with --here.</text>
+  </g>
+
+  <!-- 7 · session — set apart by a rule: the six above read and write, this one opens a session and leaves -->
+  <path fill="none" stroke="#6a675d" stroke-width="0.55" d="M56 512 H904"/>
+  <g transform="translate(56 536)">
+    <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 22"/>
+    <text x="18" y="12" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna session</text>
+    <text x="18" y="30" fill="#8a8578" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11.5">&lt;agent&gt;</text>
+    <text x="330" y="12" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Starts an agent with what this repo has open as its first message.</text>
+    <text x="330" y="30" fill="#8a8578" font-family="Georgia, 'Times New Roman', serif" font-size="11.5">Then it execs the launcher and stops existing.</text>
   </g>
 </svg>

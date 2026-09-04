@@ -169,6 +169,35 @@ later is trusting a mount that could have changed, and the check is a single sys
 > right, and the tests say so — the mistake is easy to make in the other direction and
 > would have them "fixed" by weakening what they guard.
 
+**`luna session` starts an agent, and then stops existing.**
+
+It composes a briefing from the ledger — this repository's open runs, what each is blocked
+on, how to conduct the work — and `execve`s the launcher with it as the agent's first
+message. The launcher is `ai-run` by default: the sandbox and the durable memory are
+another tool's product and Luna builds neither.
+
+This looks like the shape *The shape* rejected, and the difference is the whole argument.
+The old Luna **stayed** — it started the agent, read its replies and chose the next phase,
+so two processes both wanted to be the parent and did not compose. `session` holds nothing:
+after `execve` there is no Luna in the tree, no pipe to read, no reply to parse. Starting a
+process is not orchestrating it.
+
+*Rejected: a `SessionStart` hook.* Measured, and it works — a second hook merges with the
+one ai-memory already installs, and both `additionalContext` blocks reach the model. It
+lost on two counts: it is Claude-only, against a tool that had just been made
+harness-agnostic, and it fires on every `/clear` and `/compact`, so a session already deep
+in a task would be told again to go and check for open runs.
+
+*Rejected: driving the agent's terminal to type the briefing.* That is the failure
+[lessons.md](lessons.md) already records — a pty with no size, a folder-trust dialog, an
+ambiguous ready marker. Testing this verb hit that same trust dialog from the outside,
+which is the confirmation. An argument is not an interface.
+
+*Rejected: resuming the single open run automatically.* The briefing shows what is open and
+tells the agent to **ask**. A session may have been opened for something else entirely, and
+resuming the wrong task costs more than the question. It is the reason autonomy starts at
+`manual`.
+
 **`report` is the listing, and it filters by repository, not by the run's latest one.** A
 run is listed under every repository its lines name.
 
@@ -192,8 +221,8 @@ because half the confusing sessions with this tool have been a binary built from
 uncommitted work behaving unlike the commit it claims. *Rejected: a `VERSION` file.* A
 second place to bump, and the tag is already the thing releases are cut from. The constant
 in the source is what a plain `go install` from a clone answers with, and it is
-deliberately a pre-release: the six verbs are settled, and the flags on them have moved
-twice since.
+deliberately a pre-release: the verb set settled at six in the redesign, has gained a
+seventh since, and the flags on them have moved twice.
 
 ---
 

@@ -1303,3 +1303,215 @@ func TestAnEmptyListingNamesEveryFilterThatNarrowedIt(t *testing.T) {
 		t.Errorf("the empty listing blames the repository for what --open excluded:\n%s", out)
 	}
 }
+
+// launched captures what a session would have replaced this process with,
+// because a process that has execve'd cannot be asserted on.
+func (h *harness) launched(t *testing.T, args ...string) []string {
+	t.Helper()
+	var got []string
+	h.env.Launch = func(command []string) error {
+		got = command
+		return nil
+	}
+	t.Cleanup(func() { h.env.Launch = nil })
+	if err := h.run(append([]string{"session"}, args...)...); err != nil {
+		t.Fatalf("session %v: %v", args, err)
+	}
+	return got
+}
+
+// The briefing is the whole point of the verb: an agent that has to ask what is
+// going on here has already cost the thing this saves.
+func TestABriefingCarriesTheRunsThisRepositoryHasOpen(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "WID-7", "--event", "block", "--status", "blocked",
+		"--question", "which reading of criterion 3 holds?",
+		"--looked", "AGENTS.md", "--needs", "an answer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("record", "--run", "DONE-1", "--event", "phase",
+		"--status", "done", "--phase", "close"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("session", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "WID-7") {
+		t.Errorf("the briefing does not name the open run:\n%s", out)
+	}
+	if !strings.Contains(out, "which reading of criterion 3 holds?") {
+		t.Errorf("the briefing does not say what the run is blocked on:\n%s", out)
+	}
+	if strings.Contains(out, "DONE-1") {
+		t.Errorf("the briefing carries a finished run, which is not waiting for anybody:\n%s", out)
+	}
+}
+
+// An open run is not a request to continue it. A session that resumed the wrong
+// task on its own costs more than the question does, which is the same reason
+// autonomy starts at manual.
+func TestABriefingWithOpenRunsTellsTheAgentToAskFirst(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "WID-4", "--event", "phase",
+		"--status", "running", "--phase", "forge"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("session", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "Ask which one") {
+		t.Errorf("the briefing does not tell the agent to ask before resuming:\n%s", h.stdout())
+	}
+}
+
+// A repository with nothing open must say so plainly. Silence reads as a broken
+// ledger, and the instruction that follows still has to arrive.
+func TestABriefingSaysWhenNothingIsOpen(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("session", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "No Luna run is open here") {
+		t.Errorf("the briefing does not say the repository is idle:\n%s", out)
+	}
+	if strings.Contains(out, "Ask which one") {
+		t.Errorf("the briefing asks which run to resume when there are none:\n%s", out)
+	}
+	if !strings.Contains(out, "lsh-luna-soul") {
+		t.Errorf("an idle briefing lost the instruction to conduct:\n%s", out)
+	}
+}
+
+// The skill is named because an exact name is what a model can act on, and the
+// fallback is there because a machine without the skill must not be stranded.
+func TestABriefingNamesTheSkillAndSaysWhatToDoWithoutIt(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("session", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "lsh-luna-soul") {
+		t.Errorf("the briefing does not name the skill:\n%s", out)
+	}
+	if !strings.Contains(out, "not available in this session") {
+		t.Errorf("the briefing has no fallback for a session without the skill:\n%s", out)
+	}
+	if !strings.Contains(out, "luna check --contract -") {
+		t.Errorf("the fallback does not say how to prove anything:\n%s", out)
+	}
+}
+
+func TestTheSkillNamedInABriefingCanBeChangedOrDropped(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("session", "--print", "--skill", "my-own-flow"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "my-own-flow") {
+		t.Errorf("--skill was ignored:\n%s", h.stdout())
+	}
+
+	h.out.Reset()
+	if err := h.run("session", "--print", "--skill", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(h.stdout(), "lsh-luna-soul") {
+		t.Errorf("an empty --skill still named the default:\n%s", h.stdout())
+	}
+	if !strings.Contains(h.stdout(), "luna check") {
+		t.Errorf("dropping the skill also dropped how to use Luna:\n%s", h.stdout())
+	}
+}
+
+// Luna composes no sandbox and no memory: it hands the briefing to whatever the
+// caller already uses to start an agent, and gets out of the way.
+func TestASessionHandsTheBriefingToTheLauncher(t *testing.T) {
+	h := newHarness(t)
+
+	got := h.launched(t, "claude")
+	if len(got) != 3 {
+		t.Fatalf("expected launcher, agent and briefing; got %d: %v", len(got), got)
+	}
+	if got[0] != "ai-run" || got[1] != "claude" {
+		t.Errorf("the composition is wrong: %v", got[:2])
+	}
+	if !strings.Contains(got[2], "starting work in") {
+		t.Errorf("the third argument is not the briefing: %q", got[2])
+	}
+}
+
+// The briefing has to survive as ONE argument. It carries newlines, quotes and a
+// repository path, and a launcher that split it would hand the agent a fragment.
+func TestTheBriefingIsASingleArgument(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "WID-4", "--event", "block", "--status", "blocked",
+		"--question", `does "targeted" satisfy a demand for full?`,
+		"--looked", "docs/invariants.md", "--needs", "an answer"); err != nil {
+		t.Fatal(err)
+	}
+
+	got := h.launched(t, "claude")
+	if len(got) != 3 {
+		t.Fatalf("the briefing was split across arguments: %v", got)
+	}
+	if !strings.Contains(got[2], "\n") {
+		t.Error("the briefing lost its line breaks")
+	}
+	if !strings.Contains(got[2], `does "targeted" satisfy a demand for full?`) {
+		t.Errorf("a quoted question did not survive:\n%s", got[2])
+	}
+}
+
+func TestABareSessionStartsTheAgentWithNoLauncher(t *testing.T) {
+	h := newHarness(t)
+
+	got := h.launched(t, "codex", "--bare")
+	if len(got) != 2 || got[0] != "codex" {
+		t.Errorf("--bare still composed a launcher: %v", got)
+	}
+}
+
+func TestTheLauncherCanBeNamed(t *testing.T) {
+	h := newHarness(t)
+
+	got := h.launched(t, "claude", "--launcher", "my-wrapper")
+	if got[0] != "my-wrapper" {
+		t.Errorf("--launcher was ignored: %v", got)
+	}
+}
+
+// Starting nothing is a usage error rather than a silent no-op: somebody who
+// typed `luna session` meant to open one.
+func TestASessionWithNoAgentSaysWhatToType(t *testing.T) {
+	h := newHarness(t)
+
+	err := h.run("session")
+	if !errors.Is(err, cli.ErrUsage) {
+		t.Fatalf("session with no agent was accepted: %v", err)
+	}
+	if !strings.Contains(err.Error(), "luna session claude") {
+		t.Errorf("the refusal does not show the shape of the command: %v", err)
+	}
+}
+
+// A missing launcher is the likeliest failure on a machine that does not have
+// this house's setup, and "exec: not found" would not say what to do about it.
+func TestAMissingLauncherSaysHowToProceedWithoutIt(t *testing.T) {
+	h := newHarness(t)
+
+	err := h.run("session", "claude", "--launcher", "a-launcher-that-is-not-installed")
+	if err == nil {
+		t.Fatal("a missing launcher was not reported")
+	}
+	for _, want := range []string{"a-launcher-that-is-not-installed", "--bare", "--launcher"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q: %v", want, err)
+		}
+	}
+}

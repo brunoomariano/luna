@@ -147,6 +147,22 @@ Whoever drives the phases — an agent, a skill, a person, a script.
 Luna is called *by* one and never is one. Every "Luna does not decide" in these documents
 has the conductor as its other half.
 
+### briefing
+
+The first message `luna session` hands an agent: this repository's open runs, what each is
+blocked on, and how to conduct the work.
+
+Composed from the ledger at launch and kept nowhere. It is a message, not a file — Luna
+writes nothing into a checkout, and that includes this.
+
+### launcher
+
+What composes a session's layers around the agent: sandbox, durable memory, permissions.
+`ai-run` by default.
+
+Luna calls one and builds none of it. Each of those layers is another tool's main product,
+and taking them over is what the redesign undid.
+
 ---
 
 ## The verbs
@@ -159,6 +175,7 @@ has the conductor as its other half.
 | `luna state` | where is this run **now**? |
 | `luna trail` | what did this run **do**? |
 | `luna report` | which runs exist, and which need me? |
+| `luna session` | *(starts an agent)* here is what this repository has open |
 | `luna version` | which build am I talking to? |
 
 ### check
@@ -224,6 +241,18 @@ The listing: every run, most recently touched first, with what needs a person at
 A run is listed under **every** repository its lines name, not only the latest — a run
 that moved between two belongs to both listings.
 
+### session
+
+Starts an agent with a [briefing](#briefing) as its first message.
+
+It reads the ledger, writes nothing, and **replaces itself** with the launcher — nothing of
+Luna is left as a parent process. That is the whole reason this verb is allowed to exist:
+being the parent process, and driving an agent's human interface, are two recorded failures
+of this project, and `execve` is neither.
+
+An open run is **not** an instruction to resume it. The briefing tells the agent to ask
+first, for the same reason autonomy starts at `manual`.
+
 ---
 
 ## Three words that mean two things
@@ -269,7 +298,7 @@ is a design decision rather than a gap.
 
 | Not this | Why |
 |---|---|
-| an orchestrator | it starts no agent and opens no worktree. It did for a year, and went unused: two things that both want to be the parent process do not compose. |
+| an orchestrator | it opens no worktree, builds no sandbox, and decides no transition. It did all of that for a year and went unused: two things that both want to be the parent process do not compose. `luna session` *starts* an agent and then **stops existing** — it hands over a briefing and `execve`s, so there is no parent to compose against. Starting one process is not orchestrating it. |
 | a state machine | it decides no transitions. The last line *is* the state. |
 | a sandbox | you compose one before the agent starts. Luna only checks that its ledger landed somewhere durable. |
 | a memory | a `discovery` is recorded and **never consulted**. The command arrives in the contract every time; a gate Luna remembered would be project configuration Luna owns. |

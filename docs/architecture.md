@@ -260,12 +260,19 @@ luna record --run <id> --event <kind> …                                # what 
 luna state [--run <id>]                                                # the most recent line
 luna trail [<id>]                                                      # the whole story of one run
 luna report [--here] [--open] [--project <r>] [--since 12h]             # every run, blocked first
+luna session <agent>                                                   # start one, briefed
 luna version                                                           # what this build is
 ```
 
 With no `--run`, the branch answers: a checkout on `luna/<run>` knows which run it
 is. The branch is the authority because it travels with the work, where a directory can be
 moved or made by hand.
+
+`session` is the one verb that does not answer a question: it starts an agent with this
+repository's open runs as its first message, then **replaces itself** with whatever
+composes the session (`ai-run` here). Luna builds no sandbox and no memory — it hands over
+a briefing and stops existing, which is why starting a process here is not the parent-process
+shape the redesign removed.
 
 `report` is the listing — which runs exist, and where each one stands. `--here` narrows it
 to the repository you are standing in, and `--project` to one you are not. A run is listed
@@ -278,7 +285,7 @@ right to see it.
 
 ```
 src/
-  cmd/luna/          the binary: six verbs and an exit code
+  cmd/luna/          the binary: seven verbs and an exit code
   internal/contract/ what a phase owes and how each debt is proven
   internal/verify/   running the checks over the delivered commit
   internal/ledger/   the record, its durability guard, and autonomy

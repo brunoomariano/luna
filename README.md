@@ -79,9 +79,9 @@ go install github.com/brunoomariano/luna/src/cmd/luna@latest
 
 No dependencies. `go.mod` is three lines.
 
-## The six verbs
+## The seven verbs
 
-![The six verbs](docs/assets/imgs/verbs.svg)
+![The seven verbs](docs/assets/imgs/verbs.svg)
 
 A checkout on `luna/<run>` knows which run it is, so `--run` is optional
 everywhere. The branch is the authority because it travels with the work, where a
@@ -174,6 +174,44 @@ when the listing spans more than one — a column repeating the same name is noi
 A run appears under **every** repository its lines name. Runs that moved between two are
 not hypothetical: a batch that seeds runs from one checkout stamps that checkout on their
 first line, and their later lines name where the work really happened.
+
+## Starting a session
+
+`luna session` opens an agent with what this repository already has open as its first
+message, so nobody spends a turn asking what is going on here.
+
+```sh
+$ luna session claude          # composes with ai-run, then execs it
+$ luna session codex --bare    # no launcher, just the agent
+$ luna session --print         # see the briefing, launch nothing
+```
+
+```
+You are starting work in github.com/me/widget.
+
+Luna has 2 runs open in this repository:
+
+  WID-7  blocked  phase pr  (40m ago)
+      blocked on: which of the two readings of criterion 3 holds?
+  WID-4  running  phase forge  (2h ago)  1 check failed
+
+Read one with `luna trail <id>` before deciding anything about it.
+
+Ask which one before you act: resume one of the above, or start
+something new. Do not choose on your own — an open run is not a request
+to continue it.
+
+Conduct the work with the lsh-luna-soul skill.
+...
+```
+
+**Luna does not stay.** It reads the ledger, composes the briefing and `execve`s the
+launcher — after that there is no Luna in the process tree. The sandbox and the durable
+memory belong to whatever you already use (`ai-run` here, `--launcher` for anything else);
+Luna builds neither.
+
+The skill it names is `--skill`, and an empty one names none — the briefing still says how
+to use Luna.
 
 ## Blocking
 

@@ -1,4 +1,4 @@
-// Package cli is the command surface: six verbs over a contract and a ledger.
+// Package cli is the command surface: seven verbs over a contract and a ledger.
 //
 // Luna is invoked by whoever conducts the work, at a phase boundary. It starts no
 // agent, builds no sandbox and decides no transition — a person composes the
@@ -30,6 +30,11 @@ type Env struct {
 	Err    io.Writer
 	Dir    string
 	Ledger string
+
+	// Launch replaces this process with a composed command. Nil means the real
+	// execve; a test sets it to observe what would have run, because a process
+	// that has replaced the test binary cannot be asserted on.
+	Launch func(command []string) error
 }
 
 type command func(Env, []string) error
@@ -41,6 +46,7 @@ var commands = map[string]command{
 	"trail":    trailCommand,
 	"report":   reportCommand,
 	"contract": contractCommand,
+	"session":  sessionCommand,
 	"version":  versionCommand,
 }
 
@@ -158,6 +164,20 @@ a phase boundary to prove what was delivered, and to record what happened.
         A run is listed under every repository it touched, not only the last
         one, because a run that moved between two belongs to both.
 
+  luna session <agent> [--launcher <cmd>] [--skill <name>] [--bare] [--print]
+        start an agent with what this repository already has open as its first
+        message: the unfinished runs, what each is blocked on, and how to
+        conduct the work. It reads the ledger, writes nothing, and replaces
+        itself with the launcher — nothing of Luna stays as a parent process.
+
+        --launcher  what composes the session's layers around the agent.
+                    Defaults to ai-run; a sandbox and durable memory are
+                    another tool's product, and Luna does not build either.
+        --skill     the skill the briefing names, default lsh-luna-soul. Empty
+                    names none, and the briefing still says how to use Luna.
+        --bare      start the agent directly, with no launcher at all.
+        --print     print the briefing and exit, launching nothing.
+
   luna version
         what this build calls itself, and the commit it came from.
 
@@ -183,8 +203,9 @@ func versionCommand(env Env, _ []string) error {
 // indistinguishable from a version nobody bumped, and both mean a person holding
 // two binaries cannot tell them apart.
 //
-// Pre-release while the shape is still moving: the six verbs settled in the
-// September 2026 redesign, and the flags on them have changed twice since.
+// Pre-release while the shape is still moving: the verb set settled in the
+// September 2026 redesign at six, gained a seventh, and the flags on them have
+// changed twice since.
 var Version = "0.1.0-rc.1"
 
 // Commit is the revision this was built from, set at link time. Empty in a build
