@@ -173,6 +173,10 @@ a phase boundary to prove what was delivered, and to record what happened.
         --launcher  what composes the session's layers around the agent.
                     Defaults to ai-run; a sandbox and durable memory are
                     another tool's product, and Luna does not build either.
+                    If the default is not installed, the agent starts directly
+                    and Luna says so. A launcher you NAME is never dropped:
+                    asking for containment and silently getting none is a
+                    surprise nobody should have to catch.
         --skill     the skill the briefing names, default lsh-luna-soul. Empty
                     names none, and the briefing still says how to use Luna.
         --bare      start the agent directly, with no launcher at all.

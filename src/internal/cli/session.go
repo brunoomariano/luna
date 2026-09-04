@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -56,11 +57,38 @@ func sessionCommand(env Env, args []string) error {
 		return fmt.Errorf("%w: session needs an agent to start — `luna session claude`", ErrUsage)
 	}
 
-	command := []string{*launcher, agent, briefing}
-	if *bare {
-		command = []string{agent, briefing}
+	return env.launch(compose(env, agent, briefing, *launcher, *bare, set.Lookup("launcher")))
+}
+
+// compose decides what actually gets started.
+//
+// The default launcher is this house's, and most machines running Luna do not
+// have it. Refusing there would make the verb useless to everybody else — so a
+// *default* launcher that is not installed falls back to starting the agent
+// directly, and says so.
+//
+// A launcher the caller NAMED never falls back. That distinction is the whole
+// care in this function: `--launcher firejail` is a request for containment, and
+// silently starting an unsandboxed agent because firejail was missing is a
+// security surprise. Missing the default is an absent convenience; missing a
+// named one is a broken instruction.
+func compose(env Env, agent, briefing, launcher string, bare bool, flag *flag.Flag) []string {
+	if bare || launcher == "" {
+		return []string{agent, briefing}
 	}
-	return env.launch(command)
+	if _, err := exec.LookPath(launcher); err == nil {
+		return []string{launcher, agent, briefing}
+	}
+	if named := flag != nil && flag.Value.String() != flag.DefValue; named {
+		// Left composed on purpose: launch reports what is missing and stops.
+		return []string{launcher, agent, briefing}
+	}
+
+	fmt.Fprintf(env.Err,
+		"  note: %s is not installed, so %s starts directly, with no sandbox\n"+
+			"  and no durable memory. Pass --launcher to name what you use, or\n"+
+			"  --bare to say you meant this.\n", launcher, agent)
+	return []string{agent, briefing}
 }
 
 // launch replaces this process with the composed command.
@@ -75,9 +103,7 @@ func (e Env) launch(command []string) error {
 
 	path, err := exec.LookPath(command[0])
 	if err != nil {
-		return fmt.Errorf("cannot start a session: %s is not on your PATH — "+
-			"pass --launcher with what you use, or --bare to run the agent directly: %w",
-			command[0], err)
+		return fmt.Errorf("cannot start a session: %s is not on your PATH: %w", command[0], err)
 	}
 	// The command is variable because that is the verb: the caller names which
 	// agent to start and, with --launcher, what composes the session around it.

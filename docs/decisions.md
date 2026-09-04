@@ -193,6 +193,13 @@ in a task would be told again to go and check for open runs.
 ambiguous ready marker. Testing this verb hit that same trust dialog from the outside,
 which is the confirmation. An argument is not an interface.
 
+*Rejected: requiring the launcher.* `ai-run` is one person's setup, and the first version
+refused to start anything without it — which made the verb useless on any other machine. An
+absent **default** now falls back to starting the agent directly, loudly. An absent **named**
+launcher still refuses: `--launcher firejail` is a request for containment, and starting an
+unsandboxed agent because firejail was missing is a silent downgrade of something a person
+deliberately asked for. The two cases look identical in the code and are opposite in kind.
+
 *Rejected: resuming the single open run automatically.* The briefing shows what is open and
 tells the agent to **ask**. A session may have been opened for something else entirely, and
 resuming the wrong task costs more than the question. It is the reason autonomy starts at

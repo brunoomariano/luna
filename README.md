@@ -210,10 +210,20 @@ launcher — after that there is no Luna in the process tree. The sandbox and th
 memory belong to whatever you already use (`ai-run` here, `--launcher` for anything else);
 Luna builds neither.
 
-**And it depends on none of them.** Luna still has zero dependencies: `--bare` starts the
-agent with no launcher at all, and naming one that is not installed is refused with what to
-do instead. What a launcher needs for itself — `ai-run` prefers `gum` for its menu, and
-works without it — is that tool's business, not Luna's.
+**And it depends on none of them.** `ai-run`, `ai-jail` and `ai-memory` are one person's
+setup, not a requirement: on a machine without them, `luna session claude` starts Claude
+directly and says what it could not compose.
+
+```
+  note: ai-run is not installed, so claude starts directly, with no sandbox
+  and no durable memory. Pass --launcher to name what you use, or
+  --bare to say you meant this.
+```
+
+A launcher you **name** is never dropped that way. `--launcher firejail` is a request for
+containment, and if firejail is missing the session is refused rather than started without
+it — an absent default is a missing convenience, an absent named launcher is a broken
+instruction. `--bare` says you meant to run without one, and warns about nothing.
 
 The skill it names is `--skill`, and an empty one names none — the briefing still says how
 to use Luna.

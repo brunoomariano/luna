@@ -164,9 +164,12 @@ Luna calls one and builds none of it. Each of those layers is another tool's mai
 and taking them over is what the redesign undid.
 
 **A launcher is not a dependency of Luna.** Luna has none — `go.mod` is three lines, and
-that includes this. It only needs the launcher to be on `PATH` when you ask for one, says
-so plainly when it is not, and `--bare` skips the whole idea. Whatever the launcher itself
-needs is the launcher's business.
+that includes this. When the *default* launcher is not installed, the agent starts directly
+and Luna says what was lost; `--bare` says you meant that and warns about nothing.
+
+A launcher you **name** is never dropped: `--launcher firejail` is a request for
+containment, so a missing firejail is refused rather than quietly started without. An absent
+default is a missing convenience; an absent named launcher is a broken instruction.
 
 ---
 

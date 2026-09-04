@@ -1500,19 +1500,22 @@ func TestASessionWithNoAgentSaysWhatToType(t *testing.T) {
 	}
 }
 
-// A missing launcher is the likeliest failure on a machine that does not have
-// this house's setup, and "exec: not found" would not say what to do about it.
-func TestAMissingLauncherSaysHowToProceedWithoutIt(t *testing.T) {
+// A missing binary names itself. It used to also advise --bare, which is wrong
+// advice for the case that reaches here: this path is only taken for a launcher
+// the caller NAMED, and telling somebody who asked for a sandbox to run without
+// one is the opposite of what they asked.
+func TestAMissingLauncherNamesTheBinaryThatIsNotThere(t *testing.T) {
 	h := newHarness(t)
 
 	err := h.run("session", "claude", "--launcher", "a-launcher-that-is-not-installed")
 	if err == nil {
 		t.Fatal("a missing launcher was not reported")
 	}
-	for _, want := range []string{"a-launcher-that-is-not-installed", "--bare", "--launcher"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not mention %q: %v", want, err)
-		}
+	if !strings.Contains(err.Error(), "a-launcher-that-is-not-installed") {
+		t.Errorf("the refusal does not name the missing binary: %v", err)
+	}
+	if strings.Contains(err.Error(), "--bare") {
+		t.Errorf("the refusal advises dropping a sandbox the caller asked for: %v", err)
 	}
 }
 
@@ -1529,5 +1532,75 @@ func TestStartingAnAgentNeedsNoLauncherInstalled(t *testing.T) {
 	}
 	if !strings.Contains(got[1], "starting work in") {
 		t.Errorf("a bare session lost the briefing: %q", got[1])
+	}
+}
+
+// The distinction that carries the security: a launcher the caller NAMED is a
+// request for containment. Starting an unsandboxed agent because it was missing
+// would be a silent downgrade, and the person asked for the opposite.
+func TestANamedLauncherThatIsMissingIsRefusedRatherThanDropped(t *testing.T) {
+	h := newHarness(t)
+
+	// The composition is what is asserted, not the error: with the guard removed
+	// this still failed to start anything, so a test that only checked for an
+	// error passed while the agent was being launched unsandboxed.
+	var got []string
+	h.env.Launch = func(command []string) error {
+		got = command
+		return nil
+	}
+	t.Cleanup(func() { h.env.Launch = nil })
+
+	if err := h.run("session", "claude", "--launcher", "a-sandbox-that-is-not-installed"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0] != "a-sandbox-that-is-not-installed" {
+		t.Fatalf("a named launcher was dropped and the agent started without it: %v", got)
+	}
+	if strings.Contains(h.err.String(), "no sandbox") {
+		t.Errorf("a named launcher was treated as an absent default:\n%s", h.err.String())
+	}
+}
+
+// The fallback must be loud. Somebody who expected a sandbox and got none has to
+// read it on the way past, or the surprise arrives later and worse.
+func TestTheFallbackToNoLauncherSaysWhatWasLost(t *testing.T) {
+	h := newHarness(t)
+	// This machine has the default launcher installed; a machine that does not
+	// is the case being tested, so PATH is emptied for the lookup.
+	t.Setenv("PATH", "")
+
+	var got []string
+	h.env.Launch = func(command []string) error {
+		got = command
+		return nil
+	}
+	t.Cleanup(func() { h.env.Launch = nil })
+
+	if err := h.run("session", "some-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "some-agent" {
+		t.Fatalf("the session did not fall back to starting the agent directly: %v", got)
+	}
+	warning := h.err.String()
+	if !strings.Contains(warning, "ai-run") {
+		t.Errorf("the fallback does not name the launcher that is missing:\n%s", warning)
+	}
+	for _, want := range []string{"no sandbox", "--bare", "--launcher"} {
+		if !strings.Contains(warning, want) {
+			t.Errorf("the fallback does not mention %q:\n%s", want, warning)
+		}
+	}
+}
+
+// An explicit --bare is a choice, not a degradation, and warning about it would
+// train people to ignore the warning that matters.
+func TestAnExplicitBareSessionWarnsAboutNothing(t *testing.T) {
+	h := newHarness(t)
+
+	h.launched(t, "some-agent", "--bare")
+	if strings.Contains(h.err.String(), "no sandbox") {
+		t.Errorf("--bare was warned about as though it were a fallback:\n%s", h.err.String())
 	}
 }
