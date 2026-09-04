@@ -40,6 +40,46 @@ Three verbs and two nouns. The contract says what a phase owes; the ledger says 
 happened; `check` is the only thing that decides anything, and what it decides is whether a
 command returned zero.
 
+## The words
+
+Nine of them, and they are used precisely throughout. The two that cost a reader the most
+are first: `conductor` is the subject of most rules here and was never defined, and the
+scopes lived only in Go while an invariant depended on them.
+
+| Word | What it means |
+|---|---|
+| **conductor** | whoever drives the phases — an agent, a skill, a person, a script. Every "Luna does not decide" in this document has the conductor as its other half. Luna is called *by* one and never is one. |
+| **run** | one task from start to finish, named by an id (`WID-4`) and carried by the branch `luna/<run>`. The unit the ledger groups by. |
+| **phase** | one named stretch of a run — `forge`, `review`, `close`. The conductor names them; Luna only records which one a line belongs to. |
+| **contract** | what a phase owes, as TOML on stdin: the artifacts it produces, and how each is proven. Luna keeps none of it between calls. |
+| **artifact** | one thing a phase owes, named in the contract. A verdict is per artifact, not per phase — "forge failed" cannot say which debt went unmet. |
+| **evidence** | what one check observed: the verdict, the scope, the command, the exit code. Recorded whether it passed or not. |
+| **scope** | how much a passing check establishes. See below — it is the one word that carries a rule. |
+| **gate** | a decision handed to a person, with an answer recorded. |
+| **block** | a run stopping because information is missing, carrying three parts: the question, where the answer was looked for and what each source failed to say, and what would unblock it. Distinct from a gate — a gate has an artifact to judge, a block has a question nobody answered. |
+
+**The scopes are a ladder**, and it is the reason `scope` is not just a label:
+
+```text
+full  >  targeted  >  human  >  existence
+```
+
+| Scope | A passing check establishes |
+|---|---|
+| `full` | the project's own gate ran, whole |
+| `targeted` | only what the change touched was run |
+| `human` | a person looked and said so |
+| `existence` | the file is there, and nothing more is claimed |
+
+A check may prove *more* than the contract asked and be accepted; it may never prove
+less and be read as more. That is INV-3, and it is why an unknown scope is refused from
+both sides rather than defaulted — a typo must not outrank the floor.
+
+> **`floor` means two unrelated things in this repository**, and both are load-bearing.
+> *The loop's floor* is the mechanical condition a repeating phase may not leave (below).
+> *The coverage floor* is the 95% in the Makefile. Neither is going to be renamed; they
+> simply do not refer to each other.
+
 ## Why the agent calls Luna, and not the other way round
 
 Luna used to be the parent process: it opened worktrees, built the sandbox, started the

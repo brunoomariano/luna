@@ -552,3 +552,24 @@ kind = "existence"
 		t.Errorf("a for-human artifact leaked into produces: %v", c.Produces)
 	}
 }
+
+// The ladder as architecture.md prints it, asserted against the code that ranks
+// it. The four scopes lived only in Go for a year while INV-3 depended on them;
+// now that the order is written down, this is what stops the document from
+// drifting into teaching the wrong one.
+func TestTheLadderIsTheOrderTheDocumentPrints(t *testing.T) {
+	ladder := []contract.Scope{
+		contract.ScopeFull, contract.ScopeTargeted,
+		contract.ScopeHuman, contract.ScopeExistence,
+	}
+	for i, higher := range ladder {
+		for _, lower := range ladder[i+1:] {
+			if !higher.Satisfies(lower) {
+				t.Errorf("%s should satisfy a demand for %s", higher, lower)
+			}
+			if lower.Satisfies(higher) {
+				t.Errorf("%s satisfies a demand for %s — the ladder is upside down", lower, higher)
+			}
+		}
+	}
+}
