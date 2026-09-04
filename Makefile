@@ -5,7 +5,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap doctor ci ci-check test lint lint-docs lint-language \
         fmt fmt-check cover race vuln mod deadcode crap cyclo mutation build clean \
-        install uninstall
+        install uninstall version
 
 help: ## list the targets
 	@grep -E '^[a-z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -147,8 +147,29 @@ ci-check: ## verify only — the same thing remote CI runs
 ci: ## fix what can be fixed, then verify. Run before opening a PR.
 	@sh scripts/run-steps.sh ci $(CI_STEPS)
 
+# ── version ──────────────────────────────────────────────────────────────────
+# The version lives in the source (cli.Version) so a `go install` from a clone
+# still answers something true. This overrides it with what git actually says, so
+# a build from an unreleased or dirty tree cannot claim to be the release it was
+# cut near — which is the failure that made `luna version` useless for a year: it
+# printed "dev" whatever it was built from.
+#
+# `--dirty` matters more than it looks. Half the confusing sessions with this tool
+# have been a binary built from uncommitted work behaving unlike the same commit.
+LUNA_PKG     := github.com/brunoomariano/luna/src/internal/cli
+#
+# `--match 'v*'` keeps it off the tags that are not versions. Without it this tree
+# described as `pre-docs-reset-146-g...` — a marker left before the redesign, 146
+# commits stale, and read as a version by anyone who did not know the tag.
+VERSION      ?= $(shell git describe --tags --match 'v*' --dirty 2>/dev/null || echo dev)
+COMMIT       ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+LDFLAGS      := -X '$(LUNA_PKG).Version=$(VERSION)' -X '$(LUNA_PKG).Commit=$(COMMIT)'
+
+version: ## print the version this tree would build
+	@printf '%s (%s)\n' "$(VERSION)" "$(COMMIT)"
+
 build: ## build the binary
-	@go build -o bin/luna ./src/cmd/luna
+	@go build -ldflags "$(LDFLAGS)" -o bin/luna ./src/cmd/luna
 
 # Where `make install` puts the binary. GOBIN if it is set, else GOPATH/bin, else
 # the Go default — the same three places `go install` would use, resolved the
@@ -160,7 +181,7 @@ endif
 
 install: ## build and install luna into GOBIN (or GOPATH/bin)
 	@mkdir -p "$(INSTALL_DIR)"
-	@go build -o "$(INSTALL_DIR)/luna" ./src/cmd/luna
+	@go build -ldflags "$(LDFLAGS)" -o "$(INSTALL_DIR)/luna" ./src/cmd/luna
 	@printf 'installed %s\n' "$$("$(INSTALL_DIR)/luna" version | head -1)"
 	@printf '  at %s\n' "$(INSTALL_DIR)/luna"
 	@# What `luna` resolves to for this shell, which is not always what was just

@@ -54,7 +54,7 @@ element.
 
 ```
 src/
-  cmd/luna/          the binary: five verbs and an exit code
+  cmd/luna/          the binary: six verbs and an exit code
   internal/contract/ what a phase owes and how each debt is proven — no execution
   internal/verify/   running the checks over the delivered commit
   internal/ledger/   the record, its durability guard, and autonomy

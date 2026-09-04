@@ -162,6 +162,32 @@ later is trusting a mount that could have changed, and the check is a single sys
 > right, and the tests say so — the mistake is easy to make in the other direction and
 > would have them "fixed" by weakening what they guard.
 
+**`report` is the listing, and it filters by repository, not by the run's latest one.** A
+run is listed under every repository its lines name.
+
+*Rejected: grouping by the latest line's project.* The obvious reading, and the ledger
+already disproves it: two runs there carry two repositories each, because a batch seeded
+them from one checkout and stamped that checkout's remote on their first line while their
+later lines named where the work really happened. Filtering on the latest hides such a run
+from the repository it was seeded in, and on the first hides it from the one it delivered
+to — and both do so silently, which is the failure mode that matters. *Rejected: a
+separate `list` verb.* `report` already reads the whole ledger and orders by what needs a
+person; a second verb over the same data with a different sort is two things to keep in
+step.
+
+**A version number, and the build says which commit it came from.**
+
+*Rejected: leaving `dev` in place.* It was a placeholder nothing set for the tool's whole
+life, which made two binaries indistinguishable at exactly the moment that matters — a
+skill documenting three flows against a binary that carried one, found by a real session
+rather than by a check. `make install` overrides the constant with `git describe --dirty`,
+because half the confusing sessions with this tool have been a binary built from
+uncommitted work behaving unlike the commit it claims. *Rejected: a `VERSION` file.* A
+second place to bump, and the tag is already the thing releases are cut from. The constant
+in the source is what a plain `go install` from a clone answers with, and it is
+deliberately a pre-release: the six verbs are settled, and the flags on them have moved
+twice since.
+
 ---
 
 ## Autonomy and stopping

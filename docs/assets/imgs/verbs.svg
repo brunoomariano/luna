@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 528" width="960" height="528" role="img" aria-labelledby="t d">
   <title id="t">The six verbs</title>
-  <desc id="d">luna contract lint reads a contract and reports every way it is unusable, before anything runs. luna check runs every declared check over the delivered commit and records each verdict, answering with exit 0 proven, 2 not proven, or 1 could not run; its flags are commit, base, round and dry-run. luna record records what Luna did not verify: a phase, a gate, a block, an unblock, an autonomy change, or a discovery about the project. luna state reports where a run stands, which is its most recent line. luna trail prints the whole story of one run in order: every phase, check, discovery and block. luna report lists every run, blocked first.</desc>
+  <desc id="d">luna contract lint reads a contract and reports every way it is unusable, before anything runs. luna check runs every declared check over the delivered commit and records each verdict, answering with exit 0 proven, 2 not proven, or 1 could not run; its flags are commit, base, round and dry-run. luna record records what Luna did not verify: a phase, a gate, a block, an unblock, an autonomy change, or a discovery about the project. luna state reports where a run stands, which is its most recent line. luna trail prints the whole story of one run in order: every phase, check, discovery and block. luna report lists every run, blocked first, and narrows to one repository with --here or --project, or to unfinished work with --open.</desc>
 
   <defs>
   </defs>
@@ -80,6 +80,6 @@
   <g transform="translate(56 478)">
     <path fill="none" stroke="#c9a227" stroke-width="1.1" opacity=".45" d="M0 -4 v 22"/>
     <text x="18" y="12" fill="#e6e2d8" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14">luna report</text>
-    <text x="330" y="12" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Every run, blocked first. The morning's product.</text>
+    <text x="330" y="12" fill="#b9b4a8" font-family="Georgia, 'Times New Roman', serif" font-size="12.5">Every run, blocked first. Narrows with --here.</text>
   </g>
 </svg>

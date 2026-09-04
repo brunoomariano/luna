@@ -55,7 +55,7 @@ go install github.com/brunoomariano/luna/src/cmd/luna@latest
 
 No dependencies. `go.mod` is three lines.
 
-## The five verbs
+## The six verbs
 
 ![The six verbs](docs/assets/imgs/verbs.svg)
 
@@ -125,6 +125,31 @@ because a finding nobody can check is a claim.
 
 That is what makes the tool project-agnostic: `make ci`, `pnpm check`, `cargo test`,
 `just verify` — Luna runs what the contract names and records what it observed.
+
+## What is going on right now
+
+`trail` reads one run. `report` is the listing: every run, what needs a person first.
+
+```
+$ luna report --here
+needs somebody
+  WID-4          awaiting_gate    pr           2h ago
+                 which of the two readings did you mean?
+
+in flight
+  WID-7          running          forge        3m ago
+
+finished
+  WID-1          done             close        1d ago  (2 failed)
+```
+
+`--here` keeps it to the repository you are standing in; `--project` names one you are
+not, and `--open` drops what has finished. The repository is printed under each run only
+when the listing spans more than one — a column repeating the same name is noise.
+
+A run appears under **every** repository its lines name. Runs that moved between two are
+not hypothetical: a batch that seeds runs from one checkout stamps that checkout on their
+first line, and their later lines name where the work really happened.
 
 ## Blocking
 

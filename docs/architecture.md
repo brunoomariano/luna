@@ -193,18 +193,26 @@ luna contract lint <file|->                                            # static,
 luna record --run <id> --event <kind> …                                # what Luna did not verify
 luna state [--run <id>]                                                # the most recent line
 luna trail [<id>]                                                      # the whole story of one run
-luna report [--since 12h]                                              # every run, blocked first
+luna report [--here] [--open] [--project <r>] [--since 12h]             # every run, blocked first
+luna version                                                           # what this build is
 ```
 
 With no `--run`, the branch answers: a checkout on `luna/<run>` knows which run it
 is. The branch is the authority because it travels with the work, where a directory can be
 moved or made by hand.
 
+`report` is the listing — which runs exist, and where each one stands. `--here` narrows it
+to the repository you are standing in, and `--project` to one you are not. A run is listed
+under **every** repository its lines name, not only the latest: the ledger has runs whose
+first line names the checkout a batch seeded them from and whose later lines name the
+repository they really worked in, and either half alone hides the run from somebody with a
+right to see it.
+
 ## Layout
 
 ```
 src/
-  cmd/luna/          the binary: five verbs and an exit code
+  cmd/luna/          the binary: six verbs and an exit code
   internal/contract/ what a phase owes and how each debt is proven
   internal/verify/   running the checks over the delivered commit
   internal/ledger/   the record, its durability guard, and autonomy

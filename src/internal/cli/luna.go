@@ -1,4 +1,4 @@
-// Package cli is the command surface: five verbs over a contract and a ledger.
+// Package cli is the command surface: six verbs over a contract and a ledger.
 //
 // Luna is invoked by whoever conducts the work, at a phase boundary. It starts no
 // agent, builds no sandbox and decides no transition — a person composes the
@@ -136,8 +136,21 @@ a phase boundary to prove what was delivered, and to record what happened.
         about the project, the gates, the blocks and the notes. This is the
         log of a task: state says where it is, this says what it did.
 
-  luna report [--since <duration>] [--json]
+  luna report [--here] [--open] [--project <repo>] [--since <duration>] [--json]
         every run, most recently touched first, with what needs a person.
+        This is the listing: which tasks exist, and where each one stands.
+
+        --here      only runs that touched the repository you are standing in
+        --project   the same, for a repository you are not standing in, named
+                    the way the ledger normalises it: github.com/owner/repo
+        --open      only runs that have not finished
+        --since     only runs touched within a window, e.g. 24h
+
+        A run is listed under every repository it touched, not only the last
+        one, because a run that moved between two belongs to both.
+
+  luna version
+        what this build calls itself, and the commit it came from.
 
 The ledger is one file outside every checkout, at $XDG_DATA_HOME/luna. Luna
 refuses to write when it is not on durable storage — inside a sandbox, map that
@@ -146,8 +159,25 @@ directory read-write, or the record would be written and lost in silence.`)
 
 func versionCommand(env Env, _ []string) error {
 	fmt.Fprintln(env.Out, "luna "+Version)
+	if Commit != "" {
+		fmt.Fprintf(env.Out, "  %s\n", Commit)
+	}
 	return nil
 }
 
-// Version is the build's version, set at link time.
-var Version = "dev"
+// Version is what this build calls itself.
+//
+// The constant here is the source of truth, and `make install` overrides it at
+// link time with `git describe` so a build from a dirty or unreleased tree says
+// so rather than claiming the release it was cut near. It said "dev" for the
+// tool's whole life because nothing set it — a placeholder nobody wired is
+// indistinguishable from a version nobody bumped, and both mean a person holding
+// two binaries cannot tell them apart.
+//
+// Pre-release while the shape is still moving: the six verbs settled in the
+// September 2026 redesign, and the flags on them have changed twice since.
+var Version = "0.1.0-rc.1"
+
+// Commit is the revision this was built from, set at link time. Empty in a build
+// that was not made through the Makefile, where there is nothing honest to say.
+var Commit = ""

@@ -1007,3 +1007,276 @@ func TestASourceWithNothingFoundIsRefused(t *testing.T) {
 		t.Errorf("the refusal does not say why: %v", err)
 	}
 }
+
+// The listing exists to answer "which tasks are there, and where does each one
+// stand". Before it could be filtered, four runs across three repositories
+// arrived with nothing to tell them apart, and standing in one repository said
+// nothing about which of them belonged to it.
+func TestTheListingCanBeNarrowedToOneRepository(t *testing.T) {
+	h := newHarness(t)
+	seed := func(run, project, status string) {
+		t.Helper()
+		if err := h.run("record", "--run", run, "--event", "phase",
+			"--project", project, "--status", status, "--phase", "forge"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("HERE-1", "github.com/me/app", "running")
+	seed("ELSEWHERE-2", "github.com/me/other", "running")
+
+	if err := h.run("report", "--project", "github.com/me/app"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "HERE-1") {
+		t.Errorf("the run in the named repository is missing:\n%s", out)
+	}
+	if strings.Contains(out, "ELSEWHERE-2") {
+		t.Errorf("a run from another repository was listed:\n%s", out)
+	}
+}
+
+// A run whose lines name two repositories has to appear under both.
+//
+// This is not hypothetical: the real ledger has two such runs, left by a batch
+// that seeded them from one checkout and stamped that checkout's remote on their
+// first line while their later lines named the repository they really worked in.
+// Filtering on the latest line alone hides such a run from the repository it was
+// seeded in; filtering on the first hides it from the one it delivered to.
+func TestARunThatMovedBetweenRepositoriesIsListedUnderBoth(t *testing.T) {
+	h := newHarness(t)
+	for _, project := range []string{"github.com/me/seeded-from", "github.com/me/delivered-to"} {
+		if err := h.run("record", "--run", "STRADDLE-9", "--event", "phase",
+			"--project", project, "--status", "running", "--phase", "forge"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, project := range []string{"github.com/me/seeded-from", "github.com/me/delivered-to"} {
+		h.out.Reset()
+		if err := h.run("report", "--project", project); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(h.stdout(), "STRADDLE-9") {
+			t.Errorf("a run that touched %s is not listed there:\n%s", project, h.stdout())
+		}
+	}
+}
+
+// --here is the whole point of the filter: somebody standing in a repository
+// asking what is going on in it, without having to know how the ledger spells
+// the repository's name.
+func TestHereMeansTheRepositoryYouAreStandingIn(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "LOCAL-1", "--event", "phase",
+		"--status", "running", "--phase", "forge"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("record", "--run", "REMOTE-2", "--event", "phase",
+		"--project", "github.com/me/somewhere-else", "--status", "running"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report", "--here"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "LOCAL-1") {
+		t.Errorf("the run recorded here is not listed:\n%s", out)
+	}
+	if strings.Contains(out, "REMOTE-2") {
+		t.Errorf("a run from another repository was listed under --here:\n%s", out)
+	}
+}
+
+// Two flags naming different repositories is a question with no answer, and
+// silently preferring one of them is how somebody reads the wrong listing and
+// believes it.
+func TestHereAndAConflictingProjectAreRefused(t *testing.T) {
+	h := newHarness(t)
+
+	err := h.run("report", "--here", "--project", "github.com/me/not-here")
+	if !errors.Is(err, cli.ErrUsage) {
+		t.Fatalf("two conflicting repositories were accepted: %v", err)
+	}
+	if !strings.Contains(err.Error(), "github.com/me/not-here") {
+		t.Errorf("the refusal does not name what was asked for: %v", err)
+	}
+}
+
+// "What is still going" is a different question from "what happened lately", and
+// answering it used to mean reading the whole listing.
+func TestOpenLeavesOutWhatIsFinished(t *testing.T) {
+	h := newHarness(t)
+	for _, seeded := range []struct{ run, status string }{
+		{"GOING-1", "running"},
+		{"FINISHED-2", "done"},
+		{"GIVEN-UP-3", "abandoned"},
+	} {
+		if err := h.run("record", "--run", seeded.run, "--event", "phase",
+			"--status", seeded.status, "--phase", "forge"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := h.run("report", "--open"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	if !strings.Contains(out, "GOING-1") {
+		t.Errorf("a running run is missing from --open:\n%s", out)
+	}
+	for _, gone := range []string{"FINISHED-2", "GIVEN-UP-3"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("%s is finished and was listed under --open:\n%s", gone, out)
+		}
+	}
+}
+
+// An empty listing in a repository with no runs is not a broken ledger, and
+// saying "nothing recorded yet" there sends somebody looking for one.
+func TestAnEmptyListingSaysWhichFilterEmptiedIt(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "SOMEWHERE-1", "--event", "phase",
+		"--project", "github.com/me/elsewhere", "--status", "running"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report", "--project", "github.com/me/nothing-here"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "github.com/me/nothing-here") {
+		t.Errorf("an empty listing does not say which repository it looked in:\n%s", h.stdout())
+	}
+	if strings.Contains(h.stdout(), "nothing recorded yet") {
+		t.Errorf("a filtered listing reported an empty ledger:\n%s", h.stdout())
+	}
+}
+
+// The repository is worth a line only when the listing spans more than one.
+// Repeating the same name under every run is a column of noise.
+func TestTheRepositoryIsShownOnlyWhenTheListingSpansMoreThanOne(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "ALONE-1", "--event", "phase",
+		"--project", "github.com/me/only", "--status", "running"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(h.stdout(), "github.com/me/only") {
+		t.Errorf("the repository was repeated under a listing that has only one:\n%s", h.stdout())
+	}
+
+	if err := h.run("record", "--run", "SECOND-2", "--event", "phase",
+		"--project", "github.com/me/another", "--status", "running"); err != nil {
+		t.Fatal(err)
+	}
+	h.out.Reset()
+	if err := h.run("report"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"github.com/me/only", "github.com/me/another"} {
+		if !strings.Contains(h.stdout(), want) {
+			t.Errorf("a listing spanning two repositories does not name %s:\n%s", want, h.stdout())
+		}
+	}
+}
+
+// A version that never changes is indistinguishable from one nobody bumped. It
+// read "dev" for the tool's whole life because nothing set it.
+func TestTheVersionIsNotAPlaceholder(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.run("version"); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.TrimSpace(h.stdout())
+	if !strings.HasPrefix(out, "luna ") {
+		t.Fatalf("version does not name the tool: %q", out)
+	}
+	said := strings.Fields(strings.TrimPrefix(out, "luna "))[0]
+	if said == "dev" || said == "" {
+		t.Errorf("the version is a placeholder: %q", said)
+	}
+	if !strings.ContainsAny(said, "0123456789") {
+		t.Errorf("the version carries no number: %q", said)
+	}
+}
+
+// Each filter that can empty the listing says so in its own words, because "no
+// runs" and "no runs in the last hour" send somebody to different places.
+func TestAWindowThatMatchesNothingNamesTheWindow(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "OLD-1", "--event", "phase",
+		"--status", "running", "--phase", "forge"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report", "--since", "1ns"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "1ns") {
+		t.Errorf("an empty window does not say how far back it looked:\n%s", h.stdout())
+	}
+}
+
+func TestOpenThatMatchesNothingSaysNoRunIsOpen(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "CLOSED-1", "--event", "phase",
+		"--status", "done", "--phase", "close"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report", "--open"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "no run is open") {
+		t.Errorf("an empty --open listing does not say why:\n%s", h.stdout())
+	}
+}
+
+// A finished run still belongs in the listing — the question "what happened to
+// WID-1" is asked after it ended — but under its own heading, so it cannot be
+// mistaken for something still moving.
+func TestFinishedRunsAreListedApartFromMovingOnes(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("record", "--run", "MOVING-1", "--event", "phase",
+		"--status", "running", "--phase", "forge"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.run("record", "--run", "ENDED-2", "--event", "phase",
+		"--status", "done", "--phase", "close"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.run("report"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout()
+	flight := strings.Index(out, "in flight")
+	finished := strings.Index(out, "finished")
+	if flight < 0 || finished < 0 {
+		t.Fatalf("the listing does not separate moving from finished:\n%s", out)
+	}
+	if flight > finished {
+		t.Errorf("a finished run is listed above one still moving:\n%s", out)
+	}
+}
+
+// The commit is what tells two builds of the same version apart, which is the
+// whole reason the version stopped being a placeholder.
+func TestTheVersionSaysWhichCommitItWasBuiltFrom(t *testing.T) {
+	h := newHarness(t)
+	original := cli.Commit
+	cli.Commit = "abc1234"
+	t.Cleanup(func() { cli.Commit = original })
+
+	if err := h.run("version"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), "abc1234") {
+		t.Errorf("the version does not name the commit it came from:\n%s", h.stdout())
+	}
+}

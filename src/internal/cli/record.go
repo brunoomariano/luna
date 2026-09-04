@@ -206,15 +206,28 @@ func printBlock(out io.Writer, e ledger.Entry) {
 func reportCommand(env Env, args []string) error {
 	set := flags("report", env)
 	var (
-		since  = set.Duration("since", 0, "only runs touched within this window")
-		asJSON = set.Bool("json", false, "report as JSON")
+		since   = set.Duration("since", 0, "only runs touched within this window")
+		project = set.String("project", "", "only runs that touched this repository")
+		here    = set.Bool("here", false, "only runs that touched the repository you are standing in")
+		open    = set.Bool("open", false, "only runs that have not finished")
+		asJSON  = set.Bool("json", false, "report as JSON")
 	)
 	if err := set.Parse(args); err != nil {
 		return fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 
+	filter := ledger.Filter{Since: *since, Project: *project, Open: *open}
+	if *here {
+		where := verify.Identify(context.Background(), env.Dir)
+		if *project != "" && *project != where.Project {
+			return fmt.Errorf("%w: --here means %s, and --project says %s — pass one",
+				ErrUsage, where.Project, *project)
+		}
+		filter.Project = where.Project
+	}
+
 	l := ledger.Ledger{Path: env.Ledger}
-	runs, err := l.Report(*since)
+	runs, err := l.Report(filter)
 	if err != nil {
 		return err
 	}
@@ -223,11 +236,28 @@ func reportCommand(env Env, args []string) error {
 		return writeJSON(env.Out, reportPayload(runs))
 	}
 	if len(runs) == 0 {
-		fmt.Fprintln(env.Out, "nothing recorded yet")
+		fmt.Fprintln(env.Out, emptyReport(filter))
 		return nil
 	}
 	printReport(env.Out, runs)
 	return nil
+}
+
+// emptyReport says why the listing is empty, which is not always the same reason.
+//
+// "nothing recorded yet" in a repository that simply has no runs sends somebody
+// looking for a broken ledger. The filter that excluded everything is the thing
+// worth naming.
+func emptyReport(f ledger.Filter) string {
+	switch {
+	case f.Project != "":
+		return "no run has touched " + f.Project
+	case f.Open:
+		return "no run is open"
+	case f.Since > 0:
+		return "no run was touched in the last " + f.Since.String()
+	}
+	return "nothing recorded yet"
 }
 
 // printReport puts what needs a person first.
@@ -236,33 +266,60 @@ func reportCommand(env Env, args []string) error {
 // merrily running, and the whole reason to read a report is to find the one that
 // stopped.
 func printReport(out io.Writer, runs []ledger.Run) {
-	var waiting, moving []ledger.Run
+	var waiting, moving, finished []ledger.Run
 	for _, r := range runs {
-		if r.NeedsSomebody() {
+		switch {
+		case r.NeedsSomebody():
 			waiting = append(waiting, r)
-			continue
+		case r.Finished():
+			finished = append(finished, r)
+		default:
+			moving = append(moving, r)
 		}
-		moving = append(moving, r)
 	}
 
-	if len(waiting) > 0 {
-		fmt.Fprintln(out, "needs somebody")
-		for _, r := range waiting {
-			printRun(out, r)
-		}
-		if len(moving) > 0 {
-			fmt.Fprintln(out)
-		}
+	// The project is printed only when the listing spans more than one, because
+	// every line carrying the same repository is a column of noise — and its
+	// absence is what made a global listing unreadable when four runs from three
+	// repositories arrived with nothing to tell them apart.
+	showProject := spansProjects(runs)
+
+	section(out, "needs somebody", waiting, showProject, false)
+	section(out, "in flight", moving, showProject, len(waiting) > 0)
+	section(out, "finished", finished, showProject, len(waiting)+len(moving) > 0)
+}
+
+func section(out io.Writer, name string, runs []ledger.Run, showProject, gap bool) {
+	if len(runs) == 0 {
+		return
 	}
-	if len(moving) > 0 {
-		fmt.Fprintln(out, "in flight")
-		for _, r := range moving {
-			printRun(out, r)
-		}
+	if gap {
+		fmt.Fprintln(out)
+	}
+	fmt.Fprintln(out, name)
+	for _, r := range runs {
+		printRun(out, r, showProject)
 	}
 }
 
-func printRun(out io.Writer, r ledger.Run) {
+// spansProjects reports whether the listing covers more than one repository.
+func spansProjects(runs []ledger.Run) bool {
+	var seen string
+	for _, r := range runs {
+		for _, p := range r.Projects {
+			if seen == "" {
+				seen = p
+				continue
+			}
+			if p != seen {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func printRun(out io.Writer, r ledger.Run, showProject bool) {
 	e := r.Latest
 	line := fmt.Sprintf("  %-14s %-16s %-12s %s", e.Run, e.Status, e.Phase, ago(e.At))
 	if r.Failed > 0 {
@@ -272,6 +329,9 @@ func printRun(out io.Writer, r ledger.Run) {
 		line += "  (simulated)"
 	}
 	fmt.Fprintln(out, line)
+	if showProject && len(r.Projects) > 0 {
+		fmt.Fprintf(out, "                 %s\n", strings.Join(r.Projects, ", "))
+	}
 	if e.Question != "" {
 		fmt.Fprintf(out, "                 %s\n", e.Question)
 	}
@@ -297,11 +357,13 @@ func reportPayload(runs []ledger.Run) []map[string]any {
 		out = append(out, map[string]any{
 			"run":            r.Latest.Run,
 			"project":        r.Latest.Project,
+			"projects":       r.Projects,
 			"status":         string(r.Status()),
 			"phase":          r.Latest.Phase,
 			"at":             r.Latest.At,
 			"lines":          r.Lines,
 			"failed":         r.Failed,
+			"finished":       r.Finished(),
 			"needs_somebody": r.NeedsSomebody(),
 			"simulated":      r.Latest.Simulated,
 		})

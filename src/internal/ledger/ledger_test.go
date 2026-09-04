@@ -350,7 +350,7 @@ func TestAReportGroupsByRunMostRecentlyTouchedFirst(t *testing.T) {
 		}
 	}
 
-	runs, err := l.Report(0)
+	runs, err := l.Report(ledger.Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestAReportCountsWhatFailedAndWhoNeedsSomebody(t *testing.T) {
 		}
 	}
 
-	runs, err := l.Report(0)
+	runs, err := l.Report(ledger.Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func TestAReportCanBeBounded(t *testing.T) {
 		}
 	}
 
-	runs, err := l.Report(10 * time.Minute)
+	runs, err := l.Report(ledger.Filter{Since: 10 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,5 +641,98 @@ func TestADiscoveryMustSayWhatItReadToConcludeIt(t *testing.T) {
 	err = l.Append(ledger.Entry{Run: "MAX-2", Event: ledger.EventDiscovery, Where: "Makefile"})
 	if err == nil || !strings.Contains(err.Error(), "nothing found") {
 		t.Errorf("a discovery that concluded nothing: %v", err)
+	}
+}
+
+// Projects is a list rather than a single value because the ledger has runs that
+// carry two: a batch seeded them from one checkout and stamped that checkout's
+// remote on their first line, while their later lines named the repository the
+// work really happened in.
+func TestARunRemembersEveryRepositoryItsLinesNamed(t *testing.T) {
+	l := newLedger(t)
+	for i, project := range []string{"github.com/me/seeded-from", "github.com/me/delivered-to"} {
+		e := phase("STRADDLE-9", "forge", ledger.StatusRunning)
+		e.Project, e.At = project, at(i)
+		if err := l.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runs, err := l.Report(ledger.Filter{})
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("report: %d runs, %v", len(runs), err)
+	}
+	run := runs[0]
+	for _, project := range []string{"github.com/me/seeded-from", "github.com/me/delivered-to"} {
+		if !run.Touched(project) {
+			t.Errorf("the run does not remember touching %s: %v", project, run.Projects)
+		}
+	}
+	if run.Touched("github.com/me/never") {
+		t.Error("a repository the run never touched reads as touched")
+	}
+}
+
+// A repository is named once however many lines carry it. Repeating it would put
+// the same name four times under a run with four phases.
+func TestARepositoryIsRememberedOnceHoweverManyLinesNameIt(t *testing.T) {
+	l := newLedger(t)
+	for i := range 3 {
+		e := phase("MAX-2", "forge", ledger.StatusRunning)
+		e.Project, e.At = "github.com/me/app", at(i)
+		if err := l.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runs, err := l.Report(ledger.Filter{})
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("report: %d runs, %v", len(runs), err)
+	}
+	if got := runs[0].Projects; len(got) != 1 {
+		t.Errorf("one repository across three lines came back as %v", got)
+	}
+}
+
+// Abandoned counts as finished: the question Finished answers is "is there work
+// left here", and a run somebody gave up on has none. Why it ended is what the
+// status says, and the listing prints that rather than folding it away.
+func TestARunGivenUpOnCountsAsFinished(t *testing.T) {
+	for _, want := range []struct {
+		status   ledger.Status
+		finished bool
+	}{
+		{ledger.StatusDone, true},
+		{ledger.StatusAbandoned, true},
+		{ledger.StatusRunning, false},
+		{ledger.StatusBlocked, false},
+		{ledger.StatusAwaitingGate, false},
+		{ledger.StatusAwaitingResume, false},
+	} {
+		run := ledger.Run{Latest: ledger.Entry{Status: want.status}}
+		if run.Finished() != want.finished {
+			t.Errorf("%s: Finished() is %v, want %v", want.status, run.Finished(), want.finished)
+		}
+	}
+}
+
+func TestAReportCanLeaveOutWhatIsFinished(t *testing.T) {
+	l := newLedger(t)
+	for i, e := range []ledger.Entry{
+		phase("GOING-1", "forge", ledger.StatusRunning),
+		phase("ENDED-2", "close", ledger.StatusDone),
+	} {
+		e.At = at(i)
+		if err := l.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runs, err := l.Report(ledger.Filter{Open: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Latest.Run != "GOING-1" {
+		t.Errorf("--open did not leave out the finished run: %+v", runs)
 	}
 }

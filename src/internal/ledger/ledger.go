@@ -186,31 +186,76 @@ type Run struct {
 	// Failed is how many checks failed across the whole run. It is the number
 	// worth seeing beside a run that is still going.
 	Failed int
+
+	// Projects is every repository this run touched, in the order first seen.
+	//
+	// Usually one. It is a list because the ledger has runs whose lines carry two
+	// — a batch seeded six runs from one checkout and stamped them all with that
+	// checkout's remote, so their later lines name the repository they really
+	// worked in and their first line does not. Collapsing that to the latest
+	// would hide the run from the repository it was seeded in, and collapsing it
+	// to the first would hide it from the one it delivered to.
+	Projects []string
+}
+
+// Touched reports whether this run has a line naming the given project.
+//
+// Any line, not the latest: see Projects. A run that moved between repositories
+// belongs to both listings, because somebody standing in either one is right to
+// expect it.
+func (r Run) Touched(project string) bool {
+	for _, p := range r.Projects {
+		if p == project {
+			return true
+		}
+	}
+	return false
 }
 
 // Status is where the run stands, which is whatever its latest line said.
 func (r Run) Status() Status { return r.Latest.Status }
 
+// Filter narrows a report. A zero Filter asks for everything.
+type Filter struct {
+	// Since bounds how far back to look. Zero means the whole ledger.
+	Since time.Duration
+
+	// Project keeps only runs that touched this repository, normalised the same
+	// way Entry.Project is. Empty means every project.
+	Project string
+
+	// Open keeps only runs that have not finished — anything but done and
+	// abandoned. It is the answer to "what is in flight", which is a different
+	// question from "what happened lately" and was previously only askable by
+	// reading the whole listing.
+	Open bool
+}
+
 // Report groups the ledger by run, most recently touched first.
 //
-// `since` bounds it; a zero duration means everything. Ordering is by last
-// activity because the question a report answers is "what needs me now", and the
-// run that moved most recently is the one most likely to.
-func (l Ledger) Report(since time.Duration) ([]Run, error) {
+// Ordering is by last activity because the question a report answers is "what
+// needs me now", and the run that moved most recently is the one most likely to.
+func (l Ledger) Report(f Filter) ([]Run, error) {
 	entries, err := l.Read()
 	if err != nil {
 		return nil, err
 	}
 
 	cutoff := time.Time{}
-	if since > 0 {
-		cutoff = l.now().Add(-since)
+	if f.Since > 0 {
+		cutoff = l.now().Add(-f.Since)
 	}
 
 	byRun := groupByRun(entries, cutoff)
 
 	runs := make([]Run, 0, len(byRun))
 	for _, run := range byRun {
+		if f.Project != "" && !run.Touched(f.Project) {
+			continue
+		}
+		if f.Open && run.Finished() {
+			continue
+		}
 		runs = append(runs, *run)
 	}
 	sort.Slice(runs, func(i, j int) bool {
@@ -237,11 +282,23 @@ func groupByRun(entries []Entry, cutoff time.Time) map[string]*Run {
 		}
 		run.Latest = e
 		run.Lines++
+		if e.Project != "" && !run.Touched(e.Project) {
+			run.Projects = append(run.Projects, e.Project)
+		}
 		if e.Event == EventCheck && e.Verdict == string(VerdictFailed) {
 			run.Failed++
 		}
 	}
 	return byRun
+}
+
+// Finished reports whether a run has reached an end, either one.
+//
+// Abandoned counts: the question this answers is "is there work left here", and
+// a run somebody gave up on has none. What separates the two is why, and the
+// listing prints the status rather than folding it away.
+func (r Run) Finished() bool {
+	return r.Status() == StatusDone || r.Status() == StatusAbandoned
 }
 
 // NeedsSomebody reports whether a run is waiting on a person.
