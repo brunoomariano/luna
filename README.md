@@ -47,6 +47,26 @@ Nothing is written into your repository: no state file, no anchor, no ignore ent
 ledger knows where the worktree is, rather than the worktree knowing where the ledger is,
 so a record outlives the tree it describes.
 
+## The words
+
+| Word | What it means |
+|---|---|
+| **conductor** | whoever drives the phases — an agent, a skill, a person, a script. Luna is called *by* one and never is one, which is the other half of every "Luna does not decide" here. |
+| **run** | one task start to finish, named by an id and carried by the branch `luna/<run>`. |
+| **phase** | one named stretch of a run — `forge`, `review`, `close`. Luna knows no list of them and validates no name: which phases exist is the conductor's business. |
+| **contract** | what a phase owes, as TOML on stdin. Luna keeps none of it between calls. |
+| **artifact** | one thing a phase owes. A verdict is per artifact — "forge failed" cannot say which debt went unmet. |
+| **check** | one artifact's verifier being run, and the line it leaves. |
+| **scope** | how much a passing check establishes: `full > targeted > human > existence`. It never upgrades. |
+| **gate** | a decision handed to a person, with the answer recorded. |
+| **block** | a run stopping for missing information, carrying the question, where the answer was looked for, and what would unblock it. |
+| **discovery** | what a phase found out about the project — its verification command, how it bootstraps — recorded with the file it was read from, and never consulted afterwards. |
+
+Three of these mean a second thing in ordinary use: **gate** and **check** also name *the
+project's own* verification command (`make ci`, `pnpm check`), and **floor** is both the
+loop's mechanical floor and the 95% coverage minimum. All six senses are real and none is
+being renamed; [architecture.md](docs/architecture.md#the-words) says which is which.
+
 ## Install
 
 ```sh

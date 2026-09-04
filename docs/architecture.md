@@ -42,7 +42,7 @@ command returned zero.
 
 ## The words
 
-Nine of them, and they are used precisely throughout. The two that cost a reader the most
+Eleven of them, and they are used precisely throughout. The two that cost a reader the most
 are first: `conductor` is the subject of most rules here and was never defined, and the
 scopes lived only in Go while an invariant depended on them.
 
@@ -50,13 +50,37 @@ scopes lived only in Go while an invariant depended on them.
 |---|---|
 | **conductor** | whoever drives the phases — an agent, a skill, a person, a script. Every "Luna does not decide" in this document has the conductor as its other half. Luna is called *by* one and never is one. |
 | **run** | one task from start to finish, named by an id (`WID-4`) and carried by the branch `luna/<run>`. The unit the ledger groups by. |
-| **phase** | one named stretch of a run — `forge`, `review`, `close`. The conductor names them; Luna only records which one a line belongs to. |
+| **phase** | one named stretch of a run — `forge`, `review`, `close`. **Luna knows no list of them**: the field is free text, no name is validated, and nothing here is hard-coded. Naming and ordering them is the conductor's, and a fixed list in Luna would be flow control. |
 | **contract** | what a phase owes, as TOML on stdin: the artifacts it produces, and how each is proven. Luna keeps none of it between calls. |
 | **artifact** | one thing a phase owes, named in the contract. A verdict is per artifact, not per phase — "forge failed" cannot say which debt went unmet. |
+| **check** | one artifact's verifier being run, and the ledger line it produces. Not to be confused with the *project's* check — see the note below. |
 | **evidence** | what one check observed: the verdict, the scope, the command, the exit code. Recorded whether it passed or not. |
 | **scope** | how much a passing check establishes. See below — it is the one word that carries a rule. |
-| **gate** | a decision handed to a person, with an answer recorded. |
+| **gate** | a decision handed to a person, with an answer recorded. Also see the note below. |
 | **block** | a run stopping because information is missing, carrying three parts: the question, where the answer was looked for and what each source failed to say, and what would unblock it. Distinct from a gate — a gate has an artifact to judge, a block has a question nobody answered. |
+| **discovery** | what a phase found out about the project it works in — which command is this repository's own verification, how it bootstraps — recorded with the file it was read from. Recorded and **never consulted**: the command arrives in the contract every time. |
+
+### Three words that mean two things
+
+Not pedantry. All three are load-bearing in both senses, all three are in the ledger, and
+one has already been written down ambiguously in a real run.
+
+**`gate`.** In Luna it is an *event*: a decision a person answered (`Entry.Gate`). In the
+surrounding practice it also names *the project's own verification command* — "this
+repository's own gate", `make ci`, `pnpm check`. A real discovery line in the ledger reads
+`gate: make ci-check`, which is the second sense written into a field named for neither.
+When it matters, say **"the project's gate"** or **"a gate a person answers"**.
+
+**`check`.** One artifact's verifier being run, and the name of the verb — but also the
+project's command, which is frequently spelled `check`. One sentence in this file used to
+carry both: *"why a later check ran `pnpm check`"*. Both readings are right, which is the
+problem.
+
+**`floor`.** *The loop's floor* is the mechanical condition a repeating phase may not
+leave (below). *The coverage floor* is the 95% in the Makefile. Unrelated, both real.
+
+None of the three is going to be renamed — the second senses are what people actually
+say, and a term nobody uses is worse than one that needs a sentence.
 
 **The scopes are a ladder**, and it is the reason `scope` is not just a label:
 
@@ -74,11 +98,6 @@ full  >  targeted  >  human  >  existence
 A check may prove *more* than the contract asked and be accepted; it may never prove
 less and be read as more. That is INV-3, and it is why an unknown scope is refused from
 both sides rather than defaulted — a typo must not outrank the floor.
-
-> **`floor` means two unrelated things in this repository**, and both are load-bearing.
-> *The loop's floor* is the mechanical condition a repeating phase may not leave (below).
-> *The coverage floor* is the 95% in the Makefile. Neither is going to be renamed; they
-> simply do not refer to each other.
 
 ## Why the agent calls Luna, and not the other way round
 
@@ -181,7 +200,9 @@ command is this repository's own gate, how it bootstraps — as a `discovery`, w
 it read to conclude it. That is recorded and never consulted: the command still arrives in
 the contract on every call. A gate Luna remembered would be project configuration Luna
 owns, and owning that is what the per-project store was removed for. What the record buys
-is a reader who can see *why* a later check ran `pnpm check` rather than guessing.
+is a reader who can see *why* a later check ran `pnpm check` rather than guessing — the
+first `check` is Luna's, the second is the project's, and the collision is why both are in
+the vocabulary above.
 
 Each line is self-contained: reading one never requires reading the ones before it. That is
 what lets a concurrent fleet append with **no lock** — a write under 4 KB to a file opened
