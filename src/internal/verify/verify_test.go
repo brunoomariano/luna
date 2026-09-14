@@ -2,6 +2,7 @@ package verify_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -692,5 +693,42 @@ func TestAWorkingTreeCheckGetsNoBootstrapHint(t *testing.T) {
 
 	if strings.Contains(got.Detail, "clean checkout") {
 		t.Errorf("a working-tree check was told about clean checkouts:\n%s", got.Detail)
+	}
+}
+
+// An existence check whose path is a folder listed every file under it, and a
+// large folder pushed the ledger line past the atomic-append ceiling. The check
+// then aborted partway through a run, after earlier checks had already been
+// recorded. Truncating at the source is what keeps the verdict recordable.
+func TestExistenceOfALargeFolderTruncatesItsListing(t *testing.T) {
+	r := newRepo(t)
+	for i := range 200 {
+		path := filepath.Join(r.dir, fmt.Sprintf("API/src/edge/handler-with-a-long-name-%03d.ts", i))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head := r.commit("API/src/edge/index.ts", "x")
+
+	c := contract.Contract{
+		Phase:    "forge",
+		Produces: map[string]contract.Verifier{"edge": contract.Existence{Path: "API/src/edge/"}},
+	}
+	got := proveOne(t, verify.Shell{Dir: r.dir, Commit: head}, c)
+
+	if got.Verdict != verify.VerdictPassed {
+		t.Fatalf("the folder is there, but the verdict is %q", got.Verdict)
+	}
+
+	// 4000 is the ledger's ceiling for a whole line; a detail anywhere near it
+	// leaves no room for the rest of the record.
+	if len(got.Detail) > 1000 {
+		t.Errorf("the detail is %d bytes, too long to record:\n%s", len(got.Detail), got.Detail)
+	}
+	if !strings.Contains(got.Detail, "201 files in all") {
+		t.Errorf("the detail does not say how many files were found:\n%s", got.Detail)
 	}
 }

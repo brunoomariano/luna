@@ -278,8 +278,29 @@ func (s Shell) provePath(ctx context.Context, artifact string, v contract.Existe
 	}
 
 	evidence.Verdict = VerdictPassed
-	evidence.Detail = strings.TrimSpace(found)
+	evidence.Detail = listing(strings.TrimSpace(found))
 	return evidence, nil
+}
+
+// listedFiles is how many paths a passing existence check names before it
+// summarises instead.
+//
+// A path that is a folder lists everything under it, and a folder of a few
+// hundred files pushed the ledger line past its 4000-byte atomic-append ceiling
+// (INV-2). The line was then refused mid-run, after earlier checks had already
+// been recorded — so the truncation has to happen here, where the detail is
+// built, rather than at the ledger where refusing is the only correct answer.
+const listedFiles = 10
+
+// listing names what was found, summarising a long list rather than naming all
+// of it. The count is always exact: it is the part somebody acts on.
+func listing(found string) string {
+	paths := strings.Split(found, "\n")
+	if len(paths) <= listedFiles {
+		return found
+	}
+	return fmt.Sprintf("%s\n… and %d more, %d files in all",
+		strings.Join(paths[:listedFiles], "\n"), len(paths)-listedFiles, len(paths))
 }
 
 // runIn executes one command line and reports how it exited.
