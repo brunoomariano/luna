@@ -1677,3 +1677,66 @@ func TestTheListingAnswersToBothNamesButIsDocumentedUnderOne(t *testing.T) {
 		t.Error("the help does not document the listing under its own name")
 	}
 }
+
+// A worktree's HEAD is not the main checkout's HEAD, and the delivery being
+// proven is the one in the worktree the caller is standing in. Resolving the
+// wrong one runs every check over the base and records it as proof — the
+// measured defect behind this test, seen in six tasks across two days.
+func TestCheckResolvesTheHeadOfTheWorktreeItRunsIn(t *testing.T) {
+	h := newHarness(t)
+	base := h.commit("a.txt", "one")
+
+	// A worktree beside the repository, carrying a commit the main checkout
+	// does not have.
+	tree := filepath.Join(filepath.Dir(h.env.Dir), "delivery")
+	h.git("worktree", "add", "--quiet", "-b", "delivery", tree, "HEAD")
+
+	inTree := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tree
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if err := os.WriteFile(filepath.Join(tree, "delivered.txt"), []byte("two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inTree("add", "-A")
+	inTree("commit", "--quiet", "-m", "deliver")
+	delivered := inTree("rev-parse", "HEAD")
+
+	if delivered == base {
+		t.Fatal("the worktree and the repository share a HEAD, so this proves nothing")
+	}
+
+	// An existence check for the file only the worktree's commit carries: it
+	// passes over the delivery and fails over the base.
+	const existenceContract = `
+phase    = "forge"
+produces = ["delivered"]
+
+[verify.delivered]
+kind = "existence"
+path = "delivered.txt"
+`
+	path := filepath.Join(tree, "contract.toml")
+	if err := os.WriteFile(path, []byte(existenceContract), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h.env.Dir = tree
+	if err := h.run("check", "--contract", path, "--run", "MAX-9"); err != nil {
+		t.Fatalf("the delivery in the worktree was not proven: %v\n%s", err, h.stdout())
+	}
+
+	lines := h.lines()
+	if len(lines) == 0 {
+		t.Fatal("nothing was recorded")
+	}
+	if got := lines[len(lines)-1].Verdict; got != "passed" {
+		t.Errorf("the recorded verdict is %q — the check ran over the base, not the delivery", got)
+	}
+}

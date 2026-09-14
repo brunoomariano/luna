@@ -71,10 +71,16 @@ func checkCommand(env Env, args []string) error {
 // pass --commit meant. Resolving HEAD here keeps the guard for a phase that
 // really delivered nothing (its HEAD equals its base, which --base catches)
 // while making the documented default true.
+//
+// The HEAD is the worktree's, not the repository's. They differ in exactly the
+// case Luna is built for — a delivery in a worktree beside the main checkout —
+// and taking the repository's ran every check over the base and recorded it as
+// proof. Shell.Dir below stays the repository on purpose: the object store is
+// shared, so ls-tree and checkout work from there for any commit.
 func proveDelivery(ctx context.Context, where verify.Where, c contract.Contract, commit, base string) ([]verify.Evidence, error) {
 	resolved := commit == ""
 	if resolved {
-		commit = headOf(ctx, where.Repo)
+		commit = headOf(ctx, where.Worktree)
 	}
 	return verify.Shell{Dir: where.Repo, Commit: commit, Base: base, Resolved: resolved}.Prove(ctx, c)
 }
