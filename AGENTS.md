@@ -52,6 +52,10 @@ element.
 - Validate through the Makefile (`make help` lists the targets); `make ci` before a PR.
 - When done, report which checks you ran and any loose ends.
 
+The branch, commit and PR flow is in [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md), which
+is its single source — including the rule that a proposal reopening a recorded decision
+needs a new argument rather than a restatement.
+
 ## Layout
 
 ```
@@ -107,9 +111,10 @@ Comment to say **why**, and only when the reason is not visible in the code. The
   `verify` is about what git answers for a commit that is missing or equal to its base — a
   fake with no git has nothing to get wrong, and three bugs in a row shipped behind exactly
   that kind of fake. The tests build real repositories.
-- **`t.TempDir()` is on tmpfs here.** `/tmp` is tmpfs on this machine and on any systemd
-  default, and the durability guard refuses it — correctly. Tests that need durable storage
-  use a helper that finds some, or skip.
+- **`t.TempDir()` may be on tmpfs.** `/tmp` is tmpfs under any systemd default, and the
+  durability guard refuses it — correctly. Tests that need durable storage use a helper
+  that finds some, or skip. A skip is why a green suite is not by itself evidence that
+  INV-4's tests ran.
 - **Observe a dependency being used, not being wired.** Asserting a field is set has passed
   twice while the code path that should call it never did.
 - An invariant in `docs/invariants.md` names the tests that hold it up. **Do not call a

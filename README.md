@@ -184,7 +184,7 @@ first line, and their later lines name where the work really happened.
 message, so nobody spends a turn asking what is going on here.
 
 ```sh
-$ luna session claude          # composes with ai-run, then execs it
+$ luna session claude          # composes with ai-run if present, then execs it
 $ luna session codex --bare    # no launcher, just the agent
 $ luna session --print         # see the briefing, launch nothing
 ```

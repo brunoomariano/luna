@@ -25,8 +25,9 @@ Two things to know before writing a test:
 
 - **Give it its own ledger.** A test that leaves `XDG_DATA_HOME` alone writes into the
   developer's real record. The CLI takes the path through `cli.Env`, so a test names one.
-- **`t.TempDir()` is on tmpfs here**, and the durability guard refuses it — correctly. A
-  test that needs durable storage uses the helper that finds some, or skips.
+- **`t.TempDir()` may be on tmpfs** — it is under any systemd default — and the durability
+  guard refuses it, correctly. A test that needs durable storage uses the helper that finds
+  some, or skips.
 
 ## Git-flow
 
