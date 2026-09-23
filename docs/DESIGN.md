@@ -153,7 +153,9 @@ a filled triangle.
 ## Format
 
 **SVG, hand-written, checked into `docs/assets/imgs/`.** Vector so it scales, text so it
-diffs, and small — the three current diagrams are 19 KB together.
+diffs, and small — the three current diagrams are tens of kilobytes together, not hundreds.
+An exact figure here goes stale on the next edit, and a documentation audit found several
+of those before it found anything that mattered.
 
 ### Presentation attributes, never CSS
 

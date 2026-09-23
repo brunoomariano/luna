@@ -81,11 +81,10 @@ No dependencies. `go.mod` is three lines.
 
 ## The verbs
 
-![The seven verbs a phase calls](docs/assets/imgs/verbs.svg)
+![The nine verbs](docs/assets/imgs/verbs.svg)
 
-Two are left out of the drawing because a phase never calls them: `luna install-skills`
-is setup you run once, and `luna version` says which build you have. `luna help` has all
-nine.
+The rule near the bottom is the division that matters: above it, what a phase calls at a
+boundary; below it, what you run once and forget.
 
 A checkout on `luna/<run>` knows which run it is, so `--run` is optional
 everywhere. The branch is the authority because it travels with the work, where a
