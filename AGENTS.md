@@ -56,13 +56,13 @@ element.
 
 ```
 src/
-  cmd/luna/          the binary: eight verbs and an exit code
+  cmd/luna/          the binary: nine verbs and an exit code
   internal/contract/ what a phase owes and how each debt is proven — no execution
   internal/verify/   running the checks over the delivered commit
   internal/ledger/   the record, its durability guard, and autonomy
   internal/cli/      the command surface
-  internal/skills/   the skill Luna installs, embedded — see decisions.md
-docs/                the four files above
+  internal/skills/   the skill tree Luna installs, embedded — see decisions.md
+docs/                the four files above, plus the conventional ones beside them
 scripts/             lint helpers
 ```
 

@@ -1,4 +1,4 @@
-// Package cli is the command surface: eight verbs over a contract and a ledger.
+// Package cli is the command surface: nine verbs over a contract and a ledger.
 //
 // Luna is invoked by whoever conducts the work, at a phase boundary. It starts no
 // agent, builds no sandbox and decides no transition — a person composes the
@@ -112,6 +112,9 @@ a phase boundary to prove what was delivered, and to record what happened.
                        record the same flag does the opposite and writes the
                        line, marked as a simulation — a rehearsed flow has to
                        leave a trail, a rehearsed verdict must not.
+        --no-record    run every check and report, but write no ledger line.
+                       For trying a contract while writing one; a phase that
+                       really delivered records what its checks observed.
 
   luna contract lint <file|->
         read a contract and report every way it is unusable, without running

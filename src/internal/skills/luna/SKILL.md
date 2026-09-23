@@ -3,7 +3,7 @@ name: luna
 description: >
   Operate the luna binary — the verifier that proves what a phase delivered by
   running a command over the delivered commit, and records what happened in one
-  append-only ledger outside every repository. Covers the eight verbs, the TOML
+  append-only ledger outside every repository. Covers the nine verbs, the TOML
   contract, the scope ladder, the three exit codes, the autonomy modes (always
   starting at manual), blocking on missing information, how to DISCOVER a
   project's own gate instead of assuming `make`, and the durable-ledger
@@ -28,7 +28,7 @@ called at a phase boundary, by whoever conducts the flow.
 Which phases exist, what they are called, and what order they run in is **yours**.
 Luna validates no phase name and knows no list of them.
 
-## The eight verbs
+## The nine verbs
 
 ```sh
 luna check --contract <file|-> [--run <id>] [--commit <sha>] [--base <sha>] [--round N] [--json]

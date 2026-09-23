@@ -249,7 +249,7 @@ and the listing is the plural one, which no name said: now `luna runs` / `luna s
 `luna trail` carries the scope in the grammar.
 
 *Rejected: `list`* — names an action with no object, and would want to be `luna list runs`,
-two words where the other seven verbs have one. *Rejected: `queue`* — implies FIFO and an
+two words where every other verb is one. *Rejected: `queue`* — implies FIFO and an
 order of work that Luna decides, which is the flow control the redesign removed.
 *Rejected: `board`* — collides with the Plane board vocabulary in the surrounding skills.
 *Rejected: `ls`* — imports a filesystem metaphor into a tool that writes no file in your

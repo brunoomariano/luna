@@ -76,6 +76,11 @@ code, and a short detail when it helps.
 Recorded whether it passed or failed. A report listing only failures cannot be told from
 one where nothing ran.
 
+The detail is bounded, because the ledger line is. An `existence` check with a `path` names
+what it found, up to ten paths, and then says how many more there were — the count is
+always exact. A folder of a few hundred files would otherwise push the line past the 4 KB
+ceiling in INV-2 and be refused partway through a run.
+
 ### scope
 
 How much a passing check establishes. Four values, and they form a ladder:
@@ -157,10 +162,12 @@ writes nothing into a checkout, and that includes this.
 
 ### skill
 
-A document that teaches an agent how to use a tool, read from the harness's own directory.
+A directory of documents that teaches an agent how to use a tool, read from the harness's
+own directory.
 
-Luna carries one, about Luna itself, and `install-skills` writes it out. It knows nothing
-about your flow: which phases exist and what they are called stays yours.
+Luna carries one, about Luna itself — a `SKILL.md` and the references beside it — and
+`install-skills` writes it out. It knows nothing about your flow: which phases exist and
+what they are called stays yours.
 
 ### launcher
 
@@ -282,7 +289,8 @@ report` against a build answering `luna runs` would cost somebody a session. A t
 every verb the skill names to one `luna help` documents, so the two cannot drift — and an
 alias that still answers but is no longer documented fails it.
 
-`--print` writes the skill to stdout for somebody who would rather place it themselves.
+`--print` writes the skill to stdout for somebody who would rather place it themselves —
+each file under a `===== luna/<path> =====` header, since the skill is a tree.
 
 ---
 

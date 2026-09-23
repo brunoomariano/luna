@@ -46,6 +46,13 @@ verification phase is different because the commit it received is the thing it i
 prove. A repository with no commit at all is still the first phase of the first run, and
 still verifies its tree.
 
+**The half of it that stayed.** That account was written as though the whole defect were
+closed, and it was not: resolving against the main repository remained what `check` did
+whenever `--commit` was omitted. In a worktree — the case Luna is built for — that is the
+base, so every check ran over code the phase had not written and the ledger recorded it as
+proof. Six tasks across two days before it was caught. The HEAD now resolves in the
+worktree the call was made from.
+
 The other half of it took a second run to find. That guard asked whether a commit
 *existed*, and a phase that adds none hands back the base — which exists, and resolves. So
 the check ran over the code the phase was given and passed, because that code was already
@@ -85,7 +92,10 @@ between two commands; a line that cannot be read without its predecessors.
 **Covered by.** In `internal/ledger`: `TestAppendingNeverRewritesWhatIsAlreadyThere`,
 `TestSeveralProcessesAppendWithoutCorruptingEachOther`,
 `TestALineTooLongToAppendAtomicallyIsRefused`, `TestTheStateOfARunIsItsMostRecentLine` and
-`TestOneRunsLinesDoNotAnswerForAnother`.
+`TestOneRunsLinesDoNotAnswerForAnother`. In `internal/verify`:
+`TestExistenceOfALargeFolderTruncatesItsListing`, which keeps a long existence listing
+under the ceiling where the detail is built — the refusal above is correct, and arriving
+mid-run it leaves the earlier checks of that run already recorded.
 
 ---
 
@@ -159,6 +169,12 @@ refuses.
 **Covered by.** `TestALedgerInMemoryIsRefused` and `TestTheWritingVerbsRefuseBeforeTheirFirstAppend`
 in `internal/ledger`; `TestAVerdictThatCannotBeRecordedIsReported` in `internal/cli`; and
 `TestTheBinaryRefusesALedgerThatWouldNotSurvive`, which exercises the real binary.
+
+Each of these skips when the machine cannot provide the filesystem it needs to contrast
+against — a durable `$HOME`, or a writable tmpfs. On a machine whose `$HOME` is tmpfs the
+whole of `internal/ledger`'s suite skips, INV-2's tests with it, and the run still reports
+green. The invariant is enforced on every write regardless; what a green suite does not by
+itself establish is that these four ran.
 
 ---
 

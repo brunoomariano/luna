@@ -36,7 +36,7 @@ at a phase boundary:
       └─ exit 0 proven · 2 not proven · 1 Luna could not run
 ```
 
-Three verbs and two nouns. The contract says what a phase owes; the ledger says what
+One verb and two nouns, in the path that matters. The contract says what a phase owes; the ledger says what
 happened; `check` is the only thing that decides anything, and what it decides is whether a
 command returned zero.
 
@@ -174,6 +174,13 @@ nothing:
 
 Both now fail. Pass `--base` and a delivery equal to it is no delivery.
 
+A third one in the same family: with no `--commit`, the HEAD that answers is the
+**worktree's**, not the repository's. They differ in exactly the case Luna is built for — a
+delivery in a worktree beside the main checkout — and taking the repository's ran every
+check over the base and recorded it as proof, in six tasks across two days. The checkout
+the commit is materialised into is still cut from the repository, whose object store is
+shared between its worktrees.
+
 ## The loop's floor
 
 A repeating phase declares what it converges on. The verdict on a round belongs to the
@@ -213,8 +220,13 @@ Each line is self-contained: reading one never requires reading the ones before 
 what lets a concurrent fleet append with **no lock** — a write under 4 KB to a file opened
 `O_APPEND` lands whole. A line that would exceed that is refused rather than truncated,
 because a torn line is the one failure this format cannot recover from. Measured: eight
-processes writing 100 lines each, and host and sandbox writing simultaneously, produced no
-corrupt line.
+processes appending 60 lines each produced no corrupt line.
+
+A refusal that arrives mid-run is worse than a short line. An existence check whose path is
+a folder listed every file under it, and a few hundred files pushed the line past the
+ceiling — refused after the earlier checks in the same run were already recorded. So a long
+listing is shortened where the detail is built, to ten paths and an exact count, rather than
+at the ledger, where refusing is the only correct answer.
 
 Nothing is written into a checkout — no state file, no anchor, no ignore entry. The ledger
 knows where the worktree is, rather than the worktree knowing where the ledger is, so a
@@ -287,13 +299,13 @@ right to see it.
 
 ```
 src/
-  cmd/luna/          the binary: eight verbs and an exit code
+  cmd/luna/          the binary: nine verbs and an exit code
   internal/contract/ what a phase owes and how each debt is proven
   internal/verify/   running the checks over the delivered commit
   internal/ledger/   the record, its durability guard, and autonomy
   internal/cli/      the command surface
-  internal/skills/   the skill Luna installs, embedded
-docs/                four files
+  internal/skills/   the skill tree Luna installs, embedded
+docs/                the four files above, plus the conventional ones beside them
 ```
 
 No dependencies. `go.mod` is three lines, and the TOML subset the contract needs is a few
