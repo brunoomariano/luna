@@ -37,7 +37,7 @@ luna record --run <id> --event <kind> [...]
 luna state [--run <id>] [--json]
 luna trail [<id>] [--json]
 luna runs [--here] [--open] [--project <repo>] [--since <duration>] [--json]
-luna session <agent> [--launcher <cmd>] [--skill <name>] [--bare] [--print]
+luna session <agent> [--launcher <cmd>] [--skill <name>] [--print]
 luna install-skills <claude|codex> [--dir <path>] [--dry-run] [--print]
 ```
 

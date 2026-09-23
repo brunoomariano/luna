@@ -175,7 +175,7 @@ a phase boundary to prove what was delivered, and to record what happened.
         A run is listed under every repository it touched, not only the last
         one, because a run that moved between two belongs to both.
 
-  luna session <agent> [--launcher <cmd>] [--skill <name>] [--bare] [--print]
+  luna session <agent> [--launcher <cmd>] [--skill <name>] [--print]
         start an agent with what this repository already has open as its first
         message: the unfinished runs, what each is blocked on, and how to
         conduct the work. It reads the ledger, writes nothing, and replaces
@@ -189,7 +189,6 @@ a phase boundary to prove what was delivered, and to record what happened.
                     getting none is a surprise nobody should have to catch.
         --skill     the skill the briefing names, default luna. Empty
                     names none, and the briefing still says how to use Luna.
-        --bare      start the agent directly, with no launcher at all.
         --print     print the briefing and exit, launching nothing.
 
   luna install-skills <claude|codex> [--dir <path>] [--dry-run] [--print]

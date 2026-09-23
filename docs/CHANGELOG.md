@@ -19,9 +19,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   blocks on missing information.
 - **Exit codes are the contract with whoever conducts:** 0 proven, 2 not proven, 1 Luna
   could not run.
-- **`luna session` has no default launcher.** It named one person's tool, so every other
-  machine printed a note about an absence it could do nothing about. Name yours with
-  `--launcher` and it wraps the agent; name none and the agent starts directly. A launcher
+- **`luna session` has no default launcher, and no `--bare`.** The default named one
+  person's tool, so every other machine printed a note about an absence it could do
+  nothing about; `--bare` existed to turn that default off. Name a launcher with
+  `--launcher` and it wraps the agent, name none and the agent starts directly. A launcher
   you name is still never dropped when it is missing.
 - **The listing is `luna runs`, not `luna report`.** "Report" named three unrelated things
   in one binary and was unfindable with `rg` among Go's own `reports whether` idiom. The

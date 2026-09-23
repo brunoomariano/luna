@@ -33,7 +33,6 @@ func sessionCommand(env Env, args []string) error {
 	var (
 		launcher = set.String("launcher", "", "what composes the session around the agent")
 		skill    = set.String("skill", defaultSkill, "the skill to name in the briefing (empty: name none)")
-		bare     = set.Bool("bare", false, "run the agent directly, with no launcher")
 		printIt  = set.Bool("print", false, "print the briefing and exit, launching nothing")
 	)
 
@@ -57,7 +56,7 @@ func sessionCommand(env Env, args []string) error {
 		return fmt.Errorf("%w: session needs an agent to start — `luna session claude`", ErrUsage)
 	}
 
-	return env.launch(compose(agent, briefing, *launcher, *bare))
+	return env.launch(compose(agent, briefing, *launcher))
 }
 
 // compose decides what actually gets started.
@@ -66,8 +65,12 @@ func sessionCommand(env Env, args []string) error {
 // left composed even when it is missing, and launch reports that and stops.
 // `--launcher firejail` is a request for containment, and silently starting an
 // unsandboxed agent because firejail was absent is a security surprise.
-func compose(agent, briefing, launcher string, bare bool) []string {
-	if bare || launcher == "" {
+//
+// Naming none is how you say you want none. There was a `--bare` flag for that
+// while a default launcher existed and had to be turned off; with no default it
+// said exactly what passing nothing already says.
+func compose(agent, briefing, launcher string) []string {
+	if launcher == "" {
 		return []string{agent, briefing}
 	}
 	return []string{launcher, agent, briefing}

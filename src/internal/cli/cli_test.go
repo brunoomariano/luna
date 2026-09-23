@@ -1472,12 +1472,12 @@ func TestTheBriefingIsASingleArgument(t *testing.T) {
 	}
 }
 
-func TestABareSessionStartsTheAgentWithNoLauncher(t *testing.T) {
+func TestASessionWithNoLauncherNamedComposesNone(t *testing.T) {
 	h := newHarness(t)
 
-	got := h.launched(t, "codex", "--bare")
+	got := h.launched(t, "codex")
 	if len(got) != 2 || got[0] != "codex" {
-		t.Errorf("--bare still composed a launcher: %v", got)
+		t.Errorf("naming no launcher still composed one: %v", got)
 	}
 }
 
@@ -1504,10 +1504,9 @@ func TestASessionWithNoAgentSaysWhatToType(t *testing.T) {
 	}
 }
 
-// A missing binary names itself. It used to also advise --bare, which is wrong
-// advice for the case that reaches here: this path is only taken for a launcher
-// the caller NAMED, and telling somebody who asked for a sandbox to run without
-// one is the opposite of what they asked.
+// A missing binary names itself, and advises nothing about running without it.
+// This path is only taken for a launcher the caller NAMED, and telling somebody
+// who asked for a sandbox to go without one is the opposite of what they asked.
 func TestAMissingLauncherNamesTheBinaryThatIsNotThere(t *testing.T) {
 	h := newHarness(t)
 
@@ -1518,24 +1517,25 @@ func TestAMissingLauncherNamesTheBinaryThatIsNotThere(t *testing.T) {
 	if !strings.Contains(err.Error(), "a-launcher-that-is-not-installed") {
 		t.Errorf("the refusal does not name the missing binary: %v", err)
 	}
-	if strings.Contains(err.Error(), "--bare") {
-		t.Errorf("the refusal advises dropping a sandbox the caller asked for: %v", err)
+	for _, advice := range []string{"--bare", "without a launcher", "starts directly"} {
+		if strings.Contains(err.Error(), advice) {
+			t.Errorf("the refusal advises dropping a sandbox the caller asked for: %v", err)
+		}
 	}
 }
 
-// A launcher is a thing Luna calls, never a thing Luna needs. `--bare` has to
-// work on a machine that has none installed — otherwise the verb would have
-// quietly given this project its first dependency, and it would be one that
-// `go.mod` cannot show.
+// A launcher is a thing Luna calls, never a thing Luna needs. The verb has to
+// work on a machine with none installed — otherwise it would have quietly given
+// this project its first dependency, and one that `go.mod` cannot show.
 func TestStartingAnAgentNeedsNoLauncherInstalled(t *testing.T) {
 	h := newHarness(t)
 
-	got := h.launched(t, "some-agent", "--bare")
+	got := h.launched(t, "some-agent")
 	if len(got) != 2 || got[0] != "some-agent" {
-		t.Fatalf("--bare did not start the agent on its own: %v", got)
+		t.Fatalf("the agent did not start on its own: %v", got)
 	}
 	if !strings.Contains(got[1], "starting work in") {
-		t.Errorf("a bare session lost the briefing: %q", got[1])
+		t.Errorf("a session with no launcher lost the briefing: %q", got[1])
 	}
 }
 
@@ -1580,17 +1580,6 @@ func TestASessionWithNoLauncherStartsTheAgentDirectly(t *testing.T) {
 	}
 	if h.err.String() != "" {
 		t.Errorf("starting without a launcher warned about something:\n%s", h.err.String())
-	}
-}
-
-// An explicit --bare is a choice, not a degradation, and warning about it would
-// train people to ignore the warning that matters.
-func TestAnExplicitBareSessionWarnsAboutNothing(t *testing.T) {
-	h := newHarness(t)
-
-	h.launched(t, "some-agent", "--bare")
-	if strings.Contains(h.err.String(), "no sandbox") {
-		t.Errorf("--bare was warned about as though it were a fallback:\n%s", h.err.String())
 	}
 }
 
