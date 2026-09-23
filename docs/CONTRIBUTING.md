@@ -64,9 +64,9 @@ Two things to know before writing a test:
 
 ## The quality pipeline
 
-Luna orchestrates agents that write code. That premise sets the bar for the code
-Luna itself is made of: it has to hold up without a human reading every line, which
-means the metrics do the reviewing.
+Luna is what a conductor believes about whether a phase delivered. That premise sets
+the bar for the code Luna itself is made of: it has to hold up without a human reading
+every line, which means the metrics do the reviewing.
 
 Both `ci` and `ci-check` announce each step with a blue `▸` line, mark the result,
 and close with a summary. They **stop at the first failure** — a linter answering

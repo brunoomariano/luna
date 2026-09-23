@@ -59,8 +59,8 @@ synthesised them.
 artifact with no declared verifier is refused rather than defaulted: a contract that does
 not say how something is proven is the ceremony this project exists against.
 
-**Evidence carries scope, and scope never upgrades.** `full`, `targeted`, `existence`,
-`human`. An unstated scope on a command defaults *down* to `targeted` — under-claiming only
+**Evidence carries scope, and scope never upgrades.** `full`, `targeted`, `human`,
+`existence`. An unstated scope on a command defaults *down* to `targeted` — under-claiming only
 costs a phase that has to prove more, while over-claiming laundering a targeted run into a
 full one is unrecoverable. An unknown scope satisfies nothing and is satisfied by nothing,
 in both directions, so a typo cannot outrank the floor.
@@ -145,8 +145,7 @@ the whole chain goes.
 
 **A line is self-contained and bounded.** Reading one never requires reading the ones before
 it, and a line that would exceed the size a write lands atomically at is refused rather than
-truncated. Measured: eight processes writing 100 lines each, and host and sandbox writing
-simultaneously, produced no corrupt line.
+truncated. Measured: eight processes appending 60 lines each produced no corrupt line.
 
 **A line that cannot be parsed is reported, not skipped.** Skipping is how a record quietly
 stops being the record: the reader would answer confidently from whatever remained readable.

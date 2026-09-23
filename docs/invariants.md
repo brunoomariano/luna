@@ -24,7 +24,7 @@ uncommitted file, a local `.env`, a stale build artifact. A tree that passes and
 delivery that does not.
 
 **Floor, stated plainly.** Not every artifact is mechanically provable. Evidence carries
-the **scope** of what was proven — `full`, `targeted`, `existence`, `human` — and
+the **scope** of what was proven — `full`, `targeted`, `human`, `existence` — and
 `existence` is the honest floor for prose: the file is there, nothing more is claimed.
 Scope has no upgrade path.
 

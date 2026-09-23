@@ -240,10 +240,11 @@ from inside the sandbox landed in the host's ledger beside one written outside i
 
 ## Autonomy
 
-Three named modes: `manual` (the default), `semi`, `auto`. A gate declares which mode
-clears it, and the mode can move mid-run — a gate already open keeps whoever opened it,
-because changing the mode while a question is on somebody's screen would rewrite who
-answered it.
+Three named modes: `manual` (the default), `semi`, `auto`. Luna **records** the mode and
+resolves nothing against it: which mode clears which gate is a flow decision, and it
+belongs to whoever conducts. This type once carried `Clears` and `Blocks` to answer that
+here; both were tested, called by nothing, and removed — putting the answer in Luna is what
+the redesign undid.
 
 **Every mode still blocks on missing information, including `auto`.** The difference
 between running without asking and running without thinking is the whole value of an
