@@ -204,7 +204,7 @@ Ask which one before you act: resume one of the above, or start
 something new. Do not choose on your own — an open run is not a request
 to continue it.
 
-Conduct the work with the lsh-luna-soul skill.
+Conduct the work with the luna skill.
 ...
 ```
 

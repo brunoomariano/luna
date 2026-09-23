@@ -188,7 +188,7 @@ a phase boundary to prove what was delivered, and to record what happened.
                     and Luna says so. A launcher you NAME is never dropped:
                     asking for containment and silently getting none is a
                     surprise nobody should have to catch.
-        --skill     the skill the briefing names, default lsh-luna-soul. Empty
+        --skill     the skill the briefing names, default luna. Empty
                     names none, and the briefing still says how to use Luna.
         --bare      start the agent directly, with no launcher at all.
         --print     print the briefing and exit, launching nothing.

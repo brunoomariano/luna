@@ -366,3 +366,33 @@ func TestAWriteThatCannotHappenNamesTheFile(t *testing.T) {
 		t.Errorf("the failure does not name what it was writing: %v", err)
 	}
 }
+
+// The help text names the default skill, and named it wrongly for two renames:
+// it advertised a skill the binary had stopped using, which is the same defect
+// as the briefing itself carrying a dead name. What the help says the default is
+// has to be what the briefing produces.
+func TestTheHelpNamesTheDefaultSkillTheBriefingUses(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	if err := h.run("session", "claude", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	briefing := h.stdout()
+
+	h.out.Reset()
+	if err := h.run("help"); err != nil {
+		t.Fatal(err)
+	}
+	carried, err := skills.Find("luna")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(h.stdout(), "default "+carried.Name) {
+		t.Errorf("the help does not name %q as the default skill", carried.Name)
+	}
+	if !strings.Contains(briefing, carried.Name) {
+		t.Errorf("the briefing does not name %q, which the help promises", carried.Name)
+	}
+}
