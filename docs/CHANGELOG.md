@@ -19,11 +19,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   blocks on missing information.
 - **Exit codes are the contract with whoever conducts:** 0 proven, 2 not proven, 1 Luna
   could not run.
+- **The listing is `luna runs`, not `luna report`.** "Report" named three unrelated things
+  in one binary and was unfindable with `rg` among Go's own `reports whether` idiom. The
+  old name still dispatches, undocumented, for one release.
 
 ### Added
 - **`luna check` refuses to write to a ledger that would not survive the process** — a
   `statfs` against `TMPFS_MAGIC` before the first write, with a refusal that says how to map
   the directory into a sandbox. Verified inside a real `ai-jail`, with and without the map.
+- **`luna session <agent>`** starts an agent already briefed with what this repository has
+  open, and **`luna install-skills <claude|codex>`** writes the skill Luna carries into a
+  harness's own directory. The skill ships inside the binary, so the version that installs
+  is the version that was built — a skill documenting a verb the binary no longer answers
+  costs somebody a session.
+- **`luna record --event discovery`** records what a phase concluded about a project and
+  the file it read to conclude it. Recorded and never consulted: the command still arrives
+  in the contract on every call.
+- **`luna trail`** reads a run's whole trail rather than its last line, and says when a run
+  finished having never proven anything.
+- **`--note` and `--round`** on `record`, which were usable and undocumented.
+
+### Fixed
+- **`luna check` resolves the delivery's HEAD in the worktree it was called from**, not in
+  the main repository. They differ in exactly the case Luna is built for, and taking the
+  repository's ran every check over the base and recorded it as proof — six tasks across
+  two days.
+- **A long existence listing is summarised rather than refused.** A `path` that is a folder
+  listed every file under it; a few hundred files pushed the ledger line past its
+  atomic-append ceiling and the run aborted partway through, with the earlier checks
+  already recorded.
+- **One branch per run**, not one per phase: a phase in the branch name ages at the first
+  transition.
+- **An empty listing names every filter that narrowed it**, rather than reading as no work.
 
 ### Removed
 - `luna task`, `luna lead`, `luna fleet`, `luna gate`, `luna daemon`, `luna artifact`, the
