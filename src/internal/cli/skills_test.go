@@ -117,6 +117,52 @@ func TestTheSkillNamesNothingOutsideLuna(t *testing.T) {
 	}
 }
 
+// The same rule, held against what the binary says rather than what it carries.
+//
+// The skill was checked and the briefing was not, so the briefing kept naming a
+// skill from two renames ago: Luna installed `luna` and then told the agent to
+// conduct with something no machine had. A rule enforced on the travelling
+// document and not on the binary that travels with it is half a rule.
+func TestTheBriefingNamesNothingOutsideLuna(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	if err := h.run("session", "claude", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	briefing := strings.ToLower(h.stdout())
+
+	for _, houseOnly := range []string{
+		"lsh-", "ai-run", "ai-jail", "ai-memory", "plane", "herdr", "dotfiles",
+	} {
+		if strings.Contains(briefing, houseOnly) {
+			t.Errorf("the briefing names %q, which does not exist on a machine that is not this one:\n%s",
+				houseOnly, h.stdout())
+		}
+	}
+}
+
+// The skill the briefing names by default has to be one Luna can actually
+// produce. Naming a skill nobody has sends the agent looking for a file that
+// `install-skills` never writes.
+func TestTheBriefingNamesTheSkillLunaInstalls(t *testing.T) {
+	h := newHarness(t)
+	h.commit("a.txt", "one")
+
+	if err := h.run("session", "claude", "--print"); err != nil {
+		t.Fatal(err)
+	}
+
+	carried, err := skills.Find("luna")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout(), carried.Name) {
+		t.Errorf("the briefing does not name the skill this build carries (%q):\n%s",
+			carried.Name, h.stdout())
+	}
+}
+
 // Installing twice has to leave what installing once did. An install that
 // refuses the second time is an install nobody runs the second time.
 func TestInstallingSkillsTwiceLeavesTheSameThing(t *testing.T) {

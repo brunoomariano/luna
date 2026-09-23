@@ -1384,7 +1384,7 @@ func TestABriefingSaysWhenNothingIsOpen(t *testing.T) {
 	if strings.Contains(out, "Ask which one") {
 		t.Errorf("the briefing asks which run to resume when there are none:\n%s", out)
 	}
-	if !strings.Contains(out, "lsh-luna-soul") {
+	if !strings.Contains(out, "Conduct the work with the") {
 		t.Errorf("an idle briefing lost the instruction to conduct:\n%s", out)
 	}
 }
@@ -1398,7 +1398,7 @@ func TestABriefingNamesTheSkillAndSaysWhatToDoWithoutIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := h.stdout()
-	if !strings.Contains(out, "lsh-luna-soul") {
+	if !strings.Contains(out, "Conduct the work with the luna skill") {
 		t.Errorf("the briefing does not name the skill:\n%s", out)
 	}
 	if !strings.Contains(out, "not available in this session") {
@@ -1423,7 +1423,9 @@ func TestTheSkillNamedInABriefingCanBeChangedOrDropped(t *testing.T) {
 	if err := h.run("session", "--print", "--skill", ""); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(h.stdout(), "lsh-luna-soul") {
+	// The sentence, not the word: the default skill is now called `luna`, which
+	// the briefing says a dozen times for other reasons.
+	if strings.Contains(h.stdout(), "Conduct the work with the") {
 		t.Errorf("an empty --skill still named the default:\n%s", h.stdout())
 	}
 	if !strings.Contains(h.stdout(), "luna check") {

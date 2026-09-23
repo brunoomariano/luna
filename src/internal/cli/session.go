@@ -119,7 +119,12 @@ func (e Env) launch(command []string) error {
 // an exact name is what a model can act on — a description of a skill reads as a
 // suggestion to improvise one. The briefing says what to do without it, so a
 // machine that does not have it is not stranded.
-const defaultSkill = "lsh-luna-soul"
+//
+// It is the skill this binary carries and `install-skills` writes, so the name
+// is one Luna can actually produce. It named a house-only conductor skill for
+// two renames after that skill stopped existing: the rule banning those was
+// enforced against the travelling document and never against the briefing.
+const defaultSkill = "luna"
 
 // brief is the first message an agent receives: what this repository has open,
 // and what to do about it.
