@@ -34,8 +34,11 @@ func TestEveryVerbTheSkillNamesIsOneTheBinaryAnswers(t *testing.T) {
 	}
 
 	// Prose reads "luna help is authoritative" and the like; these are not verbs
-	// under test, and `help` is answered anyway.
-	notVerbs := map[string]bool{"binary": true, "check--contract": true}
+	// under test, and `help` is answered anyway. "is" comes from the ledger's
+	// own refusal, quoted verbatim: the path ~/.local/share/luna ends a sentence
+	// that carries on "is in memory". Quoting the binary's real message is worth
+	// more than rewording it to satisfy this pattern.
+	notVerbs := map[string]bool{"binary": true, "check--contract": true, "is": true}
 
 	for verb := range named {
 		if notVerbs[verb] {
@@ -211,8 +214,16 @@ func TestPrintingTheSkillsWritesTheWholeDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.stdout() != string(skill.Files["SKILL.md"]) {
-		t.Error("--print did not write exactly what this build carries")
+	// Every file, whole. A skill carrying references prints them under a header
+	// each, so the check is that nothing was summarised or left out — not that
+	// the output equals any one file.
+	for name, body := range skill.Files {
+		if !strings.Contains(h.stdout(), string(body)) {
+			t.Errorf("--print did not write %s as this build carries it", name)
+		}
+		if len(skill.Files) > 1 && !strings.Contains(h.stdout(), "luna/"+name) {
+			t.Errorf("--print does not say which file %s is", name)
+		}
 	}
 }
 
