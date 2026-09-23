@@ -172,18 +172,16 @@ what they are called stays yours.
 ### launcher
 
 What composes a session's layers around the agent: sandbox, durable memory, permissions.
-`ai-run` by default.
+Named with `--launcher`; there is no default, and without one the agent starts directly.
 
 Luna calls one and builds none of it. Each of those layers is another tool's main product,
 and taking them over is what the redesign undid.
 
 **A launcher is not a dependency of Luna.** Luna has none — `go.mod` is three lines, and
-that includes this. When the *default* launcher is not installed, the agent starts directly
-and Luna says what was lost; `--bare` says you meant that and warns about nothing.
+that includes this. Name none and the agent starts directly.
 
 A launcher you **name** is never dropped: `--launcher firejail` is a request for
-containment, so a missing firejail is refused rather than quietly started without. An absent
-default is a missing convenience; an absent named launcher is a broken instruction.
+containment, so a missing firejail is refused rather than quietly started without.
 
 ---
 

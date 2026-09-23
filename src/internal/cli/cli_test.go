@@ -1438,11 +1438,11 @@ func TestTheSkillNamedInABriefingCanBeChangedOrDropped(t *testing.T) {
 func TestASessionHandsTheBriefingToTheLauncher(t *testing.T) {
 	h := newHarness(t)
 
-	got := h.launched(t, "claude")
+	got := h.launched(t, "claude", "--launcher", "my-wrapper")
 	if len(got) != 3 {
 		t.Fatalf("expected launcher, agent and briefing; got %d: %v", len(got), got)
 	}
-	if got[0] != "ai-run" || got[1] != "claude" {
+	if got[0] != "my-wrapper" || got[1] != "claude" {
 		t.Errorf("the composition is wrong: %v", got[:2])
 	}
 	if !strings.Contains(got[2], "starting work in") {
@@ -1461,14 +1461,14 @@ func TestTheBriefingIsASingleArgument(t *testing.T) {
 	}
 
 	got := h.launched(t, "claude")
-	if len(got) != 3 {
+	if len(got) != 2 {
 		t.Fatalf("the briefing was split across arguments: %v", got)
 	}
-	if !strings.Contains(got[2], "\n") {
+	if !strings.Contains(got[1], "\n") {
 		t.Error("the briefing lost its line breaks")
 	}
-	if !strings.Contains(got[2], `does "targeted" satisfy a demand for full?`) {
-		t.Errorf("a quoted question did not survive:\n%s", got[2])
+	if !strings.Contains(got[1], `does "targeted" satisfy a demand for full?`) {
+		t.Errorf("a quoted question did not survive:\n%s", got[1])
 	}
 }
 
@@ -1566,35 +1566,20 @@ func TestANamedLauncherThatIsMissingIsRefusedRatherThanDropped(t *testing.T) {
 	}
 }
 
-// The fallback must be loud. Somebody who expected a sandbox and got none has to
-// read it on the way past, or the surprise arrives later and worse.
-func TestTheFallbackToNoLauncherSaysWhatWasLost(t *testing.T) {
+// With no --launcher, the agent starts directly and quietly.
+//
+// There used to be a default launcher, one person's tool, and every machine
+// without it printed a note explaining an absence it could do nothing about.
+// Nothing is lost by saying nothing: a caller who wants a sandbox names one.
+func TestASessionWithNoLauncherStartsTheAgentDirectly(t *testing.T) {
 	h := newHarness(t)
-	// This machine has the default launcher installed; a machine that does not
-	// is the case being tested, so PATH is emptied for the lookup.
-	t.Setenv("PATH", "")
 
-	var got []string
-	h.env.Launch = func(command []string) error {
-		got = command
-		return nil
-	}
-	t.Cleanup(func() { h.env.Launch = nil })
-
-	if err := h.run("session", "some-agent"); err != nil {
-		t.Fatal(err)
-	}
+	got := h.launched(t, "some-agent")
 	if len(got) != 2 || got[0] != "some-agent" {
-		t.Fatalf("the session did not fall back to starting the agent directly: %v", got)
+		t.Fatalf("the session did not start the agent directly: %v", got)
 	}
-	warning := h.err.String()
-	if !strings.Contains(warning, "ai-run") {
-		t.Errorf("the fallback does not name the launcher that is missing:\n%s", warning)
-	}
-	for _, want := range []string{"no sandbox", "--bare", "--launcher"} {
-		if !strings.Contains(warning, want) {
-			t.Errorf("the fallback does not mention %q:\n%s", want, warning)
-		}
+	if h.err.String() != "" {
+		t.Errorf("starting without a launcher warned about something:\n%s", h.err.String())
 	}
 }
 

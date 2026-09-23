@@ -146,7 +146,7 @@ proves that ledger is on a filesystem that survives the process — and refuses 
 it is not.
 
 **Why.** Luna does not build the environment it runs in. A person composes it before the
-agent starts (`ai-run`: sandbox, memory, both, or neither), so Luna inherits whatever that
+agent starts — sandbox, memory, both, or neither — so Luna inherits whatever that
 choice produced and cannot know it from the inside. Under a sandbox that gives the process
 a tmpfs `$HOME`, a ledger under `$XDG_DATA_HOME` is writable, is written, reports success,
 and evaporates. That failure is silent in both directions: the write and the read agree

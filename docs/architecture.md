@@ -22,7 +22,7 @@ Luna is called by whoever conducts the work. It starts no agent, builds no sandb
 decides nothing about what happens next.
 
 ```text
-a person composes the session      ai-run: sandbox? durable memory? both? neither?
+a person composes the session      sandbox? durable memory? both? neither?
    │
    ▼
 an agent conducts the phases       a skill, a person, a script — Luna does not care
@@ -284,7 +284,8 @@ moved or made by hand.
 
 `session` is the one verb that does not answer a question: it starts an agent with this
 repository's open runs as its first message, then **replaces itself** with whatever
-composes the session (`ai-run` here). Luna builds no sandbox and no memory — it hands over
+composes the session, when `--launcher` names one. Luna builds no sandbox and no memory —
+it hands over
 a briefing and stops existing, which is why starting a process here is not the parent-process
 shape the redesign removed.
 

@@ -184,9 +184,9 @@ first line, and their later lines name where the work really happened.
 message, so nobody spends a turn asking what is going on here.
 
 ```sh
-$ luna session claude          # composes with ai-run if present, then execs it
-$ luna session codex --bare    # no launcher, just the agent
-$ luna session --print         # see the briefing, launch nothing
+$ luna session claude                      # start the agent, briefed
+$ luna session claude --launcher my-wrap   # start it inside your own wrapper
+$ luna session --print                     # see the briefing, launch nothing
 ```
 
 ```
@@ -208,25 +208,15 @@ Conduct the work with the luna skill.
 ...
 ```
 
-**Luna does not stay.** It reads the ledger, composes the briefing and `execve`s the
-launcher — after that there is no Luna in the process tree. The sandbox and the durable
-memory belong to whatever you already use (`ai-run` here, `--launcher` for anything else);
-Luna builds neither.
+**Luna does not stay.** It reads the ledger, composes the briefing and `execve`s what you
+asked for — after that there is no Luna in the process tree. A sandbox and durable memory
+are another tool's whole product, and Luna builds neither: name yours with `--launcher`
+and it wraps the agent, or name none and the agent starts directly.
 
-**And it depends on none of them.** `ai-run`, `ai-jail` and `ai-memory` are one person's
-setup, not a requirement: on a machine without them, `luna session claude` starts Claude
-directly and says what it could not compose.
-
-```
-  note: ai-run is not installed, so claude starts directly, with no sandbox
-  and no durable memory. Pass --launcher to name what you use, or
-  --bare to say you meant this.
-```
-
-A launcher you **name** is never dropped that way. `--launcher firejail` is a request for
+**A launcher you name is never dropped.** `--launcher firejail` is a request for
 containment, and if firejail is missing the session is refused rather than started without
-it — an absent default is a missing convenience, an absent named launcher is a broken
-instruction. `--bare` says you meant to run without one, and warns about nothing.
+it — silently running an unsandboxed agent because the sandbox was absent is the surprise
+worth refusing.
 
 The skill it names is `--skill`, and an empty one names none — the briefing still says how
 to use Luna.

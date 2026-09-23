@@ -200,8 +200,9 @@ directory that harness owns, and it deletes nothing it did not write.
 
 It composes a briefing from the ledger — this repository's open runs, what each is blocked
 on, how to conduct the work — and `execve`s the launcher with it as the agent's first
-message. The launcher is `ai-run` by default: the sandbox and the durable memory are
-another tool's product and Luna builds neither.
+message. What composes the session around the agent — a sandbox, durable memory — is
+another tool's product and Luna builds neither, so it starts the agent directly unless
+`--launcher` names one.
 
 This looks like the shape *The shape* rejected, and the difference is the whole argument.
 The old Luna **stayed** — it started the agent, read its replies and chose the next phase,
@@ -209,9 +210,9 @@ so two processes both wanted to be the parent and did not compose. `session` hol
 after `execve` there is no Luna in the tree, no pipe to read, no reply to parse. Starting a
 process is not orchestrating it.
 
-*Rejected: a `SessionStart` hook.* Measured, and it works — a second hook merges with the
-one ai-memory already installs, and both `additionalContext` blocks reach the model. It
-lost on two counts: it is Claude-only, against a tool that had just been made
+*Rejected: a `SessionStart` hook.* Measured, and it works — a second hook merges with one
+a durable-memory tool already installs, and both `additionalContext` blocks reach the
+model. It lost on two counts: it is Claude-only, against a tool that had just been made
 harness-agnostic, and it fires on every `/clear` and `/compact`, so a session already deep
 in a task would be told again to go and check for open runs.
 
@@ -220,12 +221,16 @@ in a task would be told again to go and check for open runs.
 ambiguous ready marker. Testing this verb hit that same trust dialog from the outside,
 which is the confirmation. An argument is not an interface.
 
-*Rejected: requiring the launcher.* `ai-run` is one person's setup, and the first version
-refused to start anything without it — which made the verb useless on any other machine. An
-absent **default** now falls back to starting the agent directly, loudly. An absent **named**
-launcher still refuses: `--launcher firejail` is a request for containment, and starting an
-unsandboxed agent because firejail was missing is a silent downgrade of something a person
-deliberately asked for. The two cases look identical in the code and are opposite in kind.
+*Rejected: requiring the launcher.* The first version refused to start anything without
+one, which made the verb useless on any machine that did not have it.
+
+*Rejected: a default launcher.* The replacement named one particular tool and fell back,
+loudly, when it was absent — so every machine but one printed a note about a tool it was
+never going to have, and the fallback needed a rule telling a missing default from a missing
+named launcher. There is no default now: name one or get the agent. An absent **named**
+launcher still refuses, and that is the half worth keeping — `--launcher firejail` is a
+request for containment, and starting an unsandboxed agent because firejail was missing is a
+silent downgrade of something a person deliberately asked for.
 
 *Rejected: resuming the single open run automatically.* The briefing shows what is open and
 tells the agent to **ask**. A session may have been opened for something else entirely, and
