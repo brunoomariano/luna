@@ -70,34 +70,32 @@ linters:
 
     depguard:
       rules:
-        # The engine decides the flow and touches nothing else. It must not know
-        # about issue trackers (INV-core-9), must not reach the network, must not
-        # run a process, and must not talk to the store — a reducer that could
-        # read from disk would stop being replayable (ADR-0024).
-        engine:
+        # The contract says what a phase owes and how each debt is proven, and
+        # nothing in it executes: running a verifier belongs to internal/verify,
+        # and the verdict travels back as evidence. A parser that could run a
+        # command would make a contract executable by reading it.
+        contract:
           files:
-            - "**/src/internal/fsm/**"
+            - "**/src/internal/contract/**"
           deny:
-            - pkg: "net/http"
-              desc: "the engine has no HTTP surface; an adapter may, the FSM may not"
             - pkg: "os/exec"
-              desc: "running a process belongs to internal/node, not to the engine"
-            - pkg: "database/sql"
-              desc: "the reducer is pure; persistence belongs to internal/store"
-            - pkg: "modernc.org/sqlite"
-              desc: "the reducer is pure; persistence belongs to internal/store"
+              desc: "nothing in contract executes; running a check is internal/verify"
+            - pkg: "net/http"
+              desc: "a contract arrives on stdin; it is never fetched"
 
-        # The store persists and replays. It may speak SQL — that is its job —
-        # but it has no more business running processes or reaching the network
-        # than the engine does.
-        store:
+        # The ledger records and reads back. It writes one file and asks the
+        # kernel about it — it has no business running a process or reaching the
+        # network, and a record that could be fetched is not a local record.
+        ledger:
           files:
-            - "**/src/internal/store/**"
+            - "**/src/internal/ledger/**"
           deny:
-            - pkg: "net/http"
-              desc: "the store persists locally; it has no network surface"
             - pkg: "os/exec"
-              desc: "running a process belongs to internal/node"
+              desc: "the ledger records what ran; running it belongs to internal/verify"
+            - pkg: "net/http"
+              desc: "the record is one local file, outside every checkout"
+            - pkg: "database/sql"
+              desc: "the record is append-only JSONL; the SQLite store was removed"
 
     revive:
       rules:
@@ -118,6 +116,10 @@ linters:
           - gocyclo
           - prealloc
           - gosec
+          # depguard states which packages a layer may import. A test exercises
+          # the real boundary — the ledger's concurrency test spawns processes to
+          # append for real — and the rule is about production layering.
+          - depguard
 
 formatters:
   enable:
